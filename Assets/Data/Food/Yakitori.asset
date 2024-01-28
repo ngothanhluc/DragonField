@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5cfb126913aff04d8e60e474480c2f0, type: 3}
+  m_Name: Yakitori
+  m_EditorClassIdentifier: 
+  <IsStackable>k__BackingField: 1
+  <MaxStackSize>k__BackingField: 99
+  <Name>k__BackingField: Yakitori
+  <Description>k__BackingField: '+3 Health
+
+    Juicy thighs, skewered and grilled
+    to smoky perfection, glistening with a sweet-salty tare glaze. Imagine a caramelized
+    char dancing around the edges, promising a burst of smoky flavor.'
+  <ItemImage>k__BackingField: {fileID: 21300000, guid: f9aa5d71acd15a24b8e9d9e3d3411f3d, type: 3}
+  <DefaultParametersList>k__BackingField: []
+  modifiersData:
+  - statModifier: {fileID: 11400000, guid: 8c5286fbf99641945b9c584f61d963a2, type: 2}
+    value: 3
+  <actionSFX>k__BackingField: {fileID: 8300000, guid: a635e30074c9f47448087b11e4f06301, type: 3}
