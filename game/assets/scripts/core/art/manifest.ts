@@ -13,6 +13,10 @@
  *   **hàng = frame**. Ví dụ Idle.png 128×128, frame 32×32, 4 directions = 4 cột × 4 hàng.
  *   Sheet một cột (Dead.png 32×64) cũng là grid với `directions: []`.
  * - `layout: "strip"`: một hàng duy nhất, frame chạy từ trái sang phải (sheet boss).
+ *
+ * `sheet` là đường dẫn tương đối so với `game/assets/` (ví dụ `art/characters/ninja-green/Idle.png`),
+ * KHÔNG phải đường dẫn trong pack gốc: pack nằm ở `art-source/` và bị gitignore, chỉ subset
+ * dùng thật mới được copy vào `game/assets/art/`.
  */
 
 /** 4 hướng có art thật trong pack. */
@@ -26,7 +30,7 @@ export type SheetLayout = 'grid' | 'strip';
 
 /** Một animation đã cắt được từ sheet. */
 export interface SpriteEntry {
-  /** Đường dẫn tương đối so với `art-source/ninja-adventure/`. */
+  /** Đường dẫn tương đối so với `game/assets/`. */
   readonly sheet: string;
   readonly frameWidth: number;
   readonly frameHeight: number;
@@ -285,9 +289,9 @@ function readSheet(
     problems.push(`${at}.sheet phải là đường dẫn không rỗng, nhận ${describeValue(value)}`);
     return undefined;
   }
-  if (!isPackRelativePath(value)) {
+  if (!isAssetRelativePath(value)) {
     problems.push(
-      `${at}.sheet phải là đường dẫn tương đối trong art-source/ninja-adventure và kết thúc bằng .png, nhận "${value}"`,
+      `${at}.sheet phải là đường dẫn tương đối trong game/assets/ (tương đối, kết thúc bằng .png, không có ".."), nhận "${value}"`,
     );
     return undefined;
   }
@@ -414,7 +418,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Đường dẫn phải tương đối, dùng `/`, không thoát khỏi pack, và trỏ tới file png. */
-function isPackRelativePath(value: string): boolean {
+function isAssetRelativePath(value: string): boolean {
   if (!value.endsWith('.png')) return false;
   if (value.startsWith('/') || value.includes('\\')) return false;
   return !value.split('/').some((segment) => segment === '..' || segment === '');
@@ -450,4 +454,63 @@ function describeValue(value: unknown): string {
     return `array(${items.length})`;
   }
   return typeof value;
+}
+
+/**
+ * Số cột của sheet.
+ *
+ * `grid` lấy cột theo `directions`; sheet một cột (`Dead.png`, `directions: []`) thì cột = 1.
+ * Nếu để loader tự suy ra từ `directions.length` thì sheet chết sẽ ra 0 cột và chia cho 0.
+ */
+export function frameColumns(entry: SpriteEntry): number {
+  return entry.layout === 'strip' ? entry.frames : Math.max(1, entry.directions.length);
+}
+
+/** Số hàng: strip luôn 1, grid thì mỗi hàng là một frame. */
+export function frameRows(entry: SpriteEntry): number {
+  return entry.layout === 'strip' ? 1 : entry.frames;
+}
+
+export interface FrameRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Rect pixel của một frame, gốc trên-trái (thứ tự đọc của ảnh).
+ * Với `strip`, `direction` bị bỏ qua vì sheet chỉ có một hàng.
+ */
+export function frameRect(entry: SpriteEntry, direction: Direction, frame: number): FrameRect {
+  if (!Number.isInteger(frame) || frame < 0 || frame >= entry.frames) {
+    throw new Error(`frame phải là số nguyên trong [0, ${entry.frames}), nhận ${frame}`);
+  }
+
+  // Strip chạy ngang; grid chạy dọc theo hàng, ngang theo cột direction.
+  if (entry.layout === 'strip') {
+    return {
+      x: frame * entry.frameWidth,
+      y: 0,
+      width: entry.frameWidth,
+      height: entry.frameHeight,
+    };
+  }
+
+  let column = 0;
+  if (entry.directions.length > 0) {
+    column = entry.directions.indexOf(direction);
+    if (column < 0) {
+      throw new Error(
+        `direction "${direction}" không có trong sheet (chỉ có: ${entry.directions.join(', ')})`,
+      );
+    }
+  }
+
+  return {
+    x: column * entry.frameWidth,
+    y: frame * entry.frameHeight,
+    width: entry.frameWidth,
+    height: entry.frameHeight,
+  };
 }

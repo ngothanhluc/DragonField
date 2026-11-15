@@ -1,7 +1,14 @@
 /**
  * Số liệu combat. Đây là nguồn duy nhất; không hardcode số trong component.
  * Xem docs/gdd.md §3.
+ *
+ * Số thật nằm trong `game/config/tuning.json`, được `scripts/gen-tuning.ts`
+ * biên dịch sang `enemies/tuning.generated.ts`, và `enemies/tuning.ts`
+ * validate; file này chỉ giữ **tên + kiểu** để phần còn lại của code import
+ * một interface ổn định. Đổi balance = sửa JSON + `bun run gen`, không sửa file này.
  */
+import { COMBAT_TUNING } from './enemies/tuning';
+
 export interface CombatConfig {
   /** Số phát bắn mỗi giây ở trạng thái cơ bản. */
   readonly fireRatePerSecond: number;
@@ -23,14 +30,5 @@ export interface CombatConfig {
   readonly targetingRangeTiles: number;
 }
 
-export const DEFAULT_COMBAT: CombatConfig = {
-  fireRatePerSecond: 2,
-  projectileSpeedTilesPerSecond: 12,
-  damage: 1,
-  projectiles: 1,
-  moveSpeedTilesPerSecond: 4,
-  playerMaxHearts: 6,
-  invulnerabilityMs: 800,
-  contactDamage: 1,
-  targetingRangeTiles: 10,
-};
+/** Số liệu combat cơ bản, đọc từ `config/tuning.json` (không chép lại số). */
+export const DEFAULT_COMBAT: CombatConfig = COMBAT_TUNING;

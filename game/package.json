@@ -6,12 +6,14 @@
   },
   "private": true,
   "scripts": {
-    "check": "npm run typecheck && npm run test && npm run lint",
+    "check": "bun run check:config && bun run typecheck && bun run test && bun run lint",
+    "check:config": "bun run scripts/gen-tuning.ts --check",
+    "gen": "bun run scripts/gen-tuning.ts",
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint \"assets/scripts/**/*.ts\" \"tests/**/*.ts\"",
-    "format": "prettier --write \"assets/scripts/**/*.ts\" \"tests/**/*.ts\" \"*.{json,md}\""
+    "lint": "eslint \"assets/scripts/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"assets/scripts/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.ts\" \"*.{json,md}\""
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

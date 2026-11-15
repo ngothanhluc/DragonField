@@ -40,7 +40,7 @@ Title → chọn chapter → RUN
 | Di chuyển | WASD, 8 hướng, không dash |
 | Tốc chạy cơ bản | 4 tile/s |
 | Bắn | **tự động, liên tục, kể cả khi đang chạy** |
-| Aim | tự nhắm enemy gần nhất trong tầm 10 tile |
+| Aim | tự nhắm enemy gần nhất trong tầm 8 tile |
 | Nhịp bắn cơ bản | 2 phát/giây |
 | Đạn cơ bản | 1 viên, damage 1, tốc độ 12 tile/s |
 | Máu người chơi | 6 tim |
@@ -58,11 +58,15 @@ Ràng buộc từ pack: **mọi monster chỉ có 1 sheet 4 hướng × 4 frame 
 - Chết = `FX/Elemental/Explosion` + fade out.
 - Elite = **palette remap** trên 53 màu của `Palette.png` (không nhân màu), scale 1.15.
 
-| Vai trò | Máu | Hành vi | Đòn | Chapter 1 / 2 / 3 |
-|---|---|---|---|---|
-| **Chaser** | 3 | lao thẳng vào player, tốc độ cao | chạm người gây 1 | BlueBat / SpiderRed / Snake3 |
-| **Caster** | 2 | giữ khoảng cách 4–6 tile, lùi khi bị áp sát | đạn chậm, telegraph 500 ms | Eye / GreenOctopus / LanternRed |
-| **Brute** | 8 | chậm, đi thẳng | charge đường thẳng, telegraph 700 ms | Bear / TRex / Cyclope |
+| Vai trò | Máu | Tốc độ | Hành vi | Đòn | Chapter 1 / 2 / 3 |
+|---|---|---|---|---|---|
+| **Chaser** | 6 | 3.2 tile/s | lao thẳng vào player | chạm người gây 1 | BlueBat / SpiderRed / Snake3 |
+| **Caster** | 4 | 1.6 tile/s | giữ khoảng cách 4–6 tile, lùi khi bị áp sát, cooldown 900 ms | đạn chậm, telegraph 500 ms | Eye / GreenOctopus / LanternRed |
+| **Brute** | 10 | 1.2 tile/s | chậm, đi thẳng, cooldown 900 ms | charge 7 tile/s trong 450 ms, telegraph 700 ms, chạm gây 2 | Bear / TRex / Cyclope |
+
+Số này đã được kiểm chứng bằng simulation headless, không phải chọn theo cảm giác: với 2 DPS, chaser 6 máu sống 3 s — đủ để chạy 9.6 tile và chạm người, nên **đứng yên sẽ thua**. Tầm bắn 8 tile (thay vì 10) là con số quyết định: ở 10 tile, chaser chết khi còn cách ~6.4 tile và người chơi không bao giờ bị chạm.
+
+Toàn bộ số nằm trong `game/config/tuning.json`; sửa ở đó rồi chạy `bun run gen`.
 
 Độ khó tăng theo chapter:
 
@@ -140,7 +144,7 @@ Không có equipment, không có nhân vật thứ hai, không unlock skill.
 ## 8. Phòng và level design
 
 - **Mỗi phòng = đúng 1 màn hình.** Base resolution **512×288 px = 32×18 tile 16px**. Không scroll, **không cần camera follow**.
-- Phòng sinh quái theo **wave** (1 wave/phòng ở chapter 1, 2 wave từ chapter 2).
+- **Số wave là dữ liệu của từng phòng** (`assets/data/levels/*.json`), không hardcode theo chapter. `RunState` chỉ theo dõi wave hiện tại, không quy định tổng số wave.
 - Vật cản: cột, hố, tường thấp — dùng để né đạn, không chặn tầm bắn hoàn toàn.
 - 3 chapter × 9 phòng = 27 phòng, thiết kế tay trong Tiled, thứ tự cố định (không random layout) — random nằm ở skill, không ở map.
 
@@ -201,7 +205,7 @@ Inventory, equipment, NPC, dialog, hub, shop trong màn, nhiều nhân vật, ga
 
 ## 12. Rủi ro đã biết
 
-1. **Bắn liên tục** làm mất tension "đứng lại mới bắn" của Archero → độ khó phải đến từ mật độ đạn; nếu playtest thấy nhạt, thêm lại luật đứng-ý-định như một skill.
+1. **Bắn liên tục** làm mất tension "đứng lại mới bắn" của Archero. **Đã đo được** bằng simulation headless: người chơi đứng yên dọn sạch 9 phòng chapter 1 trong 60.8 s với **0 máu mất** — chaser chết trước khi chạm (2 DPS × 3 HP = 1.5 s, chỉ đủ 3.6 tile), caster chết trong cooldown 1.2 s. Đang retune qua `config/tuning.json` với điều kiện nghiệm thu: **đứng yên phải thua trong 3 phòng đầu**, người chơi có né phải sống lâu hơn ≥2×. Nếu vẫn không tạo được áp lực, phương án dự phòng là thêm lại luật đứng-yên-mới-bắn như một skill.
 2. **Chỉ có 1 nhân vật animated** (NinjaGreen) và nhân vật này **không có animation run**, chỉ có walk 4 frame → phải scale tốc độ phát animation theo vận tốc, nếu không nhân vật sẽ "trượt" khi chạy nhanh.
 3. **Không monster nào có attack/hurt/death** → telegraph, trúng đòn và chết đều là FX + tint. Rủi ro: người chơi không đọc được đòn. Test bắt buộc ở M3: 3 enemy phải phân biệt được trong 2 giây.
 4. **20 skill × 3 chapter** là khối balance lớn; giữ pool đóng băng, chỉ tune số.

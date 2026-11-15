@@ -144,3 +144,13 @@ Bảng đầy đủ: `docs/gdd.md` §3–§5. Toàn bộ số nằm trong `src/c
 **Lý do.** Chủ dự án chọn không resume run: chết/tắt tab là mất run. Schema nhỏ nên không cần migration phức tạp; vẫn giữ `version` để có chỗ sửa sau.
 
 **Hệ quả.** Không cần serialize state giữa các phòng. Toàn bộ "run state" sống trong RAM và bị xoá khi reload.
+
+---
+
+## ADR-013 — Số liệu tune nằm trong `game/config/tuning.json`, và simulation là cổng balance
+
+**Quyết định.** Mọi con số tune (combat, enemy, spawn) nằm trong `game/config/tuning.json` — **ngoài `assets/`**, để Cocos không coi đó là asset DB content. `scripts/gen-tuning.ts` đọc JSON, validate bằng `core/enemies/tuning-schema.ts`, rồi sinh `assets/scripts/core/enemies/tuning.generated.ts` (module TS thường, `as const`). Code game đọc qua `core/enemies/tuning.ts` và `core/config.ts`, không giữ hằng số riêng. `core/sim/run-simulation.ts` là công cụ đo: nó chạy trọn một chapter bằng core thuần, không cần engine.
+
+**Lý do.** Một cuộc kiểm tra bằng simulation phát hiện người chơi **đứng yên vẫn thắng chapter 1 mà không mất máu** — lỗi này không thể thấy bằng test đơn vị, và sẽ chỉ lộ ra sau khi dựng xong scene. Tách số liệu khỏi code cho phép retune bằng JSON và đo lại trong vài giây. JSON không được import trực tiếp vì mọi thứ dưới `assets/` là nội dung asset DB, và không có cách kiểm chứng bằng CLI rằng import JSON sống sót qua bước bundle script của editor; module TS thì chắc chắn sống.
+
+**Hệ quả.** Thay đổi cân bằng = sửa `config/tuning.json` rồi chạy `bun run gen`; `bun run check:config` (chạy đầu tiên trong `bun run check`) fail nếu file generated lệch nguồn. Thay đổi cân bằng phải kèm một lần chạy sim có số liệu trước/sau. Test tích hợp giữ các ngưỡng: đứng yên thua, né sống lâu hơn ≥2×, god-mode vẫn thắng trong 60–180 s. Nếu một ngưỡng bị phá, đó là tín hiệu thiết kế, không phải test hỏng.

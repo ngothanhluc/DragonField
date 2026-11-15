@@ -1,10 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { parseChapterData } from '../../assets/scripts/core/level/level-data';
 import {
   CHAPTERS_PER_RUN,
   NORMAL_ROOMS_PER_CHAPTER,
   ROOMS_PER_CHAPTER,
   RunState,
 } from '../../assets/scripts/core/run/run-state';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const chapterFile = join(here, '../../assets/data/levels/chapter-1.json');
 
 /** Dọn phòng hiện tại rồi sang phòng kế. */
 function clearAndAdvance(run: RunState): void {
@@ -112,7 +119,7 @@ describe('RunState — phòng sạch và wave', () => {
   it('sang phòng mới thì wave về 1', () => {
     const run = new RunState(2);
 
-    run.nextWave();
+    run.nextWave(2);
     expect(run.wave).toBe(2);
 
     clearAndAdvance(run);
@@ -120,18 +127,53 @@ describe('RunState — phòng sạch và wave', () => {
     expect(run.room).toBe(2);
     expect(run.wave).toBe(1);
   });
+});
 
-  it('chapter 1 có 1 wave, chapter sau có 2, boss có 1', () => {
-    expect(new RunState(1).wavesInRoom).toBe(1);
-    expect(new RunState(2).wavesInRoom).toBe(2);
-    expect(new RunState(3).wavesInRoom).toBe(2);
+/**
+ * Số wave là dữ liệu của phòng (GDD §8), nên test lấy phòng 1 của chapter 1
+ * thật (3 wave) thay vì khẳng định "chapter 1 có 1 wave" như trước.
+ */
+describe('RunState — wave theo dữ liệu level', () => {
+  const [roomOne] = parseChapterData(
+    JSON.parse(readFileSync(chapterFile, 'utf8')),
+  ).rooms;
 
-    const boss = new RunState(2);
-    for (let room = 1; room < ROOMS_PER_CHAPTER; room += 1) {
-      clearAndAdvance(boss);
+  if (roomOne === undefined) throw new Error('assets/data/levels/chapter-1.json thiếu phòng 1');
+
+  it('phòng 1 có 3 wave trong level data', () => {
+    expect(roomOne.waves.length).toBe(3);
+  });
+
+  it('phòng 3 wave đi hết state machine: 1 → 2 → 3, không sớm hơn không muộn hơn', () => {
+    const run = new RunState();
+    const totalWaves = roomOne.waves.length;
+
+    expect(run.wave).toBe(1);
+
+    run.nextWave(totalWaves);
+    expect(run.wave).toBe(2);
+
+    run.nextWave(totalWaves);
+    expect(run.wave).toBe(3);
+
+    // Hết wave cuối: không được sang wave 4.
+    expect(() => run.nextWave(totalWaves)).toThrow(/3 wave/);
+    expect(run.wave).toBe(3);
+
+    // Dọn phòng sau wave cuối rồi sang phòng kế: wave reset về 1.
+    run.onRoomCleared();
+    run.advanceToNextRoom();
+    expect(run.room).toBe(2);
+    expect(run.wave).toBe(1);
+  });
+
+  it('cùng state machine chạy được phòng 1 wave (boss) và phòng 2 wave', () => {
+    for (const totalWaves of [1, 2, 5]) {
+      const run = new RunState();
+      for (let wave = 1; wave < totalWaves; wave += 1) run.nextWave(totalWaves);
+      expect(run.wave).toBe(totalWaves);
+      expect(() => run.nextWave(totalWaves)).toThrow();
     }
-    expect(boss.isBossRoom).toBe(true);
-    expect(boss.wavesInRoom).toBe(1);
   });
 });
 
@@ -235,16 +277,25 @@ describe('RunState — chuyển trạng thái sai đều ném lỗi', () => {
     const run = new RunState(2);
     run.onRoomCleared();
 
-    expect(() => run.nextWave()).toThrow(/room-cleared/);
+    expect(() => run.nextWave(1)).toThrow(/room-cleared/);
   });
 
   it('không sang wave vượt số wave của phòng', () => {
     const run = new RunState(1);
 
-    expect(() => run.nextWave()).toThrow(/1 wave/);
+    expect(() => run.nextWave(1)).toThrow(/1 wave/);
 
-    const run2 = new RunState(2);
-    run2.nextWave();
-    expect(() => run2.nextWave()).toThrow(/2 wave/);
+    const run3 = new RunState(2);
+    run3.nextWave(2);
+    expect(() => run3.nextWave(2)).toThrow(/2 wave/);
+  });
+
+  it('từ chối tổng số wave không hợp lệ thay vì đoán', () => {
+    const run = new RunState();
+
+    expect(() => run.nextWave(0)).toThrow(/số nguyên >= 1/);
+    expect(() => run.nextWave(1.5)).toThrow(/số nguyên >= 1/);
+    expect(() => run.nextWave(Number.NaN)).toThrow(/số nguyên >= 1/);
+    expect(run.wave).toBe(1);
   });
 });

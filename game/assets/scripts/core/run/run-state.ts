@@ -10,6 +10,10 @@ export type RunStatus = 'playing' | 'room-cleared' | 'won' | 'lost';
 /**
  * Tiến trình một run: chapter nào, phòng nào, wave nào.
  *
+ * Lớp này **không** biết một phòng có bao nhiêu wave (GDD §8: số wave là dữ
+ * liệu của phòng, không phải của chapter) — caller truyền tổng số wave vào
+ * `nextWave()`.
+ *
  * Trạng thái chuyển theo đúng thứ tự: playing -> room-cleared -> playing (phòng kế)
  * hoặc -> won sau boss cuối. Mọi chuyển sai ném lỗi để bug lộ ra ngay ở test,
  * thay vì âm thầm đẩy run vào trạng thái không hợp lệ.
@@ -48,12 +52,6 @@ export class RunState {
 
   get status(): RunStatus {
     return this.currentStatus;
-  }
-
-  /** Chapter 1 có 1 wave/phòng; chapter sau có 2. Boss là 1 wave. */
-  get wavesInRoom(): number {
-    if (this.isBossRoom) return 1;
-    return this.currentChapter === 1 ? 1 : 2;
   }
 
   /** Nhãn HUD, ví dụ "3/9". */
@@ -104,16 +102,26 @@ export class RunState {
     this.currentStatus = 'playing';
   }
 
-  /** Sang wave kế trong cùng phòng. */
-  nextWave(): void {
+  /**
+   * Sang wave kế trong cùng phòng.
+   *
+   * Tổng số wave là **dữ liệu của phòng** (GDD §8: `assets/data/levels/*.json`),
+   * nên caller phải truyền vào — thường là `level.waves.length`. `RunState` chỉ
+   * giữ wave hiện tại, không suy ra số wave từ chapter hay loại phòng; nhờ vậy
+   * phòng 3 wave và phòng 1 wave dùng chung một state machine.
+   */
+  nextWave(wavesInRoom: number): void {
+    if (!Number.isInteger(wavesInRoom) || wavesInRoom < 1) {
+      throw new Error(`Số wave của phòng phải là số nguyên >= 1, nhận ${wavesInRoom}`);
+    }
     if (this.currentStatus !== 'playing') {
       throw new Error(
         `Không thể sang wave khi run đang ở trạng thái '${this.currentStatus}' (phòng ${this.roomLabel})`,
       );
     }
-    if (this.currentWave >= this.wavesInRoom) {
+    if (this.currentWave >= wavesInRoom) {
       throw new Error(
-        `Phòng ${this.roomLabel} chỉ có ${this.wavesInRoom} wave, không thể sang wave ${this.currentWave + 1}`,
+        `Phòng ${this.roomLabel} chỉ có ${wavesInRoom} wave, không thể sang wave ${this.currentWave + 1}`,
       );
     }
     this.currentWave += 1;

@@ -68,27 +68,18 @@ export interface ExplosiveStat {
 /**
  * Đầu vào tĩnh của `computeDerivedStats`.
  *
- * `DEFAULT_COMBAT` (assets/scripts/core/config.ts) không có damage / số đạn /
- * tốc chạy vì M0 chưa cần — nên chúng là trường tuỳ chọn ở đây và lấy hằng số
- * bên dưới khi thiếu. Khi config.json có ba số đó thì truyền vào là xong.
+ * `DEFAULT_COMBAT` (assets/scripts/core/config.ts) đã có đủ cả 9 số combat, nên
+ * mọi field ở đây **bắt buộc** — không còn fallback ngầm nào khi thiếu. Caller
+ * muốn baseline khác (test, meta upgrade) thì truyền object đủ field.
  */
 export interface StatsBaseline {
   readonly fireRatePerSecond: number;
+  readonly damage: number;
+  readonly projectiles: number;
   readonly playerMaxHearts: number;
   readonly invulnerabilityMs: number;
-  readonly damage?: number;
-  readonly projectiles?: number;
-  readonly moveSpeedTilesPerSecond?: number;
+  readonly moveSpeedTilesPerSecond: number;
 }
-
-/** GDD §3: đạn cơ bản damage 1, 1 viên. Giá trị thật nằm trong `DEFAULT_COMBAT`. */
-export const BASE_DAMAGE = DEFAULT_COMBAT.damage;
-export const BASE_PROJECTILES = DEFAULT_COMBAT.projectiles;
-/**
- * Tốc chạy cơ bản, tile/giây. GDD §3 không chốt số này (chỉ nói WASD 8 hướng);
- * 4 tile/s cho 32×18 tile là mức né đạn hợp lý, tune qua `DEFAULT_COMBAT`.
- */
-export const BASE_MOVE_SPEED_TILES_PER_SECOND = DEFAULT_COMBAT.moveSpeedTilesPerSecond;
 
 /**
  * Cộng dồn skill thành chỉ số cuối.
@@ -209,19 +200,15 @@ export function computeDerivedStats(
     }
   }
 
-  const baseDamage = base.damage ?? BASE_DAMAGE;
-  const baseProjectiles = base.projectiles ?? BASE_PROJECTILES;
-  const baseMoveSpeed = base.moveSpeedTilesPerSecond ?? BASE_MOVE_SPEED_TILES_PER_SECOND;
-
   return {
-    damage: sanitize(baseDamage + damageAdd),
+    damage: sanitize(base.damage + damageAdd),
     fireRatePerSecond: sanitize(base.fireRatePerSecond * (1 + fireRateAdd)),
-    projectiles: Math.max(1, Math.round(sanitize(baseProjectiles + projectileAdd))),
+    projectiles: Math.max(1, Math.round(sanitize(base.projectiles + projectileAdd))),
     pierce: Math.floor(sanitize(pierce)),
     critChance: clamp01(sanitize(critChance)),
     critMultiplier: Math.max(1, sanitize(critMultiplier)),
     maxHearts: Math.max(1, Math.floor(sanitize(base.playerMaxHearts + heartsAdd))),
-    moveSpeedTilesPerSecond: sanitize(baseMoveSpeed * (1 + moveSpeedAdd)),
+    moveSpeedTilesPerSecond: sanitize(base.moveSpeedTilesPerSecond * (1 + moveSpeedAdd)),
     invulnerabilityMs: sanitize(base.invulnerabilityMs * iframeMultiplier),
     lifestealPercent: clamp01(sanitize(lifestealPercent)),
     goldMultiplier: 1 + sanitize(goldAdd),

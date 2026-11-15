@@ -393,7 +393,7 @@ describe('resolve', () => {
   it('trả entry cho key có thật', () => {
     const entry = resolve(manifest, 'player.walk.left');
 
-    expect(entry.sheet).toBe('Actor/CharacterAnimated/NinjaGreen/Separate/Walk.png');
+    expect(entry.sheet).toBe('art/characters/ninja-green/Walk.png');
     expect(entry.frames).toBe(4);
     expect(entry.directions).toEqual(['down', 'up', 'left', 'right']);
   });

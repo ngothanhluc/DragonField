@@ -13,12 +13,16 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
     "types": [
       "node"
     ]
   },
   "include": [
     "assets/scripts/**/*.ts",
+    "assets/data/*.json",
+    "config/*.json",
+    "scripts/**/*.ts",
     "tests/**/*.ts",
     "types/**/*.d.ts"
   ]

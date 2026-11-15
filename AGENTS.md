@@ -32,7 +32,9 @@ Mọi lệnh và đường dẫn dưới đây tính từ repo root, trừ khi g
 
 ```bash
 cd game
-bun run check      # bắt buộc trước khi báo "xong": tsc --noEmit + vitest + eslint
+bun run check      # bắt buộc trước khi báo "xong": check:config + tsc + vitest + eslint
+bun run gen        # sinh lại tuning.generated.ts từ config/tuning.json
+bun run check:config  # chỉ kiểm tra generated code có lệch JSON không
 bun run test       # vitest
 bun run typecheck  # tsc --noEmit
 bun run lint       # eslint
@@ -54,8 +56,10 @@ game/                  # project Cocos Creator — mọi thứ engine đọc n�
 │   │   ├── core/      # logic thuần TS — KHÔNG được import 'cc'
 │   │   ├── game/      # component Cocos: adapter mỏng quanh core
 │   │   └── ui/        # component UI
-│   ├── data/          # JSON: config, animations manifest, level data
+│   ├── data/          # animations manifest, level data
 │   └── art/           # subset của pack, chỉ file game dùng
+├── config/
+│   └── tuning.json    # số liệu tune (nguồn duy nhất) → bun run gen
 ├── settings/          # editor sinh
 ├── library/ temp/     # cache, gitignored
 └── package.json
@@ -67,7 +71,7 @@ art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 
 1. **`src/core/` không import `cc`.** Mọi thứ trong core phải test được bằng vitest, không cần engine. Ranh giới này được enforce bằng eslint `no-restricted-imports`.
 2. **Không hardcode đường dẫn sprite.** Tham chiếu qua tên logic trong `assets/data/animations.json` (`player.idle.down`). Pack thiếu thì khai báo `fallback`.
-3. **Số liệu tune nằm trong `assets/data/config.json`**, không nằm trong code. Đổi balance = sửa JSON.
+3. **Số liệu tune nằm trong `game/config/tuning.json`** (ngoài asset DB), không nằm trong code. Sửa số → `bun run gen` → `bun run check`. `bun run check` chạy `check:config` trước, nên generated code lệch JSON là fail ngay.
 4. **Luôn chạy `bun run check`.** Cocos **bỏ qua TypeScript type error** khi compile (docs xác nhận) — không có gate này thì lỗi kiểu chỉ nổ lúc runtime.
 5. **Không tự sửa `.scene`/`.prefab` bằng tay** khi có thể mở editor; file đó là JSON do editor sinh, sửa tay dễ hỏng tham chiếu UUID.
 6. **Không thêm asset pack ngoài.** Nếu thiếu sprite, chọn asset khác trong pack hoặc dùng primitive/particle.

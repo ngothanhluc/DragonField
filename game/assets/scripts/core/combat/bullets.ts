@@ -9,6 +9,22 @@
  * chạy 60 fps mà không có frame nào cấp phát vượt kiểm soát. Hệ quả: đừng giữ
  * tham chiếu `Bullet` qua nhiều lần `spawn` — slot có thể đã thuộc về viên
  * khác. So sánh `id` nếu cần nhận diện.
+ *
+ * Hợp đồng vòng đời một viên đạn:
+ *
+ * - `spawn` đưa slot vào `live` (và trả về chính object mutable đó để adapter
+ *   đọc ngay frame này).
+ * - Viên rời pool bằng **một trong ba** đường: hết `ttlMs` (trong `update`),
+ *   bị đẩy ra khi pool đầy (`spawn`), hoặc bị thu hồi chủ động (`consume` /
+ *   `consumeWhere`). Cả ba đường đều đưa slot về `recycled` để `spawn` sau
+ *   dùng lại — không có `new` trong vòng lặp game.
+ * - Id tăng đơn điệu và **không bao giờ sống lại**: viên đã consume không còn
+ *   trong `active()`, và id của nó không thể xuất hiện trên viên khác.
+ *
+ * Vì vậy đừng mô phỏng "đạn trúng" bằng `bullet.ttlMs = 0` rồi chờ `update`
+ * kế tiếp: viên đó vẫn nằm trong `active()` (và vẫn chiếm slot, vẫn nhìn thấy
+ * được với adapter) cho tới frame sau. Dùng `consume(id)` / `consumeWhere(...)`
+ * để bắn hạ ngay trong frame va chạm.
  */
 import type { LevelData, Obstacle } from '../level/level-data';
 import { obstacleAt } from '../level/level-data';
@@ -173,6 +189,60 @@ export class BulletPool {
     return this.live;
   }
 
+  /**
+   * Thu hồi ngay viên đạn `id` (nếu có) và trả slot về `recycled`.
+   *
+   * Trả `true` khi viên đó đang sống và vừa bị bỏ, `false` khi không có id đó
+   * trong pool — gọi lại lần hai trên cùng id luôn trả `false` (id không sống
+   * lại). Sức chứa không đổi: thu hồi chỉ làm `size` giảm, slot được tái dùng
+   * cho `spawn` kế tiếp.
+   *
+   * Không gọi trong lúc `update`/`consumeWhere` đang chạy — hai hàm đó tự quản
+   * lý mảng. Gọi sau `update` (hoặc sau khi duyệt xong `active()`) là hợp lệ.
+   */
+  consume(id: number): boolean {
+    for (let index = 0; index < this.live.length; index += 1) {
+      const bullet = this.live[index];
+      if (bullet === undefined || bullet.id !== id) continue;
+
+      this.retireAt(index);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Thu hồi mọi viên thoả `predicate`, trả về **số viên** đã bỏ.
+   *
+   * Dùng cho collision resolution: một frame có thể có nhiều viên trúng, gom
+   * lại rồi gọi một lần thay vì `consume` từng id (mỗi lần `consume` phải dò
+   * và dồn mảng). Predicate chỉ được **đọc** bullet — đừng gọi `spawn` /
+   * `consume` bên trong nó; muốn đổi pool thì gọi sau khi hàm này trả về.
+   *
+   * Thứ tự "cũ nhất trước" của `active()` được giữ nguyên cho các viên còn lại.
+   */
+  consumeWhere(predicate: (bullet: Readonly<Bullet>) => boolean): number {
+    let writeIndex = 0;
+    let removed = 0;
+
+    for (let readIndex = 0; readIndex < this.live.length; readIndex += 1) {
+      const bullet = this.live[readIndex];
+      if (bullet === undefined) continue;
+
+      if (predicate(bullet)) {
+        this.recycled.push(bullet);
+        removed += 1;
+        continue;
+      }
+
+      this.live[writeIndex] = bullet;
+      writeIndex += 1;
+    }
+
+    this.live.length = writeIndex;
+    return removed;
+  }
+
   /** Bản sao sâu, dùng cho test và debug. */
   snapshot(): Bullet[] {
     return this.live.map((bullet) => ({
@@ -190,6 +260,23 @@ export class BulletPool {
   clear(): void {
     this.recycled.push(...this.live);
     this.live.length = 0;
+  }
+
+  /**
+   * Bỏ phần tử `index` khỏi `live` và trả slot về `recycled`, dồn phần đuôi
+   * sang trái để giữ thứ tự cũ → mới. `index` phải là index hợp lệ của `live`.
+   */
+  private retireAt(index: number): void {
+    const bullet = this.live[index];
+    if (bullet === undefined) return;
+
+    for (let read = index + 1; read < this.live.length; read += 1) {
+      const next = this.live[read];
+      if (next !== undefined) this.live[read - 1] = next;
+    }
+
+    this.live.length -= 1;
+    this.recycled.push(bullet);
   }
 
   private takeSlot(): MutableBullet {

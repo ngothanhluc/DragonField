@@ -2,207 +2,307 @@
   "version": 1,
   "sprites": {
     "player.idle.down": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Idle.png",
+      "sheet": "art/characters/ninja-green/Idle.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "player.idle.up": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Idle.png",
+      "sheet": "art/characters/ninja-green/Idle.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "player.idle.left": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Idle.png",
+      "sheet": "art/characters/ninja-green/Idle.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "player.idle.right": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Idle.png",
+      "sheet": "art/characters/ninja-green/Idle.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "player.walk.down": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Walk.png",
+      "sheet": "art/characters/ninja-green/Walk.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "player.walk.up": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Walk.png",
+      "sheet": "art/characters/ninja-green/Walk.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "player.walk.left": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Walk.png",
+      "sheet": "art/characters/ninja-green/Walk.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "player.walk.right": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Walk.png",
+      "sheet": "art/characters/ninja-green/Walk.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "player.attack.down": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Attack.png",
+      "sheet": "art/characters/ninja-green/Attack.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 20,
       "loop": false
     },
     "player.attack.up": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Attack.png",
+      "sheet": "art/characters/ninja-green/Attack.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 20,
       "loop": false
     },
     "player.attack.left": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Attack.png",
+      "sheet": "art/characters/ninja-green/Attack.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 20,
       "loop": false
     },
     "player.attack.right": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Attack.png",
+      "sheet": "art/characters/ninja-green/Attack.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 20,
       "loop": false
     },
     "player.hit.down": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Hit.png",
+      "sheet": "art/characters/ninja-green/Hit.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 2,
       "fps": 12,
       "loop": false
     },
     "player.hit.up": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Hit.png",
+      "sheet": "art/characters/ninja-green/Hit.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 2,
       "fps": 12,
       "loop": false
     },
     "player.hit.left": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Hit.png",
+      "sheet": "art/characters/ninja-green/Hit.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 2,
       "fps": 12,
       "loop": false
     },
     "player.hit.right": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Hit.png",
+      "sheet": "art/characters/ninja-green/Hit.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 2,
       "fps": 12,
       "loop": false
     },
     "player.roll.down": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Roll.png",
+      "sheet": "art/characters/ninja-green/Roll.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 3,
       "fps": 15,
       "loop": false
     },
     "player.roll.up": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Roll.png",
+      "sheet": "art/characters/ninja-green/Roll.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 3,
       "fps": 15,
       "loop": false
     },
     "player.roll.left": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Roll.png",
+      "sheet": "art/characters/ninja-green/Roll.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 3,
       "fps": 15,
       "loop": false
     },
     "player.roll.right": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Roll.png",
+      "sheet": "art/characters/ninja-green/Roll.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 3,
       "fps": 15,
       "loop": false
     },
     "player.dead": {
-      "sheet": "Actor/CharacterAnimated/NinjaGreen/Separate/Dead.png",
+      "sheet": "art/characters/ninja-green/Dead.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -212,367 +312,547 @@
       "loop": false
     },
     "bluebat.walk.down": {
-      "sheet": "Actor/Monster/BlueBat/SpriteSheet.png",
+      "sheet": "art/monsters/blue-bat/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "bluebat.walk.up": {
-      "sheet": "Actor/Monster/BlueBat/SpriteSheet.png",
+      "sheet": "art/monsters/blue-bat/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "bluebat.walk.left": {
-      "sheet": "Actor/Monster/BlueBat/SpriteSheet.png",
+      "sheet": "art/monsters/blue-bat/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "bluebat.walk.right": {
-      "sheet": "Actor/Monster/BlueBat/SpriteSheet.png",
+      "sheet": "art/monsters/blue-bat/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "spiderred.walk.down": {
-      "sheet": "Actor/Monster/SpiderRed/SpriteSheet.png",
+      "sheet": "art/monsters/spider-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "spiderred.walk.up": {
-      "sheet": "Actor/Monster/SpiderRed/SpriteSheet.png",
+      "sheet": "art/monsters/spider-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "spiderred.walk.left": {
-      "sheet": "Actor/Monster/SpiderRed/SpriteSheet.png",
+      "sheet": "art/monsters/spider-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "spiderred.walk.right": {
-      "sheet": "Actor/Monster/SpiderRed/SpriteSheet.png",
+      "sheet": "art/monsters/spider-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "snake3.walk.down": {
-      "sheet": "Actor/Monster/Snake3/Snake3.png",
+      "sheet": "art/monsters/snake3/Snake3.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "snake3.walk.up": {
-      "sheet": "Actor/Monster/Snake3/Snake3.png",
+      "sheet": "art/monsters/snake3/Snake3.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "snake3.walk.left": {
-      "sheet": "Actor/Monster/Snake3/Snake3.png",
+      "sheet": "art/monsters/snake3/Snake3.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "snake3.walk.right": {
-      "sheet": "Actor/Monster/Snake3/Snake3.png",
+      "sheet": "art/monsters/snake3/Snake3.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "eye.walk.down": {
-      "sheet": "Actor/Monster/Eye/Eye.png",
+      "sheet": "art/monsters/eye/Eye.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "eye.walk.up": {
-      "sheet": "Actor/Monster/Eye/Eye.png",
+      "sheet": "art/monsters/eye/Eye.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "eye.walk.left": {
-      "sheet": "Actor/Monster/Eye/Eye.png",
+      "sheet": "art/monsters/eye/Eye.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "eye.walk.right": {
-      "sheet": "Actor/Monster/Eye/Eye.png",
+      "sheet": "art/monsters/eye/Eye.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "greenoctopus.walk.down": {
-      "sheet": "Actor/Monster/GreenOctopus/SpriteSheet.png",
+      "sheet": "art/monsters/green-octopus/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "greenoctopus.walk.up": {
-      "sheet": "Actor/Monster/GreenOctopus/SpriteSheet.png",
+      "sheet": "art/monsters/green-octopus/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "greenoctopus.walk.left": {
-      "sheet": "Actor/Monster/GreenOctopus/SpriteSheet.png",
+      "sheet": "art/monsters/green-octopus/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "greenoctopus.walk.right": {
-      "sheet": "Actor/Monster/GreenOctopus/SpriteSheet.png",
+      "sheet": "art/monsters/green-octopus/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "lanternred.walk.down": {
-      "sheet": "Actor/Monster/LanternRed/SpriteSheet.png",
+      "sheet": "art/monsters/lantern-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "lanternred.walk.up": {
-      "sheet": "Actor/Monster/LanternRed/SpriteSheet.png",
+      "sheet": "art/monsters/lantern-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "lanternred.walk.left": {
-      "sheet": "Actor/Monster/LanternRed/SpriteSheet.png",
+      "sheet": "art/monsters/lantern-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "lanternred.walk.right": {
-      "sheet": "Actor/Monster/LanternRed/SpriteSheet.png",
+      "sheet": "art/monsters/lantern-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "bear.walk.down": {
-      "sheet": "Actor/Monster/Bear/SpriteSheet.png",
+      "sheet": "art/monsters/bear/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "bear.walk.up": {
-      "sheet": "Actor/Monster/Bear/SpriteSheet.png",
+      "sheet": "art/monsters/bear/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "bear.walk.left": {
-      "sheet": "Actor/Monster/Bear/SpriteSheet.png",
+      "sheet": "art/monsters/bear/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "bear.walk.right": {
-      "sheet": "Actor/Monster/Bear/SpriteSheet.png",
+      "sheet": "art/monsters/bear/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "trex.walk.down": {
-      "sheet": "Actor/Monster/TRex/SpriteSheet.png",
+      "sheet": "art/monsters/trex/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "trex.walk.up": {
-      "sheet": "Actor/Monster/TRex/SpriteSheet.png",
+      "sheet": "art/monsters/trex/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "trex.walk.left": {
-      "sheet": "Actor/Monster/TRex/SpriteSheet.png",
+      "sheet": "art/monsters/trex/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "trex.walk.right": {
-      "sheet": "Actor/Monster/TRex/SpriteSheet.png",
+      "sheet": "art/monsters/trex/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "cyclope.walk.down": {
-      "sheet": "Actor/Monster/Cyclope/SpriteSheet.png",
+      "sheet": "art/monsters/cyclope/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "cyclope.walk.up": {
-      "sheet": "Actor/Monster/Cyclope/SpriteSheet.png",
+      "sheet": "art/monsters/cyclope/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "cyclope.walk.left": {
-      "sheet": "Actor/Monster/Cyclope/SpriteSheet.png",
+      "sheet": "art/monsters/cyclope/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "cyclope.walk.right": {
-      "sheet": "Actor/Monster/Cyclope/SpriteSheet.png",
+      "sheet": "art/monsters/cyclope/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": ["down", "up", "left", "right"],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 10,
       "loop": true
     },
     "tengu.idle": {
-      "sheet": "Actor/Boss/TenguBlue/Idle.png",
+      "sheet": "art/bosses/tengu-blue/Idle.png",
       "frameWidth": 68,
       "frameHeight": 68,
       "layout": "strip",
@@ -582,7 +862,7 @@
       "loop": true
     },
     "tengu.walk": {
-      "sheet": "Actor/Boss/TenguBlue/Walk.png",
+      "sheet": "art/bosses/tengu-blue/Walk.png",
       "frameWidth": 82,
       "frameHeight": 82,
       "layout": "strip",
@@ -592,7 +872,7 @@
       "loop": true
     },
     "tengu.attack": {
-      "sheet": "Actor/Boss/TenguBlue/Attack.png",
+      "sheet": "art/bosses/tengu-blue/Attack.png",
       "frameWidth": 82,
       "frameHeight": 82,
       "layout": "strip",
@@ -602,7 +882,7 @@
       "loop": false
     },
     "tengu.hit": {
-      "sheet": "Actor/Boss/TenguBlue/Hit.png",
+      "sheet": "art/bosses/tengu-blue/Hit.png",
       "frameWidth": 68,
       "frameHeight": 68,
       "layout": "strip",
@@ -612,7 +892,7 @@
       "loop": false
     },
     "tengu.trans": {
-      "sheet": "Actor/Boss/TenguBlue/Trans.png",
+      "sheet": "art/bosses/tengu-blue/Trans.png",
       "frameWidth": 68,
       "frameHeight": 68,
       "layout": "strip",
@@ -622,7 +902,7 @@
       "loop": false
     },
     "squid.idle": {
-      "sheet": "Actor/Boss/SquidGreen/Idle.png",
+      "sheet": "art/bosses/squid-green/Idle.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -632,7 +912,7 @@
       "loop": true
     },
     "squid.walk": {
-      "sheet": "Actor/Boss/SquidGreen/Walk.png",
+      "sheet": "art/bosses/squid-green/Walk.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -642,7 +922,7 @@
       "loop": true
     },
     "squid.attack": {
-      "sheet": "Actor/Boss/SquidGreen/Attack.png",
+      "sheet": "art/bosses/squid-green/Attack.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -652,7 +932,7 @@
       "loop": false
     },
     "squid.attack-loop": {
-      "sheet": "Actor/Boss/SquidGreen/AttackLoop.png",
+      "sheet": "art/bosses/squid-green/AttackLoop.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -662,7 +942,7 @@
       "loop": true
     },
     "squid.shoot": {
-      "sheet": "Actor/Boss/SquidGreen/Shoot.png",
+      "sheet": "art/bosses/squid-green/Shoot.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -672,7 +952,7 @@
       "loop": false
     },
     "squid.hit": {
-      "sheet": "Actor/Boss/SquidGreen/Hit.png",
+      "sheet": "art/bosses/squid-green/Hit.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -682,7 +962,7 @@
       "loop": false
     },
     "samurai.idle": {
-      "sheet": "Actor/Boss/GiantBlueSamurai/Idle.png",
+      "sheet": "art/bosses/giant-blue-samurai/Idle.png",
       "frameWidth": 96,
       "frameHeight": 48,
       "layout": "strip",
@@ -692,7 +972,7 @@
       "loop": true
     },
     "samurai.walk": {
-      "sheet": "Actor/Boss/GiantBlueSamurai/Walk.png",
+      "sheet": "art/bosses/giant-blue-samurai/Walk.png",
       "frameWidth": 96,
       "frameHeight": 48,
       "layout": "strip",
@@ -702,47 +982,55 @@
       "loop": true
     },
     "samurai.attack.left": {
-      "sheet": "Actor/Boss/GiantBlueSamurai/AttackLeft.png",
+      "sheet": "art/bosses/giant-blue-samurai/AttackLeft.png",
       "frameWidth": 96,
       "frameHeight": 96,
       "layout": "strip",
-      "directions": ["left"],
+      "directions": [
+        "left"
+      ],
       "frames": 4,
       "fps": 20,
       "loop": false
     },
     "samurai.attack.right": {
-      "sheet": "Actor/Boss/GiantBlueSamurai/AttackRight.png",
+      "sheet": "art/bosses/giant-blue-samurai/AttackRight.png",
       "frameWidth": 96,
       "frameHeight": 96,
       "layout": "strip",
-      "directions": ["right"],
+      "directions": [
+        "right"
+      ],
       "frames": 4,
       "fps": 20,
       "loop": false
     },
     "samurai.charge.left": {
-      "sheet": "Actor/Boss/GiantBlueSamurai/ChargeLeft.png",
+      "sheet": "art/bosses/giant-blue-samurai/ChargeLeft.png",
       "frameWidth": 96,
       "frameHeight": 96,
       "layout": "strip",
-      "directions": ["left"],
+      "directions": [
+        "left"
+      ],
       "frames": 3,
       "fps": 15,
       "loop": true
     },
     "samurai.charge.right": {
-      "sheet": "Actor/Boss/GiantBlueSamurai/ChargeRight.png",
+      "sheet": "art/bosses/giant-blue-samurai/ChargeRight.png",
       "frameWidth": 96,
       "frameHeight": 96,
       "layout": "strip",
-      "directions": ["right"],
+      "directions": [
+        "right"
+      ],
       "frames": 3,
       "fps": 15,
       "loop": true
     },
     "samurai.hit": {
-      "sheet": "Actor/Boss/GiantBlueSamurai/Hit.png",
+      "sheet": "art/bosses/giant-blue-samurai/Hit.png",
       "frameWidth": 96,
       "frameHeight": 48,
       "layout": "strip",
