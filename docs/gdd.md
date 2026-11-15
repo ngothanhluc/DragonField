@@ -38,8 +38,9 @@ Title → chọn chapter → RUN
 | Tham số | Giá trị |
 |---|---|
 | Di chuyển | WASD, 8 hướng, không dash |
+| Tốc chạy cơ bản | 4 tile/s |
 | Bắn | **tự động, liên tục, kể cả khi đang chạy** |
-| Aim | tự nhắm enemy gần nhất trong tầm |
+| Aim | tự nhắm enemy gần nhất trong tầm 10 tile |
 | Nhịp bắn cơ bản | 2 phát/giây |
 | Đạn cơ bản | 1 viên, damage 1, tốc độ 12 tile/s |
 | Máu người chơi | 6 tim |
@@ -124,11 +125,13 @@ Sau mỗi phòng (trừ phòng boss): chọn **1 trong 3** thẻ. Cùng kỹ nă
 
 Vàng nhặt trong run được giữ sau khi chết. 3 track vĩnh viễn, mỗi track 10 cấp, giá tăng dần:
 
-| Track | Mỗi cấp | Giá cấp 1 → 10 |
-|---|---|---|
-| Máu | +1 tim | 50 → 500 (tăng ~×1.3) |
-| Damage | +5% | 40 → 400 |
-| Nhịp bắn | +3% | 40 → 400 |
+| Track | Mỗi cấp | Số cấp | Giá cấp 1 → 10 |
+|---|---|---|---|
+| Máu | +1 tim | **5** | 50 → 180 |
+| Damage | +5% | 10 | 40 → 400 |
+| Nhịp bắn | +3% | 10 | 40 → 400 |
+
+Máu cap ở 5 cấp (không phải 10) vì 6 tim cơ bản + 10 = 16 tim vượt chỗ HUD 512×288, và skill Vitality cũng chỉ cho +5. Bảng giá vẫn giữ đủ 10 mốc trong code để đổi cap mà không phải tune lại.
 
 Không có equipment, không có nhân vật thứ hai, không unlock skill.
 

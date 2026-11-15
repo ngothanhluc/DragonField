@@ -7,6 +7,12 @@ export interface CombatConfig {
   readonly fireRatePerSecond: number;
   /** Tốc độ đạn, tính theo tile/giây (1 tile = 16 px). */
   readonly projectileSpeedTilesPerSecond: number;
+  /** Sát thương mỗi viên đạn cơ bản. */
+  readonly damage: number;
+  /** Số viên đạn mỗi phát ở trạng thái cơ bản. */
+  readonly projectiles: number;
+  /** Tốc chạy cơ bản, tile/giây. */
+  readonly moveSpeedTilesPerSecond: number;
   /** Số tim tối đa của player. */
   readonly playerMaxHearts: number;
   /** Thời gian bất tử sau khi trúng đòn, ms. */
@@ -20,6 +26,9 @@ export interface CombatConfig {
 export const DEFAULT_COMBAT: CombatConfig = {
   fireRatePerSecond: 2,
   projectileSpeedTilesPerSecond: 12,
+  damage: 1,
+  projectiles: 1,
+  moveSpeedTilesPerSecond: 4,
   playerMaxHearts: 6,
   invulnerabilityMs: 800,
   contactDamage: 1,
