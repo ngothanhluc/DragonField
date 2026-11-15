@@ -1,0 +1,27 @@
+name: check
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: game
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: game/package-lock.json
+
+      - run: npm ci
+
+      # tsc --noEmit + vitest + eslint.
+      # Không build web ở đây: build cần Cocos Creator GUI, không chạy headless được.
+      - run: npm run check

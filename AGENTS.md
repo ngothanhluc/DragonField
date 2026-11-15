@@ -21,12 +21,15 @@ Roguelite né đạn top-down, pixel 16px, chạy trên web. Người chơi **t�
 
 ## Trạng thái hiện tại
 
-Repo **chưa có project Cocos**. Project phải được tạo bằng Cocos Dashboard (GUI) tại root repo, chọn template **Empty (2D)**.
-Sau khi tạo xong, các lệnh dưới đây mới tồn tại.
+Project Cocos **đã được tạo** tại `game/` (Cocos Creator 3.8.8, template Empty 2D, `package.json name: ninja-adventure`).
+`game/assets/` hiện còn rỗng — scaffold M0 chưa làm.
+
+Mọi lệnh và đường dẫn dưới đây tính từ repo root, trừ khi ghi rõ.
 
 ## Lệnh
 
 ```bash
+cd game
 npm run check      # bắt buộc trước khi báo "xong": tsc --noEmit + vitest + eslint
 npm run test       # vitest
 npm run typecheck  # tsc --noEmit
@@ -37,21 +40,25 @@ Build web (cần editor đã cài, không chạy trong CI):
 
 ```bash
 /Applications/CocosCreator/Creator/3.8.8/CocosCreator.app/Contents/MacOS/CocosCreator \
-  --project . --build "platform=web-desktop;debug=false"
+  --project game --build "platform=web-desktop;debug=false"
 ```
 
 ## Cấu trúc
 
 ```text
-assets/
-├── scripts/
-│   ├── core/    # logic thuần TS — KHÔNG được import 'cc'
-│   ├── game/    # component Cocos: adapter mỏng quanh core
-│   └── ui/      # component UI
-├── data/        # JSON: config, animations manifest, level data
-└── art/         # subset của pack, chỉ file game dùng
-docs/            # thiết kế + quyết định + kiểm kê
-art-source/      # pack đầy đủ, KHÔNG commit (gitignored)
+game/                  # project Cocos Creator — mọi thứ engine đọc nằm ở đây
+├── assets/
+│   ├── scripts/
+│   │   ├── core/      # logic thuần TS — KHÔNG được import 'cc'
+│   │   ├── game/      # component Cocos: adapter mỏng quanh core
+│   │   └── ui/        # component UI
+│   ├── data/          # JSON: config, animations manifest, level data
+│   └── art/           # subset của pack, chỉ file game dùng
+├── settings/          # editor sinh
+├── library/ temp/     # cache, gitignored
+└── package.json
+docs/                  # thiết kế + quyết định + kiểm kê
+art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 ```
 
 ## Quy tắc bắt buộc

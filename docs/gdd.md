@@ -6,7 +6,9 @@ Trạng thái: bản nháp 1, chốt các quyết định từ phiên thiết k�
 
 ## 1. Pitch
 
-Roguelite né đạn một màn hình, top-down 16px. Người chơi **luôn tự động bắn** vào kẻ địch gần nhất, nên kỹ năng duy nhất là **di chuyển**. Mỗi phòng dọn sạch → chọn 1 trong 3 kỹ năng ngẫu nhiên. Chết là hết run, giữ vàng để mua upgrade vĩnh viễn. Rồng là boss cuối của mỗi chapter.
+Roguelite né đạn một màn hình, top-down 16px. Người chơi **luôn tự động bắn** vào kẻ địch gần nhất, nên kỹ năng duy nhất là **di chuyển**. Mỗi phòng dọn sạch → chọn 1 trong 3 kỹ năng ngẫu nhiên. Chết là hết run, giữ vàng để mua upgrade vĩnh viễn.
+
+3 chapter, mỗi chapter 8 phòng + 1 boss. Bối cảnh lấy từ tileset có thật trong pack: **đồng cỏ/rừng → sông/thác → làng hoang**. Không có rồng, không có dungeon. Boss: **Tengu → Squid → Samurai**. Nhân vật: **NinjaGreen** (nhân vật duy nhất của pack có bộ animation 4 hướng đầy đủ).
 
 Tham chiếu: Archero (loop), nhưng **bắn liên tục kể cả khi đang chạy** — khác Archero ở chỗ không có "đứng lại mới bắn".
 
@@ -19,7 +21,7 @@ Title → chọn chapter → RUN
   phòng 1 → dọn sạch → chọn 1/3 skill
   phòng 2 → ...
   ... 8 phòng
-  phòng 9 = BOSS (rồng)
+  phòng 9 = BOSS
 → màn hình kết quả (số phòng, vàng, thời gian)
 → meta shop (mua upgrade vĩnh viễn)
 → Title
@@ -50,37 +52,42 @@ Không có nút đánh, không có nút bắn. Input duy nhất: **WASD + Esc (p
 
 ## 4. Kẻ địch
 
-Chọn theo **vai trò**, không theo tên sinh vật (sinh vật cụ thể lấy từ pack, đổi được mà không sửa logic).
+Ràng buộc từ pack: **mọi monster chỉ có 1 sheet 4 hướng × 4 frame walk**, không có attack/hurt/death. Nên toàn bộ biểu đạt của enemy là **AI + FX + tint**:
+- Telegraph = vòng `Magic/Circle` dưới chân (300–700 ms) + flash trắng 80 ms.
+- Chết = `FX/Elemental/Explosion` + fade out.
+- Elite = **palette remap** trên 53 màu của `Palette.png` (không nhân màu), scale 1.15.
 
-| Vai trò | Máu | Hành vi | Đòn |
-|---|---|---|---|
-| **Grunt** | 3 | lao thẳng vào player, tốc độ cao | chạm người gây 1 |
-| **Caster** | 2 | giữ khoảng cách 4–6 tile, né ra xa khi bị áp sát | bắn đạn chậm, telegraph 500 ms |
-| **Brute** | 8 | chậm, đi thẳng | charge theo đường thẳng, telegraph 700 ms |
+| Vai trò | Máu | Hành vi | Đòn | Chapter 1 / 2 / 3 |
+|---|---|---|---|---|
+| **Chaser** | 3 | lao thẳng vào player, tốc độ cao | chạm người gây 1 | BlueBat / SpiderRed / Snake3 |
+| **Caster** | 2 | giữ khoảng cách 4–6 tile, lùi khi bị áp sát | đạn chậm, telegraph 500 ms | Eye / GreenOctopus / LanternRed |
+| **Brute** | 8 | chậm, đi thẳng | charge đường thẳng, telegraph 700 ms | Bear / TRex / Cyclope |
 
 Độ khó tăng theo chapter:
 
 | Chapter | Số enemy/phòng | Thành phần |
 |---|---|---|
-| 1 | 3–4 | grunt, 1 caster từ phòng 4 |
-| 2 | 5–6 | grunt + caster + 1 brute từ phòng 3 |
-| 3 | 7–8 | cả 3 loại + elite (enemy thường ×1.5 máu, ×1.5 damage) |
+| 1 | 3–4 | chaser, 1 caster từ phòng 4 |
+| 2 | 5–6 | chaser + caster + 1 brute từ phòng 3 |
+| 3 | 7–8 | cả 3 loại + elite |
 
-Elite = cùng sprite, tint màu + scale 1.15, thêm 1 đòn.
+Dự phòng nếu silhouette trùng nhau: YellowsBat, MouseBlack, LanternGreen, RedOctopus, Panda, Reptile2, Skull, GreyTrex.
 
 ---
 
-## 5. Boss: rồng
+## 5. Boss
 
-Máu 60. 3 phase, mỗi phase đổi pattern. Arena là 1 phòng 32×18 tile có 4 cột đá phá được.
+Mỗi chapter một boss, lấy từ `Actor/Boss`. Arena 32×18 tile với 4 cột đá phá được. Máu: 60 / 80 / 100.
 
-| Phase | Máu còn | Pattern |
-|---|---|---|
-| 1 | 100–66% | breath hình nón 5 viên (telegraph 800 ms) + tail sweep cận chiến |
-| 2 | 66–33% | bay lên, dive vào vị trí player (dấu chân trên đất 900 ms), gọi 2 grunt |
-| 3 | 33–0% | breath quét 180° (12 viên), dive nhanh hơn, phá 2 cột đá |
+| Chapter | Boss | Animation có sẵn | Pattern |
+|---|---|---|---|
+| 1 | **TenguBlue** (82×82) | idle 6, walk 10, **attack 15**, hit 8, **Trans 11** | (1) đi bộ đuổi + đòn attack bắn chùm 5 viên; (2) thêm `Trans` dịch chuyển ngẫu nhiên rồi bắn vòng 8 viên; (3) enrage: dịch chuyển 3 lần liên tiếp, chùm 5 viên ×3 đợt |
+| 2 | **SquidGreen** (76×79) | idle 4, walk 4, attack 6, **AttackLoop 4**, **Shoot 5**, hit 4 | (1) bơi ngang + `Shoot` 5 viên toả; (2) `AttackLoop` phun đạn liên tục theo hình xoắn; (3) gọi 2 GreenOctopus, xoắn nhanh hơn |
+| 3 | **GiantBlueSamurai** (96×96) | idle 6, walk 6, **attack L/R 4**, **charge L/R 3**, hit 4 | (1) charge ngang arena rồi slash bắn sóng đạn thẳng; (2) charge 2 lần liên tiếp, đổi hướng; (3) charge để lại vệt lửa + slash 2 sóng |
 
-Animation rồng: xem ADR-007 — dùng sprite tĩnh + chuyển động bộ phận, không có frame sheet.
+Nguyên tắc đọc đòn: mỗi phase phải có **một dấu hiệu khác nhau** — Ch1 đọc hướng chùm đạn, Ch2 đọc nhịp xoắn, Ch3 đọc hướng charge (animation L/R là dấu hiệu).
+
+Loại: DemonCyclop, GiantFlam, GiantSpirit (không có frame đòn), Dragon* (0 animation).
 
 ---
 
@@ -134,6 +141,16 @@ Không có equipment, không có nhân vật thứ hai, không unlock skill.
 - Vật cản: cột, hố, tường thấp — dùng để né đạn, không chặn tầm bắn hoàn toàn.
 - 3 chapter × 9 phòng = 27 phòng, thiết kế tay trong Tiled, thứ tự cố định (không random layout) — random nằm ở skill, không ở map.
 
+| Chapter | Theme | Tileset dùng |
+|---|---|---|
+| 1 | Đồng cỏ / rừng | `TilesetNature` + `TilesetRelief` + `TilesetElement` + `TilesetField` |
+| 2 | Sông / thác | `TilesetWater` + waterfall + ripples + `TilesetNature` làm bờ |
+| 3 | Làng hoang | `TilesetVillageAbandoned` + `TilesetHouse` + `TilesetTowers` + `TilesetHole` |
+| Arena boss | Cùng theme chapter | + 4 cột đá (từ `TilesetElement`) |
+| Hub / shop | Trại | `tileset_camp` + `tileset_bed` + `Interior/*` |
+
+Không có theme dungeon/crypt trong pack → không làm. `TilesetFloor.png` cao 417 px (không chia hết 16) → cắt 26 hàng, bỏ 1 px cuối.
+
 ---
 
 ## 9. UI
@@ -182,6 +199,7 @@ Inventory, equipment, NPC, dialog, hub, shop trong màn, nhiều nhân vật, ga
 ## 12. Rủi ro đã biết
 
 1. **Bắn liên tục** làm mất tension "đứng lại mới bắn" của Archero → độ khó phải đến từ mật độ đạn; nếu playtest thấy nhạt, thêm lại luật đứng-ý-định như một skill.
-2. **Rồng không có frame animation** → phải làm chuyển động bộ phận; nếu trông tệ, cắt xuống boss "rồng bóng" (silhouette + particle) thay vì cố animate.
-3. **20 skill × 3 chapter** là khối balance lớn; giữ pool đóng băng, chỉ tune số.
-4. Pack hiện trong repo **chưa phải Update #8** (thiếu `Actor/CharacterAnimated`) → phải tải lại trước M1.5.
+2. **Chỉ có 1 nhân vật animated** (NinjaGreen) và nhân vật này **không có animation run**, chỉ có walk 4 frame → phải scale tốc độ phát animation theo vận tốc, nếu không nhân vật sẽ "trượt" khi chạy nhanh.
+3. **Không monster nào có attack/hurt/death** → telegraph, trúng đòn và chết đều là FX + tint. Rủi ro: người chơi không đọc được đòn. Test bắt buộc ở M3: 3 enemy phải phân biệt được trong 2 giây.
+4. **20 skill × 3 chapter** là khối balance lớn; giữ pool đóng băng, chỉ tune số.
+5. `TilesetFloor.png` lệch 1 px và không có atlas JSON → bảng frame/animation phải khai báo tay, sai một ô là lệch toàn bộ animation.

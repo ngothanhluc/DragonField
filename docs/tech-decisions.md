@@ -67,15 +67,20 @@ Ngày chốt: 2026-11-15. Trạng thái: đã chốt, chỉ mở lại khi có b
 
 ## ADR-007 — Đặc tả art
 
-**Quyết định.** **Chỉ dùng Ninja Adventure** (pixel-boy & AAA, CC0). Không dùng pack ngoài. Bản mục tiêu: **Update #8 (2026-03-29)** — có `Actor/CharacterAnimated` (bộ animation mới, gồm jump) và `Actor/Animals`; bản trong repo hiện chưa phải #8. Tile 16×16, top-down 3/4, 4 hướng, khung nhân vật 32×32. Hai lỗ hổng phải **tự làm**:
-1. **Tileset dungeon/hầm mộ** — pack không có (tác giả xác nhận đang nằm trong TODO): sàn, tường autotile 16 biến thể, cửa, props. Palette lấy mẫu từ pack.
-2. **Animation rồng** — rồng trong pack là ảnh tĩnh 64×64 (kiểm: `spriteMode: 1`) + kit rời "no animation". Làm bằng **chuyển động bộ phận trong engine** (xoay cánh, mở hàm, ve đuôi, hit flash, chết bằng explode), không vẽ frame-by-frame.
+**Quyết định.** **Chỉ dùng Ninja Adventure Update #8** (pixel-boy & AAA, CC0), không pack ngoài, **không vẽ thêm asset nào**. Nguồn: `art-source/ninja-adventure/` (110 MB: 1915 PNG, 188 audio, 23 tileset, 66 monster, 20 folder boss, 361 file UI, 62 skill icon). Tile 16×16, top-down 3/4, 4 hướng.
 
-Giữ audio (100+ SFX, 37 nhạc) và 2 font pixel CC0 của pack.
+Những gì pack **không có** thì **cắt khỏi thiết kế**, không tự làm:
+- **Không có tileset dungeon/crypt** → 3 chapter là đồng cỏ/rừng, sông/thác, làng hoang.
+- **Rồng không có animation** (modular parts, 0 frame) → bỏ rồng. Boss dùng Tengu / Squid / Samurai.
+- **Chỉ 1 nhân vật có bộ 4 hướng đầy đủ** (`CharacterAnimated/NinjaGreen`) → player là nhân vật đó, không có skin animated.
+- **Không monster nào có attack/hurt/death** → telegraph, trúng đòn, chết đều là FX + palette remap.
+- **Không có art thanh máu boss / khung thẻ skill** → ghép từ nine-path `Theme Wood`.
 
-**Lý do.** Survey cho thấy **không tồn tại rồng animated top-down 16px nào** trên thị trường, nên rồng luôn là hạng mục tự làm dù chọn pack nào. Trong khi đó Ninja Adventure là bộ CC0 gần đủ nhất: 30+ quái animated, 9 boss animated, UI, font, audio — đúng thứ roguelite cần (bề rộng kẻ địch), và đã nằm trong repo.
+Chi tiết + bảng coverage: `docs/art/pack-inventory.md`.
 
-**Hệ quả.** Không có rủi ro license. Không phải ghép style giữa nhiều nguồn. Đổi lại: bộ tile dungeon và animation rồng là công việc author, nằm ở M1.5–M2 và M6.
+**Lý do.** Survey cho thấy không tồn tại rồng animated top-down 16px nào trên thị trường, và pack này đã có sẵn bề rộng kẻ địch (66 monster + 10 boss) — đúng thứ roguelite cần hơn là một con boss đẹp. Tự vẽ dungeon tiles + rồng là 2 task author lớn nhất, và cả hai đều không cần thiết cho loop.
+
+**Hệ quả.** Zero rủi ro license, zero công author art. Đổi lại: theme bị giới hạn trong 3 bối cảnh có sẵn, và biểu đạt của enemy phụ thuộc hoàn toàn vào FX.
 
 ---
 
