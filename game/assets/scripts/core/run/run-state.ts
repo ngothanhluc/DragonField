@@ -105,7 +105,7 @@ export class RunState {
   /**
    * Sang wave kế trong cùng phòng.
    *
-   * Tổng số wave là **dữ liệu của phòng** (GDD §8: `assets/data/levels/*.json`),
+   * Tổng số wave là **dữ liệu của phòng** (GDD §8: `assets/resources/data/levels/*.json`),
    * nên caller phải truyền vào — thường là `level.waves.length`. `RunState` chỉ
    * giữ wave hiện tại, không suy ra số wave từ chapter hay loại phòng; nhờ vậy
    * phòng 3 wave và phòng 1 wave dùng chung một state machine.

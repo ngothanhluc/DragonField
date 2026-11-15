@@ -66,7 +66,7 @@ interface RawChapter {
   rooms: RawRoom[];
 }
 
-const LEVEL_URL = new URL('../../assets/data/levels/chapter-1.json', import.meta.url);
+const LEVEL_URL = new URL('../../assets/resources/data/levels/chapter-1.json', import.meta.url);
 
 const rawChapter = JSON.parse(nodeFs.readFileSync(LEVEL_URL, 'utf8')) as RawChapter;
 const chapter: ChapterData = parseChapterData(rawChapter);

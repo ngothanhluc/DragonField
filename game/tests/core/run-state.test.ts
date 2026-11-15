@@ -11,7 +11,7 @@ import {
 } from '../../assets/scripts/core/run/run-state';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const chapterFile = join(here, '../../assets/data/levels/chapter-1.json');
+const chapterFile = join(here, '../../assets/resources/data/levels/chapter-1.json');
 
 /** Dọn phòng hiện tại rồi sang phòng kế. */
 function clearAndAdvance(run: RunState): void {
@@ -138,7 +138,7 @@ describe('RunState — wave theo dữ liệu level', () => {
     JSON.parse(readFileSync(chapterFile, 'utf8')),
   ).rooms;
 
-  if (roomOne === undefined) throw new Error('assets/data/levels/chapter-1.json thiếu phòng 1');
+  if (roomOne === undefined) throw new Error('assets/resources/data/levels/chapter-1.json thiếu phòng 1');
 
   it('phòng 1 có 3 wave trong level data', () => {
     expect(roomOne.waves.length).toBe(3);

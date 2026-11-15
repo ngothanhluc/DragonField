@@ -5,7 +5,7 @@
  * Pattern chi tiết nằm ở `patterns.ts`, sinh quái ở `summon.ts`.
  *
  * Boss lấy frame từ `Actor/Boss` của pack; mỗi sheet là **một hàng ngang**
- * (`layout: "strip"` trong `assets/data/animations.json`), nên core chỉ *gọi
+ * (`layout: "strip"` trong `assets/resources/data/animations.json`), nên core chỉ *gọi
  * tên* animation, adapter lo cắt frame và lật sprite.
  */
 export const BOSS_IDS = ['tengu', 'squid', 'samurai'] as const;

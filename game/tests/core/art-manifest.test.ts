@@ -6,7 +6,7 @@ import type { AnimationManifest, SpriteEntry } from '../../assets/scripts/core/a
 import { REQUIRED_KEYS, resolve, validateManifest } from '../../assets/scripts/core/art/manifest';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MANIFEST_PATH = join(HERE, '..', '..', 'assets', 'data', 'animations.json');
+const MANIFEST_PATH = join(HERE, '..', '..', 'assets', 'resources', 'data', 'animations.json');
 
 const DIRS = ['down', 'up', 'left', 'right'] as const;
 type Dir = (typeof DIRS)[number];
@@ -393,7 +393,7 @@ describe('resolve', () => {
   it('trả entry cho key có thật', () => {
     const entry = resolve(manifest, 'player.walk.left');
 
-    expect(entry.sheet).toBe('art/characters/ninja-green/Walk.png');
+    expect(entry.sheet).toBe('resources/art/characters/ninja-green/Walk.png');
     expect(entry.frames).toBe(4);
     expect(entry.directions).toEqual(['down', 'up', 'left', 'right']);
   });

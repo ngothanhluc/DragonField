@@ -29,7 +29,7 @@ import {
 } from '../../assets/scripts/core/sim/run-simulation';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const chapterFile = join(here, '../../assets/data/levels/chapter-1.json');
+const chapterFile = join(here, '../../assets/resources/data/levels/chapter-1.json');
 
 function loadChapterOne(): ChapterData {
   return parseChapterData(JSON.parse(readFileSync(chapterFile, 'utf8')));

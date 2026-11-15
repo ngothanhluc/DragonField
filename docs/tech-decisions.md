@@ -57,7 +57,7 @@ Ngày chốt: 2026-11-15. Trạng thái: đã chốt, chỉ mở lại khi có b
 
 ## ADR-006 — Hợp đồng art: manifest tên logic
 
-**Quyết định.** Code không tham chiếu tên file sprite. Mọi animation truy cập qua tên logic trong `assets/data/animations.json` (`player.idle.down`, `enemy.grunt.attack`), kèm `fallback` khi pack thiếu.
+**Quyết định.** Code không tham chiếu tên file sprite. Mọi animation truy cập qua tên logic trong `assets/resources/data/animations.json` (`player.idle.down`, `enemy.grunt.attack`), kèm `fallback` khi pack thiếu.
 
 **Lý do.** Cho phép build M1→M5 bằng placeholder và swap art ở M6 mà không sửa logic.
 

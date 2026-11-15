@@ -33,7 +33,7 @@ import { distance, type Vec2 } from '../../assets/scripts/core/math/vec2';
 import { SeededRng } from '../../assets/scripts/core/rng';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MANIFEST_PATH = join(HERE, '..', '..', 'assets', 'data', 'animations.json');
+const MANIFEST_PATH = join(HERE, '..', '..', 'assets', 'resources', 'data', 'animations.json');
 
 /** Boss đứng giữa sân; player đi vòng để pattern phải bám chứ không đứng yên. */
 const BOSS_START: Vec2 = { x: 16, y: 9 };

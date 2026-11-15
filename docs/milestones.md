@@ -9,7 +9,7 @@ Nguồn thiết kế: `docs/gdd.md`. Quyết định kỹ thuật: `docs/tech-de
 
 ## M0 — Tooling
 
-**Việc.** Project Cocos Creator 3.8.8 (Empty 2D) tại root. `assets/scripts/{core,game,ui}`, `assets/data/`. `AGENTS.md`. `tsc --noEmit`, vitest, eslint, prettier. GitHub Actions chạy `bun run check`. Script sinh placeholder sprite. Xoá Unity + tag `unity-final` (theo ADR-003, ADR-011).
+**Việc.** Project Cocos Creator 3.8.8 (Empty 2D) tại root. `assets/scripts/{core,game,ui}`, `assets/resources/data/`. `AGENTS.md`. `tsc --noEmit`, vitest, eslint, prettier. GitHub Actions chạy `bun run check`. Script sinh placeholder sprite. Xoá Unity + tag `unity-final` (theo ADR-003, ADR-011).
 
 **Nghiệm thu.** `bun run check` xanh; boot scene rỗng không lỗi console; `docs/` đủ 5 file; repo sạch, không còn `Assets/`.
 

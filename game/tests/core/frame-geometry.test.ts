@@ -11,7 +11,7 @@ import {
 } from '../../assets/scripts/core/art/manifest';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const manifestFile = join(here, '../../assets/data/animations.json');
+const manifestFile = join(here, '../../assets/resources/data/animations.json');
 
 function load(): AnimationManifest {
   return validateManifest(JSON.parse(readFileSync(manifestFile, 'utf8')));
@@ -59,6 +59,14 @@ describe('frame geometry', () => {
       width: entry.frameWidth,
       height: entry.frameHeight,
     });
+  });
+
+  it('mọi sheet nằm trong resources/ để load được lúc runtime', () => {
+    const manifest = load();
+
+    for (const [key, entry] of Object.entries(manifest.sprites)) {
+      expect(entry.sheet.startsWith('resources/art/'), `${key} → ${entry.sheet}`).toBe(true);
+    }
   });
 
   it('từ chối frame ngoài phạm vi và hướng không có', () => {

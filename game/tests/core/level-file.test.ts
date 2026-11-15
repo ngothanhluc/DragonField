@@ -8,7 +8,7 @@ import {
 } from '../../assets/scripts/core/level/level-data';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const chapterFile = join(here, '../../assets/data/levels/chapter-1.json');
+const chapterFile = join(here, '../../assets/resources/data/levels/chapter-1.json');
 
 function loadChapter(): ChapterData {
   return parseChapterData(JSON.parse(readFileSync(chapterFile, 'utf8')));
@@ -16,9 +16,9 @@ function loadChapter(): ChapterData {
 
 /**
  * Test file JSON thật, không phải fixture inline.
- * Mục đích: file trong `assets/data/` không thể lệch schema mà build vẫn xanh.
+ * Mục đích: file trong `assets/resources/data/` không thể lệch schema mà build vẫn xanh.
  */
-describe('assets/data/levels/chapter-1.json', () => {
+describe('assets/resources/data/levels/chapter-1.json', () => {
   it('parse được và có đủ 9 phòng', () => {
     const chapter = loadChapter();
 

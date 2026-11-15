@@ -2,7 +2,7 @@
  * Manifest animation — nguồn duy nhất cho đường dẫn sprite.
  *
  * Code game chỉ tham chiếu animation bằng key logic (`player.idle.down`), không bao giờ ghép
- * đường dẫn file. Dữ liệu thật nằm ở `assets/data/animations.json`; module này giữ type,
+ * đường dẫn file. Dữ liệu thật nằm ở `assets/resources/data/animations.json`; module này giữ type,
  * validate và tra cứu. Thuần TS: không import `cc`, test được bằng vitest.
  *
  * Key: `<actor>.<animation>.<direction>` cho animation có hướng (`player.walk.left`),
@@ -43,7 +43,7 @@ export interface SpriteEntry {
   readonly loop: boolean;
 }
 
-/** Nội dung `assets/data/animations.json` sau khi validate. */
+/** Nội dung `assets/resources/data/animations.json` sau khi validate. */
 export interface AnimationManifest {
   readonly version: number;
   readonly sprites: Readonly<Record<string, SpriteEntry>>;
@@ -431,7 +431,7 @@ function suggestKeys(manifest: AnimationManifest, key: string): string {
     actor === undefined ? [] : allKeys.filter((candidate) => candidate.startsWith(`${actor}.`));
 
   if (sameActor.length === 0) {
-    return `Manifest có ${allKeys.length} key, xem assets/data/animations.json.`;
+    return `Manifest có ${allKeys.length} key, xem assets/resources/data/animations.json.`;
   }
 
   const shown = sameActor.slice(0, 8).join(', ');

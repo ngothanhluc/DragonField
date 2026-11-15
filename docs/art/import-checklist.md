@@ -1,6 +1,6 @@
 # Checklist import art — subset dùng trong game
 
-Trạng thái: **đã stage** `game/assets/art/` (94 file PNG, 387.567 byte ≈ 378,5 KiB) từ `art-source/ninja-adventure/` (CC0, gitignored).
+Trạng thái: **đã stage** `game/assets/resources/art/` (94 file PNG, 387.567 byte ≈ 378,5 KiB) từ `art-source/ninja-adventure/` (CC0, gitignored).
 
 Nguyên tắc của lần stage này:
 
@@ -14,7 +14,7 @@ Nguyên tắc của lần stage này:
 ## 1. Cây đích
 
 ```text
-game/assets/art/                                    94 file   387.567 B
+game/assets/resources/art/                                    94 file   387.567 B
 ├── characters/
 │   └── ninja-green/          7 file   11.602 B   Idle, Walk, Attack, Hit, Roll, Dead, Jump
 ├── monsters/                 9 file   21.375 B   1 sheet/con, mỗi con 1 thư mục
@@ -113,7 +113,7 @@ Sau khi kéo đường cắt, bấm **dấu check xanh** ở góc trên phải S
 
 Cocos Creator 3.8 **không có grid-slice tự động** (Sprite Editor chỉ làm border/trim). Vì vậy:
 
-> **Không tạo sub-frame bằng tay.** Mỗi PNG import thành **1 SpriteFrame duy nhất**, rồi code cắt frame lúc runtime từ `frameWidth`/`frameHeight`/`frames`/`layout` trong `game/assets/data/animations.json` (`SpriteFrame.clone()` + set `rect`). `rect` và `originalSize` đều là property set được trong 3.8.
+> **Không tạo sub-frame bằng tay.** Mỗi PNG import thành **1 SpriteFrame duy nhất**, rồi code cắt frame lúc runtime từ `frameWidth`/`frameHeight`/`frames`/`layout` trong `game/assets/resources/data/animations.json` (`SpriteFrame.clone()` + set `rect`). `rect` và `originalSize` đều là property set được trong 3.8.
 
 Hai kiểu bố cục trong manifest:
 
@@ -189,7 +189,7 @@ Lưu ý: Tengu có 2 cỡ frame (68 và 82) ⇒ pivot/anchor phải tính theo t
 
 ## 4. Bảng map animation → key manifest
 
-Nguồn: `game/assets/data/animations.json` (75 key trên 33 sheet). Đường dẫn đích tính từ `game/assets/art/`.
+Nguồn: `game/assets/resources/data/animations.json` (75 key trên 33 sheet). Đường dẫn đích tính từ `game/assets/resources/art/`.
 
 ### 4.1 Player — 21 key / 6 sheet
 
@@ -305,7 +305,7 @@ Icon 24×24 = 1,5 tile 16 px ⇒ khi hiện trong thẻ skill phải scale bội
 
 ### 6.3 Manifest trỏ sai gốc đường dẫn — **đã sửa**
 
-`animations.json` từng ghi `sheet` theo gốc `art-source/ninja-adventure/` (ví dụ `"Actor/Monster/BlueBat/SpriteSheet.png"`), trong khi file thật đã stage ở `game/assets/art/`. Loader sẽ không tìm được PNG.
+`animations.json` từng ghi `sheet` theo gốc `art-source/ninja-adventure/` (ví dụ `"Actor/Monster/BlueBat/SpriteSheet.png"`), trong khi file thật đã stage ở `game/assets/resources/art/`. Loader sẽ không tìm được PNG.
 
 Đã sửa: cả 75 entry dùng đường dẫn tương đối với `game/assets/` (`art/monsters/blue-bat/SpriteSheet.png`), verify **33/33 sheet tồn tại trên đĩa**. Validator đổi sang `isAssetRelativePath` và thông báo lỗi theo gốc `game/assets/`.
 
@@ -323,7 +323,7 @@ Icon 24×24 = 1,5 tile 16 px ⇒ khi hiện trong thẻ skill phải scale bội
 
 Thứ tự đúng, làm từ trên xuống:
 
-1. **Đóng editor** nếu đang mở project khác. `git status --short` phải chỉ có `game/assets/art/**` và `docs/art/import-checklist.md` là file mới.
+1. **Đóng editor** nếu đang mở project khác. `git status --short` phải chỉ có `game/assets/resources/art/**` và `docs/art/import-checklist.md` là file mới.
 2. Mở **Cocos Creator 3.8.8** → chọn project `game/`. Chờ import xong (Assets hiện thư mục `art`, status bar hết "Importing…").
 3. Nếu muốn mọi PNG về sau tự là sprite-frame: **Edit → Preferences → mục Default Meta** → mở JSON → đặt `"image": { "type": "sprite-frame" }` → Apply. (Không bắt buộc; bước 4 làm được thủ công.)
 4. Trong Assets, chọn **từng thư mục** (`characters`, `monsters`, `bosses`, `tilesets`, `ui`, `fx`) → chọn hết PNG bên trong → Inspector:

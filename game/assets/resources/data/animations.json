@@ -2,7 +2,7 @@
   "version": 1,
   "sprites": {
     "player.idle.down": {
-      "sheet": "art/characters/ninja-green/Idle.png",
+      "sheet": "resources/art/characters/ninja-green/Idle.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -17,7 +17,7 @@
       "loop": true
     },
     "player.idle.up": {
-      "sheet": "art/characters/ninja-green/Idle.png",
+      "sheet": "resources/art/characters/ninja-green/Idle.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -32,7 +32,7 @@
       "loop": true
     },
     "player.idle.left": {
-      "sheet": "art/characters/ninja-green/Idle.png",
+      "sheet": "resources/art/characters/ninja-green/Idle.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -47,7 +47,7 @@
       "loop": true
     },
     "player.idle.right": {
-      "sheet": "art/characters/ninja-green/Idle.png",
+      "sheet": "resources/art/characters/ninja-green/Idle.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -62,7 +62,7 @@
       "loop": true
     },
     "player.walk.down": {
-      "sheet": "art/characters/ninja-green/Walk.png",
+      "sheet": "resources/art/characters/ninja-green/Walk.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -77,7 +77,7 @@
       "loop": true
     },
     "player.walk.up": {
-      "sheet": "art/characters/ninja-green/Walk.png",
+      "sheet": "resources/art/characters/ninja-green/Walk.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -92,7 +92,7 @@
       "loop": true
     },
     "player.walk.left": {
-      "sheet": "art/characters/ninja-green/Walk.png",
+      "sheet": "resources/art/characters/ninja-green/Walk.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -107,7 +107,7 @@
       "loop": true
     },
     "player.walk.right": {
-      "sheet": "art/characters/ninja-green/Walk.png",
+      "sheet": "resources/art/characters/ninja-green/Walk.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -122,7 +122,7 @@
       "loop": true
     },
     "player.attack.down": {
-      "sheet": "art/characters/ninja-green/Attack.png",
+      "sheet": "resources/art/characters/ninja-green/Attack.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -137,7 +137,7 @@
       "loop": false
     },
     "player.attack.up": {
-      "sheet": "art/characters/ninja-green/Attack.png",
+      "sheet": "resources/art/characters/ninja-green/Attack.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -152,7 +152,7 @@
       "loop": false
     },
     "player.attack.left": {
-      "sheet": "art/characters/ninja-green/Attack.png",
+      "sheet": "resources/art/characters/ninja-green/Attack.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -167,7 +167,7 @@
       "loop": false
     },
     "player.attack.right": {
-      "sheet": "art/characters/ninja-green/Attack.png",
+      "sheet": "resources/art/characters/ninja-green/Attack.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -182,7 +182,7 @@
       "loop": false
     },
     "player.hit.down": {
-      "sheet": "art/characters/ninja-green/Hit.png",
+      "sheet": "resources/art/characters/ninja-green/Hit.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -197,7 +197,7 @@
       "loop": false
     },
     "player.hit.up": {
-      "sheet": "art/characters/ninja-green/Hit.png",
+      "sheet": "resources/art/characters/ninja-green/Hit.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -212,7 +212,7 @@
       "loop": false
     },
     "player.hit.left": {
-      "sheet": "art/characters/ninja-green/Hit.png",
+      "sheet": "resources/art/characters/ninja-green/Hit.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -227,7 +227,7 @@
       "loop": false
     },
     "player.hit.right": {
-      "sheet": "art/characters/ninja-green/Hit.png",
+      "sheet": "resources/art/characters/ninja-green/Hit.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -242,7 +242,7 @@
       "loop": false
     },
     "player.roll.down": {
-      "sheet": "art/characters/ninja-green/Roll.png",
+      "sheet": "resources/art/characters/ninja-green/Roll.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -257,7 +257,7 @@
       "loop": false
     },
     "player.roll.up": {
-      "sheet": "art/characters/ninja-green/Roll.png",
+      "sheet": "resources/art/characters/ninja-green/Roll.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -272,7 +272,7 @@
       "loop": false
     },
     "player.roll.left": {
-      "sheet": "art/characters/ninja-green/Roll.png",
+      "sheet": "resources/art/characters/ninja-green/Roll.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -287,7 +287,7 @@
       "loop": false
     },
     "player.roll.right": {
-      "sheet": "art/characters/ninja-green/Roll.png",
+      "sheet": "resources/art/characters/ninja-green/Roll.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -302,7 +302,7 @@
       "loop": false
     },
     "player.dead": {
-      "sheet": "art/characters/ninja-green/Dead.png",
+      "sheet": "resources/art/characters/ninja-green/Dead.png",
       "frameWidth": 32,
       "frameHeight": 32,
       "layout": "grid",
@@ -312,7 +312,7 @@
       "loop": false
     },
     "bluebat.walk.down": {
-      "sheet": "art/monsters/blue-bat/SpriteSheet.png",
+      "sheet": "resources/art/monsters/blue-bat/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -327,7 +327,7 @@
       "loop": true
     },
     "bluebat.walk.up": {
-      "sheet": "art/monsters/blue-bat/SpriteSheet.png",
+      "sheet": "resources/art/monsters/blue-bat/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -342,7 +342,7 @@
       "loop": true
     },
     "bluebat.walk.left": {
-      "sheet": "art/monsters/blue-bat/SpriteSheet.png",
+      "sheet": "resources/art/monsters/blue-bat/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -357,7 +357,7 @@
       "loop": true
     },
     "bluebat.walk.right": {
-      "sheet": "art/monsters/blue-bat/SpriteSheet.png",
+      "sheet": "resources/art/monsters/blue-bat/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -372,7 +372,7 @@
       "loop": true
     },
     "spiderred.walk.down": {
-      "sheet": "art/monsters/spider-red/SpriteSheet.png",
+      "sheet": "resources/art/monsters/spider-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -387,7 +387,7 @@
       "loop": true
     },
     "spiderred.walk.up": {
-      "sheet": "art/monsters/spider-red/SpriteSheet.png",
+      "sheet": "resources/art/monsters/spider-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -402,7 +402,7 @@
       "loop": true
     },
     "spiderred.walk.left": {
-      "sheet": "art/monsters/spider-red/SpriteSheet.png",
+      "sheet": "resources/art/monsters/spider-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -417,7 +417,7 @@
       "loop": true
     },
     "spiderred.walk.right": {
-      "sheet": "art/monsters/spider-red/SpriteSheet.png",
+      "sheet": "resources/art/monsters/spider-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -432,7 +432,7 @@
       "loop": true
     },
     "snake3.walk.down": {
-      "sheet": "art/monsters/snake3/Snake3.png",
+      "sheet": "resources/art/monsters/snake3/Snake3.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -447,7 +447,7 @@
       "loop": true
     },
     "snake3.walk.up": {
-      "sheet": "art/monsters/snake3/Snake3.png",
+      "sheet": "resources/art/monsters/snake3/Snake3.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -462,7 +462,7 @@
       "loop": true
     },
     "snake3.walk.left": {
-      "sheet": "art/monsters/snake3/Snake3.png",
+      "sheet": "resources/art/monsters/snake3/Snake3.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -477,7 +477,7 @@
       "loop": true
     },
     "snake3.walk.right": {
-      "sheet": "art/monsters/snake3/Snake3.png",
+      "sheet": "resources/art/monsters/snake3/Snake3.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -492,7 +492,7 @@
       "loop": true
     },
     "eye.walk.down": {
-      "sheet": "art/monsters/eye/Eye.png",
+      "sheet": "resources/art/monsters/eye/Eye.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -507,7 +507,7 @@
       "loop": true
     },
     "eye.walk.up": {
-      "sheet": "art/monsters/eye/Eye.png",
+      "sheet": "resources/art/monsters/eye/Eye.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -522,7 +522,7 @@
       "loop": true
     },
     "eye.walk.left": {
-      "sheet": "art/monsters/eye/Eye.png",
+      "sheet": "resources/art/monsters/eye/Eye.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -537,7 +537,7 @@
       "loop": true
     },
     "eye.walk.right": {
-      "sheet": "art/monsters/eye/Eye.png",
+      "sheet": "resources/art/monsters/eye/Eye.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -552,7 +552,7 @@
       "loop": true
     },
     "greenoctopus.walk.down": {
-      "sheet": "art/monsters/green-octopus/SpriteSheet.png",
+      "sheet": "resources/art/monsters/green-octopus/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -567,7 +567,7 @@
       "loop": true
     },
     "greenoctopus.walk.up": {
-      "sheet": "art/monsters/green-octopus/SpriteSheet.png",
+      "sheet": "resources/art/monsters/green-octopus/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -582,7 +582,7 @@
       "loop": true
     },
     "greenoctopus.walk.left": {
-      "sheet": "art/monsters/green-octopus/SpriteSheet.png",
+      "sheet": "resources/art/monsters/green-octopus/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -597,7 +597,7 @@
       "loop": true
     },
     "greenoctopus.walk.right": {
-      "sheet": "art/monsters/green-octopus/SpriteSheet.png",
+      "sheet": "resources/art/monsters/green-octopus/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -612,7 +612,7 @@
       "loop": true
     },
     "lanternred.walk.down": {
-      "sheet": "art/monsters/lantern-red/SpriteSheet.png",
+      "sheet": "resources/art/monsters/lantern-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -627,7 +627,7 @@
       "loop": true
     },
     "lanternred.walk.up": {
-      "sheet": "art/monsters/lantern-red/SpriteSheet.png",
+      "sheet": "resources/art/monsters/lantern-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -642,7 +642,7 @@
       "loop": true
     },
     "lanternred.walk.left": {
-      "sheet": "art/monsters/lantern-red/SpriteSheet.png",
+      "sheet": "resources/art/monsters/lantern-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -657,7 +657,7 @@
       "loop": true
     },
     "lanternred.walk.right": {
-      "sheet": "art/monsters/lantern-red/SpriteSheet.png",
+      "sheet": "resources/art/monsters/lantern-red/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -672,7 +672,7 @@
       "loop": true
     },
     "bear.walk.down": {
-      "sheet": "art/monsters/bear/SpriteSheet.png",
+      "sheet": "resources/art/monsters/bear/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -687,7 +687,7 @@
       "loop": true
     },
     "bear.walk.up": {
-      "sheet": "art/monsters/bear/SpriteSheet.png",
+      "sheet": "resources/art/monsters/bear/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -702,7 +702,7 @@
       "loop": true
     },
     "bear.walk.left": {
-      "sheet": "art/monsters/bear/SpriteSheet.png",
+      "sheet": "resources/art/monsters/bear/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -717,7 +717,7 @@
       "loop": true
     },
     "bear.walk.right": {
-      "sheet": "art/monsters/bear/SpriteSheet.png",
+      "sheet": "resources/art/monsters/bear/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -732,7 +732,7 @@
       "loop": true
     },
     "trex.walk.down": {
-      "sheet": "art/monsters/trex/SpriteSheet.png",
+      "sheet": "resources/art/monsters/trex/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -747,7 +747,7 @@
       "loop": true
     },
     "trex.walk.up": {
-      "sheet": "art/monsters/trex/SpriteSheet.png",
+      "sheet": "resources/art/monsters/trex/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -762,7 +762,7 @@
       "loop": true
     },
     "trex.walk.left": {
-      "sheet": "art/monsters/trex/SpriteSheet.png",
+      "sheet": "resources/art/monsters/trex/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -777,7 +777,7 @@
       "loop": true
     },
     "trex.walk.right": {
-      "sheet": "art/monsters/trex/SpriteSheet.png",
+      "sheet": "resources/art/monsters/trex/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -792,7 +792,7 @@
       "loop": true
     },
     "cyclope.walk.down": {
-      "sheet": "art/monsters/cyclope/SpriteSheet.png",
+      "sheet": "resources/art/monsters/cyclope/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -807,7 +807,7 @@
       "loop": true
     },
     "cyclope.walk.up": {
-      "sheet": "art/monsters/cyclope/SpriteSheet.png",
+      "sheet": "resources/art/monsters/cyclope/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -822,7 +822,7 @@
       "loop": true
     },
     "cyclope.walk.left": {
-      "sheet": "art/monsters/cyclope/SpriteSheet.png",
+      "sheet": "resources/art/monsters/cyclope/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -837,7 +837,7 @@
       "loop": true
     },
     "cyclope.walk.right": {
-      "sheet": "art/monsters/cyclope/SpriteSheet.png",
+      "sheet": "resources/art/monsters/cyclope/SpriteSheet.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -852,7 +852,7 @@
       "loop": true
     },
     "tengu.idle": {
-      "sheet": "art/bosses/tengu-blue/Idle.png",
+      "sheet": "resources/art/bosses/tengu-blue/Idle.png",
       "frameWidth": 68,
       "frameHeight": 68,
       "layout": "strip",
@@ -862,7 +862,7 @@
       "loop": true
     },
     "tengu.walk": {
-      "sheet": "art/bosses/tengu-blue/Walk.png",
+      "sheet": "resources/art/bosses/tengu-blue/Walk.png",
       "frameWidth": 82,
       "frameHeight": 82,
       "layout": "strip",
@@ -872,7 +872,7 @@
       "loop": true
     },
     "tengu.attack": {
-      "sheet": "art/bosses/tengu-blue/Attack.png",
+      "sheet": "resources/art/bosses/tengu-blue/Attack.png",
       "frameWidth": 82,
       "frameHeight": 82,
       "layout": "strip",
@@ -882,7 +882,7 @@
       "loop": false
     },
     "tengu.hit": {
-      "sheet": "art/bosses/tengu-blue/Hit.png",
+      "sheet": "resources/art/bosses/tengu-blue/Hit.png",
       "frameWidth": 68,
       "frameHeight": 68,
       "layout": "strip",
@@ -892,7 +892,7 @@
       "loop": false
     },
     "tengu.trans": {
-      "sheet": "art/bosses/tengu-blue/Trans.png",
+      "sheet": "resources/art/bosses/tengu-blue/Trans.png",
       "frameWidth": 68,
       "frameHeight": 68,
       "layout": "strip",
@@ -902,7 +902,7 @@
       "loop": false
     },
     "squid.idle": {
-      "sheet": "art/bosses/squid-green/Idle.png",
+      "sheet": "resources/art/bosses/squid-green/Idle.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -912,7 +912,7 @@
       "loop": true
     },
     "squid.walk": {
-      "sheet": "art/bosses/squid-green/Walk.png",
+      "sheet": "resources/art/bosses/squid-green/Walk.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -922,7 +922,7 @@
       "loop": true
     },
     "squid.attack": {
-      "sheet": "art/bosses/squid-green/Attack.png",
+      "sheet": "resources/art/bosses/squid-green/Attack.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -932,7 +932,7 @@
       "loop": false
     },
     "squid.attack-loop": {
-      "sheet": "art/bosses/squid-green/AttackLoop.png",
+      "sheet": "resources/art/bosses/squid-green/AttackLoop.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -942,7 +942,7 @@
       "loop": true
     },
     "squid.shoot": {
-      "sheet": "art/bosses/squid-green/Shoot.png",
+      "sheet": "resources/art/bosses/squid-green/Shoot.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -952,7 +952,7 @@
       "loop": false
     },
     "squid.hit": {
-      "sheet": "art/bosses/squid-green/Hit.png",
+      "sheet": "resources/art/bosses/squid-green/Hit.png",
       "frameWidth": 76,
       "frameHeight": 79,
       "layout": "strip",
@@ -962,7 +962,7 @@
       "loop": false
     },
     "samurai.idle": {
-      "sheet": "art/bosses/giant-blue-samurai/Idle.png",
+      "sheet": "resources/art/bosses/giant-blue-samurai/Idle.png",
       "frameWidth": 96,
       "frameHeight": 48,
       "layout": "strip",
@@ -972,7 +972,7 @@
       "loop": true
     },
     "samurai.walk": {
-      "sheet": "art/bosses/giant-blue-samurai/Walk.png",
+      "sheet": "resources/art/bosses/giant-blue-samurai/Walk.png",
       "frameWidth": 96,
       "frameHeight": 48,
       "layout": "strip",
@@ -982,7 +982,7 @@
       "loop": true
     },
     "samurai.attack.left": {
-      "sheet": "art/bosses/giant-blue-samurai/AttackLeft.png",
+      "sheet": "resources/art/bosses/giant-blue-samurai/AttackLeft.png",
       "frameWidth": 96,
       "frameHeight": 96,
       "layout": "strip",
@@ -994,7 +994,7 @@
       "loop": false
     },
     "samurai.attack.right": {
-      "sheet": "art/bosses/giant-blue-samurai/AttackRight.png",
+      "sheet": "resources/art/bosses/giant-blue-samurai/AttackRight.png",
       "frameWidth": 96,
       "frameHeight": 96,
       "layout": "strip",
@@ -1006,7 +1006,7 @@
       "loop": false
     },
     "samurai.charge.left": {
-      "sheet": "art/bosses/giant-blue-samurai/ChargeLeft.png",
+      "sheet": "resources/art/bosses/giant-blue-samurai/ChargeLeft.png",
       "frameWidth": 96,
       "frameHeight": 96,
       "layout": "strip",
@@ -1018,7 +1018,7 @@
       "loop": true
     },
     "samurai.charge.right": {
-      "sheet": "art/bosses/giant-blue-samurai/ChargeRight.png",
+      "sheet": "resources/art/bosses/giant-blue-samurai/ChargeRight.png",
       "frameWidth": 96,
       "frameHeight": 96,
       "layout": "strip",
@@ -1030,7 +1030,7 @@
       "loop": true
     },
     "samurai.hit": {
-      "sheet": "art/bosses/giant-blue-samurai/Hit.png",
+      "sheet": "resources/art/bosses/giant-blue-samurai/Hit.png",
       "frameWidth": 96,
       "frameHeight": 48,
       "layout": "strip",

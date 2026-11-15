@@ -56,8 +56,9 @@ game/                  # project Cocos Creator — mọi thứ engine đọc n�
 │   │   ├── core/      # logic thuần TS — KHÔNG được import 'cc'
 │   │   ├── game/      # component Cocos: adapter mỏng quanh core
 │   │   └── ui/        # component UI
-│   ├── data/          # animations manifest, level data
-│   └── art/           # subset của pack, chỉ file game dùng
+│   └── resources/
+│       ├── data/      # animations manifest, level data
+│       └── art/       # subset của pack, load theo path lúc runtime
 ├── config/
 │   └── tuning.json    # số liệu tune (nguồn duy nhất) → bun run gen
 ├── settings/          # editor sinh
@@ -70,7 +71,7 @@ art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 ## Quy tắc bắt buộc
 
 1. **`src/core/` không import `cc`.** Mọi thứ trong core phải test được bằng vitest, không cần engine. Ranh giới này được enforce bằng eslint `no-restricted-imports`.
-2. **Không hardcode đường dẫn sprite.** Tham chiếu qua tên logic trong `assets/data/animations.json` (`player.idle.down`). Pack thiếu thì khai báo `fallback`.
+2. **Không hardcode đường dẫn sprite.** Tham chiếu qua tên logic trong `assets/resources/data/animations.json` (`player.idle.down`). Pack thiếu thì khai báo `fallback`.
 3. **Số liệu tune nằm trong `game/config/tuning.json`** (ngoài asset DB), không nằm trong code. Sửa số → `bun run gen` → `bun run check`. `bun run check` chạy `check:config` trước, nên generated code lệch JSON là fail ngay.
 4. **Luôn chạy `bun run check`.** Cocos **bỏ qua TypeScript type error** khi compile (docs xác nhận) — không có gate này thì lỗi kiểu chỉ nổ lúc runtime.
 5. **Không tự sửa `.scene`/`.prefab` bằng tay** khi có thể mở editor; file đó là JSON do editor sinh, sửa tay dễ hỏng tham chiếu UUID.
