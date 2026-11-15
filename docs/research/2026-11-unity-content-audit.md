@@ -1,4 +1,4 @@
-# Audit nội dung Unity — DragonField (2026-11-15)
+# Audit nội dung Unity — Yokai Field (2026-11-15)
 
 Mục đích: chốt các **con số kỹ thuật** của bản Unity trước khi xoá source để rewrite sang Cocos Creator 3.8.
 Đây là bản ghi read-only, không phải backup code. Nội dung gameplay (dialog, tên item, layout map) **sẽ không được tái sử dụng** theo quyết định "100% nội dung mới"; các bảng dưới đây chỉ dùng làm tham chiếu kỹ thuật (grid, frame size, animation cadence, audio ngắn).

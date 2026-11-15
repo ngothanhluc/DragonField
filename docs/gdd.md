@@ -1,4 +1,4 @@
-# GDD — DragonField v2 (roguelite)
+# GDD — Yokai Field v2 (roguelite)
 
 Trạng thái: bản nháp 1, chốt các quyết định từ phiên thiết kế 2026-11-15. Chưa có phần nào được implement.
 
@@ -81,9 +81,9 @@ Mỗi chapter một boss, lấy từ `Actor/Boss`. Arena 32×18 tile với 4 c�
 
 | Chapter | Boss | Animation có sẵn | Pattern |
 |---|---|---|---|
-| 1 | **TenguBlue** (82×82) | idle 6, walk 10, **attack 15**, hit 8, **Trans 11** | (1) đi bộ đuổi + đòn attack bắn chùm 5 viên; (2) thêm `Trans` dịch chuyển ngẫu nhiên rồi bắn vòng 8 viên; (3) enrage: dịch chuyển 3 lần liên tiếp, chùm 5 viên ×3 đợt |
+| 1 | **TenguBlue** (frame 68×68 – 82×82) | idle 6, walk 10, **attack 15**, hit 8, **Trans 11** | (1) đi bộ đuổi + đòn attack bắn chùm 5 viên; (2) thêm `Trans` dịch chuyển ngẫu nhiên rồi bắn vòng 8 viên; (3) enrage: dịch chuyển 3 lần liên tiếp, chùm 5 viên ×3 đợt |
 | 2 | **SquidGreen** (76×79) | idle 4, walk 4, attack 6, **AttackLoop 4**, **Shoot 5**, hit 4 | (1) bơi ngang + `Shoot` 5 viên toả; (2) `AttackLoop` phun đạn liên tục theo hình xoắn; (3) gọi 2 GreenOctopus, xoắn nhanh hơn |
-| 3 | **GiantBlueSamurai** (96×96) | idle 6, walk 6, **attack L/R 4**, **charge L/R 3**, hit 4 | (1) charge ngang arena rồi slash bắn sóng đạn thẳng; (2) charge 2 lần liên tiếp, đổi hướng; (3) charge để lại vệt lửa + slash 2 sóng |
+| 3 | **GiantBlueSamurai** (frame 96×48 – 96×96) | idle 6, walk 6, **attack L/R 4**, **charge L/R 3**, hit 4 | (1) charge ngang arena rồi slash bắn sóng đạn thẳng; (2) charge 2 lần liên tiếp, đổi hướng; (3) charge để lại vệt lửa + slash 2 sóng |
 
 Nguyên tắc đọc đòn: mỗi phase phải có **một dấu hiệu khác nhau** — Ch1 đọc hướng chùm đạn, Ch2 đọc nhịp xoắn, Ch3 đọc hướng charge (animation L/R là dấu hiệu).
 

@@ -55,9 +55,9 @@ Dự phòng: YellowsBat, MouseBlack, LanternGreen, RedOctopus, Panda, Reptile2, 
 
 | Boss | Idle | Walk | Attack | Charge | Jump | Hit | Khác | Frame |
 |---|---|---|---|---|---|---|---|---|
-| TenguBlue | 6 | 10 | **15** | – | – | 8 | **Trans 11** (dịch chuyển) | 82×82 |
+| TenguBlue | 6 | 10 | **15** | – | – | 8 | **Trans 11** (dịch chuyển) | **68×68** (idle/hit/trans), 82×82 (walk/attack) |
 | SquidGreen | 4 | 4 | 6 + **AttackLoop 4** | – | – | 4 | **Shoot 5** | 76×79 |
-| GiantBlueSamurai | 6 | 6 | 4 + 4 (L/R) | 3 + 3 (L/R) | – | 4 | | 96×96 |
+| GiantBlueSamurai | 6 | 6 | 4 + 4 (L/R) | 3 + 3 (L/R) | – | 4 | | **96×48** (idle/walk/hit), 96×96 (attack/charge) |
 | GiantSlime | 5 | – | – | – | **13** | 5 | slam | 62×52 |
 | GiantBamboo | 6 | 12 | 5 | 3 | – | 4 | | 62×62 |
 | GiantFrog | 5 | – | 3 | 7 | 6 | 3 | | 40×40 |

@@ -1,4 +1,4 @@
-# AGENTS.md — DragonField
+# AGENTS.md — Yokai Field
 
 Hướng dẫn cho agent (và cho người) làm việc trong repo này. Đọc file này trước khi sửa code.
 
@@ -15,9 +15,11 @@ Roguelite né đạn top-down, pixel 16px, chạy trên web. Người chơi **t�
 ## Stack
 
 - **Cocos Creator 3.8.8** (LTS). Không dùng 4.0 — mới chỉ là beta.
+- **Bun** là package manager duy nhất (`bun install`, `bun run …`). Không dùng npm/yarn/pnpm: repo chỉ có `bun.lock`, không có `package-lock.json`.
 - TypeScript. Không C#, không GDScript.
 - Target duy nhất: **web-desktop**. Không mobile, không native, không mini-game.
 - Nguồn art duy nhất: **Ninja Adventure Update #8** (CC0). Không thêm pack ngoài.
+- Tên game: **Yokai Field**. Tên folder repo vẫn là `DragonField` (đổi tên folder sẽ phá đường dẫn tuyệt đối trong các session đang mở).
 
 ## Trạng thái hiện tại
 
@@ -30,10 +32,10 @@ Mọi lệnh và đường dẫn dưới đây tính từ repo root, trừ khi g
 
 ```bash
 cd game
-npm run check      # bắt buộc trước khi báo "xong": tsc --noEmit + vitest + eslint
-npm run test       # vitest
-npm run typecheck  # tsc --noEmit
-npm run lint       # eslint
+bun run check      # bắt buộc trước khi báo "xong": tsc --noEmit + vitest + eslint
+bun run test       # vitest
+bun run typecheck  # tsc --noEmit
+bun run lint       # eslint
 ```
 
 Build web (cần editor đã cài, không chạy trong CI):
@@ -66,7 +68,7 @@ art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 1. **`src/core/` không import `cc`.** Mọi thứ trong core phải test được bằng vitest, không cần engine. Ranh giới này được enforce bằng eslint `no-restricted-imports`.
 2. **Không hardcode đường dẫn sprite.** Tham chiếu qua tên logic trong `assets/data/animations.json` (`player.idle.down`). Pack thiếu thì khai báo `fallback`.
 3. **Số liệu tune nằm trong `assets/data/config.json`**, không nằm trong code. Đổi balance = sửa JSON.
-4. **Luôn chạy `npm run check`.** Cocos **bỏ qua TypeScript type error** khi compile (docs xác nhận) — không có gate này thì lỗi kiểu chỉ nổ lúc runtime.
+4. **Luôn chạy `bun run check`.** Cocos **bỏ qua TypeScript type error** khi compile (docs xác nhận) — không có gate này thì lỗi kiểu chỉ nổ lúc runtime.
 5. **Không tự sửa `.scene`/`.prefab` bằng tay** khi có thể mở editor; file đó là JSON do editor sinh, sửa tay dễ hỏng tham chiếu UUID.
 6. **Không thêm asset pack ngoài.** Nếu thiếu sprite, chọn asset khác trong pack hoặc dùng primitive/particle.
 7. **Test đi kèm logic.** Thay đổi trong `core/` phải có test tương ứng; test là thứ duy nhất chứng minh combat/skill/save đúng.
@@ -82,7 +84,7 @@ art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 
 | Bẫy | Cách tránh |
 |---|---|
-| Compile bỏ qua type error | `npm run check` |
+| Compile bỏ qua type error | `bun run check` |
 | Không có authoring headless | scene dựng bằng editor hoặc bằng code; level là data |
 | Không có TileMap native, chỉ TiledMap (TMX) | map vẽ bằng Tiled |
 | Không có Cinemachine | không cần — phòng chỉ 1 màn hình, camera tĩnh |

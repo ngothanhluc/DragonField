@@ -1,0 +1,250 @@
+{
+  "chapter": 1,
+  "rooms": [
+    {
+      "id": "ch1-r1",
+      "chapter": 1,
+      "room": 1,
+      "isBossRoom": false,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 6, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 26, "y": 4 }, "elite": false },
+            { "role": "caster", "at": { "x": 16, "y": 3 }, "elite": false }
+          ]
+        },
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 5, "y": 8 }, "elite": false },
+            { "role": "chaser", "at": { "x": 27, "y": 8 }, "elite": false },
+            { "role": "chaser", "at": { "x": 16, "y": 5 }, "elite": false }
+          ]
+        },
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 10, "y": 3 }, "elite": false },
+            { "role": "caster", "at": { "x": 26, "y": 13 }, "elite": false },
+            { "role": "caster", "at": { "x": 16, "y": 7 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "pillar", "x": 8, "y": 6, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 22, "y": 6, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 8, "y": 11, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 22, "y": 11, "width": 2, "height": 2 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": 2 }
+      ]
+    },
+    {
+      "id": "ch1-r2",
+      "chapter": 1,
+      "room": 2,
+      "isBossRoom": false,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 6, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 26, "y": 4 }, "elite": false },
+            { "role": "caster", "at": { "x": 16, "y": 3 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "pillar", "x": 11, "y": 7, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 19, "y": 7, "width": 2, "height": 2 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": 3 }
+      ]
+    },
+    {
+      "id": "ch1-r3",
+      "chapter": 1,
+      "room": 3,
+      "isBossRoom": false,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 5, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 27, "y": 4 }, "elite": false },
+            { "role": "caster", "at": { "x": 16, "y": 4 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "pillar", "x": 6, "y": 8, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 24, "y": 8, "width": 2, "height": 2 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": 4 }
+      ]
+    },
+    {
+      "id": "ch1-r4",
+      "chapter": 1,
+      "room": 4,
+      "isBossRoom": false,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 6, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 26, "y": 4 }, "elite": false },
+            { "role": "caster", "at": { "x": 16, "y": 4 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "wall", "x": 8, "y": 9, "width": 6, "height": 1 },
+        { "kind": "wall", "x": 18, "y": 9, "width": 6, "height": 1 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": 5 }
+      ]
+    },
+    {
+      "id": "ch1-r5",
+      "chapter": 1,
+      "room": 5,
+      "isBossRoom": false,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 6, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 26, "y": 4 }, "elite": false },
+            { "role": "caster", "at": { "x": 16, "y": 3 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "pit", "x": 10, "y": 6, "width": 3, "height": 2 },
+        { "kind": "pit", "x": 19, "y": 6, "width": 3, "height": 2 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": 6 }
+      ]
+    },
+    {
+      "id": "ch1-r6",
+      "chapter": 1,
+      "room": 6,
+      "isBossRoom": false,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 5, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 27, "y": 4 }, "elite": false },
+            { "role": "caster", "at": { "x": 16, "y": 4 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "pillar", "x": 8, "y": 7, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 22, "y": 7, "width": 2, "height": 2 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": 7 }
+      ]
+    },
+    {
+      "id": "ch1-r7",
+      "chapter": 1,
+      "room": 7,
+      "isBossRoom": false,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 6, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 26, "y": 4 }, "elite": false },
+            { "role": "caster", "at": { "x": 16, "y": 4 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "pillar", "x": 10, "y": 7, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 20, "y": 7, "width": 2, "height": 2 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": 8 }
+      ]
+    },
+    {
+      "id": "ch1-r8",
+      "chapter": 1,
+      "room": 8,
+      "isBossRoom": false,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "caster", "at": { "x": 16, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 6, "y": 9 }, "elite": false },
+            { "role": "chaser", "at": { "x": 26, "y": 9 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "pillar", "x": 8, "y": 5, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 22, "y": 5, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 8, "y": 11, "width": 2, "height": 2 },
+        { "kind": "pillar", "x": 22, "y": 11, "width": 2, "height": 2 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": 9 }
+      ]
+    },
+    {
+      "id": "ch1-r9",
+      "chapter": 1,
+      "room": 9,
+      "isBossRoom": true,
+      "size": { "cols": 32, "rows": 18 },
+      "tileSizePx": 16,
+      "playerStart": { "x": 16, "y": 16 },
+      "waves": [
+        {
+          "enemies": [
+            { "role": "chaser", "at": { "x": 16, "y": 4 }, "elite": false },
+            { "role": "chaser", "at": { "x": 16, "y": 13 }, "elite": false }
+          ]
+        }
+      ],
+      "obstacles": [
+        { "kind": "pillar", "x": 6, "y": 5, "width": 3, "height": 3 },
+        { "kind": "pillar", "x": 23, "y": 5, "width": 3, "height": 3 },
+        { "kind": "pillar", "x": 6, "y": 10, "width": 3, "height": 3 },
+        { "kind": "pillar", "x": 23, "y": 10, "width": 3, "height": 3 }
+      ],
+      "doors": [
+        { "at": { "x": 16, "y": 0.5 }, "toRoom": null }
+      ],
+      "boss": { "name": "TenguBlue" }
+    }
+  ]
+}

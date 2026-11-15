@@ -14,14 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: game/package-lock.json
+          bun-version: 1.4.4
 
-      - run: npm ci
+      - run: bun install --frozen-lockfile
 
       # tsc --noEmit + vitest + eslint.
       # Không build web ở đây: build cần Cocos Creator GUI, không chạy headless được.
-      - run: npm run check
+      - run: bun run check

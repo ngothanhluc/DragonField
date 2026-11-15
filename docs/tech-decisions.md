@@ -1,4 +1,4 @@
-# Tech decisions — DragonField v2
+# Tech decisions — Yokai Field v2
 
 Bản ghi quyết định kỹ thuật. Mỗi mục là một ADR ngắn: quyết định, lý do, hệ quả.
 Ngày chốt: 2026-11-15. Trạng thái: đã chốt, chỉ mở lại khi có bằng chứng mới.
@@ -118,7 +118,7 @@ Bảng đầy đủ: `docs/gdd.md` §3–§5. Toàn bộ số nằm trong `src/c
 
 **Lý do.** Cocos bỏ qua type error; không có gate thì lỗi kiểu chỉ nổ lúc runtime. Build web trong CI cần cài editor vào runner — quá nặng, để sau M7.
 
-**Hệ quả.** `npm run check` là lệnh duy nhất agent cần chạy trước khi báo xong việc.
+**Hệ quả.** `bun run check` là lệnh duy nhất agent cần chạy trước khi báo xong việc.
 
 ---
 

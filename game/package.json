@@ -1,5 +1,5 @@
 {
-  "name": "ninja-adventure",
+  "name": "yokai-field",
   "uuid": "ceecdd5c-963b-45b9-ad6d-0dd553119b14",
   "creator": {
     "version": "3.8.8"
@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@types/node": "^26.6.6",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
     "typescript": "^5.4.0",
