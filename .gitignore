@@ -28,3 +28,6 @@ art-source/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# accidental duplicate Cocos project (nested repo, no commits)
+NewProject/
