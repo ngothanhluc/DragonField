@@ -27,6 +27,7 @@ import {
   Label as CocosLabel,
   Layers,
   Node as CocosNode,
+  ResolutionPolicy,
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
   director,
@@ -179,6 +180,9 @@ export class Bootstrap extends Component {
   // -------------------------------------------------------------------------
 
   private async boot(): Promise<void> {
+    // 512×288 = 32×18 tile 16 px. Đặt trong code để không phụ thuộc Project Settings.
+    view.setDesignResolutionSize(512, 288, ResolutionPolicy.SHOW_ALL);
+
     const manifest = await this.loadManifest();
     const chapter = await this.loadChapter();
 
@@ -284,18 +288,39 @@ export class Bootstrap extends Component {
    * báo lỗi rõ ràng thay vì màn hình đen.
    */
   private prepareCamera(): void {
-    const scene = director.getScene();
-    const camera: Camera | null = scene === null ? null : scene.getComponentInChildren(CocosCamera);
-    if (camera === null) {
-      throw new Error(
-        'Scene không có Camera. Tạo scene 2D có Main Camera rồi gắn Bootstrap (xem docs/editor-setup.md).',
-      );
-    }
+    const camera = this.pickWorldCamera();
 
     camera.projection = CocosCamera.ProjectionType.ORTHO;
     camera.orthoHeight = CAMERA_ORTHO_HEIGHT;
+    // Camera world phải thấy layer DEFAULT. Camera của scene 2D template là camera UI
+    // (`visibility = UI_2D`), dùng nhầm thì sprite world vô hình dù code vẫn chạy.
+    camera.visibility = Layers.Enum.DEFAULT;
+    camera.priority = 0;
+    camera.clearFlags = CocosCamera.ClearFlag.SOLID_COLOR;
+    camera.clearColor = new CocosColor(14, 12, 20, 255);
+
     const node = camera.node;
     node.setPosition(ROOM_CENTER.x, ROOM_CENTER.y, node.position.z);
+  }
+
+  /**
+   * Camera dùng để vẽ world.
+   *
+   * Scene 2D mặc định có `Canvas > Camera` — camera đó thuộc Canvas và chỉ thấy UI_2D.
+   * Ta ưu tiên camera **không** nằm dưới Canvas; nếu scene chỉ có camera UI thì tự tạo
+   * camera world để người dùng không phải sửa lại cấu trúc scene.
+   */
+  private pickWorldCamera(): Camera {
+    const scene = director.getScene();
+    const candidates: Camera[] = scene === null ? [] : scene.getComponentsInChildren(CocosCamera);
+    const world = candidates.find((candidate) => !hasCanvasAncestor(candidate.node));
+    if (world !== undefined) return world;
+
+    const node = new CocosNode('world-camera');
+    node.layer = Layers.Enum.DEFAULT;
+    node.parent = this.node;
+    const created: Camera = node.addComponent(CocosCamera);
+    return created;
   }
 
   /** world → room/actor/bullet, thứ tự này là thứ tự vẽ của Cocos 2D. */
@@ -673,4 +698,15 @@ function isInsideRoom(level: LevelData, point: Vec2): boolean {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+
+/** true nếu node nằm dưới một node có component Canvas (tức camera UI, không phải camera world). */
+function hasCanvasAncestor(node: Node): boolean {
+  let current: Node | null = node;
+  while (current !== null) {
+    if (current.getComponent(CocosCanvas) !== null) return true;
+    current = current.parent;
+  }
+  return false;
 }
