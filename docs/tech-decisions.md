@@ -47,11 +47,38 @@ Ngày chốt: 2026-11-15. Trạng thái: đã chốt, chỉ mở lại khi có b
 
 ## ADR-005 — Pipeline level: TiledMap render + LevelData thuần TS
 
-**Quyết định.** Map vẽ bằng **Tiled** (`.tmx`). Cocos `TiledMap` component render. Object layer (spawn, door, collision, trigger) được parse thành `LevelData` (TS thuần), có JSON schema và test.
+**Quyết định.** Map là `.tmx` (orthogonal, 32×18 tile 16 px) tại
+`game/assets/resources/data/levels/chapter-<n>/room-<r>.tmx`, kèm `.tsx` trong cùng thư mục.
+Cocos `TiledMap` render tile layer. Object layer được parse bằng **một** parser TS thuần
+(`core/level/tmx.ts`) thành `LevelData`; runtime lấy XML từ `TiledMapAsset.tmxXmlStr` và
+gọi đúng hàm mà vitest dùng, nên file hỏng không thể lọt qua `bun run check`.
 
-**Lý do.** Cocos không có TileMap native, chỉ TiledMap/TMX; không có đường import tilemap từ Unity. Tách LevelData giữ được khả năng test headless mà vẫn dùng component chính thức.
+**Quy ước** (nguồn duy nhất: comment đầu `core/level/tmx.ts`):
 
-**Hệ quả.** Phải cài Tiled. TMX không được chứa logic; mọi logic nằm ở LevelData. Không có Circle/Edge collider như Unity — collision là box/polygon hoặc tile-based.
+- Map properties: `chapter` int 1..3, `room` int ≥ 1, `isBossRoom` bool (mặc định false),
+  `boss` string = `spriteName` trong `BOSSES` (chỉ phòng boss).
+- Object layer (nhận diện bằng `name`):
+  - `playerStart` — point, đúng 1.
+  - `spawn` — point; properties `role` (chaser/caster/tank), `wave` (int ≥ 1), `elite` (bool).
+  - `obstacle` — rect; property `kind` (pillar/wall/pit).
+  - `door` — point; property `toRoom` (int ≥ 1), thiếu = cửa cuối chapter (`null`).
+  - `bossStart` — point, tuỳ chọn, chỉ phòng boss (mặc định 16,5).
+  - Object tên khác ⇒ lỗi, để typo không âm thầm bị bỏ qua.
+- Toạ độ object là **pixel Tiled** (16 px/tile); parser đổi sang tile unit.
+- Tile layer chỉ để vẽ (`encoding="csv"`); va chạm/vật cản **không** suy ra từ tile.
+- Thêm phòng = thêm `.tmx`. Bootstrap `resources.loadDir` cả thư mục, sắp theo `room`,
+  và `RunState` nhận tổng phòng từ dữ liệu — thả `room-10.tmx` là HUD hiện `x/10`,
+  không sửa code.
+
+**Lý do.** Cocos không có TileMap native, chỉ TiledMap/TMX; không có đường import tilemap
+từ Unity. Tách LevelData giữ được khả năng test headless mà vẫn dùng component chính thức;
+một parser duy nhất loại bỏ khả năng test và runtime hiểu file khác nhau.
+
+**Hệ quả.** Không có Circle/Edge collider như Unity — collision là box/polygon hoặc
+tile-based; hiện chỉ dùng hình chữ nhật trục song song (object `rotation` phải bằng 0).
+Tileset phải nằm trong asset DB (PNG import Type = sprite-frame) và `.tsx` phải ở cùng thư
+mục với `.tmx`, tham chiếu bằng tên file trần (`source="field.tsx"`): importer lưu đúng
+chuỗi đó làm key và engine tra `tsxContentMap[source]` **không có fallback** như ảnh.
 
 ---
 

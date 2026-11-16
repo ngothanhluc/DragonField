@@ -49,6 +49,8 @@ Nguồn thiết kế: `docs/gdd.md`. Quyết định kỹ thuật: `docs/tech-de
 - Thêm 1 phòng mới chỉ bằng sửa `.tmx`, không sửa code.
 - Đi hết 9 phòng của chapter 1 (boss là placeholder) không lỗi.
 
+**Trạng thái: ✅ Xong (2026-11-16).** 427 test xanh (mới: `xml`, `tmx`, `chapter-discovery`, `withBest`, `run-state` data-driven + `markWon`). 9 phòng `chapter-1/room-<n>.tmx` + `field.tsx`; `TiledMap` vẽ tile, object layer parse bằng **một** parser (`core/level/tmx.ts`, không `cc`) thành `LevelData`. Chapter select dựng bằng code (ch1 mở, 2–3 khoá, hiện best từ `localStorage`) → 9 phòng → boss placeholder Tengu 60 HP → CHAPTER CLEAR → về chapter select. Đã thử thả `room-10.tmx`: HUD và flow thành `x/10` không sửa code (file thử đã xoá). Headless Chrome đi trọn `1/9 → 9/9`, không lỗi console. Chưa có: 3 phase/đạn boss (M4), skill pick (M3), font pixel.
+
 ---
 
 ## M3 — Độ sâu combat

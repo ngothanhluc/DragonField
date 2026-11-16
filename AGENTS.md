@@ -99,6 +99,8 @@ art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 | `resources.load` callback: `err` là `undefined` (không phải `null`) khi thành công | kiểm tra bằng truthiness (`if (err)`), đừng so `=== null` — sẽ đọc `.message` trên `undefined` |
 | Build transpile kiểu loose: `[...set]` thành `[].concat(set)` → mảng chứa nguyên `Set` (vitest/tsc không bắt được) | Set/Map/iterator → mảng thì dùng `Array.from(x)`; chỉ spread array thật |
 | Sprite/Label không nằm dưới Canvas thì **không được vẽ** | node gốc của world phải có `RenderRoot2D` (đã gắn trong `createWorldLayers`) |
+| `.tmx` tham chiếu `.tsx` bằng tên file trần, cùng thư mục | importer lưu đúng chuỗi `source` làm key và engine tra `tsxContentMap[source]` **không fallback** (ảnh thì có fallback theo basename). Đặt `field.tsx` cạnh `room-*.tmx`, `source="field.tsx"`; ảnh trong `.tsx` cứ dùng đường dẫn tương đối |
+| `TiledMap` vẽ tile bằng **pixel**, không phải unit | node map scale `1/16` (`ACTOR_SCALE`) và đặt ở tâm phòng `(16,9)`, anchor `(0.5,0.5)`; va chạm/vật cản lấy từ object layer (`.tmx` → `LevelData.obstacles`), **không** suy ra từ tile |
 | Stub `cc` là `any` nên `this.foo()` trên class extends `Component` không bị tsc kiểm tra | method không tồn tại chỉ nổ lúc runtime — chạy build web thử sau khi sửa `game/` |
 | Bộ gõ tiếng Việt (Telex/VNI) bật thì WASD bị kẹt lúc đầu, phải bấm đủ 4 phím mới đi bình thường; tắt bộ gõ (ABC) là hết. CDP/puppeteer không tái hiện được | **chưa sửa** — cần log `keydown/keyup` (code, keyCode, isComposing) lúc bật bộ gõ trước khi sửa `player-controller.ts` |
 | Scale sprite | **1 texture px = 1/16 unit** (`ACTOR_SCALE` trong `level-view.ts`). Không chuẩn hoá theo bề rộng frame — làm vậy player 32 px sẽ nhỏ bằng nửa con quái 16 px |

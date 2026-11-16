@@ -28,7 +28,7 @@ Chọn node `Boot` → Inspector → **Add Component** → gõ `Bootstrap` → c
 `Bootstrap` (script này ở `assets/scripts/game/bootstrap.ts`).
 
 Không set property nào: mọi thứ đọc từ `assets/resources/data/animations.json` và
-`assets/resources/data/levels/chapter-1.json`.
+các file `.tmx` trong `assets/resources/data/levels/chapter-1/` (quy ước ở ADR-005).
 
 ### 4. Camera: `orthoHeight = 9` tại `(16, 9)`
 
@@ -92,7 +92,7 @@ resources. Xem đúng dòng đó trong Console trước, nó nói rõ file nào:
 | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `Không load được "resources/data/animations.json"`                                 | Chưa import xong, hoặc file bị đổi tên/di chuyển               | `game/assets/resources/data/animations.json`                                    |
 | `"resources/data/animations.json" không hợp lệ: …`                                 | Schema sai (version, key, directions…)                         | Đọc danh sách lỗi — validator liệt kê **toàn bộ**                               |
-| `Không load được "resources/data/levels/chapter-1.json"`                           | Thiếu file hoặc sai path                                       | `game/assets/resources/data/levels/chapter-1.json`                              |
+| `Không load được phòng nào trong "resources/data/levels/chapter-1"`                | Thiếu/thư mục rỗng, hoặc `.tmx` chưa import                    | `game/assets/resources/data/levels/chapter-1/room-<n>.tmx`                      |
 | `Không load được texture cho sheet "resources/art/…" (resources: "art/…/texture")` | PNG chưa import thành **sprite-frame**, hoặc `.meta` chưa sinh | Chọn PNG → Inspector → Type = `sprite-frame`, Filter = Nearest (checklist §2.1) |
 | `Scene không có Camera…`                                                           | Xoá mất Main Camera                                            | Bước 4                                                                          |
 | `Chapter 1 chưa map monster cho role "tank"`                                       | Level data có role chưa có trong bảng                          | `MONSTERS_BY_CHAPTER` trong `bootstrap.ts`                                      |

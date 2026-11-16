@@ -144,7 +144,7 @@ Không có equipment, không có nhân vật thứ hai, không unlock skill.
 ## 8. Phòng và level design
 
 - **Mỗi phòng = đúng 1 màn hình.** Base resolution **512×288 px = 32×18 tile 16px**. Không scroll, **không cần camera follow**.
-- **Số wave là dữ liệu của từng phòng** (`assets/resources/data/levels/*.json`), không hardcode theo chapter. `RunState` chỉ theo dõi wave hiện tại, không quy định tổng số wave.
+- **Số wave là dữ liệu của từng phòng** (`assets/resources/data/levels/chapter-<n>/*.tmx`), không hardcode theo chapter. `RunState` chỉ theo dõi wave hiện tại, không quy định tổng số wave.
 - Vật cản: cột, hố, tường thấp — dùng để né đạn, không chặn tầm bắn hoàn toàn.
 - 3 chapter × 9 phòng = 27 phòng, thiết kế tay trong Tiled, thứ tự cố định (không random layout) — random nằm ở skill, không ở map.
 
