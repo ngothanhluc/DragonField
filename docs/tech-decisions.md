@@ -129,7 +129,7 @@ Bảng đầy đủ: `docs/gdd.md` §3–§5. Toàn bộ số nằm trong `src/c
 2. `docs/gdd.md`
 3. `docs/tech-decisions.md` (file này)
 4. `docs/milestones.md`
-5. `docs/art/asset-pack-shortlist.md`
+5. ~~`docs/art/asset-pack-shortlist.md`~~ — đã xoá sau khi chốt Ninja Adventure (ADR-007)
 
 **Lý do.** Tránh mất dữ liệu không thể phục hồi khi chưa có gì thay thế.
 

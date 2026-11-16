@@ -30,12 +30,13 @@ Nguồn thiết kế: `docs/gdd.md`. Quyết định kỹ thuật: `docs/tech-de
 
 ## M1.5 — Taste test art (bắt buộc)
 
-**Việc.** Cài pack **Update #8** (có `Actor/CharacterAnimated`). Tự vẽ bộ tile dungeon tối thiểu: sàn, tường (autotile 16 biến thể góc/cạnh), cửa. Palette lấy mẫu từ pack. Gắn player + 1 enemy + 1 phòng vào M1.
+**Việc.** Cài pack **Ninja Adventure Update #8** (có `Actor/CharacterAnimated`). Phòng dùng tileset có sẵn của pack (không tự vẽ tile, không làm dungeon — ADR-007). Gắn player + 1 enemy + 1 phòng vào M1.
 
 **Nghiệm thu.**
 - Ảnh chụp màn hình 512×288 trông như game, không phải prototype.
-- Tile tự vẽ đứng cạnh sprite pack mà không lệch palette/outline.
 - Quyết định: giữ hướng art này / đổi. **Đổi ngay tại đây**, không đổi sau M3.
+
+**Trạng thái: ✅ Xong (2026-11-16).** Giữ tileset của pack, không làm dungeon. Ảnh nghiệm thu: `docs/art/m1.5-taste-test.png` (512×288, build release). Phòng 32×18 letterbox vừa khít mọi tỉ lệ canvas (`core/view/letterbox.ts`), HUD dán đúng mép phòng.
 
 ---
 
