@@ -62,7 +62,7 @@ export function loadTexture(sheet: string): Promise<Texture2D> {
 
 /** Load trước nhiều sheet (dùng ở màn load đầu chapter). Sheet trùng chỉ load một lần. */
 export function preloadSheets(sheets: readonly string[]): Promise<void> {
-  return Promise.all([...new Set(sheets)].map((sheet) => loadTexture(sheet))).then(() => undefined);
+  return Promise.all(Array.from(new Set(sheets), (sheet) => loadTexture(sheet))).then(() => undefined);
 }
 
 /** Xoá cache — chỉ dùng cho test/dev; không destroy texture vì sprite đang dùng có thể còn sống. */

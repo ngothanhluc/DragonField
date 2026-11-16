@@ -35,13 +35,13 @@ type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = ReturnType<typeof sliceFrame>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 
-/** `Heart.png` 80×16 = 5 trạng thái 16×16 xếp ngang, đầy → rỗng (import-checklist §3.5). */
+/** `Heart.png` 80×16 = 5 trạng thái 16×16 xếp ngang, rỗng → đầy (import-checklist §3.5). */
 export const HEART_SHEET = 'resources/art/ui/Heart.png';
 
 const HEART_SIZE_PX = 16;
-/** Trạng thái 0 = tim đầy; trạng thái 4 = tim rỗng. */
-const HEART_FULL_INDEX = 0;
-const HEART_EMPTY_INDEX = 4;
+/** Trạng thái 0 = tim rỗng (xám); trạng thái 4 = tim đầy (đỏ). */
+const HEART_EMPTY_INDEX = 0;
+const HEART_FULL_INDEX = 4;
 /** Khoảng cách giữa hai tim, px design (16 px tim + 2 px thở). */
 const HEART_SPACING_PX = 18;
 

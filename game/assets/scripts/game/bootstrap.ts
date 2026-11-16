@@ -23,14 +23,18 @@ import {
   Canvas as CocosCanvas,
   Color as CocosColor,
   Component,
+  Input,
   JsonAsset as CocosJsonAsset,
+  KeyCode,
   Label as CocosLabel,
   Layers,
   Node as CocosNode,
+  RenderRoot2D,
   ResolutionPolicy,
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
   director,
+  input,
   resources,
   view,
 } from 'cc';
@@ -59,6 +63,7 @@ const { ccclass } = _decorator;
 /** `cc` là module any trong repo: type phải suy ra từ import value (xem `texture-cache.ts`). */
 type Camera = InstanceType<typeof CocosCamera>;
 type Canvas = InstanceType<typeof CocosCanvas>;
+type Color = InstanceType<typeof CocosColor>;
 type JsonAsset = InstanceType<typeof CocosJsonAsset>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
@@ -87,6 +92,9 @@ const ROOM_CENTER: Vec2 = { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 };
 const CAMERA_Z = 1000;
 const CAMERA_NEAR = 1;
 const CAMERA_FAR = 2000;
+
+const END_LOSS_COLOR = new CocosColor(255, 96, 96, 255);
+const END_WIN_COLOR = new CocosColor(255, 230, 120, 255);
 
 /**
  * Monster theo vai trò của từng chapter (GDD §4). Key phải khớp manifest — không có
@@ -189,6 +197,8 @@ export class Bootstrap extends Component {
   private async boot(): Promise<void> {
     // 512×288 = 32×18 tile 16 px. Đặt trong code để không phụ thuộc Project Settings.
     view.setDesignResolutionSize(512, 288, ResolutionPolicy.SHOW_ALL);
+    // Cocos chỉ nghe phím trên #GameCanvas: chưa focus thì WASD/R không ăn cho tới khi click.
+    document.getElementById('GameCanvas')?.focus();
 
     const manifest = await this.loadManifest();
     const chapter = await this.loadChapter();
@@ -221,7 +231,6 @@ export class Bootstrap extends Component {
       `[YokaiField] Chapter ${chapter.chapter}: ${chapter.rooms.length} phòng. ` +
         `Bắt đầu phòng ${this.run?.roomLabel ?? '?'} (${firstRoom.waves.length} wave). ` +
         `room=${this.roomLayer?.children.length ?? 0} actor=${this.actorLayer?.children.length ?? 0} ` +
-        `camera=${JSON.stringify(this.worldCameraPosition())} ` +
         `player=${JSON.stringify(player.position)}`,
     );
   }
@@ -295,7 +304,7 @@ export class Bootstrap extends Component {
     sheets.add(ENEMY_BULLET_SHEET);
     sheets.add(HEART_SHEET);
 
-    return [...sheets];
+    return Array.from(sheets);
   }
 
   /**
@@ -344,6 +353,8 @@ export class Bootstrap extends Component {
   /** world → room/actor/bullet, thứ tự này là thứ tự vẽ của Cocos 2D. */
   private createWorldLayers(): void {
     const worldRoot = new CocosNode('world');
+    // Cocos chỉ vẽ Sprite nằm dưới một RenderRoot2D (Canvas là một); world không nằm dưới Canvas.
+    worldRoot.addComponent(RenderRoot2D);
     worldRoot.parent = this.node;
 
     this.roomLayer = this.addLayer('room-layer', worldRoot);
@@ -644,14 +655,31 @@ export class Bootstrap extends Component {
 
     this.status = 'lost';
     run.markLost();
-    console.log(
-      `[YokaiField] Thua ở phòng ${run.roomLabel} (0 tim). Run kết thúc — màn kết quả chưa nối.`,
-    );
+    console.log(`[YokaiField] Thua ở phòng ${run.roomLabel} (0 tim).`);
+    this.showEndScreen(`GAME OVER\nPhòng ${run.roomLabel}\nNhấn R để chơi lại`, END_LOSS_COLOR);
   }
 
   private finishWin(): void {
     this.status = 'won';
-    console.log('[YokaiField] Hết phòng của chapter — thắng chapter (màn kết quả chưa làm).');
+    console.log('[YokaiField] Hết phòng của chapter — thắng chapter.');
+    this.showEndScreen('CHAPTER CLEAR\nNhấn R để chơi lại', END_WIN_COLOR);
+  }
+
+  private showEndScreen(text: string, color: Color): void {
+    this.showBanner('end-screen', text, color);
+    input.on(Input.EventType.KEY_DOWN, this.onEndKey, this);
+  }
+
+  /** Chơi lại = load lại scene: bootstrap dựng mọi thứ từ đầu, không phải reset tay từng phần. */
+  private onEndKey(event: { readonly keyCode: number }): void {
+    if (event.keyCode !== KeyCode.KEY_R) return;
+    input.off(Input.EventType.KEY_DOWN, this.onEndKey, this);
+    const scene = director.getScene();
+    if (scene !== null) director.loadScene(scene.name);
+  }
+
+  protected onDestroy(): void {
+    input.off(Input.EventType.KEY_DOWN, this.onEndKey, this);
   }
 
   // -------------------------------------------------------------------------
@@ -665,23 +693,28 @@ export class Bootstrap extends Component {
     console.error(`[YokaiField] Bootstrap thất bại: ${message}`);
 
     try {
-      const canvas = this.ensureUiRoot();
-      const label = createLabel(canvas, 'load-error', `LOAD FAILED\n${message}`);
-      label.fontSize = 13;
-      label.lineHeight = 17;
-      label.color = new CocosColor(255, 96, 96, 255);
-      label.enableWrapText = true;
-      // RESIZE_HEIGHT + bề rộng cố định = xuống dòng theo màn hình thay vì tràn ra ngoài.
-      label.overflow = CocosLabel.Overflow.RESIZE_HEIGHT;
-
-      const transform: UITransform | null = label.node.getComponent(CocosUITransform);
-      if (transform !== null) {
-        transform.setContentSize(view.getVisibleSize().width - 16, 80);
-      }
-      label.node.setPosition(0, 0, 0);
+      this.showBanner('load-error', `LOAD FAILED\n${message}`, END_LOSS_COLOR);
     } catch (nested: unknown) {
       console.error(`[YokaiField] Không dựng được màn hình lỗi: ${errorMessage(nested)}`);
     }
+  }
+
+  /** Chữ to giữa màn hình (lỗi load, game over, thắng chapter). */
+  private showBanner(name: string, text: string, color: Color): void {
+    const canvas = this.ensureUiRoot();
+    const label = createLabel(canvas, name, text);
+    label.fontSize = 13;
+    label.lineHeight = 17;
+    label.color = color;
+    label.enableWrapText = true;
+    // RESIZE_HEIGHT + bề rộng cố định = xuống dòng theo màn hình thay vì tràn ra ngoài.
+    label.overflow = CocosLabel.Overflow.RESIZE_HEIGHT;
+
+    const transform: UITransform | null = label.node.getComponent(CocosUITransform);
+    if (transform !== null) {
+      transform.setContentSize(view.getVisibleSize().width - 16, 80);
+    }
+    label.node.setPosition(0, 0, 0);
   }
 
   // -------------------------------------------------------------------------

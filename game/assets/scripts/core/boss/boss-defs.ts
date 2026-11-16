@@ -126,7 +126,7 @@ function animationsOf(id: BossId): readonly string[] {
       keys.add(entry.base);
     }
   }
-  return [...keys];
+  return Array.from(keys);
 }
 
 export const BOSSES: Readonly<Record<BossId, BossDef>> = {
