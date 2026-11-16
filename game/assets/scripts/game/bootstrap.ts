@@ -242,9 +242,15 @@ export class Bootstrap extends Component {
    */
   private loadJson(path: string): Promise<unknown> {
     return new Promise<unknown>((onLoad, onFail) => {
-      resources.load(path, CocosJsonAsset, (error: Error | null, asset: JsonAsset | null) => {
-        if (error !== null || asset === null) {
-          const cause = error === null ? 'asset trả về rỗng' : error.message;
+      resources.load(
+        path,
+        CocosJsonAsset,
+        (error: Error | null | undefined, asset: JsonAsset | null | undefined) => {
+        // Cocos gọi callback với `null` **hoặc `undefined`** khi thành công. So sánh
+        // `=== null` sẽ coi `undefined` là lỗi rồi đọc `.message` trên undefined —
+        // chính là lỗi runtime "Cannot read properties of undefined (reading 'message')".
+        if (error || !asset) {
+          const cause = error ? error.message : 'asset trả về rỗng';
           onFail(new Error(`Không load được "resources/${path}.json". Nguyên nhân: ${cause}`));
           return;
         }

@@ -96,4 +96,5 @@ art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 | `tsconfig.json` không được đọc lúc compile | dùng để IDE check + `tsc --noEmit` trong CI |
 | `resources.load` cần hậu tố `/spriteFrame` | dùng manifest, không load path thủ công |
 | Stub `cc` làm named import thành `any` **value**, không dùng được ở vị trí type | trong `assets/scripts/game/`, alias `type Node = InstanceType<typeof CocosNode>` (đã dùng ở 5 file); gom về một file khi có `cc.d.ts` thật từ editor |
+| `resources.load` callback: `err` là `undefined` (không phải `null`) khi thành công | kiểm tra bằng truthiness (`if (err)`), đừng so `=== null` — sẽ đọc `.message` trên `undefined` |
 | Scale sprite | **1 texture px = 1/16 unit** (`ACTOR_SCALE` trong `level-view.ts`). Không chuẩn hoá theo bề rộng frame — làm vậy player 32 px sẽ nhỏ bằng nửa con quái 16 px |
