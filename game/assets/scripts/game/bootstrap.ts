@@ -80,6 +80,13 @@ const MAX_STEP_MS = 50;
 /** Camera world: `orthoHeight = 9` và đứng ở tâm phòng (16, 9). */
 const CAMERA_ORTHO_HEIGHT = ROOM_ROWS / 2;
 const ROOM_CENTER: Vec2 = { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 };
+/**
+ * Camera ortho nhìn theo -Z với `near = 1`, nên sprite ở z = 0 **bị cắt** nếu camera
+ * cũng đứng ở z = 0. Đặt camera lùi về z = 1000 (chuẩn 2D của Cocos) rồi khai near/far.
+ */
+const CAMERA_Z = 1000;
+const CAMERA_NEAR = 1;
+const CAMERA_FAR = 2000;
 
 /**
  * Monster theo vai trò của từng chapter (GDD §4). Key phải khớp manifest — không có
@@ -212,7 +219,10 @@ export class Bootstrap extends Component {
     this.startWave(0);
     console.log(
       `[YokaiField] Chapter ${chapter.chapter}: ${chapter.rooms.length} phòng. ` +
-        `Bắt đầu phòng ${this.run?.roomLabel ?? '?'} (${firstRoom.waves.length} wave).`,
+        `Bắt đầu phòng ${this.run?.roomLabel ?? '?'} (${firstRoom.waves.length} wave). ` +
+        `room=${this.roomLayer?.children.length ?? 0} actor=${this.actorLayer?.children.length ?? 0} ` +
+        `camera=${JSON.stringify(this.worldCameraPosition())} ` +
+        `player=${JSON.stringify(player.position)}`,
     );
   }
 
@@ -304,9 +314,11 @@ export class Bootstrap extends Component {
     camera.priority = 0;
     camera.clearFlags = CocosCamera.ClearFlag.SOLID_COLOR;
     camera.clearColor = new CocosColor(14, 12, 20, 255);
+    camera.near = CAMERA_NEAR;
+    camera.far = CAMERA_FAR;
 
     const node = camera.node;
-    node.setPosition(ROOM_CENTER.x, ROOM_CENTER.y, node.position.z);
+    node.setPosition(ROOM_CENTER.x, ROOM_CENTER.y, CAMERA_Z);
   }
 
   /**
