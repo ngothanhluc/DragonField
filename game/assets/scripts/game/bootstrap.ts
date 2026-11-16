@@ -29,6 +29,7 @@ import {
   Label as CocosLabel,
   Layers,
   Node as CocosNode,
+  Rect as CocosRect,
   RenderRoot2D,
   ResolutionPolicy,
   Sprite as CocosSprite,
@@ -36,6 +37,7 @@ import {
   director,
   input,
   resources,
+  screen,
   view,
 } from 'cc';
 import { resolve, validateManifest } from '../core/art/manifest';
@@ -45,11 +47,12 @@ import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
 import type { EnemyState } from '../core/enemies/behaviours';
 import { nextWaveIndex, spawnWave } from '../core/enemies/waves';
-import { ROOM_COLS, ROOM_ROWS, parseChapterData } from '../core/level/level-data';
+import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX, parseChapterData } from '../core/level/level-data';
 import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data';
 import { distance } from '../core/math/vec2';
 import type { Vec2 } from '../core/math/vec2';
 import { RunState } from '../core/run/run-state';
+import { letterboxRect } from '../core/view/letterbox';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { preloadSheets } from './assets/texture-cache';
 import { BulletView, ENEMY_BULLET_SHEET, PLAYER_BULLET_SHEET } from './bullet-view';
@@ -85,6 +88,14 @@ const MAX_STEP_MS = 50;
 /** Camera world: `orthoHeight = 9` và đứng ở tâm phòng (16, 9). */
 const CAMERA_ORTHO_HEIGHT = ROOM_ROWS / 2;
 const ROOM_CENTER: Vec2 = { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 };
+
+/**
+ * Design resolution đúng bằng một phòng: 32×18 tile 16 px = 512×288 (16:9). Canvas
+ * tỉ lệ khác thì giữ nguyên khung này và letterbox — xem `applyViewport`.
+ */
+const DESIGN_WIDTH = ROOM_COLS * TILE_SIZE_PX;
+const DESIGN_HEIGHT = ROOM_ROWS * TILE_SIZE_PX;
+
 /**
  * Camera ortho nhìn theo -Z với `near = 1`, nên sprite ở z = 0 **bị cắt** nếu camera
  * cũng đứng ở z = 0. Đặt camera lùi về z = 1000 (chuẩn 2D của Cocos) rồi khai near/far.
@@ -95,6 +106,9 @@ const CAMERA_FAR = 2000;
 
 const END_LOSS_COLOR = new CocosColor(255, 96, 96, 255);
 const END_WIN_COLOR = new CocosColor(255, 230, 120, 255);
+
+/** Màu bar letterbox / nền ngoài phòng. */
+const BACKDROP_COLOR = new CocosColor(14, 12, 20, 255);
 
 /** Thời gian giữ chữ "ROOM CLEAR" trước khi sang phòng kế, giây. */
 const ROOM_CLEAR_BANNER_SECONDS = 1;
@@ -137,6 +151,7 @@ export class Bootstrap extends Component {
   private bulletLayer: Node | null = null;
   private roomRoot: Node | null = null;
   private uiRoot: Node | null = null;
+  private worldCamera: Camera | null = null;
 
   private player: PlayerController | null = null;
   private bulletView: BulletView | null = null;
@@ -200,7 +215,10 @@ export class Bootstrap extends Component {
 
   private async boot(): Promise<void> {
     // 512×288 = 32×18 tile 16 px. Đặt trong code để không phụ thuộc Project Settings.
-    view.setDesignResolutionSize(512, 288, ResolutionPolicy.SHOW_ALL);
+    view.setDesignResolutionSize(DESIGN_WIDTH, DESIGN_HEIGHT, ResolutionPolicy.SHOW_ALL);
+    // `SHOW_ALL` tính lại band mỗi lần canvas đổi kích thước, nên camera world phải bám
+    // theo đúng band đó; nếu không phòng bị cắt ở 4:3 và lệch ở 21:9 (xem applyViewport).
+    view.on('canvas-resize', this.onCanvasResize, this);
     // Cocos chỉ nghe phím trên #GameCanvas: chưa focus thì WASD/R không ăn cho tới khi click.
     document.getElementById('GameCanvas')?.focus();
 
@@ -326,12 +344,60 @@ export class Bootstrap extends Component {
     camera.visibility = Layers.Enum.DEFAULT;
     camera.priority = 0;
     camera.clearFlags = CocosCamera.ClearFlag.SOLID_COLOR;
-    camera.clearColor = new CocosColor(14, 12, 20, 255);
+    camera.clearColor = BACKDROP_COLOR;
     camera.near = CAMERA_NEAR;
     camera.far = CAMERA_FAR;
 
     const node = camera.node;
     node.setPosition(ROOM_CENTER.x, ROOM_CENTER.y, CAMERA_Z);
+
+    this.worldCamera = camera;
+    this.createBackdropCamera();
+    this.applyViewport();
+  }
+
+  /**
+   * Camera nền cho bar letterbox. Camera thường chỉ clear trong viewport của nó, nên phần
+   * ngoài band 16:9 là backbuffer (màu không đảm bảo); camera này phủ cả canvas nhưng
+   * `visibility = 0` (không vẽ layer nào) để chỉ tô `BACKDROP_COLOR` phía sau mọi thứ.
+   */
+  private createBackdropCamera(): void {
+    const node = new CocosNode('letterbox-camera');
+    node.layer = Layers.Enum.DEFAULT;
+    node.parent = this.node;
+
+    const camera: Camera = node.addComponent(CocosCamera);
+    camera.projection = CocosCamera.ProjectionType.ORTHO;
+    camera.visibility = 0;
+    // Vẽ trước camera world (priority 0) và camera UI (priority 1).
+    camera.priority = -1;
+    camera.clearFlags = CocosCamera.ClearFlag.SOLID_COLOR;
+    camera.clearColor = BACKDROP_COLOR;
+    camera.near = CAMERA_NEAR;
+    camera.far = CAMERA_FAR;
+    node.setPosition(ROOM_CENTER.x, ROOM_CENTER.y, CAMERA_Z);
+  }
+
+  /**
+   * Letterbox: camera world chỉ vẽ đúng band 16:9 mà `SHOW_ALL` dành cho design
+   * resolution (xem `core/view/letterbox.ts`), nên phòng 32×18 luôn vừa khít và canh
+   * giữa; phần thừa của canvas do camera nền tô màu tối (xem `createBackdropCamera`).
+   *
+   * HUD không phải chỉnh: camera UI của Canvas đã vẽ design unit đúng 1:1 với band
+   * (orthoHeight = nửa chiều cao canvas / scaleY), nên HUD tự dán mép phòng.
+   */
+  private applyViewport(): void {
+    const canvas = screen.windowSize;
+    const band = letterboxRect(canvas.width, canvas.height, DESIGN_WIDTH, DESIGN_HEIGHT);
+
+    const world = this.worldCamera;
+    if (world !== null) {
+      world.rect = new CocosRect(band.x, band.y, band.width, band.height);
+    }
+  }
+
+  private onCanvasResize(): void {
+    this.applyViewport();
   }
 
   /**
@@ -700,6 +766,7 @@ export class Bootstrap extends Component {
 
   protected onDestroy(): void {
     input.off(Input.EventType.KEY_DOWN, this.onEndKey, this);
+    view.off('canvas-resize', this.onCanvasResize, this);
   }
 
   // -------------------------------------------------------------------------
