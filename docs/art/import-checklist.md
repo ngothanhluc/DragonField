@@ -172,7 +172,7 @@ Lưu ý: Tengu có 2 cỡ frame (68 và 82) ⇒ pivot/anchor phải tính theo t
 
 | File | px | Cắt |
 |---|---|---|
-| `Heart.png` | 80×16 | **5 state × 16×16** (đầy → rỗng), cắt ngang |
+| `Heart.png` | 80×16 | **5 state × 16×16** (rỗng → đầy, frame 0 là tim xám), cắt ngang |
 | `LifeBarMiniProgress.png` | 18×4 | 1 state, dùng `Sprite Type = FILLED` (horizontal) |
 | `LifeBarMiniUnder.png` | 18×4 | nền, `FILLED` hoặc simple |
 | `skill-icons/*.png` | 24×24 | 1 icon/file, không cắt |
