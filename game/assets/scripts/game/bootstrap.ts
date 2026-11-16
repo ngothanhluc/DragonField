@@ -2,20 +2,25 @@
  * Điểm vào duy nhất của scene: gắn component này lên **một** node là game chạy.
  *
  * Dựng toàn bộ bằng code (không prefab, không sửa `.scene` — quy tắc 5 trong AGENTS.md):
- * camera → player → room → đạn → HUD → wave. Thứ tự load cố định:
  *
  * ```text
  * animations.json (validate) ─┐
- * chapter-1.json (validate)  ─┼─> preload sheet ─> room + player + HUD ─> wave 1
+ * save (localStorage)        ─┼─> chapter select ─> loadDir .tmx ─> parse TMX ─> room + player + HUD ─> wave 1
  * ```
  *
- * Lỗi ở bất kỳ bước nào cũng hiện **một** khối chữ trên màn hình kèm path resources
- * (`resources/data/animations`, `art/monsters/blue-bat/SpriteSheet/texture`…), vì lỗi
- * import art là lỗi hay gặp nhất khi mở project lần đầu.
+ * Phòng là **dữ liệu**: bootstrap load mọi `.tmx` trong `data/levels/chapter-<n>/`
+ * (`resources.loadDir`), parse bằng đúng parser mà vitest dùng
+ * (`core/level/tmx.ts`), sắp theo property `room` (`core/level/chapter.ts`) rồi tạo
+ * `RunState` với **tổng số phòng lấy từ dữ liệu** — thêm `room-10.tmx` là HUD hiện
+ * `x/10`, không sửa code.
  *
  * Vòng chạy nằm trong `update()` và gọi tuần tự player → enemy → đạn → va chạm, đúng thứ
  * tự `core/sim/run-simulation.ts`, để hành vi trong engine khớp với thứ đã được đo
  * balance ở sim.
+ *
+ * Boss M2 là **placeholder**: một `EnemyView` dùng art boss thật (`TenguBlue`) với
+ * máu/hitbox từ `core/boss/boss-defs.ts`, hành vi tank có sẵn (telegraph + charge).
+ * Dọn sạch phòng boss ⇒ CHAPTER CLEAR ⇒ về chapter select.
  */
 import {
   _decorator,
@@ -33,6 +38,7 @@ import {
   RenderRoot2D,
   ResolutionPolicy,
   Sprite as CocosSprite,
+  TiledMapAsset as CocosTiledMapAsset,
   UITransform as CocosUITransform,
   director,
   input,
@@ -42,24 +48,33 @@ import {
 } from 'cc';
 import { resolve, validateManifest } from '../core/art/manifest';
 import type { AnimationManifest } from '../core/art/manifest';
+import { bossForSpriteName } from '../core/boss/boss-defs';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
 import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
 import type { EnemyState } from '../core/enemies/behaviours';
 import { nextWaveIndex, spawnWave } from '../core/enemies/waves';
-import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX, parseChapterData } from '../core/level/level-data';
+import { chapterFromLevels } from '../core/level/chapter';
+import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data';
+import { parseTmxLevel } from '../core/level/tmx';
 import { distance } from '../core/math/vec2';
 import type { Vec2 } from '../core/math/vec2';
 import { RunState } from '../core/run/run-state';
+import { withBest } from '../core/save/save-data';
+import type { SaveData } from '../core/save/save-data';
+import type { SaveRepository } from '../core/save/storage';
 import { letterboxRect } from '../core/view/letterbox';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { preloadSheets } from './assets/texture-cache';
 import { BulletView, ENEMY_BULLET_SHEET, PLAYER_BULLET_SHEET } from './bullet-view';
+import { buildChapterSelect } from './chapter-select';
+import type { ChapterButton } from './chapter-select';
 import { EnemyView } from './enemy-view';
 import { Hud, HEART_SHEET, createLabel } from './hud';
-import { ACTOR_SCALE, FLOOR_SHEET, OBSTACLE_SHEET, buildRoom } from './level-view';
+import { ACTOR_SCALE, OBSTACLE_SHEET, buildRoom } from './level-view';
 import { PlayerController } from './player-controller';
+import { createSaveRepository } from './save-storage';
 
 const { ccclass } = _decorator;
 
@@ -70,14 +85,25 @@ type Color = InstanceType<typeof CocosColor>;
 type JsonAsset = InstanceType<typeof CocosJsonAsset>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
+type TiledMapAsset = InstanceType<typeof CocosTiledMapAsset>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 
-/** Đường dẫn resources (không có `resources/`, không có `.json`). */
+/** Đường dẫn resources (không có `resources/`, không có phần mở rộng). */
 const MANIFEST_PATH = 'data/animations';
-const CHAPTER_PATH = 'data/levels/chapter-1';
 
-/** Bán kính va chạm enemy, tile — cùng quy ước với `run-simulation.ts`. */
-const ENEMY_RADIUS_TILES = 0.4;
+/**
+ * Thư mục TMX của từng chapter **có dữ liệu trong build này**. M2 chỉ author chapter 1;
+ * chapter 2–3 hiện trên chapter select nhưng khoá vì chưa có file (không đoán layout).
+ */
+const CHAPTER_FOLDERS: Readonly<Record<number, string>> = {
+  1: 'data/levels/chapter-1',
+};
+
+/** GDD §1: 3 chapter mỗi run. Chapter select luôn hiện đủ 3 nút. */
+const CHAPTER_COUNT = 3;
+
+/** Chỗ boss đứng khi TMX không có object `bossStart` (tile unit, y hướng xuống). */
+const BOSS_START_FALLBACK: Vec2 = { x: 16, y: 5 };
 
 /**
  * Trần thời gian một frame. Tab bị ẩn vài giây rồi quay lại sẽ có `dt` rất lớn; kẹp lại
@@ -107,7 +133,7 @@ const CAMERA_FAR = 2000;
 const END_LOSS_COLOR = new CocosColor(255, 96, 96, 255);
 const END_WIN_COLOR = new CocosColor(255, 230, 120, 255);
 
-/** Màu bar letterbox / nền ngoài phòng. */
+/** Màu bar letterbox / nền ngoài phòng và nền chapter select. */
 const BACKDROP_COLOR = new CocosColor(14, 12, 20, 255);
 
 /** Thời gian giữ chữ "ROOM CLEAR" trước khi sang phòng kế, giây. */
@@ -133,13 +159,43 @@ const PLAYER_KEYS = [
 ] as const;
 
 /** Trạng thái của bootstrap — không phải trạng thái của `RunState`. */
-type BootstrapStatus = 'loading' | 'playing' | 'room-clear' | 'lost' | 'won' | 'boss-pending' | 'error';
+export type BootstrapStatus =
+  | 'loading'
+  | 'menu'
+  | 'playing'
+  | 'room-clear'
+  | 'lost'
+  | 'won'
+  | 'error';
+
+/**
+ * API debug khi URL có `?debug=1` (headless acceptance không chơi bằng tay được).
+ *
+ * `killAll()` trừ máu mọi enemy/boss còn sống **qua `EnemyView.takeDamage`** — đúng
+ * đường damage của đạn, nên clear/transition chạy như chơi thật.
+ */
+export interface YokaiDebugApi {
+  readonly status: BootstrapStatus;
+  readonly chapter: number;
+  readonly room: number;
+  readonly roomTotal: number;
+  killAll(): number;
+}
+
+interface LoadedChapter {
+  readonly chapter: ChapterData;
+  /** TiledMapAsset theo số phòng, dùng lại cho `buildRoom`. */
+  readonly assets: ReadonlyMap<number, TiledMapAsset>;
+}
 
 @ccclass('Bootstrap')
 export class Bootstrap extends Component {
   private manifest: AnimationManifest | null = null;
   private chapter: ChapterData | null = null;
+  private chapterAssets: ReadonlyMap<number, TiledMapAsset> = new Map();
   private run: RunState | null = null;
+  private save: SaveData | null = null;
+  private saveRepo: SaveRepository | null = null;
 
   /**
    * Ba lớp con của node `world`, tạo đúng một lần theo thứ tự vẽ: sàn → actor → đạn.
@@ -151,12 +207,14 @@ export class Bootstrap extends Component {
   private bulletLayer: Node | null = null;
   private roomRoot: Node | null = null;
   private uiRoot: Node | null = null;
+  private menuRoot: Node | null = null;
   private worldCamera: Camera | null = null;
 
   private player: PlayerController | null = null;
   private bulletView: BulletView | null = null;
   private hud: Hud | null = null;
   private roomClearBanner: Node | null = null;
+  private endBanner: Node | null = null;
 
   private enemies: EnemyView[] = [];
   private currentLevel: LevelData | null = null;
@@ -210,7 +268,7 @@ export class Bootstrap extends Component {
   }
 
   // -------------------------------------------------------------------------
-  // Boot
+  // Boot → chapter select
   // -------------------------------------------------------------------------
 
   private async boot(): Promise<void> {
@@ -222,39 +280,102 @@ export class Bootstrap extends Component {
     // Cocos chỉ nghe phím trên #GameCanvas: chưa focus thì WASD/R không ăn cho tới khi click.
     document.getElementById('GameCanvas')?.focus();
 
-    const manifest = await this.loadManifest();
-    const chapter = await this.loadChapter();
+    this.saveRepo = createSaveRepository();
+    this.save = this.saveRepo.load();
+    if (this.saveRepo.lastLoadError !== null) {
+      console.warn(`[YokaiField] Save hỏng, dùng save mặc định: ${this.saveRepo.lastLoadError}`);
+    }
+    this.installDebugHook();
 
-    this.manifest = manifest;
-    this.chapter = chapter;
-    this.run = new RunState(chapter.chapter);
-
+    this.manifest = await this.loadManifest();
     this.prepareCamera();
-
     this.createWorldLayers();
+    await this.showChapterSelect();
+  }
 
-    // Preload **trước** khi dựng gì: mọi lỗi art/JSON nổi ở một chỗ, với path đầy đủ.
-    await preloadSheets(this.collectSheets(manifest, chapter));
+  private async showChapterSelect(): Promise<void> {
+    const save = this.save;
+    if (save === null) throw new Error('Bootstrap: chưa load save');
 
-    const firstRoom = this.levelFor(1);
-    if (firstRoom === null) {
-      throw new Error(`"resources/${CHAPTER_PATH}.json" không có phòng 1`);
+    const chapters: ChapterButton[] = [];
+    for (let chapter = 1; chapter <= CHAPTER_COUNT; chapter += 1) {
+      const hasData = CHAPTER_FOLDERS[chapter] !== undefined;
+      chapters.push({
+        chapter,
+        hasData,
+        playable: hasData && chapter <= save.chaptersUnlocked,
+      });
     }
 
-    const player = this.createPlayer(firstRoom.playerStart);
-    this.createRoom(firstRoom);
+    const canvas = this.ensureUiRoot();
+    this.menuRoot?.destroy();
+    this.menuRoot = await buildChapterSelect(canvas, {
+      chapters,
+      best: save.best,
+      onSelect: (chapter) => {
+        void this.startChapter(chapter);
+      },
+    });
 
-    await this.createBullets(player);
-    await this.createHud();
+    // Chỉ báo 'menu' sau khi nút đã dựng xong: debug/headless click ngay khi thấy
+    // status 'menu' thì nút phải tồn tại rồi (nếu không click rơi vào hư không).
+    this.status = 'menu';
 
-    this.status = 'playing';
-    this.startWave(0);
     console.log(
-      `[YokaiField] Chapter ${chapter.chapter}: ${chapter.rooms.length} phòng. ` +
-        `Bắt đầu phòng ${this.run?.roomLabel ?? '?'} (${firstRoom.waves.length} wave). ` +
-        `room=${this.roomLayer?.children.length ?? 0} actor=${this.actorLayer?.children.length ?? 0} ` +
-        `player=${JSON.stringify(player.position)}`,
+      `[YokaiField] Chapter select: best chapter ${save.best.chapter} · room ${save.best.room}, ` +
+        `unlocked ${save.chaptersUnlocked}/${CHAPTER_COUNT}.`,
     );
+  }
+
+  /** Load toàn bộ `.tmx` của chapter rồi bắt đầu run ở phòng 1. */
+  private async startChapter(chapterNumber: number): Promise<void> {
+    if (this.status !== 'menu') return;
+
+    const folder = CHAPTER_FOLDERS[chapterNumber];
+    if (folder === undefined) {
+      console.warn(`[YokaiField] Chapter ${chapterNumber} chưa có dữ liệu .tmx — không mở.`);
+      return;
+    }
+
+    this.status = 'loading';
+    this.menuRoot?.destroy();
+    this.menuRoot = null;
+
+    try {
+      const manifest = this.manifest;
+      if (manifest === null) throw new Error('Bootstrap: manifest chưa load xong');
+
+      const loaded = await this.loadChapter(folder);
+      this.chapter = loaded.chapter;
+      this.chapterAssets = loaded.assets;
+      const run = new RunState(loaded.chapter.chapter, loaded.chapter.rooms.length);
+      this.run = run;
+
+      // Preload **trước** khi dựng gì: mọi lỗi art/JSON nổi ở một chỗ, với path đầy đủ.
+      await preloadSheets(this.collectSheets(manifest, loaded.chapter));
+
+      const firstRoom = this.levelFor(1);
+      if (firstRoom === null) {
+        throw new Error(`"resources/${folder}" không có phòng 1`);
+      }
+
+      const player = this.createPlayer(firstRoom.playerStart);
+      this.createRoom(firstRoom);
+
+      await this.createBullets(player);
+      await this.createHud();
+
+      this.status = 'playing';
+      this.persistBest(firstRoom.room);
+      this.startWave(0);
+      console.log(
+        `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} phòng từ ` +
+          `resources/${folder}. Bắt đầu phòng ${run.roomLabel} ` +
+          `(${firstRoom.waves.length} wave). player=${JSON.stringify(player.position)}`,
+      );
+    } catch (error: unknown) {
+      this.fail(error);
+    }
   }
 
   private loadManifest(): Promise<AnimationManifest> {
@@ -267,13 +388,48 @@ export class Bootstrap extends Component {
     });
   }
 
-  private loadChapter(): Promise<ChapterData> {
-    return this.loadJson(CHAPTER_PATH).then((json) => {
-      try {
-        return parseChapterData(json);
-      } catch (error: unknown) {
-        throw new Error(`"resources/${CHAPTER_PATH}.json" không hợp lệ: ${errorMessage(error)}`);
-      }
+  /**
+   * Load mọi `TiledMapAsset` trong thư mục chapter (thứ tự engine trả về không đảm bảo),
+   * parse từng file bằng parser của core, sắp theo `room` rồi validate cả chapter.
+   */
+  private loadChapter(folder: string): Promise<LoadedChapter> {
+    return new Promise<LoadedChapter>((onLoad, onFail) => {
+      resources.loadDir(
+        folder,
+        CocosTiledMapAsset,
+        (error: Error | null | undefined, assets: TiledMapAsset[] | null | undefined) => {
+          // Cocos gọi callback với `null` **hoặc `undefined`** khi thành công.
+          if (error || !assets || assets.length === 0) {
+            const cause = error ? error.message : 'không có TiledMapAsset nào';
+            onFail(
+              new Error(
+                `Không load được phòng nào trong "resources/${folder}". ` +
+                  `Kiểm tra .tmx đã import chưa (Type = tiled-map). Nguyên nhân: ${cause}`,
+              ),
+            );
+            return;
+          }
+
+          try {
+            const levels: LevelData[] = [];
+            const byRoom = new Map<number, TiledMapAsset>();
+
+            for (const asset of assets) {
+              const source = `resources/${folder}/${asset.name}.tmx`;
+              const level = parseTmxLevel(asset.tmxXmlStr, { source });
+              if (byRoom.has(level.room)) {
+                throw new Error(`${source}: phòng ${level.room} bị trùng với một .tmx khác`);
+              }
+              byRoom.set(level.room, asset);
+              levels.push(level);
+            }
+
+            onLoad({ chapter: chapterFromLevels(levels), assets: byRoom });
+          } catch (parseError: unknown) {
+            onFail(parseError instanceof Error ? parseError : new Error(String(parseError)));
+          }
+        },
+      );
     });
   }
 
@@ -287,22 +443,24 @@ export class Bootstrap extends Component {
         path,
         CocosJsonAsset,
         (error: Error | null | undefined, asset: JsonAsset | null | undefined) => {
-        // Cocos gọi callback với `null` **hoặc `undefined`** khi thành công. So sánh
-        // `=== null` sẽ coi `undefined` là lỗi rồi đọc `.message` trên undefined —
-        // chính là lỗi runtime "Cannot read properties of undefined (reading 'message')".
-        if (error || !asset) {
-          const cause = error ? error.message : 'asset trả về rỗng';
-          onFail(new Error(`Không load được "resources/${path}.json". Nguyên nhân: ${cause}`));
-          return;
-        }
-        onLoad(asset.json);
-      });
+          // Cocos gọi callback với `null` **hoặc `undefined`** khi thành công. So sánh
+          // `=== null` sẽ coi `undefined` là lỗi rồi đọc `.message` trên undefined —
+          // chính là lỗi runtime "Cannot read properties of undefined (reading 'message')".
+          if (error || !asset) {
+            const cause = error ? error.message : 'asset trả về rỗng';
+            onFail(new Error(`Không load được "resources/${path}.json". Nguyên nhân: ${cause}`));
+            return;
+          }
+          onLoad(asset.json);
+        },
+      );
     });
   }
 
   /**
-   * Gom sheet cần preload: animation player, walk của mọi monster chapter này dùng, cộng
-   * sheet sàn/vật cản/đạn/tim. Preload một lần để frame đầu không có sprite trắng.
+   * Gom sheet cần preload: animation player, walk của mọi monster chapter này dùng, mọi
+   * animation boss (nếu có phòng boss), cộng sheet vật cản/đạn/tim. Preload một lần để
+   * frame đầu không có sprite trắng.
    */
   private collectSheets(manifest: AnimationManifest, chapter: ChapterData): string[] {
     const sheets = new Set<string>();
@@ -318,9 +476,17 @@ export class Bootstrap extends Component {
           sheets.add(resolve(manifest, `${monster}.walk.down`).sheet);
         }
       }
+
+      if (room.isBossRoom) {
+        const def = room.boss === undefined ? undefined : bossForSpriteName(room.boss.name);
+        if (def !== undefined) {
+          for (const key of def.animations) {
+            sheets.add(resolve(manifest, key).sheet);
+          }
+        }
+      }
     }
 
-    sheets.add(FLOOR_SHEET);
     sheets.add(OBSTACLE_SHEET);
     sheets.add(PLAYER_BULLET_SHEET);
     sheets.add(ENEMY_BULLET_SHEET);
@@ -440,12 +606,16 @@ export class Bootstrap extends Component {
 
   /** Dựng room mới và thay room cũ (node cũ `destroy()` là engine dọn hết con). */
   private createRoom(level: LevelData): void {
-    const manifest = this.manifest;
     const roomLayer = this.roomLayer;
-    if (manifest === null || roomLayer === null) return;
+    if (roomLayer === null) throw new Error('Bootstrap: chưa có room-layer');
+
+    const asset = this.chapterAssets.get(level.room);
+    if (asset === undefined) {
+      throw new Error(`Chưa load TiledMapAsset cho phòng ${level.room} (${level.id})`);
+    }
 
     this.roomRoot?.destroy();
-    this.roomRoot = buildRoom(roomLayer, level, manifest, FLOOR_SHEET, OBSTACLE_SHEET);
+    this.roomRoot = buildRoom(roomLayer, level, asset, OBSTACLE_SHEET);
     this.currentLevel = level;
     this.waveIndex = 0;
   }
@@ -576,7 +746,7 @@ export class Bootstrap extends Component {
           !enemy.isDead &&
           hitsCircle(area, {
             position: enemy.position,
-            radiusTiles: ENEMY_RADIUS_TILES,
+            radiusTiles: enemy.radiusTiles,
           }),
       );
       if (victim === undefined) continue;
@@ -622,7 +792,8 @@ export class Bootstrap extends Component {
     }
 
     run.onRoomCleared();
-    console.log(`[YokaiField] Phòng ${level.room} sạch.`);
+    this.persistBest(level.room);
+    console.log(`[YokaiField] Phòng ${run.roomLabel} sạch.`);
 
     // Dừng sim (update() return khi status khác 'playing') và giữ chữ ~1 s để
     // người chơi đọc được "phòng sạch" trước khi màn hình đổi. Hẹn giờ bằng
@@ -637,6 +808,15 @@ export class Bootstrap extends Component {
 
       this.roomClearBanner?.destroy();
       this.roomClearBanner = null;
+
+      // Phòng cuối của chapter (số phòng lấy từ dữ liệu) = hết run của chapter này.
+      // Không dùng `RunState.isBossRoom`: chapter có thể có phòng thường sau boss.
+      if (current.room >= current.roomsTotal) {
+        current.markWon();
+        this.finishWin();
+        return;
+      }
+
       this.status = 'playing';
       current.advanceToNextRoom();
       this.enterRoom(current.room);
@@ -649,7 +829,7 @@ export class Bootstrap extends Component {
 
     const level = this.levelFor(roomNumber);
     if (level === null) {
-      this.finishWin();
+      this.fail(new Error(`Chapter ${run.chapter} thiếu phòng ${roomNumber} (RunState ${run.roomLabel})`));
       return;
     }
 
@@ -659,38 +839,62 @@ export class Bootstrap extends Component {
     this.createRoom(level);
     this.player?.teleport(level.playerStart);
     this.hud?.setRoomLabel(run.roomLabel);
+    this.persistBest(roomNumber);
 
-    if (level.isBossRoom) {
-      this.reachBossRoom(level);
-      return;
-    }
-
+    if (level.isBossRoom) this.spawnBoss(level);
     this.startWave(0);
-    console.log(`[YokaiField] Vào phòng ${run.roomLabel} (${level.waves.length} wave).`);
+
+    console.log(
+      `[YokaiField] Vào phòng ${run.roomLabel} (${level.waves.length} wave` +
+        `${level.isBossRoom ? ', boss' : ''}).`,
+    );
   }
 
   /**
-   * Phòng boss: dựng arena nhưng **không** chạy boss. Đây là chỗ duy nhất phải thay khi
-   * làm milestone boss.
+   * Boss placeholder (M2): art boss thật + hành vi tank có sẵn (telegraph → charge),
+   * máu/hitbox lấy từ `core/boss/boss-defs.ts` (GDD §5: Tengu 60 máu).
    *
-   * TODO(boss): `core/sim/boss-run.ts` là bản mẫu đầy đủ của cách lái boss — mỗi frame gọi
-   * `stepBoss({ state, nowMs, deltaMs, player, rng })`, đọc `events` để sinh đạn (`shoot`),
-   * gọi quái (`summon`), đổi animation (`play-animation`), rồi áp `state` trả về. Arena đã
-   * sẵn (`level.isBossRoom`, 4 cột), chỉ thiếu một `BossView` làm đúng các bước đó.
+   * Chưa có pattern 3 phase / đạn boss — đó là M4. Ở đây chỉ cần một mục tiêu to, khoẻ,
+   * phải giết thì phòng mới sạch, để chứng minh run flow tới CHAPTER CLEAR.
    */
-  private reachBossRoom(level: LevelData): void {
-    this.status = 'boss-pending';
-    const bossName = level.boss?.name ?? 'chưa khai báo';
-    // "Kết quả" của run tính tới đây: đã dọn 8 phòng, còn bao nhiêu tim, mất bao lâu.
-    // Màn kết quả thật (vàng, thời gian, nút về meta shop — GDD §9) chưa làm.
-    const hearts = this.player?.hearts ?? 0;
-    const seconds = (this.nowMs / 1000).toFixed(1);
+  private spawnBoss(level: LevelData): void {
+    const bossName = level.boss?.name;
+    if (bossName === undefined) {
+      throw new Error(`Phòng ${level.room} là boss room nhưng thiếu map property "boss"`);
+    }
+
+    const def = bossForSpriteName(bossName);
+    if (def === undefined) {
+      throw new Error(
+        `Không có boss "${bossName}" trong BOSSES (TMX room-${level.room}); ` +
+          'map property "boss" phải là spriteName, ví dụ TenguBlue.',
+      );
+    }
+
+    const start = level.bossStart ?? BOSS_START_FALLBACK;
+    const state: EnemyState = {
+      id: `boss-${level.room}`,
+      // Tank: telegraph rồi charge — placeholder đọc được đòn mà không cần AI mới.
+      role: 'tank',
+      elite: false,
+      position: { x: start.x, y: start.y },
+      health: def.maxHealth,
+      maxHealth: def.maxHealth,
+      action: { kind: 'idle' },
+      actionStartedMs: 0,
+    };
+
+    this.addEnemy(level, state, {
+      monster: def.id,
+      walkKey: `${def.id}.walk`,
+      radiusTiles: def.hitboxRadiusTiles,
+      // Thân boss ~3.5 tile: cho tầm chạm rộng hơn chaser để "đứng sát" là trúng.
+      contactRangeTiles: def.hitboxRadiusTiles + 0.5,
+    });
+
     console.log(
-      `[YokaiField] Tới phòng boss ${level.room} (${bossName}) sau ${seconds}s, còn ${hearts} tim. ` +
-        'Boss chưa nối — dừng run ở đây.',
-    );
-    console.log(
-      '[YokaiField] TODO(boss): nối core/sim/boss-run.ts (stepBoss + events) để chạy pattern GDD §5.',
+      `[YokaiField] Boss placeholder ${def.displayName} (${def.maxHealth} HP) tại ` +
+        `${start.x},${start.y} — dùng hành vi tank, pattern thật ở M4.`,
     );
   }
 
@@ -704,12 +908,21 @@ export class Bootstrap extends Component {
     }
   }
 
-  private addEnemy(level: LevelData, state: EnemyState): void {
+  private addEnemy(
+    level: LevelData,
+    state: EnemyState,
+    options: {
+      readonly monster?: string;
+      readonly walkKey?: string;
+      readonly radiusTiles?: number;
+      readonly contactRangeTiles?: number;
+    } = {},
+  ): void {
     const manifest = this.manifest;
     const actorLayer = this.actorLayer;
     if (manifest === null || actorLayer === null) return;
 
-    const monster = this.monsterFor(level.chapter, state.role);
+    const monster = options.monster ?? this.monsterFor(level.chapter, state.role);
 
     const node = new CocosNode(`${monster}-${state.id}`);
     node.parent = actorLayer;
@@ -723,7 +936,15 @@ export class Bootstrap extends Component {
 
     node.addComponent(SpriteAnimator);
     const enemyView: EnemyView = node.addComponent(EnemyView);
-    enemyView.init({ state, monster, level, baseScale: scale });
+    enemyView.init({
+      state,
+      monster,
+      level,
+      baseScale: scale,
+      walkKey: options.walkKey,
+      radiusTiles: options.radiusTiles,
+      contactRangeTiles: options.contactRangeTiles,
+    });
 
     this.enemies.push(enemyView);
   }
@@ -742,30 +963,142 @@ export class Bootstrap extends Component {
     this.status = 'lost';
     run.markLost();
     console.log(`[YokaiField] Thua ở phòng ${run.roomLabel} (0 tim).`);
-    this.showEndScreen(`GAME OVER\nPhòng ${run.roomLabel}\nNhấn R để chơi lại`, END_LOSS_COLOR);
+    this.showEndScreen(
+      `GAME OVER\nPhòng ${run.roomLabel}\nNhấn R hoặc click để về chọn chapter`,
+      END_LOSS_COLOR,
+    );
   }
 
   private finishWin(): void {
+    const run = this.run;
     this.status = 'won';
-    console.log('[YokaiField] Hết phòng của chapter — thắng chapter.');
-    this.showEndScreen('CHAPTER CLEAR\nNhấn R để chơi lại', END_WIN_COLOR);
+    const label = run?.roomLabel ?? '?/?';
+    console.log(`[YokaiField] CHAPTER CLEAR — chapter ${run?.chapter ?? '?'}, phòng ${label}.`);
+    this.showEndScreen(
+      `CHAPTER CLEAR\nChapter ${run?.chapter ?? '?'} · ${label}\nNhấn R hoặc click để về chọn chapter`,
+      END_WIN_COLOR,
+    );
   }
 
   private showEndScreen(text: string, color: Color): void {
-    this.showBanner('end-screen', text, color);
+    this.endBanner?.destroy();
+    this.endBanner = this.showBanner('end-screen', text, color);
     input.on(Input.EventType.KEY_DOWN, this.onEndKey, this);
+    input.on(Input.EventType.MOUSE_DOWN, this.onEndClick, this);
   }
 
-  /** Chơi lại = load lại scene: bootstrap dựng mọi thứ từ đầu, không phải reset tay từng phần. */
+  /** R hoặc click ở màn kết thúc → dọn run và về chapter select (không reload scene). */
   private onEndKey(event: { readonly keyCode: number }): void {
     if (event.keyCode !== KeyCode.KEY_R) return;
+    void this.returnToChapterSelect().catch((error: unknown) => this.fail(error));
+  }
+
+  private onEndClick(): void {
+    void this.returnToChapterSelect().catch((error: unknown) => this.fail(error));
+  }
+
+  private async returnToChapterSelect(): Promise<void> {
     input.off(Input.EventType.KEY_DOWN, this.onEndKey, this);
-    const scene = director.getScene();
-    if (scene !== null) director.loadScene(scene.name);
+    input.off(Input.EventType.MOUSE_DOWN, this.onEndClick, this);
+
+    this.teardownRun();
+    this.status = 'loading';
+    await this.showChapterSelect();
+  }
+
+  /**
+   * Dọn sạch một run khỏi scene. Huỷ từng nhóm node thay vì reload scene: reload sẽ
+   * huỷ các load ảnh đang bay và devtools ghi `net::ERR_CONNECTION_RESET` (vô hại
+   * nhưng làm bẩn cổng "không lỗi console"), còn teardown này chỉ bỏ đúng node của run.
+   */
+  private teardownRun(): void {
+    this.roomClearBanner?.destroy();
+    this.roomClearBanner = null;
+    this.endBanner?.destroy();
+    this.endBanner = null;
+
+    this.clearEnemies();
+    this.player?.node.destroy();
+    this.player = null;
+    this.bulletView?.node.destroy();
+    this.bulletView = null;
+    this.hud?.node.destroy();
+    this.hud = null;
+
+    this.roomRoot?.destroy();
+    this.roomRoot = null;
+    this.currentLevel = null;
+    this.chapter = null;
+    this.chapterAssets = new Map();
+    this.run = null;
+    this.waveIndex = 0;
+    this.nowMs = 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // Save + debug hook
+  // -------------------------------------------------------------------------
+
+  /** Ghi kỷ lục khi vào phòng mới; lỗi save không được làm chết run. */
+  private persistBest(room: number): void {
+    const run = this.run;
+    const repo = this.saveRepo;
+    const save = this.save;
+    if (run === null || repo === null || save === null) return;
+
+    try {
+      const next = withBest(save, run.chapter, room);
+      if (next.best.chapter === save.best.chapter && next.best.room === save.best.room) return;
+      this.save = next;
+      repo.save(next);
+      console.log(
+        `[YokaiField] Best cập nhật: chapter ${next.best.chapter} · room ${next.best.room}.`,
+      );
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] Không ghi được best: ${errorMessage(error)}`);
+    }
+  }
+
+  /** `?debug=1` → `window.__yokai` cho acceptance headless. Không có debug thì không có gì. */
+  private installDebugHook(): void {
+    if (!isDebugEnabled()) return;
+
+    // Getter dạng arrow để đọc trạng thái sống của bootstrap; không alias `this`
+    // (eslint `no-this-alias`) và không expose field nội bộ.
+    const api: YokaiDebugApi = Object.defineProperties({} as YokaiDebugApi, {
+      status: { get: () => this.status, enumerable: true },
+      chapter: { get: () => this.run?.chapter ?? 0, enumerable: true },
+      room: { get: () => this.run?.room ?? 0, enumerable: true },
+      roomTotal: { get: () => this.run?.roomsTotal ?? 0, enumerable: true },
+      killAll: { value: () => this.killAllEnemies(), enumerable: true },
+    });
+
+    (window as unknown as { __yokai?: YokaiDebugApi }).__yokai = api;
+    console.log(
+      '[YokaiField] debug=1: window.__yokai sẵn sàng (status, chapter, room, roomTotal, killAll).',
+    );
+  }
+
+  /**
+   * Giết mọi enemy/boss còn sống **qua đường damage chuẩn** (`EnemyView.takeDamage`),
+   * nên wave/room clear chạy y như chơi thật. Trả về số mục tiêu đã giết.
+   */
+  private killAllEnemies(): number {
+    let killed = 0;
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      enemy.takeDamage(enemy.health);
+      killed += 1;
+    }
+    console.log(
+      `[YokaiField] debug killAll: ${killed} enemy ở phòng ${this.run?.roomLabel ?? '?'}.`,
+    );
+    return killed;
   }
 
   protected onDestroy(): void {
     input.off(Input.EventType.KEY_DOWN, this.onEndKey, this);
+    input.off(Input.EventType.MOUSE_DOWN, this.onEndClick, this);
     view.off('canvas-resize', this.onCanvasResize, this);
   }
 
@@ -839,6 +1172,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Bật API debug khi URL có `?debug=1` (acceptance tự động của milestone). */
+function isDebugEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('debug') === '1';
+  } catch {
+    return false;
+  }
+}
 
 /** true nếu node nằm dưới một node có component Canvas (tức camera UI, không phải camera world). */
 function hasCanvasAncestor(node: Node): boolean {

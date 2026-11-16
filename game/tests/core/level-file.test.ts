@@ -1,24 +1,17 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import {
-  parseChapterData,
-  type ChapterData,
-} from '../../assets/scripts/core/level/level-data';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const chapterFile = join(here, '../../assets/resources/data/levels/chapter-1.json');
+import type { ChapterData } from '../../assets/scripts/core/level/level-data';
+import { loadChapterOne, roomOf } from '../helpers/tmx-levels';
 
 function loadChapter(): ChapterData {
-  return parseChapterData(JSON.parse(readFileSync(chapterFile, 'utf8')));
+  return loadChapterOne();
 }
 
 /**
- * Test file JSON thật, không phải fixture inline.
- * Mục đích: file trong `assets/resources/data/` không thể lệch schema mà build vẫn xanh.
+ * Test trên file `.tmx` thật, không phải fixture inline.
+ * Mục đích: file trong `assets/resources/data/levels/` không thể lệch schema mà
+ * `bun run check` vẫn xanh.
  */
-describe('assets/resources/data/levels/chapter-1.json', () => {
+describe('assets/resources/data/levels/chapter-1/*.tmx', () => {
   it('parse được và có đủ 9 phòng', () => {
     const chapter = loadChapter();
 
@@ -26,16 +19,15 @@ describe('assets/resources/data/levels/chapter-1.json', () => {
   });
 
   it('phòng 1 có ít nhất 3 wave và vật cản để né đạn', () => {
-    const [first] = loadChapter().rooms;
+    const first = roomOf(loadChapter(), 1);
 
-    expect(first).toBeDefined();
-    expect(first?.waves.length).toBeGreaterThanOrEqual(3);
-    expect(first?.obstacles.length).toBeGreaterThan(0);
+    expect(first.waves.length).toBeGreaterThanOrEqual(3);
+    expect(first.obstacles.length).toBeGreaterThan(0);
   });
 
-  it('phòng 1 chứa đủ 3 vai trò địch', () => {
+  it('phòng 1 chứa đủ 2 vai trò địch (chaser + caster)', () => {
     const roles = new Set(
-      (loadChapter().rooms[0]?.waves ?? []).flatMap((wave) =>
+      roomOf(loadChapter(), 1).waves.flatMap((wave) =>
         wave.enemies.map((enemy) => enemy.role),
       ),
     );

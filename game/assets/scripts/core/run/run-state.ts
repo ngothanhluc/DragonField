@@ -14,6 +14,11 @@ export type RunStatus = 'playing' | 'room-cleared' | 'won' | 'lost';
  * liệu của phòng, không phải của chapter) — caller truyền tổng số wave vào
  * `nextWave()`.
  *
+ * Tổng số phòng của chapter là **dữ liệu** (`roomsInChapter`, lấy từ số file
+ * `.tmx`), không phải hằng số: thêm `room-10.tmx` là run tự biết `10/10`. Hằng
+ * `ROOMS_PER_CHAPTER` chỉ còn là mặc định khi caller không có dữ liệu (test,
+ * simulation).
+ *
  * Trạng thái chuyển theo đúng thứ tự: playing -> room-cleared -> playing (phòng kế)
  * hoặc -> won sau boss cuối. Mọi chuyển sai ném lỗi để bug lộ ra ngay ở test,
  * thay vì âm thầm đẩy run vào trạng thái không hợp lệ.
@@ -23,27 +28,39 @@ export class RunState {
   private currentRoom = 1;
   private currentWave = 1;
   private currentStatus: RunStatus = 'playing';
+  private readonly roomsInChapter: number;
 
-  constructor(chapter = 1) {
+  constructor(chapter = 1, roomsInChapter: number = ROOMS_PER_CHAPTER) {
     if (!Number.isInteger(chapter) || chapter < 1 || chapter > CHAPTERS_PER_RUN) {
       throw new Error(
         `Chapter phải là số nguyên trong khoảng 1..${CHAPTERS_PER_RUN}, nhận ${chapter}`,
       );
     }
+    if (!Number.isInteger(roomsInChapter) || roomsInChapter < 1) {
+      throw new Error(
+        `Số phòng của chapter phải là số nguyên >= 1, nhận ${roomsInChapter}`,
+      );
+    }
     this.currentChapter = chapter;
+    this.roomsInChapter = roomsInChapter;
   }
 
   get chapter(): number {
     return this.currentChapter;
   }
 
-  /** Phòng hiện tại, 1-based. Phòng ROOMS_PER_CHAPTER là boss. */
+  /** Phòng hiện tại, 1-based. Phòng `roomsTotal` là boss. */
   get room(): number {
     return this.currentRoom;
   }
 
+  /** Tổng số phòng của chapter hiện tại — suy ra từ dữ liệu level, không hardcode. */
+  get roomsTotal(): number {
+    return this.roomsInChapter;
+  }
+
   get isBossRoom(): boolean {
-    return this.currentRoom === ROOMS_PER_CHAPTER;
+    return this.currentRoom === this.roomsInChapter;
   }
 
   get wave(): number {
@@ -56,17 +73,17 @@ export class RunState {
 
   /** Nhãn HUD, ví dụ "3/9". */
   get roomLabel(): string {
-    return `${this.currentRoom}/${ROOMS_PER_CHAPTER}`;
+    return `${this.currentRoom}/${this.roomsInChapter}`;
   }
 
   /** Tỉ lệ phòng đã dọn trên toàn run, 0..1. */
   get progress(): number {
     const clearedInChapter = this.currentRoom - 1;
     const cleared =
-      (this.currentChapter - 1) * ROOMS_PER_CHAPTER +
+      (this.currentChapter - 1) * this.roomsInChapter +
       clearedInChapter +
       (this.currentStatus === 'room-cleared' || this.currentStatus === 'won' ? 1 : 0);
-    return Math.min(1, cleared / (CHAPTERS_PER_RUN * ROOMS_PER_CHAPTER));
+    return Math.min(1, cleared / (CHAPTERS_PER_RUN * this.roomsInChapter));
   }
 
   /** Đánh dấu phòng sạch. Không tự sang phòng kế — caller chọn skill trước. */
@@ -105,7 +122,8 @@ export class RunState {
   /**
    * Sang wave kế trong cùng phòng.
    *
-   * Tổng số wave là **dữ liệu của phòng** (GDD §8: `assets/resources/data/levels/*.json`),
+   * Tổng số wave là **dữ liệu của phòng** (GDD §8: object `spawn` có property `wave`
+   * trong `assets/resources/data/levels/chapter-<n>/*.tmx`),
    * nên caller phải truyền vào — thường là `level.waves.length`. `RunState` chỉ
    * giữ wave hiện tại, không suy ra số wave từ chapter hay loại phòng; nhờ vậy
    * phòng 3 wave và phòng 1 wave dùng chung một state machine.
@@ -134,5 +152,20 @@ export class RunState {
       );
     }
     this.currentStatus = 'lost';
+  }
+
+  /**
+   * Kết thúc run với thắng lợi.
+   *
+   * Dùng khi một chapter được chơi như **một run riêng** (chapter select của M2):
+   * dọn boss là hết run, không tự nhảy sang chapter kế như `advanceToNextRoom`.
+   */
+  markWon(): void {
+    if (this.currentStatus === 'won' || this.currentStatus === 'lost') {
+      throw new Error(
+        `Không thể đánh dấu thắng khi run đang ở trạng thái '${this.currentStatus}' (phòng ${this.roomLabel})`,
+      );
+    }
+    this.currentStatus = 'won';
   }
 }

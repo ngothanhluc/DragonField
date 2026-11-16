@@ -18,6 +18,7 @@ import {
   migrate,
   parseSaveData,
   serializeSave,
+  withBest,
 } from '../../assets/scripts/core/save/save-data';
 import type { SaveData } from '../../assets/scripts/core/save/save-data';
 import { DEFAULT_VOLUME, applySettings, clampVolume } from '../../assets/scripts/core/save/settings';
@@ -189,6 +190,40 @@ describe('SaveData — validate', () => {
   it('từ chối dữ liệu không phải object', () => {
     expect(() => parseSaveData(undefined)).toThrow(/phải là object/);
     expect(() => parseSaveData([1, 2, 3])).toThrow(/phải là object/);
+  });
+});
+
+describe('SaveData — withBest', () => {
+  it('ghi kỷ lục mới trên save mới, không sửa save cũ', () => {
+    const base = createDefaultSave();
+    const next = withBest(base, 1, 3);
+
+    expect(next.best).toEqual({ chapter: 1, room: 3 });
+    expect(base.best).toEqual({ chapter: 0, room: 0 });
+    expect(next.gold).toBe(base.gold);
+  });
+
+  it('không lùi kỷ lục: chapter xa hơn thắng, cùng chapter thì room lớn hơn thắng', () => {
+    const save = withBest(withBest(createDefaultSave(), 2, 3), 1, 9);
+
+    expect(save.best).toEqual({ chapter: 2, room: 3 });
+    expect(withBest(save, 2, 4).best).toEqual({ chapter: 2, room: 4 });
+    expect(withBest(save, 2, 2).best).toEqual({ chapter: 2, room: 3 });
+  });
+
+  it('nhận room 10 — tổng phòng theo dữ liệu nên save không chặn trần 9', () => {
+    const repository = new SaveRepository(new MemorySaveStorage());
+    repository.save(withBest(createDefaultSave(), 1, 10));
+
+    expect(repository.load().best).toEqual({ chapter: 1, room: 10 });
+    expect(repository.lastLoadError).toBeNull();
+  });
+
+  it('từ chối chapter/room ngoài miền', () => {
+    expect(() => withBest(createDefaultSave(), 0, 1)).toThrow(/chapter/);
+    expect(() => withBest(createDefaultSave(), 4, 1)).toThrow(/chapter/);
+    expect(() => withBest(createDefaultSave(), 1, 0)).toThrow(/room/);
+    expect(() => withBest(createDefaultSave(), 1, 2.5)).toThrow(/room/);
   });
 });
 

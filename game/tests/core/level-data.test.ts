@@ -2,22 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   isInsideRoom,
   obstacleAt,
-  parseChapterData,
   parseLevelData,
   type ChapterData,
   type LevelData,
 } from '../../assets/scripts/core/level/level-data';
 import { parseTileRows } from '../../assets/scripts/core/level/tile-rows';
-
-/**
- * `@types/node` không nằm trong devDependencies (tsconfig `types: []`), nên
- * import động qua biến để tsc không cố resolve module. Vitest chạy trong Node
- * nên `node:fs` vẫn có thật lúc runtime.
- */
-const nodeFsModule: string = 'node:fs';
-const nodeFs = (await import(nodeFsModule)) as unknown as {
-  readFileSync(path: URL, encoding: 'utf8'): string;
-};
+import { loadChapterOne } from '../helpers/tmx-levels';
 
 interface RawPoint {
   x: number;
@@ -59,6 +49,7 @@ interface RawRoom {
   obstacles: RawObstacle[];
   doors: RawDoor[];
   boss?: { name: string };
+  bossStart?: RawPoint;
 }
 
 interface RawChapter {
@@ -66,10 +57,10 @@ interface RawChapter {
   rooms: RawRoom[];
 }
 
-const LEVEL_URL = new URL('../../assets/resources/data/levels/chapter-1.json', import.meta.url);
-
-const rawChapter = JSON.parse(nodeFs.readFileSync(LEVEL_URL, 'utf8')) as RawChapter;
-const chapter: ChapterData = parseChapterData(rawChapter);
+const chapter: ChapterData = loadChapterOne();
+// Bản JSON thuần để mutate trong test validation: parser TMX trả object readonly nhưng
+// schema `parseLevelData` nhận dữ liệu thô, nên test được đúng đường validate.
+const rawChapter = JSON.parse(JSON.stringify(chapter)) as RawChapter;
 
 function at<T>(items: readonly T[], index: number): T {
   const value = items[index];
@@ -82,7 +73,7 @@ function at<T>(items: readonly T[], index: number): T {
 function room(number: number): LevelData {
   const found = chapter.rooms.find((candidate) => candidate.room === number);
   if (found === undefined) {
-    throw new Error(`chapter-1.json thiếu phòng ${number}`);
+    throw new Error(`chapter 1 thiếu phòng ${number}`);
   }
   return found;
 }
@@ -97,7 +88,7 @@ function expectChapterError(mutate: (chapter: RawChapter) => void, pattern: RegE
   expect(() => parseLevelData(broken)).toThrow(pattern);
 }
 
-describe('chapter-1.json', () => {
+describe('chapter 1 (.tmx → LevelData)', () => {
   it('parse được đủ 9 phòng, đúng thứ tự', () => {
     expect(chapter.chapter).toBe(1);
     expect(chapter.rooms).toHaveLength(9);
@@ -127,11 +118,12 @@ describe('chapter-1.json', () => {
     expect(room1.doors).toHaveLength(1);
   });
 
-  it('phòng 9 là boss room có boss name và 4 cột', () => {
+  it('phòng 9 là boss room có boss name, bossStart và 4 cột', () => {
     const bossRoom = room(9);
 
     expect(bossRoom.isBossRoom).toBe(true);
     expect(bossRoom.boss?.name).toBe('TenguBlue');
+    expect(bossRoom.bossStart).toEqual({ x: 16, y: 5 });
     expect(bossRoom.obstacles.filter((obstacle) => obstacle.kind === 'pillar')).toHaveLength(4);
   });
 
@@ -301,6 +293,32 @@ describe('parseLevelData — validation', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 1).room = 1;
     }, /số phòng 1 bị trùng/);
+  });
+
+  it('nhận số phòng 10 — tổng phòng là dữ liệu, không phải hằng số', () => {
+    const broken = cloneChapter();
+    at(broken.rooms, 0).room = 10;
+
+    expect(parseLevelData(broken).room).toBe(10);
+  });
+
+  it('từ chối số phòng 0 hoặc âm', () => {
+    expectChapterError((broken) => {
+      at(broken.rooms, 0).room = 0;
+    }, /rooms\[0\]\.room.*>= 1/);
+  });
+
+  it('từ chối bossStart ở phòng thường', () => {
+    expectChapterError((broken) => {
+      at(broken.rooms, 0).bossStart = { x: 16, y: 5 };
+    }, /rooms\[0\]\.bossStart.*chỉ phòng boss/);
+  });
+
+  it('từ chối bossStart ngoài phòng', () => {
+    expectChapterError((broken) => {
+      const bossRoom = at(broken.rooms, 8);
+      bossRoom.bossStart = { x: 16, y: 19 };
+    }, /rooms\[8\]\.bossStart.*ngoài phòng/);
   });
 
   it('từ chối door trỏ tới phòng không tồn tại', () => {

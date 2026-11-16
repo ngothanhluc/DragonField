@@ -1,17 +1,11 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { parseChapterData } from '../../assets/scripts/core/level/level-data';
 import {
   CHAPTERS_PER_RUN,
   NORMAL_ROOMS_PER_CHAPTER,
   ROOMS_PER_CHAPTER,
   RunState,
 } from '../../assets/scripts/core/run/run-state';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const chapterFile = join(here, '../../assets/resources/data/levels/chapter-1.json');
+import { loadChapterOne } from '../helpers/tmx-levels';
 
 /** Dọn phòng hiện tại rồi sang phòng kế. */
 function clearAndAdvance(run: RunState): void {
@@ -134,11 +128,9 @@ describe('RunState — phòng sạch và wave', () => {
  * thật (3 wave) thay vì khẳng định "chapter 1 có 1 wave" như trước.
  */
 describe('RunState — wave theo dữ liệu level', () => {
-  const [roomOne] = parseChapterData(
-    JSON.parse(readFileSync(chapterFile, 'utf8')),
-  ).rooms;
+  const [roomOne] = loadChapterOne().rooms;
 
-  if (roomOne === undefined) throw new Error('assets/resources/data/levels/chapter-1.json thiếu phòng 1');
+  if (roomOne === undefined) throw new Error('chapter 1 (.tmx) thiếu phòng 1');
 
   it('phòng 1 có 3 wave trong level data', () => {
     expect(roomOne.waves.length).toBe(3);
@@ -215,6 +207,76 @@ describe('RunState — nhãn và tiến trình', () => {
 
     expect(run.status).toBe('lost');
     expect(run.progress).toBeCloseTo(2 / 27, 10);
+  });
+});
+
+describe('RunState — tổng phòng lấy từ dữ liệu', () => {
+  it('nhận tổng phòng khác 9 (thêm room-10.tmx là x/10)', () => {
+    const run = new RunState(1, 10);
+
+    expect(run.roomsTotal).toBe(10);
+    expect(run.roomLabel).toBe('1/10');
+
+    for (let room = 1; room <= 10; room += 1) {
+      expect(run.room).toBe(room);
+      expect(run.isBossRoom).toBe(room === 10);
+      if (room < 10) clearAndAdvance(run);
+    }
+
+    expect(run.roomLabel).toBe('10/10');
+  });
+
+  it('progress dùng tổng phòng của chapter', () => {
+    const run = new RunState(1, 10);
+
+    run.onRoomCleared();
+
+    expect(run.progress).toBeCloseTo(1 / (CHAPTERS_PER_RUN * 10), 10);
+  });
+
+  it('từ chối tổng phòng không hợp lệ', () => {
+    expect(() => new RunState(1, 0)).toThrow(/số nguyên >= 1/);
+    expect(() => new RunState(1, 2.5)).toThrow(/số nguyên >= 1/);
+    expect(() => new RunState(1, Number.NaN)).toThrow(/số nguyên >= 1/);
+  });
+});
+
+describe('RunState — markWon (chapter chơi như một run riêng)', () => {
+  it('dọn boss rồi markWon → won, giữ nguyên phòng', () => {
+    const run = new RunState(1);
+    for (let room = 1; room <= ROOMS_PER_CHAPTER; room += 1) {
+      if (room < ROOMS_PER_CHAPTER) {
+        clearAndAdvance(run);
+      } else {
+        run.onRoomCleared();
+      }
+    }
+
+    expect(run.isBossRoom).toBe(true);
+    run.markWon();
+
+    expect(run.status).toBe('won');
+    expect(run.chapter).toBe(1);
+    expect(run.room).toBe(ROOMS_PER_CHAPTER);
+    // progress tính trên cả 3 chapter của run (GDD §1), nên xong chapter 1 = 1/3.
+    expect(run.progress).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('markWon từ trạng thái playing cũng hợp lệ', () => {
+    const run = new RunState(1);
+
+    run.markWon();
+
+    expect(run.status).toBe('won');
+  });
+
+  it('không markWon hai lần, không markLost sau markWon', () => {
+    const run = new RunState(1);
+    run.markWon();
+
+    expect(() => run.markWon()).toThrow(/won/);
+    expect(() => run.markLost()).toThrow(/won/);
+    expect(() => run.advanceToNextRoom()).toThrow(/won/);
   });
 });
 

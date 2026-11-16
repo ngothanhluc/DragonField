@@ -1,13 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
 import { CHASER_CONTACT_RANGE_TILES } from '../../assets/scripts/core/enemies/behaviours';
 import {
   ROOM_COLS,
   ROOM_ROWS,
-  parseChapterData,
   parseLevelData,
   type ChapterData,
   type LevelData,
@@ -27,13 +23,7 @@ import {
   type InputPolicy,
   type PolicyWorld,
 } from '../../assets/scripts/core/sim/run-simulation';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const chapterFile = join(here, '../../assets/resources/data/levels/chapter-1.json');
-
-function loadChapterOne(): ChapterData {
-  return parseChapterData(JSON.parse(readFileSync(chapterFile, 'utf8')));
-}
+import { loadChapterOne } from '../helpers/tmx-levels';
 
 const chapterOne = loadChapterOne();
 

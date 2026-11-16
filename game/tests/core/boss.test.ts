@@ -6,6 +6,7 @@ import {
   BOSSES,
   BOSS_IDS,
   animationFor,
+  bossForSpriteName,
   healthFraction,
   phaseFor,
   type BossId,
@@ -163,6 +164,12 @@ describe('boss defs', () => {
     expect(animationFor('squid', 'loop', 'left')).toBe('squid.attack-loop');
     // Boss không có animation đó thì lùi về attack, không trả key rác.
     expect(animationFor('tengu', 'loop', 'left')).toBe('tengu.attack');
+  });
+
+  it('tra boss theo tên sprite trong TMX', () => {
+    expect(bossForSpriteName('TenguBlue')?.id).toBe('tengu');
+    expect(bossForSpriteName('GiantBlueSamurai')?.id).toBe('samurai');
+    expect(bossForSpriteName('Dragon')).toBeUndefined();
   });
 });
 

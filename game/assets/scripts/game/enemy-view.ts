@@ -45,6 +45,9 @@ const TELEGRAPH_PULSE = 0.12;
 /** Tốc độ pulse, radian/giây. */
 const TELEGRAPH_PULSE_SPEED = 14;
 
+/** Bán kính hitbox mặc định, tile — cùng quy ước với `run-simulation.ts`. */
+export const DEFAULT_ENEMY_RADIUS_TILES = 0.4;
+
 export interface EnemyViewInitArgs {
   readonly state: EnemyState;
   /** Tên actor trong manifest, không có gạch nối: `bluebat`, `spiderred`, `eye`… */
@@ -52,6 +55,15 @@ export interface EnemyViewInitArgs {
   readonly level: LevelData;
   /** Scale node đã tính từ frame (xem `actorScale` trong `level-view.ts`). */
   readonly baseScale: number;
+  /**
+   * Key animation đi bộ **không hướng** (sheet `strip` của boss, vd `tengu.walk`).
+   * Bỏ trống thì dùng `<monster>.walk.<direction>` như monster thường.
+   */
+  readonly walkKey?: string;
+  /** Bán kính hitbox, tile. Boss lớn hơn monster thường (`BOSSES[id].hitboxRadiusTiles`). */
+  readonly radiusTiles?: number;
+  /** Tầm gây sát thương khi chạm, tile. Mặc định bằng tầm của chaser. */
+  readonly contactRangeTiles?: number;
 }
 
 @ccclass('EnemyView')
@@ -65,6 +77,10 @@ export class EnemyView extends Component {
   private dead = false;
   private animKey = '';
   private animDirection: Direction = 'down';
+  /** Key đi bộ không hướng (boss); rỗng = dùng `<monster>.walk.<direction>`. */
+  private walkKey = '';
+  private hitRadius = DEFAULT_ENEMY_RADIUS_TILES;
+  private contactRange = CHASER_CONTACT_RANGE_TILES;
   /** Cú đẩy nhỏ sau khi trúng đạn; `null` = không bị đẩy. */
   private knockback: KnockbackState | null = null;
 
@@ -81,6 +97,16 @@ export class EnemyView extends Component {
     return this.dead;
   }
 
+  /** Máu còn lại — `killAll()` debug dùng để trừ đúng một lần qua đường damage chuẩn. */
+  get health(): number {
+    return this.state?.health ?? 0;
+  }
+
+  /** Bán kính hitbox, tile (đạn player dùng để xét trúng). */
+  get radiusTiles(): number {
+    return this.hitRadius;
+  }
+
   /** Chaser/tank gây sát thương khi chạm; caster bắn đạn nên không tính contact. */
   get melee(): boolean {
     const state = this.state;
@@ -93,7 +119,7 @@ export class EnemyView extends Component {
   }
 
   get contactRangeTiles(): number {
-    return CHASER_CONTACT_RANGE_TILES;
+    return this.contactRange;
   }
 
   init(args: EnemyViewInitArgs): void {
@@ -101,6 +127,9 @@ export class EnemyView extends Component {
     this.monster = args.monster;
     this.level = args.level;
     this.baseScale = args.baseScale;
+    this.walkKey = args.walkKey ?? '';
+    this.hitRadius = args.radiusTiles ?? DEFAULT_ENEMY_RADIUS_TILES;
+    this.contactRange = args.contactRangeTiles ?? CHASER_CONTACT_RANGE_TILES;
     this.animator = this.getComponent(SpriteAnimator);
     const sprite: Sprite | null = this.getComponent(CocosSprite);
     this.sprite = sprite;
@@ -256,6 +285,15 @@ export class EnemyView extends Component {
   }
 
   private playWalk(direction: Direction, force = false): void {
+    if (this.walkKey !== '') {
+      if (!force && this.animKey === this.walkKey) return;
+      this.animKey = this.walkKey;
+      this.animDirection = direction;
+      // Boss dùng sheet một hàng (không cột hướng) — truyền key không hướng.
+      this.animator?.play(this.walkKey);
+      return;
+    }
+
     if (!force && this.animKey === `${this.monster}.walk` && this.animDirection === direction) {
       return;
     }

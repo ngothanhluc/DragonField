@@ -9,7 +9,7 @@
  */
 import { UPGRADE_TRACKS, createDefaultUpgrades, maxLevelFor } from '../meta/upgrades';
 import type { UpgradeTrack } from '../meta/upgrades';
-import { CHAPTERS_PER_RUN, ROOMS_PER_CHAPTER } from '../run/run-state';
+import { CHAPTERS_PER_RUN } from '../run/run-state';
 import { DEFAULT_SETTINGS, applySettings } from './settings';
 import type { Settings } from './settings';
 
@@ -157,7 +157,16 @@ export function parseSaveData(raw: unknown): SaveData {
     problems.add('best', `phải là object { chapter, room }, nhận ${describeValue(rawBest)}`);
   } else {
     bestChapter = readInteger(rawBest.chapter, 'best.chapter', 0, CHAPTERS_PER_RUN, 0, problems);
-    bestRoom = readInteger(rawBest.room, 'best.room', 0, ROOMS_PER_CHAPTER, 0, problems);
+    // Số phòng của chapter là dữ liệu (`roomsInChapter` từ số file `.tmx`), nên
+    // không chặn trần theo hằng số cũ — save của chapter 10 phòng vẫn phải load được.
+    bestRoom = readInteger(
+      rawBest.room,
+      'best.room',
+      0,
+      Number.MAX_SAFE_INTEGER,
+      0,
+      problems,
+    );
   }
 
   let settings: Settings = { ...DEFAULT_SETTINGS };
@@ -226,6 +235,30 @@ export function serializeSave(data: SaveData): string {
 function pick(raw: Record<string, unknown>, key: string, fallback: unknown): unknown {
   const value = raw[key];
   return value === undefined ? fallback : value;
+}
+
+/**
+ * Trả save mới với `best` = xa hơn giữa kỷ lục cũ và `(chapter, room)`.
+ *
+ * So sánh theo chapter trước rồi tới room — "tới phòng 5 chapter 1" không thể
+ * ghi đè "tới phòng 2 chapter 2". Dùng ở bootstrap mỗi lần vào phòng mới và ở
+ * màn kết thúc run; save không hợp lệ sẽ ném (đừng ghi rác vào slot).
+ */
+export function withBest(save: SaveData, chapter: number, room: number): SaveData {
+  const valid = parseSaveData(save);
+  if (!Number.isInteger(chapter) || chapter < 1 || chapter > CHAPTERS_PER_RUN) {
+    throw new Error(`withBest: chapter phải là số nguyên 1..${CHAPTERS_PER_RUN}, nhận ${chapter}`);
+  }
+  if (!Number.isInteger(room) || room < 1) {
+    throw new Error(`withBest: room phải là số nguyên >= 1, nhận ${room}`);
+  }
+
+  const previous = valid.best;
+  const further =
+    chapter > previous.chapter || (chapter === previous.chapter && room > previous.room);
+  if (!further) return valid;
+
+  return { ...valid, best: { chapter, room } };
 }
 
 /**

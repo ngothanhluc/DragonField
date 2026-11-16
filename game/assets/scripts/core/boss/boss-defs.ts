@@ -163,11 +163,23 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
 };
 
 /**
+ * Tra boss theo `LevelData.boss.name` (tên folder art, ví dụ `TenguBlue`).
+ *
+ * TMX chỉ chứa **tên sprite**, không chứa id boss: nhờ vậy đổi tên trong Tiled
+ * không kéo theo id nội bộ, và tên sai sẽ lộ ra ngay ("không có boss ...").
+ */
+export function bossForSpriteName(spriteName: string): BossDef | undefined {
+  for (const boss of Object.values(BOSSES)) {
+    if (boss.spriteName === spriteName) return boss;
+  }
+  return undefined;
+}
+
+/**
  * Phase theo máu còn lại. `healthFraction` phải hữu hạn; 1 = đầy máu.
  *
  * Biên: `1 → 1`, `0.66 → 2`, `0.33 → 3`, `0 → 3` (với ngưỡng 2/3 và 1/3).
- */
-export function phaseFor(bossId: BossId, healthFraction: number): BossPhase {
+ */export function phaseFor(bossId: BossId, healthFraction: number): BossPhase {
   if (!Number.isFinite(healthFraction)) {
     throw new Error(`phaseFor cần healthFraction hữu hạn, nhận ${healthFraction}`);
   }

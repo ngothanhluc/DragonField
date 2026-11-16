@@ -1,5 +1,5 @@
 /**
- * Dựng một phòng bằng code: sàn + vật cản. Không prefab, không sửa scene.
+ * Dựng một phòng: `TiledMap` cho tile layer + sprite cho vật cản.
  *
  * Hệ toạ độ:
  * - `LevelData` là **tile unit, gốc trên-trái, y hướng xuống** (đúng hệ Tiled).
@@ -10,9 +10,12 @@
  * file khác (`player-controller`, `enemy-view`, `bullet-view`) dùng lại đúng mấy hàm
  * này để cả phòng chỉ có **một** quy ước lật trục.
  *
- * Vì sao helper toạ độ nằm ở đây: danh sách file của milestone chỉ có 6 file adapter,
- * không có chỗ cho một `util/coordinates.ts` riêng — file này là nơi duy nhất biết
- * hình học của phòng, nên nó sở hữu luôn phép đổi hệ trục.
+ * Tile layer do `TiledMap` vẽ trong **pixel** (map 512×288 px, gốc dưới-trái, hàng 0
+ * ở trên). Node map được scale `1/16` và đặt ở tâm phòng nên khớp tuyệt đối với world
+ * unit: ô `(col,row)` phủ đúng `[col, col+1) × [rows-row-1, rows-row)`.
+ *
+ * Vật cản **không** được suy ra từ tile: `LevelData.obstacles` (parse từ object layer
+ * của `.tmx`, xem `core/level/tmx.ts`) là nguồn duy nhất cho cả va chạm lẫn hình.
  */
 import {
   Node as CocosNode,
@@ -20,12 +23,13 @@ import {
   Size,
   Sprite as CocosSprite,
   SpriteFrame as CocosSpriteFrame,
+  TiledMap as CocosTiledMap,
   UITransform as CocosUITransform,
   Vec2 as EngineVec2,
 } from 'cc';
-import type { AnimationManifest } from '../core/art/manifest';
+import type { TiledMapAsset as CocosTiledMapAsset } from 'cc';
 import type { LevelData, Obstacle, ObstacleKind } from '../core/level/level-data';
-import { ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
+import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { loadTexture } from './assets/texture-cache';
 
@@ -37,22 +41,12 @@ type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = InstanceType<typeof CocosSpriteFrame>;
 type Texture2D = Awaited<ReturnType<typeof loadTexture>>;
+type TiledMap = InstanceType<typeof CocosTiledMap>;
+type TiledMapAsset = InstanceType<typeof CocosTiledMapAsset>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 
 /** 1 tile = 1 world unit (world convention của milestone). */
 export const TILE_WORLD_UNITS = 1;
-
-/**
- * Sheet sàn: `TilesetField.png` (80×240 px = 5×15 tile 16 px).
- *
- * Ô được chọn là **tile (col = 1, row = 4)** — px `(16, 64, 16, 16)`.
- * Đo trên file thật: ô này **đủ 256/256 px đục**, 98% số px cùng một màu cỏ
- * `#ADBC3A`, không có viền/hoa văn ở mép ⇒ ghép 32×18 ô không thấy đường nối.
- * `TilesetField` là tileset duy nhất trong pack có mảng màu phẳng như vậy;
- * `TilesetNature`/`VillageAbandoned` toàn cây/đá/nhà (không có ô nền),
- * `TilesetFloor.png` thì cố tình không được stage (lệch 1 px).
- */
-export const FLOOR_SHEET = 'resources/art/tilesets/TilesetField.png';
 
 /**
  * Sheet vật cản: `TilesetHouse.png` (528×368 px). Ba ô đá/bóng tối:
@@ -73,9 +67,6 @@ export interface TileRect {
   readonly height: number;
 }
 
-/** Ô sàn đã chọn — xem ghi chú ở `FLOOR_SHEET`. */
-const FLOOR_RECT: TileRect = { x: 16, y: 64, width: 16, height: 16 };
-
 const OBSTACLE_RECTS: Readonly<Record<ObstacleKind, TileRect>> = {
   pillar: { x: 352, y: 0, width: 16, height: 16 },
   wall: { x: 336, y: 0, width: 16, height: 16 },
@@ -94,13 +85,8 @@ export function tileToWorld(point: Vec2): Vec2 {
   return { x: point.x, y: ROOM_ROWS - point.y };
 }
 
-/** Tâm ô `(col, row)` (row đếm từ trên) trong world. */
-export function tileCenterToWorld(col: number, row: number): Vec2 {
-  return { x: col + 0.5, y: ROOM_ROWS - row - 0.5 };
-}
-
 /** Hình chữ nhật world của một vật cản: góc dưới-trái + kích thước, cả hai theo unit. */
-export function obstacleWorldRect(obstacle: Obstacle): {
+function obstacleWorldRect(obstacle: Obstacle): {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -151,66 +137,52 @@ export function sliceFrame(texture: Texture2D, rect: TileRect): SpriteFrame {
 // ---------------------------------------------------------------------------
 
 /**
- * Dựng phòng từ `LevelData` và trả về **root node** (huỷ phòng = `root.destroy()`,
- * engine tự dọn hết node con).
+ * Dựng phòng từ `LevelData` + `TiledMapAsset` và trả về **root node** (huỷ phòng =
+ * `root.destroy()`, engine tự dọn hết node con, kể cả layer của TiledMap).
  *
- * Texture load bất đồng bộ nên node được tạo ngay, sprite gắn vào khi texture về.
- * Lỗi load chỉ log ra console kèm đường dẫn resources; bootstrap đã `preloadSheets`
- * trước nên trường hợp này không xảy ra lúc chạy bình thường, còn nếu có thì lỗi
- * thật đã nổi ở bước preload với thông báo đầy đủ hơn.
+ * Root giữ hệ **world unit** (1 tile = 1 unit) như mọi actor/đạn; node `tile-map` con
+ * mới là node bị scale `1/16` (`ACTOR_SCALE`) để TMX pixel khớp world unit. Nhờ vậy
+ * vật cản dùng lại đúng toạ độ unit của milestone, không phải đổi sang pixel.
+ *
+ * Tắt culling vì phòng chỉ 576 tile và camera world bị letterbox (`Camera.rect`), một
+ * trường hợp dễ làm culling cắt nhầm.
+ *
+ * Vật cản: sprite 1×1 unit như trước, hình chữ nhật lấy từ object layer (đã parse
+ * thành `LevelData.obstacles`) — không có pipeline thứ hai.
  */
 export function buildRoom(
   parent: Node,
   level: LevelData,
-  manifest: AnimationManifest,
-  floorSheet: string,
+  tmxAsset: TiledMapAsset,
   obstacleSheet: string,
 ): Node {
-  // Tile chưa có key trong manifest (import-checklist §6.2: 15 tileset + 39 file UI
-  // không có key), nên sheet phải truyền vào. Giữ tham số để chữ ký không đổi khi
-  // tile có schema riêng.
-  void manifest;
-
   const root = new CocosNode(`room-${level.id}`);
   root.parent = parent;
 
-  void buildFloor(root, level, floorSheet).catch((error: unknown) => {
-    reportLoadFailure('sàn', floorSheet, error);
-  });
+  const mapNode = new CocosNode('tile-map');
+  mapNode.parent = root;
+
+  // `@requireComponent(UITransform)` của TiledMap thêm UITransform ngay khi addComponent.
+  const map: TiledMap = mapNode.addComponent(CocosTiledMap);
+
+  const transform: UITransform | null = mapNode.getComponent(CocosUITransform);
+  if (transform !== null) transform.setAnchorPoint(0.5, 0.5);
+
+  const scale = TILE_WORLD_UNITS / TILE_SIZE_PX;
+  mapNode.setScale(scale, scale, 1);
+  // Tâm map = tâm phòng: map 512×288 px × 1/16 = 32×18 unit.
+  mapNode.setPosition(ROOM_COLS / 2, ROOM_ROWS / 2, 0);
+
+  // Gán asset SAU khi node đã có anchor/scale/parent: `_buildLayerAndGroup` tạo layer
+  // dưới node này và đọc anchor của map một lần.
+  map.tmxAsset = tmxAsset;
+  map.enableCulling = false;
+
   void buildObstacles(root, level, obstacleSheet).catch((error: unknown) => {
     reportLoadFailure('vật cản', obstacleSheet, error);
   });
 
   return root;
-}
-
-/**
- * Sàn: một node `floor` giữ lưới 32×18 sprite.
- *
- * `Sprite` của Cocos không lặp texture được (không có `wrapMode REPEAT` cho sprite
- * thường, muốn lặp phải viết shader riêng), nên "một sàn trải 32×18" ở đây là **một
- * node cha** + 576 quad 1×1 unit. Toàn bộ nằm cùng một texture và cùng material nên
- * batcher gộp thành một draw call, và nhờ vậy sau này thay tile theo ô (viền, trang
- * trí) không phải đổi cấu trúc.
- */
-async function buildFloor(root: Node, level: LevelData, sheet: string): Promise<void> {
-  const texture = await loadTexture(sheet);
-  // Phòng có thể đã bị huỷ trong lúc chờ texture (đổi phòng) — đừng gắn vào node chết.
-  if (!root.isValid) return;
-  const frame = sliceFrame(texture, FLOOR_RECT);
-
-  const floor = new CocosNode('floor');
-  floor.parent = root;
-
-  const scale = TILE_WORLD_UNITS / TILE_SIZE_PX;
-  for (let row = 0; row < level.size.rows; row += 1) {
-    for (let col = 0; col < level.size.cols; col += 1) {
-      const tile = makeTileNode(`tile-${col}-${row}`, frame, TILE_SIZE_PX, TILE_SIZE_PX, scale);
-      tile.parent = floor;
-      const at = tileCenterToWorld(col, row);
-      tile.setPosition(at.x, at.y, 0);
-    }
-  }
 }
 
 /** Vật cản: một sprite cho mỗi `Obstacle`, kéo giãn đúng kích thước tile của nó. */
@@ -245,7 +217,7 @@ async function buildObstacles(root: Node, level: LevelData, sheet: string): Prom
 
 /**
  * Node 1 sprite với `sizeMode = CUSTOM` (node giữ đúng kích thước ta đặt, không bị
- * frame tự resize) — cần cho cả tile 1×1 và vật cản 3×3.
+ * frame tự resize) — cần cho vật cản nhiều tile.
  */
 function makeTileNode(
   name: string,

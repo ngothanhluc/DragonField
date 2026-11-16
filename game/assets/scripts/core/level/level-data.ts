@@ -1,6 +1,7 @@
 /**
  * Hợp đồng runtime của một phòng. Đây là thứ game dùng, không phải định dạng editor:
- * `.tmx` chỉ để render, object layer được đổ vào `LevelData` qua `parseLevelData`.
+ * nguồn dữ liệu là `.tmx` (xem `core/level/tmx.ts` cho quy ước object layer), và
+ * adapter mapper object layer vào `LevelData` qua `parseTmxLevel` → `parseLevelData`.
  *
  * Hệ toạ độ: **tile unit, gốc trên-trái, y hướng xuống** — đúng hệ của Tiled.
  * Adapter Cocos lật trục y khi dựng node. Phòng luôn đúng 32×18 tile 16 px
@@ -70,6 +71,8 @@ export interface LevelData {
   readonly doors: Door[];
   /** Chỉ có ở phòng boss; `name` khớp key art (ví dụ `TenguBlue`). */
   readonly boss?: BossInfo;
+  /** Chỉ có ở phòng boss; chỗ boss đứng (tile unit). Thiếu thì adapter dùng mặc định. */
+  readonly bossStart?: Vec2;
 }
 
 /** Một file chapter: `{ chapter, rooms }`. */
@@ -328,8 +331,8 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
   }
 
   let room = 1;
-  if (!isInteger(value.room) || value.room < 1 || value.room > 9) {
-    problems.add(`${path}.room`, `phải là số nguyên 1..9, nhận ${describeValue(value.room)}`);
+  if (!isInteger(value.room) || value.room < 1) {
+    problems.add(`${path}.room`, `phải là số nguyên >= 1, nhận ${describeValue(value.room)}`);
   } else {
     room = value.room;
   }
@@ -415,6 +418,18 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     problems.add(`${path}.boss`, 'chỉ phòng boss mới được khai báo boss');
   }
 
+  let bossStart: Vec2 | undefined;
+  if (value.bossStart !== undefined) {
+    const parsedStart = readVec2(value.bossStart, `${path}.bossStart`, problems);
+    if (parsedStart !== null) {
+      checkPointInRoom(parsedStart, `${path}.bossStart`, problems);
+      bossStart = parsedStart;
+    }
+  }
+  if (!isBossRoom && value.bossStart !== undefined) {
+    problems.add(`${path}.bossStart`, 'chỉ phòng boss mới được khai báo bossStart');
+  }
+
   return {
     id,
     chapter,
@@ -427,6 +442,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     obstacles,
     doors,
     ...(boss !== undefined ? { boss } : {}),
+    ...(bossStart !== undefined ? { bossStart } : {}),
   };
 }
 
