@@ -28,6 +28,14 @@ export interface CombatConfig {
   readonly contactDamage: number;
   /** Tầm auto-aim, tính theo tile. */
   readonly targetingRangeTiles: number;
+  /** Quãng đường knockback player khi trúng đòn, tile. */
+  readonly playerKnockbackDistanceTiles: number;
+  /** Thời gian đi hết quãng knockback player, ms. */
+  readonly playerKnockbackDurationMs: number;
+  /** Quãng đường knockback enemy khi trúng đạn, tile. */
+  readonly enemyKnockbackDistanceTiles: number;
+  /** Thời gian đi hết quãng knockback enemy, ms. */
+  readonly enemyKnockbackDurationMs: number;
 }
 
 /** Số liệu combat cơ bản, đọc từ `config/tuning.json` (không chép lại số). */

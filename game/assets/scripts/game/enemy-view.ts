@@ -12,6 +12,8 @@
 import { _decorator, Color as CocosColor, Component, Sprite as CocosSprite } from 'cc';
 import type { Direction } from '../core/art/manifest';
 import { directionFromVector } from '../core/art/runtime';
+import { startKnockback, stepKnockback, type KnockbackState } from '../core/combat/knockback';
+import { DEFAULT_COMBAT } from '../core/config';
 import {
   CHASER_CONTACT_RANGE_TILES,
   ROOM_EDGE_MARGIN_TILES,
@@ -63,6 +65,8 @@ export class EnemyView extends Component {
   private dead = false;
   private animKey = '';
   private animDirection: Direction = 'down';
+  /** Cú đẩy nhỏ sau khi trúng đạn; `null` = không bị đẩy. */
+  private knockback: KnockbackState | null = null;
 
   get id(): string {
     return this.state?.id ?? '';
@@ -126,18 +130,27 @@ export class EnemyView extends Component {
     }
 
     this.advance(next, deltaMs);
+    this.applyKnockback(deltaMs);
     this.syncNodePosition();
     this.applyVisual(next, nowMs, player);
   }
 
   /** Trừ máu; hết máu thì biến mất (TODO(fx): explosion + fade, xem GDD §4). */
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, source: Vec2 | null = null): void {
     const state = this.state;
     if (state === null || this.dead) return;
 
     state.health = Math.max(0, state.health - amount);
     if (state.health <= 0) {
       this.die();
+      return;
+    }
+
+    if (source !== null) {
+      this.knockback = startKnockback(state.position, source, {
+        distanceTiles: DEFAULT_COMBAT.enemyKnockbackDistanceTiles,
+        durationMs: DEFAULT_COMBAT.enemyKnockbackDurationMs,
+      });
     }
   }
 
@@ -186,6 +199,23 @@ export class EnemyView extends Component {
       x: clamp(next.x, ROOM_EDGE_MARGIN_TILES, ROOM_COLS - ROOM_EDGE_MARGIN_TILES),
       y: clamp(next.y, ROOM_EDGE_MARGIN_TILES, ROOM_ROWS - ROOM_EDGE_MARGIN_TILES),
     };
+  }
+
+  /** Cú đẩy nhỏ sau đòn đạn; cùng bộ dựng với player nhưng quãng ngắn hơn. */
+  private applyKnockback(deltaMs: number): void {
+    const state = this.state;
+    const level = this.level;
+    if (state === null || level === null || this.knockback === null) return;
+
+    const result = stepKnockback(
+      state.position,
+      this.knockback,
+      deltaMs,
+      level,
+      ROOM_EDGE_MARGIN_TILES,
+    );
+    state.position = result.position;
+    this.knockback = result.state;
   }
 
   private applyVisual(action: EnemyAction, nowMs: number, player: Vec2): void {

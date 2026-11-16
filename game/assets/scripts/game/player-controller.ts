@@ -16,10 +16,11 @@ import { directionFromVector, loopDurationMs } from '../core/art/runtime';
 import { AutoFire } from '../core/combat/auto-fire';
 import { BulletPool } from '../core/combat/bullets';
 import { HealthState } from '../core/combat/health';
+import { startKnockback, stepKnockback, type KnockbackState } from '../core/combat/knockback';
 import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
 import { ROOM_EDGE_MARGIN_TILES } from '../core/enemies/behaviours';
-import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
+import { ROOM_COLS, ROOM_ROWS, type LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-intent';
 import { SpriteAnimator } from './anim/sprite-animator';
@@ -93,6 +94,8 @@ export class PlayerController extends Component {
   private attackUntilMs = 0;
   private hitUntilMs = 0;
   private attackAnimMs = 0;
+  /** Cú đẩy đang chạy sau đòn trúng; `null` = không bị đẩy. */
+  private knockback: KnockbackState | null = null;
 
   /** Đạn player đang bay — `bullet-view` đọc pool này mỗi frame. */
   get bullets(): BulletPool {
@@ -132,6 +135,8 @@ export class PlayerController extends Component {
   /** Đặt lại vị trí khi sang phòng mới; không đụng máu (máu theo cả run). */
   teleport(at: Vec2): void {
     this.tilePosition = { x: at.x, y: at.y };
+    // Sang phòng khác thì cú đẩy của phòng cũ không được dính theo.
+    this.knockback = null;
     this.syncNodePosition();
   }
 
@@ -140,7 +145,12 @@ export class PlayerController extends Component {
    * `nowMs` là đồng hồ của run (không phải `Date.now`) để i-frame và animation
    * cùng một dòng thời gian, và để test/tái hiện được.
    */
-  step(nowMs: number, deltaMs: number, targets: readonly Targetable[]): void {
+  step(
+    nowMs: number,
+    deltaMs: number,
+    targets: readonly Targetable[],
+    level: LevelData,
+  ): void {
     if (this.health.isDead) return;
 
     const input2D = normalizeMoveInput(this.keys);
@@ -168,6 +178,7 @@ export class PlayerController extends Component {
       this.syncNodePosition();
     }
 
+    this.applyKnockback(deltaMs, level);
     this.fireIfReady(nowMs, deltaMs, targets);
     this.playCurrentAnimation(nowMs, moving);
   }
@@ -176,7 +187,7 @@ export class PlayerController extends Component {
    * Ăn sát thương; i-frame và trần máu do `HealthState` quyết. Trả về `true` khi
    * đòn thật sự vào (dùng cho log/FX sau này).
    */
-  applyDamage(nowMs: number, amount: number): boolean {
+  applyDamage(nowMs: number, amount: number, source: Vec2 | null = null): boolean {
     const result = this.health.tryDamage(amount, nowMs);
     if (!result.applied) return false;
 
@@ -185,8 +196,33 @@ export class PlayerController extends Component {
 
     if (result.dead) {
       this.playAnimation('player.dead');
+      return true;
+    }
+
+    if (source !== null) {
+      this.knockback = startKnockback(this.tilePosition, source, {
+        distanceTiles: DEFAULT_COMBAT.playerKnockbackDistanceTiles,
+        durationMs: DEFAULT_COMBAT.playerKnockbackDurationMs,
+      });
     }
     return true;
+  }
+
+  /** Cú đẩy đi sau input, nên không ai "giữ phím" mà đứng yên được khi trúng đòn. */
+  private applyKnockback(deltaMs: number, level: LevelData): void {
+    const state = this.knockback;
+    if (state === null) return;
+
+    const result = stepKnockback(
+      this.tilePosition,
+      state,
+      deltaMs,
+      level,
+      ROOM_EDGE_MARGIN_TILES,
+    );
+    this.tilePosition = result.position;
+    this.knockback = result.state;
+    this.syncNodePosition();
   }
 
   protected onEnable(): void {

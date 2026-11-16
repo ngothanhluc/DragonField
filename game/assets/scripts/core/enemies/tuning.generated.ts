@@ -15,6 +15,10 @@ export const TUNING_DATA = {
     invulnerabilityMs: 800,
     contactDamage: 1,
     targetingRangeTiles: 8,
+    playerKnockbackDistanceTiles: 1.5,
+    playerKnockbackDurationMs: 180,
+    enemyKnockbackDistanceTiles: 0.35,
+    enemyKnockbackDurationMs: 120,
   },
   enemies: {
     eliteHealthMultiplier: 2,

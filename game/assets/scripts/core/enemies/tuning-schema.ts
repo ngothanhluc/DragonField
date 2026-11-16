@@ -34,6 +34,14 @@ export interface CombatTuning {
   readonly contactDamage: number;
   /** Tầm auto-aim, tile. */
   readonly targetingRangeTiles: number;
+  /** Quãng đường knockback player khi trúng đòn, tile. */
+  readonly playerKnockbackDistanceTiles: number;
+  /** Thời gian đi hết quãng knockback player, ms. */
+  readonly playerKnockbackDurationMs: number;
+  /** Quãng đường knockback enemy khi trúng đạn, tile. */
+  readonly enemyKnockbackDistanceTiles: number;
+  /** Thời gian đi hết quãng knockback enemy, ms. */
+  readonly enemyKnockbackDurationMs: number;
 }
 
 /**
@@ -100,6 +108,10 @@ const COMBAT_FIELDS = [
   'invulnerabilityMs',
   'contactDamage',
   'targetingRangeTiles',
+  'playerKnockbackDistanceTiles',
+  'playerKnockbackDurationMs',
+  'enemyKnockbackDistanceTiles',
+  'enemyKnockbackDurationMs',
 ] as const;
 
 const ENEMY_GROUP_FIELDS = [
@@ -226,6 +238,10 @@ function zeroCombat(): CombatTuning {
     invulnerabilityMs: 0,
     contactDamage: 0,
     targetingRangeTiles: 0,
+    playerKnockbackDistanceTiles: 0,
+    playerKnockbackDurationMs: 0,
+    enemyKnockbackDistanceTiles: 0,
+    enemyKnockbackDurationMs: 0,
   };
 }
 
@@ -282,6 +298,18 @@ function parseCombat(
       readNumber(source, 'targetingRangeTiles', path, problems, {
         positive: true,
       }) ?? 0,
+    playerKnockbackDistanceTiles:
+      readNumber(source, 'playerKnockbackDistanceTiles', path, problems, {
+        positive: true,
+      }) ?? 0,
+    playerKnockbackDurationMs:
+      readNumber(source, 'playerKnockbackDurationMs', path, problems, {
+        positive: true,
+      }) ?? 0,
+    enemyKnockbackDistanceTiles:
+      readNumber(source, 'enemyKnockbackDistanceTiles', path, problems) ?? 0,
+    enemyKnockbackDurationMs:
+      readNumber(source, 'enemyKnockbackDurationMs', path, problems) ?? 0,
   };
 }
 

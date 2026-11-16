@@ -96,6 +96,9 @@ const CAMERA_FAR = 2000;
 const END_LOSS_COLOR = new CocosColor(255, 96, 96, 255);
 const END_WIN_COLOR = new CocosColor(255, 230, 120, 255);
 
+/** Thời gian giữ chữ "ROOM CLEAR" trước khi sang phòng kế, giây. */
+const ROOM_CLEAR_BANNER_SECONDS = 1;
+
 /**
  * Monster theo vai trò của từng chapter (GDD §4). Key phải khớp manifest — không có
  * gạch nối (`bluebat`, không phải `blue-bat`).
@@ -116,7 +119,7 @@ const PLAYER_KEYS = [
 ] as const;
 
 /** Trạng thái của bootstrap — không phải trạng thái của `RunState`. */
-type BootstrapStatus = 'loading' | 'playing' | 'lost' | 'won' | 'boss-pending' | 'error';
+type BootstrapStatus = 'loading' | 'playing' | 'room-clear' | 'lost' | 'won' | 'boss-pending' | 'error';
 
 @ccclass('Bootstrap')
 export class Bootstrap extends Component {
@@ -138,6 +141,7 @@ export class Bootstrap extends Component {
   private player: PlayerController | null = null;
   private bulletView: BulletView | null = null;
   private hud: Hud | null = null;
+  private roomClearBanner: Node | null = null;
 
   private enemies: EnemyView[] = [];
   private currentLevel: LevelData | null = null;
@@ -169,7 +173,7 @@ export class Bootstrap extends Component {
         alive: true,
       }));
 
-    player.step(this.nowMs, deltaMs, targets);
+    player.step(this.nowMs, deltaMs, targets, level);
     for (const enemy of this.enemies) {
       if (enemy.isDead) continue;
       enemy.step(this.nowMs, deltaMs, player.position);
@@ -512,7 +516,7 @@ export class Bootstrap extends Component {
       if (victim === undefined) continue;
 
       spent.add(bullet.id);
-      victim.takeDamage(bullet.damage);
+      victim.takeDamage(bullet.damage, bullet.position);
     }
 
     if (spent.size > 0) {
@@ -535,7 +539,7 @@ export class Bootstrap extends Component {
     for (const enemy of this.enemies) {
       if (enemy.isDead || !enemy.melee) continue;
       if (distance(enemy.position, player.position) > enemy.contactRangeTiles) continue;
-      player.applyDamage(this.nowMs, enemy.contactDamage);
+      player.applyDamage(this.nowMs, enemy.contactDamage, enemy.position);
     }
   }
 
@@ -553,8 +557,24 @@ export class Bootstrap extends Component {
 
     run.onRoomCleared();
     console.log(`[YokaiField] Phòng ${level.room} sạch.`);
-    run.advanceToNextRoom();
-    this.enterRoom(run.room);
+
+    // Dừng sim (update() return khi status khác 'playing') và giữ chữ ~1 s để
+    // người chơi đọc được "phòng sạch" trước khi màn hình đổi. Hẹn giờ bằng
+    // scheduler của Cocos, không dùng setTimeout — callback tự bị huỷ khi scene reload.
+    this.status = 'room-clear';
+    this.roomClearBanner?.destroy();
+    this.roomClearBanner = this.showBanner('room-clear', 'ROOM CLEAR', END_WIN_COLOR, 20);
+
+    this.scheduleOnce(() => {
+      const current = this.run;
+      if (!this.isValid || current === null || this.status !== 'room-clear') return;
+
+      this.roomClearBanner?.destroy();
+      this.roomClearBanner = null;
+      this.status = 'playing';
+      current.advanceToNextRoom();
+      this.enterRoom(current.room);
+    }, ROOM_CLEAR_BANNER_SECONDS);
   }
 
   private enterRoom(roomNumber: number): void {
@@ -699,12 +719,12 @@ export class Bootstrap extends Component {
     }
   }
 
-  /** Chữ to giữa màn hình (lỗi load, game over, thắng chapter). */
-  private showBanner(name: string, text: string, color: Color): void {
+  /** Chữ to giữa màn hình (lỗi load, game over, thắng chapter, room clear). */
+  private showBanner(name: string, text: string, color: Color, fontSize = 13): Node {
     const canvas = this.ensureUiRoot();
     const label = createLabel(canvas, name, text);
-    label.fontSize = 13;
-    label.lineHeight = 17;
+    label.fontSize = fontSize;
+    label.lineHeight = fontSize + 4;
     label.color = color;
     label.enableWrapText = true;
     // RESIZE_HEIGHT + bề rộng cố định = xuống dòng theo màn hình thay vì tràn ra ngoài.
@@ -715,6 +735,7 @@ export class Bootstrap extends Component {
       transform.setContentSize(view.getVisibleSize().width - 16, 80);
     }
     label.node.setPosition(0, 0, 0);
+    return label.node;
   }
 
   // -------------------------------------------------------------------------
