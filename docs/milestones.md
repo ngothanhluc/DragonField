@@ -24,6 +24,8 @@ Nguồn thiết kế: `docs/gdd.md`. Quyết định kỹ thuật: `docs/tech-de
 - Chơi được 1 phòng trong editor, chết và restart được.
 - Không có `cc` import trong `src/core/`.
 
+**Trạng thái: ✅ Xong (2026-11-16).** 361 test xanh (có `knockback.test.ts`); chơi trên build web: knockback 1.5 tile, "ROOM CLEAR" ~1 s rồi sang 2/9, GAME OVER + R chơi lại. Còn treo: bộ gõ tiếng Việt (Telex) làm kẹt phím WASD — xem `AGENTS.md`; caster chưa bắn đạn (thuộc M3).
+
 ---
 
 ## M1.5 — Taste test art (bắt buộc)
