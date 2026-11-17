@@ -55,6 +55,7 @@ game/                  # project Cocos Creator — mọi thứ engine đọc n�
 │   ├── scripts/
 │   │   ├── core/      # logic thuần TS — KHÔNG được import 'cc'
 │   │   ├── game/      # component Cocos: adapter mỏng quanh core
+│   │   ├── screens/   # màn M5 dựng bằng code (title/shop/pause/result/…)
 │   │   └── ui/        # component UI
 │   └── resources/
 │       ├── data/      # animations manifest, level data
@@ -105,7 +106,12 @@ art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 | Bộ gõ tiếng Việt (Telex/VNI) bật thì WASD bị kẹt lúc đầu, phải bấm đủ 4 phím mới đi bình thường; tắt bộ gõ (ABC) là hết. CDP/puppeteer không tái hiện được | **chưa sửa** — cần log `keydown/keyup` (code, keyCode, isComposing) lúc bật bộ gõ trước khi sửa `player-controller.ts` |
 | Scale sprite | **1 texture px = 1/16 unit** (`ACTOR_SCALE` trong `level-view.ts`). Không chuẩn hoá theo bề rộng frame — làm vậy player 32 px sẽ nhỏ bằng nửa con quái 16 px |
 | `Sprite.sizeMode = CUSTOM` lấy kích thước từ `UITransform.contentSize` (**mặc định 100×100**), không lấy từ frame | mọi sprite dựng bằng code phải gọi `transform.setContentSize(frame.width, frame.height)`; thiếu dòng đó thì hình to gấp ~3 lần dù rect/scale đúng (vòng telegraph M3 bị đúng lỗi này) |
-| Build `web-desktop` ép `exactFitScreen = false` (plugin build ghi đè trong settings) → canvas đứng yên ở kích thước lúc build, `window.resize` **không** đổi canvas; chỉ `screen.windowSize` mới đổi được (chế độ SubFrame) | Muốn phòng vừa canvas ở mọi tỉ lệ thì letterbox bằng `Camera.rect` trên camera world (`bootstrap.applyViewport`); đừng giả định canvas bám theo viewport khi test bằng `page.setViewport` |
+| Build `web-desktop` ép `exactFitScreen = false` (plugin build ghi đè trong settings) → canvas đứng yên ở kích thước lúc build, `window.resize` **không** tự đổi canvas; chỉ `screen.windowSize` mới đổi được (chế độ SubFrame) | Từ M5 `game/viewport.ts` (`fillBrowserViewport`) gán `screen.windowSize` lúc boot + mỗi `window.resize`, nên canvas bám viewport và UI 16:9/16:10/4:3 không bị cắt. Test phải kiểm `canvas.getBoundingClientRect()` = `innerWidth×innerHeight`, không chỉ `page.setViewport` |
+| Template build đặt canvas trong `#GameDiv` có **border 5px** + inline `1280×960`, kèm `h1.header`/`p.footer` | `fillBrowserViewport` phải set `#GameDiv` fixed `100vw/100vh`, border 0, ẩn header/footer; chỉ đổi `screen.windowSize` thì canvas lệch 5px và tràn viewport (đo được ở headless: `canvas.x = 5`) |
+| `label.node.position` là toạ độ **local** trong button cha, không phải toạ độ canvas | debug `uiText()`/click-to-label phải dùng `node.worldPosition` (Canvas ở 0,0); dùng `.position` thì mọi nút báo cùng một rect và click "Play" rơi vào nút bên dưới |
+| Texture UI import mặc định lọc **bilinear** → nút gỗ 16×8 phóng to và thẻ skill bị nhoè | UI frame/thẻ/chapter button load qua `loadPixelTexture` (`setFilters(NEAREST, NEAREST)`); HUD tim/thanh máu cũng dùng. World art vẫn đi `loadTexture` cho tới khi M6 quyết riêng |
+| Kéo giãn frame nút 16×8 có góc trong suốt làm nền tối full-screen + nearest → 4 góc trong suốt phóng to thành lỗ, HUD/world lọt qua | nền phủ màn dùng `Graphics` (`createBackdropPanel`), không dùng sprite frame nút |
+| Trình duyệt dùng Esc để thoát fullscreen và **không giao keydown** cho page | Màn Settings vẫn phải có nút Back chuột; nghe `fullscreenchange` để đồng bộ save/nhãn, đừng coi Esc là đường thoát duy nhất khi đang fullscreen |
 | `Camera.clearFlags = SOLID_COLOR` chỉ xoá trong `rect` của camera; phần ngoài rect là backbuffer (đen, không đảm bảo màu) | Camera nền `visibility = 0`, `priority = -1`, `rect = (0,0,1,1)` để tô bar letterbox (`bootstrap.createBackdropCamera`) |
 | Asset mới (`.tmx`/`.tsx`/folder) cần `.meta`; meta sai JSON thì asset-db báo `Read meta ... failed` và lần build đó có thể bỏ qua asset | `.tmx.meta`: `importer: "tiled-map"`, `files: [".json", ".tmx"]`; `.tsx.meta`: `importer: "text"`, `files: [".json"]`; folder: `importer: "directory"`. Sinh meta bằng script thì kiểm `python3 -c 'import json,glob;...'` trước khi build |
 | Nhiều tileset trong một `.tmx`: `firstgid` phải bằng tổng `tilecount` của các tileset trước + 1 (`TilesetField` có 75 tile → tileset thứ hai `firstgid="76"`) | gid trong layer = `firstgid + row*columns + col`; sai firstgid thì tile hiện lệch cả bảng hoặc trong suốt |

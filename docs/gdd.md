@@ -164,7 +164,7 @@ Không có theme dungeon/crypt trong pack → không làm. `TilesetFloor.png` ca
 
 | Màn hình | Nội dung |
 |---|---|
-| Title | Play, Settings, Credits |
+| Title | Play, Shop, Settings, Credits |
 | Chapter select | 3 nút, khoá/mở, hiện best |
 | HUD | tim, vàng, icon skill (tối đa 8), số phòng `3/9` |
 | Skill pick | 3 thẻ, hover hiện mô tả, click chọn |
@@ -186,12 +186,16 @@ Không có theme dungeon/crypt trong pack → không làm. `TilesetFloor.png` ca
 {
   "version": 1,
   "gold": 0,
-  "upgrades": { "hp": 0, "damage": 0, "firerate": 0 },
+  "upgrades": { "hearts": 0, "damage": 0, "fireRate": 0 },
   "chaptersUnlocked": 1,
   "best": { "chapter": 0, "room": 0 },
   "settings": { "volume": 0.8, "fullscreen": false }
 }
 ```
+
+Key `hearts`/`fireRate` là tên **trong code** (`UpgradeTrack`). Bản nháp cũ của tài
+liệu này ghi `hp`/`firerate`; `migrate()` vẫn đọc hai tên cũ khi load để save của
+người chơi cũ không mất cấp, nhưng save ghi ra luôn dùng tên mới.
 
 **Không** lưu run đang chơi (user chọn: mất run khi tắt tab).
 
