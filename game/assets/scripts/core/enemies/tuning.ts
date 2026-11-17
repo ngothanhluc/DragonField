@@ -53,3 +53,6 @@ export const COMBAT_TUNING: CombatTuning = TUNING.combat;
 
 /** Số liệu enemy — `behaviours.ts`, `waves.ts` và sim đọc từ đây. */
 export const ENEMY_TUNING: EnemiesTuning = TUNING.enemies;
+
+/** Hệ số scale theo chapter — `behaviours.ts` đọc khi tính máu/sát thương. */
+export const CHAPTER_TUNING = TUNING.chapters;

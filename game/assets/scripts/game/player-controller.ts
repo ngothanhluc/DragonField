@@ -9,13 +9,15 @@
  * Không tự chạy trong `update()`: bootstrap gọi `step()` để thứ tự một frame là tất
  * định (player → enemy → đạn → va chạm), giống `core/sim/run-simulation.ts`.
  */
-import { _decorator, Component, Input, KeyCode, input } from 'cc';
+import { _decorator, Color as CocosColor, Component, Input, KeyCode, Sprite as CocosSprite, input } from 'cc';
 import type { AnimationManifest, Direction } from '../core/art/manifest';
 import { resolve } from '../core/art/manifest';
 import { directionFromVector, loopDurationMs } from '../core/art/runtime';
 import { AutoFire } from '../core/combat/auto-fire';
 import { BulletPool } from '../core/combat/bullets';
 import { HealthState } from '../core/combat/health';
+import { firePlayerVolley } from '../core/combat/player-fire';
+import { ShieldCharger } from '../core/combat/shield';
 import { startKnockback, stepKnockback, type KnockbackState } from '../core/combat/knockback';
 import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
@@ -23,10 +25,23 @@ import { ROOM_EDGE_MARGIN_TILES } from '../core/enemies/behaviours';
 import { ROOM_COLS, ROOM_ROWS, type LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-intent';
+import { SeededRng } from '../core/rng';
+import { computeDerivedStats, type DerivedStats } from '../core/skills/derived-stats';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { tileToWorld } from './level-view';
 
 const { ccclass } = _decorator;
+
+/** `cc` là module any: tên import chỉ dùng được ở vị trí value. */
+type Color = InstanceType<typeof CocosColor>;
+type Sprite = InstanceType<typeof CocosSprite>;
+
+/** Tint khiên / lúc trúng đòn (đọc được trạng thái mà không cần icon riêng). */
+const PLAYER_NO_TINT = new CocosColor(255, 255, 255, 255);
+const PLAYER_SHIELD_TINT = new CocosColor(150, 225, 255, 255);
+const PLAYER_HURT_TINT = new CocosColor(255, 150, 150, 255);
+/** Thời gian giữ tint trúng đòn / chặn đòn, ms. */
+const PLAYER_TINT_MS = 140;
 
 /**
  * Hình dạng tối thiểu của event bàn phím mà file này dùng. `cc` là module any trong repo
@@ -71,13 +86,22 @@ export interface PlayerInitArgs {
   readonly manifest: AnimationManifest;
   /** Vị trí spawn trong hệ tile của `LevelData`, y hướng xuống. */
   readonly startAt: Vec2;
+  /** RNG của run cho crit từng viên đạn (cùng nguồn với roll skill). */
+  readonly rng?: SeededRng;
 }
 
 @ccclass('PlayerController')
 export class PlayerController extends Component {
   private readonly health = new HealthState(DEFAULT_COMBAT);
-  private readonly autoFire = AutoFire.fromRate(DEFAULT_COMBAT.fireRatePerSecond);
+  private autoFire = AutoFire.fromRate(DEFAULT_COMBAT.fireRatePerSecond);
   private readonly bulletPool = new BulletPool();
+  /** Chỉ số hiện tại sau skill — mọi phép tính dùng object này, không đọc DEFAULT_COMBAT. */
+  private stats: DerivedStats = computeDerivedStats(new Map<string, number>());
+  private shield = new ShieldCharger(0, 0);
+  private rng = SeededRng.fromSeed(1);
+  private sprite: Sprite | null = null;
+  private tintUntilMs = 0;
+  private tint: Color = PLAYER_NO_TINT;
   private readonly keys: KeyState = {
     up: false,
     down: false,
@@ -119,9 +143,52 @@ export class PlayerController extends Component {
     return this.health.isDead;
   }
 
+  /** Chỉ số sau skill — CombatLoop đọc để áp crit/pierce/nổ/lifesteal/thorns. */
+  get derivedStats(): DerivedStats {
+    return this.stats;
+  }
+
+  get shieldCharges(): number {
+    return this.shield.charges;
+  }
+
+  get shieldMaxCharges(): number {
+    return this.shield.maxCharges;
+  }
+
+  /** Hồi máu (lifesteal, Second Wind, Vitality lúc nhặt). Trả số tim sau khi hồi. */
+  heal(amount: number): number {
+    return this.health.heal(amount);
+  }
+
+  /**
+   * Áp loadout mới (nhặt skill hoặc debug `grantSkill`).
+   *
+   * `healNow` là hiệu ứng một lần của Vitality. Khiên được tạo lại đầy charge khi
+   * số stack đổi; giữa các lần nhặt, `ShieldCharger` tự hồi theo 20 s.
+   */
+  applyStats(stats: DerivedStats, healNow = 0): void {
+    this.stats = stats;
+    this.health.configure(stats.maxHearts, stats.invulnerabilityMs);
+    if (healNow > 0) this.health.heal(healNow);
+
+    this.autoFire = AutoFire.fromRate(stats.fireRatePerSecond);
+    const shield = stats.shield;
+    if (shield === undefined) {
+      this.shield = new ShieldCharger(0, 0);
+    } else if (
+      this.shield.maxCharges !== shield.charges ||
+      this.shield.cooldownMs !== shield.cooldownMs
+    ) {
+      this.shield = new ShieldCharger(shield.charges, shield.cooldownMs);
+    }
+  }
+
   /** Gọi một lần sau khi `addComponent`, trước frame đầu tiên. */
   init(args: PlayerInitArgs): void {
     this.animator = this.getComponent(SpriteAnimator);
+    this.sprite = this.getComponent(CocosSprite);
+    if (args.rng !== undefined) this.rng = args.rng;
     this.attackAnimMs = Math.max(1, loopDurationMs(resolve(args.manifest, 'player.attack.down')));
 
     this.tilePosition = { x: args.startAt.x, y: args.startAt.y };
@@ -153,6 +220,8 @@ export class PlayerController extends Component {
   ): void {
     if (this.health.isDead) return;
 
+    this.shield.update(nowMs);
+
     const input2D = normalizeMoveInput(this.keys);
     // `normalizeMoveInput` dùng quy ước màn hình: up = +y. Dữ liệu tile có y hướng
     // **xuống**, nên lật dấu y đúng một lần, ở đây.
@@ -161,7 +230,7 @@ export class PlayerController extends Component {
 
     if (moving) {
       this.facing = directionFromVector(moveIntent, this.facing);
-      const velocity = velocityFromInput(moveIntent, DEFAULT_COMBAT.moveSpeedTilesPerSecond);
+      const velocity = velocityFromInput(moveIntent, this.stats.moveSpeedTilesPerSecond);
       const seconds = deltaMs / 1000;
       this.tilePosition = {
         x: clamp(
@@ -181,6 +250,7 @@ export class PlayerController extends Component {
     this.applyKnockback(deltaMs, level);
     this.fireIfReady(nowMs, deltaMs, targets);
     this.playCurrentAnimation(nowMs, moving);
+    this.applyStateTint(nowMs);
   }
 
   /**
@@ -188,10 +258,19 @@ export class PlayerController extends Component {
    * đòn thật sự vào (dùng cho log/FX sau này).
    */
   applyDamage(nowMs: number, amount: number, source: Vec2 | null = null): boolean {
+    // Khiên chặn trước i-frame: đòn bị chặn không tiêu i-frame và không knockback.
+    if (this.shield.tryBlock(nowMs)) {
+      this.tintUntilMs = nowMs + PLAYER_TINT_MS;
+      this.tint = PLAYER_SHIELD_TINT;
+      return true;
+    }
+
     const result = this.health.tryDamage(amount, nowMs);
     if (!result.applied) return false;
 
     this.hitUntilMs = nowMs + HIT_ANIM_MS;
+    this.tintUntilMs = nowMs + PLAYER_TINT_MS;
+    this.tint = PLAYER_HURT_TINT;
     this.playAnimation(`player.hit.${this.facing}`, this.facing);
 
     if (result.dead) {
@@ -244,17 +323,33 @@ export class PlayerController extends Component {
     });
     if (shot === null) return;
 
-    const speed = DEFAULT_COMBAT.projectileSpeedTilesPerSecond;
-    this.bulletPool.spawn({
-      position: shot.origin,
-      velocity: { x: shot.direction.x * speed, y: shot.direction.y * speed },
+    firePlayerVolley({
+      pool: this.bulletPool,
+      stats: this.stats,
+      rng: this.rng,
+      origin: shot.origin,
+      direction: shot.direction,
+      speedTilesPerSecond: DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
       radiusTiles: BULLET_RADIUS_TILES,
-      damage: DEFAULT_COMBAT.damage,
-      owner: 'player',
       ttlMs: PLAYER_BULLET_TTL_MS,
     });
 
     this.attackUntilMs = nowMs + this.attackAnimMs;
+  }
+
+  /**
+   * Tint trạng thái: đỏ khi vừa trúng đòn, xanh khi còn charge khiên. Đây là
+   * "shield icon/tint" của M4 — nhìn nhân vật biết khiên còn hay đã vỡ.
+   */
+  private applyStateTint(nowMs: number): void {
+    const sprite = this.sprite;
+    if (sprite === null) return;
+
+    if (nowMs < this.tintUntilMs) {
+      sprite.color = this.tint;
+      return;
+    }
+    sprite.color = this.shield.charges > 0 ? PLAYER_SHIELD_TINT : PLAYER_NO_TINT;
   }
 
   private playCurrentAnimation(nowMs: number, moving: boolean): void {

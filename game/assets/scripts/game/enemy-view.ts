@@ -35,6 +35,7 @@ import {
 import type { Direction } from '../core/art/manifest';
 import { directionFromVector } from '../core/art/runtime';
 import { startKnockback, stepKnockback, type KnockbackState } from '../core/combat/knockback';
+import { StatusEffects } from '../core/combat/status-effects';
 import { telegraphProgress, type TelegraphKind } from '../core/combat/telegraph';
 import { DEFAULT_COMBAT } from '../core/config';
 import {
@@ -53,6 +54,7 @@ import { eliteScale } from '../core/enemies/elite';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
+import type { DerivedStats } from '../core/skills/derived-stats';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { loadTexture } from './assets/texture-cache';
 import { sliceFrame, tileToWorld } from './level-view';
@@ -85,7 +87,8 @@ const RING_FRAMES = 4;
 /** Frame cắt một lần cho cả scene — mỗi enemy chỉ tham chiếu, không tự cắt lại. */
 let ringFramesPromise: Promise<SpriteFrame[]> | null = null;
 
-function loadRingFrames(): Promise<SpriteFrame[]> {
+/** Load 4 frame vòng telegraph, dùng chung với boss (`boss-view.ts`). */
+export function loadTelegraphFrames(): Promise<SpriteFrame[]> {
   if (ringFramesPromise !== null) return ringFramesPromise;
 
   const task = loadTexture(TELEGRAPH_RING_SHEET).then((texture) =>
@@ -104,6 +107,8 @@ function loadRingFrames(): Promise<SpriteFrame[]> {
 const NO_TINT = new CocosColor(255, 255, 255, 255);
 const HIT_TINT = new CocosColor(255, 250, 225, 255);
 const ELITE_TINT = new CocosColor(206, 174, 255, 255);
+const FROZEN_TINT = new CocosColor(150, 220, 255, 255);
+const POISONED_TINT = new CocosColor(170, 230, 130, 255);
 const TELEGRAPH_TINT: Readonly<Record<RoleTelegraphKind, Color>> = {
   chaser: new CocosColor(255, 226, 120, 255),
   caster: new CocosColor(130, 220, 255, 255),
@@ -197,6 +202,8 @@ export class EnemyView extends Component {
   private chargeHitDone = false;
   /** `untilMs` của cú lao đang chạy — đổi giá trị = cú mới (elite lao liên tiếp). */
   private chargeUntilMs = -1;
+  /** Freeze/Poison do skill player; core quyết thời gian, view chỉ giữ state. */
+  private readonly statuses = new StatusEffects();
 
   get id(): string {
     return this.state?.id ?? '';
@@ -287,6 +294,17 @@ export class EnemyView extends Component {
 
     const previous = state.action;
     const next = decideAction({ state, player, nowMs, level });
+
+    // Poison chảy trước khi quyết action: enemy có thể chết trong frame này.
+    const poison = this.statuses.poisonDamage(nowMs, deltaMs);
+    if (poison > 0) {
+      state.health = Math.max(0, state.health - poison);
+      if (state.health <= 0) {
+        this.die();
+        return result;
+      }
+    }
+
     const released = attackReleased(previous, next);
 
     // `actionStartedMs` là mốc của **chu kỳ đòn** — xem `core/enemies/attack-cycle.ts`.
@@ -311,7 +329,7 @@ export class EnemyView extends Component {
     }
 
     const before: Vec2 = { x: state.position.x, y: state.position.y };
-    this.advance(next, deltaMs);
+    this.advance(next, deltaMs, this.statuses.speedMultiplier(nowMs));
     this.applyKnockback(deltaMs);
     this.syncNodePosition();
 
@@ -356,6 +374,11 @@ export class EnemyView extends Component {
     }
   }
 
+  /** Freeze/Poison khi đạn player trúng. Core quyết hiệu ứng, view chỉ giữ state. */
+  applyStatus(stats: DerivedStats, nowMs: number): void {
+    this.statuses.apply(stats, nowMs);
+  }
+
   /** Cú lao hiện tại đã gây sát thương chưa — battle loop gọi để tránh trừ máu 2 lần. */
   get chargeHitApplied(): boolean {
     return this.chargeHitDone;
@@ -379,12 +402,12 @@ export class EnemyView extends Component {
     this.node.active = false;
   }
 
-  private advance(action: EnemyAction, deltaMs: number): void {
+  private advance(action: EnemyAction, deltaMs: number, speedMultiplier = 1): void {
     const state = this.state;
     const level = this.level;
     if (state === null || level === null) return;
 
-    const seconds = deltaMs / 1000;
+    const seconds = (deltaMs / 1000) * Math.max(0, Math.min(1, speedMultiplier));
     let next: Vec2 = state.position;
 
     if (action.kind === 'charge') {
@@ -450,8 +473,15 @@ export class EnemyView extends Component {
     }
 
     this.applyScale(hitFlash ? HIT_FLASH_SCALE : 1);
-    this.applyTint(hitFlash ? HIT_TINT : this.idleTint());
+    this.applyTint(hitFlash ? HIT_TINT : this.stateTint(nowMs));
     this.hideRing();
+  }
+
+  /** Tint trạng thái ngoài telegraph: frozen > poisoned > elite. */
+  private stateTint(nowMs: number): Color {
+    if (this.statuses.isSlowed(nowMs)) return FROZEN_TINT;
+    if (this.statuses.isPoisoned(nowMs)) return POISONED_TINT;
+    return this.idleTint();
   }
 
   /** Elite giữ tint tím nhạt cả lúc đứng yên — cách đọc "con này mạnh hơn" không cần chữ. */
@@ -515,7 +545,7 @@ export class EnemyView extends Component {
   // -------------------------------------------------------------------------
 
   private async createRing(): Promise<void> {
-    const frames = await loadRingFrames();
+    const frames = await loadTelegraphFrames();
     if (!this.isValid || this.dead) return;
     this.ringFrames = frames;
 

@@ -25,8 +25,9 @@
  *   lại (adapter Cocos mới là bên chạy animation và FX).
  * - `godMode` là hook test: player không nhận sát thương.
  */
-import { BOSSES, type BossId, type BossPhase } from '../boss/boss-defs';
+import { BOSSES, phaseFor, type BossId, type BossPhase } from '../boss/boss-defs';
 import {
+  bulletVelocity,
   initialBossState,
   stepBoss,
   type BossState,
@@ -36,6 +37,16 @@ import { summonedEnemies } from '../boss/summon';
 import { AutoFire } from '../combat/auto-fire';
 import { BulletPool, hitsCircle, type Bullet } from '../combat/bullets';
 import { HealthState } from '../combat/health';
+import { accumulateDamage } from '../combat/integer-damage';
+import { firePlayerVolley } from '../combat/player-fire';
+import {
+  HOMING_TURN_RATE_RADIANS_PER_SECOND,
+  damageAfterExecute,
+  lifestealHeal,
+  ricochetTarget,
+  steerVelocity,
+} from '../combat/shot-effects';
+import { StatusEffects } from '../combat/status-effects';
 import type { Targetable } from '../combat/targeting';
 import { DEFAULT_COMBAT } from '../config';
 import { maxHealthFor } from '../enemies/behaviours';
@@ -43,6 +54,7 @@ import { ROOM_COLS, ROOM_ROWS, type EnemyRole } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
 import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
 import { SeededRng } from '../rng';
+import { computeDerivedStats, type DerivedStats } from '../skills/derived-stats';
 
 /** Bước mô phỏng, ms. Trùng nhịp `SIM_STEP_MS` của run simulation để so số đo. */
 export const BOSS_RUN_STEP_MS = 16;
@@ -148,7 +160,7 @@ export type BossRunEvent =
       readonly kind: 'player-hit';
       readonly nowMs: number;
       readonly hearts: number;
-      readonly source: 'projectile';
+      readonly source: 'projectile' | 'contact';
     }
   | { readonly kind: 'player-dead'; readonly nowMs: number };
 
@@ -164,6 +176,14 @@ export interface BossRunOptions {
    * không giết nó). Mặc định `DEFAULT_COMBAT.damage`.
    */
   readonly playerDamagePerShot?: number;
+  /** Skill của run (`Map<id, stacks>`) — sim phải mô phỏng đúng như game. */
+  readonly skills?: ReadonlyMap<string, number>;
+  /** Bắt đầu ở một phase (test "mỗi phase buộc phải di chuyển"). 1 = đầy máu. */
+  readonly bossHealthFraction?: number;
+  /** Test hook: máu player lớn hơn 6 để đo nhiều phase trong một lần chạy. */
+  readonly playerMaxHearts?: number;
+  /** Máu đầu vào (sim chapter nối phòng boss); mặc định đầy máu. */
+  readonly playerHearts?: number;
   /** Mặc định `approachBoss`: bám boss để giữ tầm auto-aim. */
   readonly policy?: BossRunPolicy;
   readonly playerStart?: Vec2;
@@ -225,37 +245,63 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     throw new Error(`simulateBossRun cần maxDurationMs hữu hạn > 0, nhận ${maxDurationMs}`);
   }
 
-  const damagePerShot = options.playerDamagePerShot ?? DEFAULT_COMBAT.damage;
+  const baseStats = computeDerivedStats(options.skills ?? new Map<string, number>());
+  const damagePerShot = options.playerDamagePerShot ?? baseStats.damage;
   if (!Number.isFinite(damagePerShot) || damagePerShot < 0) {
     throw new Error(
       `simulateBossRun cần playerDamagePerShot hữu hạn >= 0, nhận ${damagePerShot}`,
     );
   }
+  const stats: DerivedStats = { ...baseStats, damage: damagePerShot };
+  const maxHearts = Math.max(baseStats.maxHearts, options.playerMaxHearts ?? 0);
 
   const rng = new SeededRng(options.seed);
-  const health = new HealthState(DEFAULT_COMBAT);
-  const autoFire = AutoFire.fromRate(DEFAULT_COMBAT.fireRatePerSecond);
+  const health = new HealthState(
+    {
+      playerMaxHearts: maxHearts,
+      invulnerabilityMs: baseStats.invulnerabilityMs,
+    },
+    Math.min(options.playerHearts ?? maxHearts, maxHearts),
+  );
+  const autoFire = AutoFire.fromRate(stats.fireRatePerSecond);
   const bullets = new BulletPool();
+  const bossStatus = new StatusEffects();
   const events: BossRunEvent[] = [];
   const phaseChanges: BossPhase[] = [];
   /** Id đạn trúng trong frame hiện tại; tái dùng để không cấp phát mỗi frame. */
   const spent = new Set<number>();
+  let hitstopMs = 0;
 
   const hitboxRadius = BOSSES[options.bossId].hitboxRadiusTiles;
   const policy = options.policy ?? approachBoss;
+  const fraction = Math.min(1, Math.max(0, options.bossHealthFraction ?? 1));
 
   let boss: BossState = initialBossState(options.bossId, options.bossStart ?? DEFAULT_BOSS_START);
+  if (fraction < 1) {
+    boss = {
+      ...boss,
+      health: Math.round(BOSSES[options.bossId].maxHealth * fraction),
+      phase: phaseFor(options.bossId, fraction),
+    };
+  }
+  let bossDamageCarry = 0;
   let player: Vec2 = { ...(options.playerStart ?? DEFAULT_PLAYER_START) };
   const summoned: SummonedState[] = [];
   let durationMs = 0;
   let outcome: BossRunOutcome | null = null;
 
   const damageBoss = (amount: number): void => {
-    boss = { ...boss, health: Math.max(0, boss.health - amount) };
+    if (amount <= 0 || boss.health <= 0) return;
+    // Máu boss nguyên: poison/crit/execute lẻ được cộng dồn qua `carry`.
+    const step = accumulateDamage(bossDamageCarry, amount);
+    bossDamageCarry = step.carry;
+    if (step.whole <= 0) return;
+
+    boss = { ...boss, health: Math.max(0, boss.health - step.whole) };
     events.push({ kind: 'boss-hit', nowMs: durationMs, health: boss.health });
   };
 
-  const damagePlayer = (amount: number): void => {
+  const damagePlayer = (amount: number, source: 'projectile' | 'contact' = 'projectile'): void => {
     if (options.godMode === true) return;
     const result = health.tryDamage(amount, durationMs);
     if (!result.applied) return;
@@ -263,12 +309,22 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
       kind: 'player-hit',
       nowMs: durationMs,
       hearts: result.hearts,
-      source: 'projectile',
+      source,
     });
+  };
+
+  const healPlayer = (amount: number): void => {
+    if (amount > 0) health.heal(amount);
   };
 
   while (durationMs < maxDurationMs && outcome === null) {
     durationMs += BOSS_RUN_STEP_MS;
+
+    // Hitstop: thời gian trôi nhưng mô phỏng đứng yên, đúng `HitstopClock` của game.
+    if (hitstopMs > 0) {
+      hitstopMs -= BOSS_RUN_STEP_MS;
+      continue;
+    }
 
     // --- Player: di chuyển theo policy, rồi bắn tự động -------------------
     player = movePlayer(
@@ -282,7 +338,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         bullets: bullets.active(),
         summoned,
       }),
-      DEFAULT_COMBAT.moveSpeedTilesPerSecond,
+      stats.moveSpeedTilesPerSecond,
     );
 
     const targets: Targetable[] = [
@@ -300,16 +356,17 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
       rangeTiles: DEFAULT_COMBAT.targetingRangeTiles,
     });
     if (shot !== null) {
-      const speed = DEFAULT_COMBAT.projectileSpeedTilesPerSecond;
-      bullets.spawn({
-        position: shot.origin,
-        velocity: { x: shot.direction.x * speed, y: shot.direction.y * speed },
+      firePlayerVolley({
+        pool: bullets,
+        stats,
+        rng,
+        origin: shot.origin,
+        direction: shot.direction,
+        speedTilesPerSecond: DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
         radiusTiles: PLAYER_BULLET_RADIUS_TILES,
-        damage: damagePerShot,
-        owner: 'player',
         ttlMs: PLAYER_BULLET_TTL_MS,
       });
-      events.push({ kind: 'player-shot', nowMs: durationMs, damage: damagePerShot });
+      events.push({ kind: 'player-shot', nowMs: durationMs, damage: stats.damage });
     }
 
     // --- Boss: pattern ---------------------------------------------------
@@ -322,6 +379,15 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     });
     boss = stepped.state;
 
+    // Thân boss lúc charge gây sát thương (xem `combat-loop.ts`).
+    if (
+      boss.chargeDirection !== null &&
+      boss.health > 0 &&
+      distance(boss.position, player) <= hitboxRadius + PLAYER_RADIUS_TILES
+    ) {
+      damagePlayer(DEFAULT_COMBAT.contactDamage, 'contact');
+    }
+
     for (const event of stepped.events) {
       switch (event.kind) {
         case 'shoot':
@@ -333,7 +399,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
           // `summonedEnemies` là nguồn tất định duy nhất cho vị trí quái: cùng
           // seed + cùng state cho đúng cùng danh sách.
           for (const enemy of summonedEnemies(boss, event.role, event.count, rng)) {
-            const enemyMaxHealth = maxHealthFor(enemy.role, false);
+            const enemyMaxHealth = maxHealthFor(enemy.role, false, undefined, BOSSES[options.bossId].chapter);
             summoned.push({
               id: enemy.id,
               role: enemy.role,
@@ -382,6 +448,21 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
       }
     }
 
+    // --- Poison trên boss (skill Poison) ---------------------------------
+    const poison = bossStatus.poisonDamage(durationMs, BOSS_RUN_STEP_MS);
+    if (poison > 0 && boss.health > 0) damageBoss(poison);
+
+    // --- Homing: xoay vận tốc về mục tiêu gần nhất ------------------------
+    for (const bullet of bullets.active()) {
+      if (!bullet.homing || bullet.owner !== 'player') continue;
+      const aim = nearestTarget(bullet.position, boss, summoned);
+      if (aim === null) continue;
+      const turn = (HOMING_TURN_RATE_RADIANS_PER_SECOND * BOSS_RUN_STEP_MS) / 1000;
+      const next = steerVelocity(bullet.velocity, bullet.position, aim, turn);
+      bullet.velocity.x = next.x;
+      bullet.velocity.y = next.y;
+    }
+
     // --- Đạn: bay, dọn viên ra khỏi phòng, rồi giải va chạm --------------
     bullets.update(BOSS_RUN_STEP_MS);
     bullets.consumeWhere((bullet) => !isInsideArena(bullet.position));
@@ -398,28 +479,58 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         continue;
       }
 
+      let consumed = false;
+
       // Boss là mục tiêu chính; hitbox là proxy bán kính đã ghi ở đầu file.
       if (
         boss.health > 0 &&
+        !bullet.hitIds.includes(BOSS_TARGET_ID) &&
         hitsCircle(area, { position: boss.position, radiusTiles: hitboxRadius })
       ) {
-        spent.add(bullet.id);
-        if (bullet.damage > 0) damageBoss(bullet.damage);
-        continue;
+        const healthBefore = boss.health;
+        const damage = damageAfterExecute(
+          stats,
+          bullet.damage,
+          healthBefore / BOSSES[options.bossId].maxHealth,
+        );
+        damageBoss(damage);
+        bossStatus.apply(stats, durationMs);
+        healPlayer(lifestealHeal(stats, Math.min(damage, healthBefore)));
+        bullet.hitIds.push(BOSS_TARGET_ID);
+        hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
+        splashDamage(stats, bullet, boss.position, summoned, (target) => {
+          target.health = Math.max(0, target.health - bullet.explosiveDamage);
+          if (target.health <= 0) {
+            events.push({ kind: 'boss-summoned-killed', nowMs: durationMs, enemyId: target.id });
+          }
+        });
+        consumed = resolveBulletAfterHit(bullet, boss.position, summoned);
+        if (consumed) {
+          spent.add(bullet.id);
+          continue;
+        }
       }
 
-      const victim = summoned.find(
-        (enemy) =>
-          enemy.health > 0 &&
-          hitsCircle(area, { position: enemy.position, radiusTiles: SUMMONED_RADIUS_TILES }),
-      );
-      if (victim === undefined) continue;
+      for (const victim of summoned) {
+        if (victim.health <= 0) continue;
+        if (bullet.hitIds.includes(victim.id)) continue;
+        if (!hitsCircle(area, { position: victim.position, radiusTiles: SUMMONED_RADIUS_TILES })) {
+          continue;
+        }
 
-      spent.add(bullet.id);
-      victim.health -= bullet.damage;
-      if (victim.health <= 0) {
-        events.push({ kind: 'boss-summoned-killed', nowMs: durationMs, enemyId: victim.id });
+        const damage = damageAfterExecute(stats, bullet.damage, victim.health / victim.maxHealth);
+        victim.health = Math.max(0, victim.health - damage);
+        healPlayer(lifestealHeal(stats, Math.min(damage, victim.maxHealth)));
+        bullet.hitIds.push(victim.id);
+        hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
+        if (victim.health <= 0) {
+          events.push({ kind: 'boss-summoned-killed', nowMs: durationMs, enemyId: victim.id });
+        }
+        consumed = resolveBulletAfterHit(bullet, victim.position, summoned);
+        if (consumed) break;
       }
+
+      if (consumed) spent.add(bullet.id);
     }
     if (spent.size > 0) bullets.consumeWhere((bullet) => spent.has(bullet.id));
 
@@ -446,6 +557,81 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
   };
 }
 
+/** Mục tiêu gần nhất cho Homing: boss nếu còn sống, sau đó tới quái được gọi. */
+function nearestTarget(
+  from: Vec2,
+  boss: BossState,
+  summoned: readonly SummonedState[],
+): Vec2 | null {
+  let best: Vec2 | null = null;
+  let bestGap = Number.POSITIVE_INFINITY;
+
+  if (boss.health > 0) {
+    best = boss.position;
+    bestGap = distance(from, boss.position);
+  }
+  for (const enemy of summoned) {
+    if (enemy.health <= 0) continue;
+    const gap = distance(from, enemy.position);
+    if (gap < bestGap) {
+      best = enemy.position;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
+/** Nổ AoE quanh điểm trúng: mọi mục tiêu khác trong bán kính nhận damage phụ. */
+function splashDamage(
+  stats: DerivedStats,
+  bullet: Bullet,
+  center: Vec2,
+  summoned: readonly SummonedState[],
+  apply: (target: SummonedState) => void,
+): void {
+  if (bullet.explosiveRadiusTiles <= 0 || stats.explosive === undefined) return;
+  for (const enemy of summoned) {
+    if (enemy.health <= 0 || bullet.hitIds.includes(enemy.id)) continue;
+    if (distance(center, enemy.position) > bullet.explosiveRadiusTiles) continue;
+    apply(enemy);
+  }
+}
+
+/**
+ * Sau khi trúng một mục tiêu: giữ đạn nếu còn xuyên, nảy sang mục tiêu khác
+ * nếu còn lượt, ngược lại thu hồi. Trả `true` khi đạn phải bị bỏ.
+ */
+function resolveBulletAfterHit(
+  bullet: Bullet,
+  from: Vec2,
+  summoned: readonly SummonedState[],
+): boolean {
+  if (bullet.pierceRemaining > 0) {
+    bullet.pierceRemaining -= 1;
+    return false;
+  }
+  if (bullet.ricochetRemaining > 0) {
+    const next = ricochetTarget(
+      from,
+      summoned
+        .filter((enemy) => enemy.health > 0)
+        .map((enemy) => ({ id: enemy.id, position: enemy.position })),
+      bullet.hitIds,
+    );
+    if (next !== null) {
+      bullet.ricochetRemaining -= 1;
+      const speed = Math.hypot(bullet.velocity.x, bullet.velocity.y);
+      const dx = next.position.x - from.x;
+      const dy = next.position.y - from.y;
+      const length = Math.hypot(dx, dy) || 1;
+      bullet.velocity.x = (dx / length) * speed;
+      bullet.velocity.y = (dy / length) * speed;
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Di chuyển player theo phím của frame, kẹp trong phòng. */
 function movePlayer(player: Vec2, input: MoveInput, speedTilesPerSecond: number): Vec2 {
   const velocity = velocityFromInput(normalizeMoveInput(input), speedTilesPerSecond);
@@ -467,15 +653,10 @@ function movePlayer(player: Vec2, input: MoveInput, speedTilesPerSecond: number)
  * là góc tuyệt đối, 0 = +x, `Math.PI / 2` = +y (xuống).
  */
 function spawnBossBullet(bullets: BulletPool, verb: BulletVerb): void {
-  const baseAngle =
-    verb.toward === null
-      ? 0
-      : Math.atan2(verb.toward.y - verb.from.y, verb.toward.x - verb.from.x);
-  const angle = baseAngle + verb.angleOffset;
-
+  const velocity = bulletVelocity(verb);
   bullets.spawn({
     position: verb.from,
-    velocity: { x: Math.cos(angle) * verb.speed, y: Math.sin(angle) * verb.speed },
+    velocity,
     radiusTiles: verb.radiusTiles,
     damage: verb.damage,
     owner: 'enemy',

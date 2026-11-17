@@ -26,7 +26,7 @@ export function spawnWave(level: LevelData, waveIndex: number): EnemyState[] {
   }
 
   return wave.enemies.map((enemy, index): EnemyState => {
-    const maxHealth = maxHealthFor(enemy.role, enemy.elite);
+    const maxHealth = maxHealthFor(enemy.role, enemy.elite, undefined, level.chapter);
     return {
       id: enemyId(level.room, waveIndex, index),
       role: enemy.role,

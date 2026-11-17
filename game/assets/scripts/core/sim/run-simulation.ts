@@ -2,29 +2,53 @@
  * Mô phỏng run headless — không engine, không DOM, không `SaveStorage`.
  *
  * Nối các module `core/` mà game dùng (`waves`, `behaviours`, `AutoFire`,
- * `BulletPool`, `HealthState`, `rewards`) thành tick loop 16 ms, để test tích
- * hợp bắt regression balance và luồng thắng/thua mà không mở Cocos.
+ * `BulletPool`, `HealthState`, `rewards`, `skills`, `boss`) thành tick loop 16 ms,
+ * để test tích hợp bắt regression balance và luồng thắng/thua mà không mở Cocos.
+ *
+ * Đây là bản mô phỏng **của đúng những luật game đang chạy** (M4):
+ *
+ * - Nhịp bắn/damage/số đạn/crit/pierce/ricochet/homing/nổ/freeze/poison/
+ *   lifesteal/shield/thorns đều lấy từ `DerivedStats` và các helper core mà
+ *   `game/` dùng.
+ * - Hitstop và stagger được mô phỏng: trúng đạn làm mô phỏng đứng yên 70 ms và
+ *   enemy choáng 150 ms, cooldown không reset.
+ * - Elite caster bắn loạt 3 viên, chaser elite lao, tank elite lao 2 lần; hitbox
+ *   và tầm chạm scale theo silhouette vai trò.
+ * - Phòng boss **không** còn là tank placeholder: nó chạy `simulateBossRun`
+ *   (`core/sim/boss-run.ts`), tức `stepBoss` + phase + summon + skill.
  *
  * - Ngẫu nhiên chỉ qua `SeededRng` tạo từ `seed`; không module-level state.
  * - Vật cản **chỉ chặn đạn** (mô phỏng cân bằng, không phải collision/nav thật).
  * - `godMode` là hook test: bỏ qua sát thương lên player để đo thời gian dọn phòng.
  */
+import { bossForSpriteName } from '../boss/boss-defs';
 import { AutoFire } from '../combat/auto-fire';
 import { BulletPool, firstHit, hitsCircle, type Bullet } from '../combat/bullets';
 import { HealthState } from '../combat/health';
+import { firePlayerVolley } from '../combat/player-fire';
+import {
+  HOMING_TURN_RATE_RADIANS_PER_SECOND,
+  damageAfterExecute,
+  lifestealHeal,
+  ricochetTarget,
+  steerVelocity,
+} from '../combat/shot-effects';
+import { ShieldCharger } from '../combat/shield';
+import { StatusEffects } from '../combat/status-effects';
 import { DEFAULT_COMBAT } from '../config';
 import {
   CHASER_CONTACT_RANGE_TILES,
   ROOM_EDGE_MARGIN_TILES,
-  TANK_CHARGE_SPEED_TILES_PER_SECOND,
   attackReleased,
   contactDamageFor,
   decideAction,
-  maxHealthFor,
   speedFor,
+  staggerAction,
+  visualScaleFor,
   type EnemyAction,
   type EnemyState,
 } from '../enemies/behaviours';
+import { eliteVolleyAngles } from '../enemies/elite';
 import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
@@ -32,6 +56,7 @@ import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../moveme
 import { SeededRng } from '../rng';
 import { goldForKill, goldForRoomClear } from '../run/rewards';
 import { computeDerivedStats } from '../skills/derived-stats';
+import { simulateBossRun } from './boss-run';
 
 export const SIM_STEP_MS = 16;
 /** 10 phút — dài hơn run 8–12 phút của GDD §2. */
@@ -39,7 +64,7 @@ export const SIM_DEFAULT_MAX_DURATION_MS = 600_000;
 
 /** Bán kính va chạm, tile. */
 const PLAYER_RADIUS_TILES = 0.25;
-const ENEMY_RADIUS_TILES = 0.4;
+const DEFAULT_ENEMY_RADIUS_TILES = 0.4;
 const BULLET_RADIUS_TILES = 0.15;
 /** Chaser đứng yên đúng tại ngưỡng này, nên vùng sát thương phải bằng nó. */
 const CONTACT_RANGE_TILES = CHASER_CONTACT_RANGE_TILES;
@@ -70,6 +95,7 @@ export interface PolicyWorld {
   readonly wave: number;
   readonly player: Vec2;
   readonly hearts: number;
+  readonly shieldCharges: number;
   readonly enemies: readonly EnemyState[];
   readonly bullets: readonly Bullet[];
 }
@@ -100,7 +126,9 @@ interface SimEventBase {
 export type SimulationEvent =
   | (SimEventBase & { readonly kind: 'kill'; readonly enemyId: string; readonly role: EnemyRole; readonly gold: number })
   | (SimEventBase & { readonly kind: 'player-hit'; readonly hearts: number; readonly source: 'contact' | 'projectile' })
+  | (SimEventBase & { readonly kind: 'shield-block' })
   | (SimEventBase & { readonly kind: 'room-cleared'; readonly gold: number })
+  | (SimEventBase & { readonly kind: 'boss-phase'; readonly phase: number })
   | { readonly kind: 'run-won' | 'run-lost'; readonly nowMs: number };
 
 export interface SimulationResult {
@@ -123,12 +151,22 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
   const rng = new SeededRng(options.seed);
   const stats = computeDerivedStats(options.skills ?? new Map<string, number>());
-  const health = new HealthState({ playerMaxHearts: stats.maxHearts, invulnerabilityMs: stats.invulnerabilityMs });
+  const health = new HealthState({
+    playerMaxHearts: stats.maxHearts,
+    invulnerabilityMs: stats.invulnerabilityMs,
+  });
+  const shield = new ShieldCharger(
+    stats.shield?.charges ?? 0,
+    stats.shield?.cooldownMs ?? 0,
+  );
   const autoFire = AutoFire.fromRate(stats.fireRatePerSecond);
   const bullets = new BulletPool();
+  /** Status của từng enemy, key = id (không nhét vào `EnemyState` để không đổi schema chung). */
+  const statuses = new Map<string, StatusEffects>();
   const events: SimulationEvent[] = [];
   /** Id đạn trúng trong frame hiện tại; tái dùng để không cấp phát mỗi frame. */
   const spent = new Set<number>();
+  let hitstopMs = 0;
 
   let roomIndex = 0;
   let room = firstRoom;
@@ -141,15 +179,168 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   let goldEarned = 0;
   let status: SimulationStatus | null = null;
 
-  const applyDamage = (amount: number, source: 'contact' | 'projectile'): void => {
+  const healPlayer = (amount: number): void => {
+    if (amount > 0) health.heal(amount);
+  };
+
+  const damagePlayer = (amount: number): void => {
     if (options.godMode === true) return;
+    if (shield.tryBlock(durationMs)) {
+      events.push({ kind: 'shield-block', nowMs: durationMs, room: room.room });
+      return;
+    }
     const result = health.tryDamage(amount, durationMs);
     if (!result.applied) return;
-    events.push({ kind: 'player-hit', nowMs: durationMs, room: room.room, hearts: result.hearts, source });
+    events.push({
+      kind: 'player-hit',
+      nowMs: durationMs,
+      room: room.room,
+      hearts: result.hearts,
+      source: 'projectile',
+    });
   };
+
+  const statusOf = (enemy: EnemyState): StatusEffects => {
+    let entry = statuses.get(enemy.id);
+    if (entry === undefined) {
+      entry = new StatusEffects();
+      statuses.set(enemy.id, entry);
+    }
+    return entry;
+  };
+
+  /**
+   * Caster bắn một loạt. Elite dùng `eliteVolleyAngles` (3 viên toả); thường
+   * một viên với lệch ngẫu nhiên nhỏ để hai caster không bắn trùng một đường.
+   * Cùng luật với `game/combat-loop.ts`.
+   */
+  const fireCasterVolley = (enemy: EnemyState): void => {
+    const dx = player.x - enemy.position.x;
+    const dy = player.y - enemy.position.y;
+    const length = Math.hypot(dx, dy);
+    const baseAngle = length === 0 ? 0 : Math.atan2(dy, dx);
+    const eliteAngles = eliteVolleyAngles(enemy.role, enemy.elite);
+    const angles =
+      enemy.elite && eliteAngles.length > 0
+        ? eliteAngles
+        : [(rng.next() * 2 - 1) * ENEMY_SHOT_SPREAD_RADIANS];
+    const damage = contactDamageFor(enemy.role, enemy.elite, undefined, room.chapter);
+
+    for (const offset of angles) {
+      const angle = baseAngle + offset;
+      bullets.spawn({
+        position: enemy.position,
+        velocity: {
+          x: Math.cos(angle) * ENEMY_BULLET_SPEED_TILES_PER_SECOND,
+          y: Math.sin(angle) * ENEMY_BULLET_SPEED_TILES_PER_SECOND,
+        },
+        radiusTiles: BULLET_RADIUS_TILES,
+        damage,
+        owner: 'enemy',
+        ttlMs: ENEMY_BULLET_TTL_MS,
+      });
+    }
+  };
+
+  const killEnemy = (enemy: EnemyState, atMs: number): void => {
+    if (enemy.health <= 0 && enemy.action.kind === 'dead') return;
+    enemy.health = 0;
+    enemy.action = { kind: 'dead' };
+    const gold = Math.round(goldForKill(enemy.role, enemy.elite) * stats.goldMultiplier);
+    kills += 1;
+    goldEarned += gold;
+    events.push({
+      kind: 'kill',
+      nowMs: atMs,
+      room: room.room,
+      enemyId: enemy.id,
+      role: enemy.role,
+      gold,
+    });
+  };
+
+  const damageEnemy = (enemy: EnemyState, amount: number): number => {
+    if (amount <= 0 || enemy.health <= 0) return 0;
+    const dealt = Math.min(amount, enemy.health);
+    enemy.health = Math.max(0, enemy.health - amount);
+    if (enemy.health <= 0) killEnemy(enemy, durationMs);
+    else enemy.action = staggerAction(durationMs, DEFAULT_COMBAT.enemyStaggerMs);
+    return dealt;
+  };
+
+  /** Vào phòng boss: giao hẳn cho `simulateBossRun` và kết thúc run. */
+  const runBossRoom = (
+    bossRoom: LevelData,
+    atRoomIndex: number,
+  ): { bossDurationMs: number; won: boolean } => {
+    const bossDef =
+      bossRoom.boss === undefined ? undefined : bossForSpriteName(bossRoom.boss.name);
+    if (bossDef === undefined) {
+      throw new Error(`Phòng boss ${bossRoom.id} thiếu boss hợp lệ trong BOSSES`);
+    }
+
+    const result = simulateBossRun({
+      bossId: bossDef.id,
+      seed: options.seed + atRoomIndex * 1_000 + 1,
+      maxDurationMs: Math.max(1, maxDurationMs - durationMs),
+      godMode: options.godMode,
+      skills: options.skills,
+      playerHearts: health.current,
+      playerStart: bossRoom.playerStart,
+      bossStart: bossRoom.bossStart,
+    });
+
+    for (const event of result.events) {
+      if (event.kind === 'boss-phase') {
+        events.push({
+          kind: 'boss-phase',
+          nowMs: durationMs + event.nowMs,
+          room: bossRoom.room,
+          phase: event.phase,
+        });
+      }
+    }
+    if (result.outcome === 'won') {
+      kills += 1;
+      const gold = Math.round(goldForRoomClear(true) * stats.goldMultiplier);
+      goldEarned += gold;
+      roomsCleared += 1;
+      events.push({
+        kind: 'room-cleared',
+        nowMs: durationMs + result.durationMs,
+        room: bossRoom.room,
+        gold,
+      });
+      events.push({ kind: 'run-won', nowMs: durationMs + result.durationMs });
+    } else {
+      events.push({ kind: 'run-lost', nowMs: durationMs + result.durationMs });
+    }
+
+    return { bossDurationMs: result.durationMs, won: result.outcome === 'won' };
+  };
+
+  // Chapter chỉ có phòng boss (author sai/edge): xử lý trước khi vào loop.
+  if (room.isBossRoom) {
+    const bossRun = runBossRoom(room, 0);
+    return {
+      status: bossRun.won ? 'won' : 'lost',
+      roomsCleared,
+      kills,
+      goldEarned,
+      durationMs: bossRun.bossDurationMs,
+      events,
+    };
+  }
 
   while (durationMs < maxDurationMs && status === null) {
     durationMs += SIM_STEP_MS;
+    shield.update(durationMs);
+
+    // Hitstop: thời gian trôi nhưng mô phỏng đứng yên (đúng `HitstopClock`).
+    if (hitstopMs > 0) {
+      hitstopMs -= SIM_STEP_MS;
+      continue;
+    }
 
     const intent = options.policy({
       nowMs: durationMs,
@@ -157,6 +348,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       wave: waveIndex,
       player,
       hearts: health.current,
+      shieldCharges: shield.charges,
       enemies,
       bullets: bullets.active(),
     });
@@ -174,21 +366,27 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       rangeTiles: DEFAULT_COMBAT.targetingRangeTiles,
     });
     if (shot !== null) {
-      const speed = DEFAULT_COMBAT.projectileSpeedTilesPerSecond;
-      const velocity = { x: shot.direction.x * speed, y: shot.direction.y * speed };
-      bullets.spawn({
-        position: shot.origin,
-        velocity,
+      firePlayerVolley({
+        pool: bullets,
+        stats,
+        rng,
+        origin: shot.origin,
+        direction: shot.direction,
+        speedTilesPerSecond: DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
         radiusTiles: BULLET_RADIUS_TILES,
-        damage: stats.damage,
-        owner: 'player',
         ttlMs: PLAYER_BULLET_TTL_MS,
       });
     }
 
-    // decideAction là hàm thuần; adapter (ở đây) mới là bên ghi action.
+    // --- Enemy AI ---------------------------------------------------------
     for (const enemy of enemies) {
       if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
+
+      const statusEffects = statusOf(enemy);
+      const slow = statusEffects.speedMultiplier(durationMs);
+      const poison = statusEffects.poisonDamage(durationMs, SIM_STEP_MS);
+      if (poison > 0) damageEnemy(enemy, poison);
+      if (enemy.health <= 0) continue;
 
       const before = enemy.action;
       const next = decideAction({ state: enemy, player, nowMs: durationMs, level: room });
@@ -196,15 +394,48 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       enemy.action = next;
 
       if (attackReleased(before, next) === 'shot') {
-        const spread = (rng.next() * 2 - 1) * ENEMY_SHOT_SPREAD_RADIANS;
-        spawnEnemyShot(bullets, enemy, player, spread);
+        fireCasterVolley(enemy);
       }
-      advanceEnemy(enemy, next);
+      advanceEnemy(enemy, next, slow, room);
 
       const melee = enemy.role === 'chaser' || enemy.role === 'tank';
-      if (melee && distance(enemy.position, player) <= CONTACT_RANGE_TILES) {
-        applyDamage(contactDamageFor(enemy.role, enemy.elite), 'contact');
+      const contactRange = CONTACT_RANGE_TILES * visualScaleFor(enemy.role);
+      if (melee && distance(enemy.position, player) <= contactRange) {
+        if (options.godMode !== true) {
+          if (shield.tryBlock(durationMs)) {
+            events.push({ kind: 'shield-block', nowMs: durationMs, room: room.room });
+          } else {
+            const result = health.tryDamage(
+              contactDamageFor(enemy.role, enemy.elite, undefined, room.chapter),
+              durationMs,
+            );
+            if (result.applied) {
+              events.push({
+                kind: 'player-hit',
+                nowMs: durationMs,
+                room: room.room,
+                hearts: result.hearts,
+                source: 'contact',
+              });
+              // Thorns: chạm vào player thì enemy ăn đòn (chỉ khi đòn thật sự vào).
+              if (stats.thorns !== undefined) {
+                damageEnemy(enemy, stats.thorns.damage);
+              }
+            }
+          }
+        }
       }
+    }
+
+    // --- Homing -----------------------------------------------------------
+    for (const bullet of bullets.active()) {
+      if (!bullet.homing || bullet.owner !== 'player') continue;
+      const aim = nearestAlive(bullet.position, enemies);
+      if (aim === null) continue;
+      const turn = (HOMING_TURN_RATE_RADIANS_PER_SECOND * SIM_STEP_MS) / 1000;
+      const next = steerVelocity(bullet.velocity, bullet.position, aim, turn);
+      bullet.velocity.x = next.x;
+      bullet.velocity.y = next.y;
     }
 
     bullets.update(SIM_STEP_MS);
@@ -230,27 +461,65 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       if (bullet.owner === 'enemy') {
         if (!hitsCircle(area, { position: player, radiusTiles: PLAYER_RADIUS_TILES })) continue;
         spent.add(bullet.id);
-        applyDamage(bullet.damage, 'projectile');
+        damagePlayer(bullet.damage);
         continue;
       }
 
-      const target = enemies.find(
-        (enemy) =>
-          enemy.health > 0 &&
-          enemy.action.kind !== 'dead' &&
-          hitsCircle(area, { position: enemy.position, radiusTiles: ENEMY_RADIUS_TILES }),
-      );
-      if (target === undefined) continue;
+      // Đạn player: quét mọi enemy còn sống trên đường (Piercing), nảy nếu có
+      // Ricochet, rồi mới quyết thu hồi.
+      let consumed = false;
+      for (const enemy of enemies) {
+        if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
+        if (bullet.hitIds.includes(enemy.id)) continue;
 
-      spent.add(bullet.id);
-      target.health -= bullet.damage;
-      if (target.health > 0) continue;
+        const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
+        if (!hitsCircle(area, { position: enemy.position, radiusTiles: enemyRadius })) continue;
 
-      target.action = { kind: 'dead' };
-      const gold = goldForKill(target.role, target.elite);
-      kills += 1;
-      goldEarned += gold;
-      events.push({ kind: 'kill', nowMs: durationMs, room: room.room, enemyId: target.id, role: target.role, gold });
+        bullet.hitIds.push(enemy.id);
+        const damage = damageAfterExecute(stats, bullet.damage, enemy.health / enemy.maxHealth);
+        const dealt = damageEnemy(enemy, damage);
+        healPlayer(lifestealHeal(stats, dealt));
+        statusOf(enemy).apply(stats, durationMs);
+        hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
+
+        // Explosive: damage phụ lên enemy khác trong bán kính.
+        if (bullet.explosiveRadiusTiles > 0 && bullet.explosiveDamage > 0) {
+          for (const other of enemies) {
+            if (other === enemy || other.health <= 0 || other.action.kind === 'dead') continue;
+            if (distance(bullet.position, other.position) > bullet.explosiveRadiusTiles) continue;
+            damageEnemy(other, bullet.explosiveDamage);
+          }
+        }
+
+        // Enemy chết vì đòn chính: event kill đã phát trong damageEnemy.
+        if (bullet.pierceRemaining > 0) {
+          bullet.pierceRemaining -= 1;
+          continue;
+        }
+        if (bullet.ricochetRemaining > 0) {
+          const next = ricochetTarget(
+            bullet.position,
+            enemies
+              .filter((candidate) => candidate.health > 0 && candidate.action.kind !== 'dead')
+              .map((candidate) => ({ id: candidate.id, position: candidate.position })),
+            bullet.hitIds,
+          );
+          if (next !== null) {
+            bullet.ricochetRemaining -= 1;
+            const speed = Math.hypot(bullet.velocity.x, bullet.velocity.y);
+            const dx = next.position.x - bullet.position.x;
+            const dy = next.position.y - bullet.position.y;
+            const length = Math.hypot(dx, dy) || 1;
+            bullet.velocity.x = (dx / length) * speed;
+            bullet.velocity.y = (dy / length) * speed;
+            continue;
+          }
+        }
+        consumed = true;
+        break;
+      }
+
+      if (consumed) spent.add(bullet.id);
     }
     if (spent.size > 0) bullets.consumeWhere((bullet) => spent.has(bullet.id));
 
@@ -264,10 +533,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (waveIndex + 1 < waveCount(room)) {
       waveIndex += 1;
     } else {
-      const roomGold = goldForRoomClear(room.isBossRoom);
+      const roomGold = Math.round(goldForRoomClear(room.isBossRoom) * stats.goldMultiplier);
       goldEarned += roomGold;
       roomsCleared += 1;
       events.push({ kind: 'room-cleared', nowMs: durationMs, room: room.room, gold: roomGold });
+      healPlayer(stats.healPerRoom ?? 0);
 
       const nextRoom = options.level.rooms[roomIndex + 1];
       if (nextRoom === undefined) {
@@ -275,9 +545,18 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         events.push({ kind: 'run-won', nowMs: durationMs });
         break;
       }
+
       roomIndex += 1;
       room = nextRoom;
       waveIndex = 0;
+
+      if (room.isBossRoom) {
+        const bossRun = runBossRoom(room, roomIndex);
+        durationMs += bossRun.bossDurationMs;
+        status = bossRun.won ? 'won' : 'lost';
+        break;
+      }
+
       player = { x: room.playerStart.x, y: room.playerStart.y };
     }
 
@@ -288,34 +567,27 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   return { status: status ?? 'timeout', roomsCleared, kills, goldEarned, durationMs, events };
 }
 
-/**
- * Wave của phòng. Boss room chưa dùng được `core/boss/*` (module đang thêm song
- * song, chưa có API spawn `EnemyState` ổn định) nên tạm là **một tank**.
- *
- * TODO(boss): thay bằng `assets/scripts/core/boss/patterns.ts` (`stepBoss`) +
- * `boss-defs.ts` để boss room chạy đúng pattern GDD §5.
- */
+/** Wave của phòng. Boss room do `runBossRoom` xử lý nên ở đây chỉ phòng thường. */
 function spawnRoomWave(room: LevelData, waveIndex: number): EnemyState[] {
-  if (!room.isBossRoom) return spawnWave(room, waveIndex);
-
-  const health = maxHealthFor('tank', false);
-  const position = { x: room.size.cols / 2, y: room.size.rows / 4 };
-  return [
-    {
-      id: `r${room.room}-boss`,
-      role: 'tank',
-      elite: false,
-      position,
-      health,
-      maxHealth: health,
-      action: { kind: 'idle' },
-      actionStartedMs: 0,
-    },
-  ];
+  return spawnWave(room, waveIndex);
 }
 
 function waveCount(room: LevelData): number {
-  return room.isBossRoom ? 1 : room.waves.length;
+  return room.waves.length;
+}
+
+function nearestAlive(from: Vec2, enemies: readonly EnemyState[]): Vec2 | null {
+  let best: Vec2 | null = null;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const enemy of enemies) {
+    if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
+    const gap = distance(from, enemy.position);
+    if (gap < bestGap) {
+      best = enemy.position;
+      bestGap = gap;
+    }
+  }
+  return best;
 }
 
 function movePlayer(player: Vec2, input: MoveInput, speed: number, room: LevelData): Vec2 {
@@ -329,14 +601,18 @@ function movePlayer(player: Vec2, input: MoveInput, speed: number, room: LevelDa
   };
 }
 
-/** Di chuyển enemy theo action vừa quyết; `walk` không vượt quá target. */
-function advanceEnemy(enemy: EnemyState, action: EnemyAction): void {
+/** Di chuyển enemy theo action vừa quyết; `slow` là hệ số Freeze hiện tại. */
+function advanceEnemy(enemy: EnemyState, action: EnemyAction, slow: number, level: LevelData): void {
   const seconds = SIM_STEP_MS / 1000;
+  const factor = Math.max(0, Math.min(1, slow));
 
   if (action.kind === 'charge') {
-    const step = TANK_CHARGE_SPEED_TILES_PER_SECOND * seconds;
+    const step = action.speedTilesPerSecond * factor * seconds;
     const { x, y } = action.direction;
-    enemy.position = { x: enemy.position.x + x * step, y: enemy.position.y + y * step };
+    enemy.position = clampToRoom(level, {
+      x: enemy.position.x + x * step,
+      y: enemy.position.y + y * step,
+    });
     return;
   }
   if (action.kind !== 'walk') return;
@@ -346,26 +622,16 @@ function advanceEnemy(enemy: EnemyState, action: EnemyAction): void {
   const length = Math.hypot(dx, dy);
   if (length === 0) return;
 
-  const scale = Math.min(1, (speedFor(enemy.role, enemy.elite) * seconds) / length);
-  enemy.position = { x: enemy.position.x + dx * scale, y: enemy.position.y + dy * scale };
+  const scale = Math.min(1, (speedFor(enemy.role, enemy.elite) * factor * seconds) / length);
+  enemy.position = clampToRoom(level, {
+    x: enemy.position.x + dx * scale,
+    y: enemy.position.y + dy * scale,
+  });
 }
 
-function spawnEnemyShot(bullets: BulletPool, enemy: EnemyState, player: Vec2, spread: number): void {
-  const dx = player.x - enemy.position.x;
-  const dy = player.y - enemy.position.y;
-  const length = Math.hypot(dx, dy);
-  const base = length === 0 ? { x: 1, y: 0 } : { x: dx / length, y: dy / length };
-  const cos = Math.cos(spread);
-  const sin = Math.sin(spread);
-  const direction = { x: base.x * cos - base.y * sin, y: base.x * sin + base.y * cos };
-  const speed = ENEMY_BULLET_SPEED_TILES_PER_SECOND;
-
-  bullets.spawn({
-    position: enemy.position,
-    velocity: { x: direction.x * speed, y: direction.y * speed },
-    radiusTiles: BULLET_RADIUS_TILES,
-    damage: contactDamageFor(enemy.role, enemy.elite),
-    owner: 'enemy',
-    ttlMs: ENEMY_BULLET_TTL_MS,
-  });
+function clampToRoom(level: LevelData, point: Vec2): Vec2 {
+  return {
+    x: Math.min(Math.max(point.x, ROOM_EDGE_MARGIN_TILES), level.size.cols - ROOM_EDGE_MARGIN_TILES),
+    y: Math.min(Math.max(point.y, ROOM_EDGE_MARGIN_TILES), level.size.rows - ROOM_EDGE_MARGIN_TILES),
+  };
 }

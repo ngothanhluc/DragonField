@@ -23,7 +23,9 @@ import {
   type InputPolicy,
   type PolicyWorld,
 } from '../../assets/scripts/core/sim/run-simulation';
-import { loadChapterOne } from '../helpers/tmx-levels';
+import { loadChapterOne, loadTmxLevels, LEVELS_ROOT } from '../helpers/tmx-levels';
+import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
+import { join } from 'node:path';
 
 const chapterOne = loadChapterOne();
 
@@ -125,7 +127,11 @@ function makeDodgePolicy(): InputPolicy {
 
 /** 9 phòng × (thời gian đi bộ tới chỗ bắn + TTK) — biên rộng để không flaky. */
 const CHAPTER_CLEAR_MIN_MS = 60_000;
-const CHAPTER_CLEAR_MAX_MS = 180_000;
+/**
+ * M4: boss thật (60 HP Tengu + 3 phase) dài hơn tank placeholder, nên trần
+ * nới từ 180 s lên 240 s. Run vẫn nằm trong khoảng 8–12 phút của GDD §2.
+ */
+const CHAPTER_CLEAR_MAX_MS = 240_000;
 /** Phòng 1 một mình, god-mode, không skill — đo nhịp dọn phòng. */
 const ROOM_ONE_CLEAR_MIN_MS = 15_000;
 const ROOM_ONE_CLEAR_MAX_MS = 60_000;
@@ -406,6 +412,94 @@ describe('simulateRun — balance chapter 1', () => {
     expect(contactHits.length).toBeGreaterThan(0);
     expect(closestGap).toBeLessThanOrEqual(CHASER_CONTACT_RANGE_TILES);
   });
+});
+
+/** Loadout tiêu biểu của một người chơi đã nhặt vài thẻ trong run. */
+const SKILLED_LOADOUT: ReadonlyMap<string, number> = new Map([
+  ['sharpen', 2],
+  ['rapid-fire', 2],
+  ['twin-shot', 1],
+  ['vitality', 1],
+  ['swift', 1],
+  ['piercing', 1],
+  ['crit-eye', 1],
+  ['shield', 1],
+]);
+
+describe('simulateRun — skill có tác dụng thật', () => {
+  it('skill tăng DPS làm phòng 1 sạch nhanh hơn hẳn (god mode, đứng yên)', () => {
+    const singleRoom: ChapterData = { chapter: 1, rooms: chapterOne.rooms.slice(0, 1) };
+    const base = simulateRun({ seed: 7, level: singleRoom, policy: standStill, godMode: true });
+    const combo = simulateRun({
+      seed: 7,
+      level: singleRoom,
+      policy: standStill,
+      godMode: true,
+      skills: new Map([
+        ['sharpen', 2],
+        ['rapid-fire', 2],
+        ['twin-shot', 1],
+      ]),
+    });
+
+    expect(base.status).toBe('won');
+    expect(combo.status).toBe('won');
+    expect(combo.durationMs).toBeLessThan(base.durationMs * 0.7);
+  });
+
+  it('loadout tiêu biểu dọn được cả 3 chapter, kể cả boss (policy né)', () => {
+    for (const chapter of [1, 2, 3]) {
+      const level = chapterFromLevels(
+        loadTmxLevels(join(LEVELS_ROOT, `chapter-${chapter}`)),
+      );
+      const result = simulateRun({
+        seed: 7,
+        level,
+        policy: makeDodgePolicy(),
+        skills: SKILLED_LOADOUT,
+        maxDurationMs: 300_000,
+      });
+
+      expect(result.status, `chapter ${chapter}`).toBe('won');
+      expect(result.roomsCleared, `chapter ${chapter}`).toBe(9);
+    }
+  });
+});
+
+describe('simulateRun — balance chapter 2 và 3 với run 0 skill', () => {
+  /**
+   * Mỗi chapter là một run mới (GDD §2), nên phải chứng minh cửa vào của ch2/ch3
+   * chơi được **không cần skill**: đứng yên vẫn thua trong 3 phòng đầu, còn né
+   * không skill phải sống ít nhất 2× và dọn được ít nhất 3 phòng.
+   */
+  for (const chapter of [2, 3]) {
+    const level = chapterFromLevels(loadTmxLevels(join(LEVELS_ROOT, `chapter-${chapter}`)));
+
+    it(`chapter ${chapter}: đứng yên thua trong 3 phòng đầu`, () => {
+      for (const seed of BALANCE_SEEDS) {
+        const result = simulateRun({ seed, level, policy: standStill });
+        expect(result.status, `chapter ${chapter} seed ${seed}`).toBe('lost');
+        expect(result.roomsCleared, `chapter ${chapter} seed ${seed}`).toBeLessThan(3);
+      }
+    });
+
+    it(`chapter ${chapter}: né không skill sống ≥2× và dọn ≥3 phòng`, () => {
+      for (const seed of BALANCE_SEEDS) {
+        const idle = simulateRun({ seed, level, policy: standStill });
+        const dodging = simulateRun({
+          seed,
+          level,
+          policy: makeDodgePolicy(),
+          maxDurationMs: 300_000,
+        });
+
+        expect(dodging.durationMs, `chapter ${chapter} seed ${seed}`).toBeGreaterThanOrEqual(
+          idle.durationMs * 2,
+        );
+        expect(dodging.roomsCleared, `chapter ${chapter} seed ${seed}`).toBeGreaterThanOrEqual(3);
+      }
+    });
+  }
 });
 
 describe('simulateRun — tích hợp save', () => {

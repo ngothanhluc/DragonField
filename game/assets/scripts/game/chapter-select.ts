@@ -139,7 +139,7 @@ export async function buildChapterSelect(
   best.color = TEXT_COLOR;
   best.node.setPosition(0, BEST_Y, 0);
 
-  const hint = createLabel(root, 'hint', 'Click Chapter 1 to start');
+  const hint = createLabel(root, 'hint', 'Clear a chapter to unlock the next');
   hint.fontSize = 10;
   hint.color = MUTED_COLOR;
   hint.node.setPosition(0, HINT_Y, 0);

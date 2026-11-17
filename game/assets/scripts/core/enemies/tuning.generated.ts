@@ -22,6 +22,18 @@ export const TUNING_DATA = {
     enemyHitstopMs: 70,
     enemyStaggerMs: 150,
   },
+  chapters: {
+    enemyHealthMultipliers: [
+      1,
+      1.05,
+      1.05,
+    ],
+    enemyDamageMultipliers: [
+      1,
+      1,
+      1,
+    ],
+  },
   enemies: {
     eliteHealthMultiplier: 2,
     eliteDamageMultiplier: 2,

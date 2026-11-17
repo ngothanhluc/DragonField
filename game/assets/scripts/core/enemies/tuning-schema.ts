@@ -13,6 +13,7 @@
  * rồi ném một `Error` duy nhất, cùng kiểu `level-data.ts`.
  */
 import { ENEMY_ROLES, type EnemyRole } from '../level/level-data';
+import { CHAPTERS_PER_RUN } from '../run/run-state';
 
 /** Số liệu combat của player (GDD §3). */
 export interface CombatTuning {
@@ -148,7 +149,21 @@ export interface TuningConfig {
   /** Tăng khi đổi nghĩa của field, để save/replay cũ nhận ra. */
   readonly version: number;
   readonly combat: CombatTuning;
+  /** Hệ số scale theo chapter (GDD §4): mỗi chapter khó hơn, không chỉ đông hơn. */
+  readonly chapters: ChapterScalingTuning;
   readonly enemies: EnemiesTuning;
+}
+
+/**
+ * Scale enemy theo chapter. Phần lớn độ khó đến từ số lượng/thành phần trong
+ * `.tmx` (GDD §4); hai mảng này là phần **số** để chapter 2–3 không chỉ đông
+ * hơn mà mỗi con cũng dai/đau hơn.
+ */
+export interface ChapterScalingTuning {
+  /** Nhân máu enemy theo chapter, index 0 = chapter 1. */
+  readonly enemyHealthMultipliers: readonly number[];
+  /** Nhân sát thương enemy theo chapter, index 0 = chapter 1. */
+  readonly enemyDamageMultipliers: readonly number[];
 }
 
 /** Nguồn số liệu, dùng trong thông báo lỗi để người sửa biết mở file nào. */
@@ -299,6 +314,44 @@ function readObject(
   return value;
 }
 
+/** Đọc mảng số đúng `length` phần tử, mọi phần tử hữu hạn và > 0. */
+function readMultiplierArray(
+  source: Record<string, unknown>,
+  field: string,
+  path: string,
+  problems: ProblemList,
+): readonly number[] {
+  const fieldPath = joinPath(path, field);
+  const value = source[field];
+  if (!Array.isArray(value)) {
+    problems.add(fieldPath, `phải là mảng ${CHAPTERS_PER_RUN} số, nhận ${describe(value)}`);
+    return CHAPTERS_PER_RUN_MULTIPLIERS;
+  }
+  if (value.length !== CHAPTERS_PER_RUN) {
+    problems.add(
+      fieldPath,
+      `phải có đúng ${CHAPTERS_PER_RUN} phần tử (mỗi chapter một hệ số), nhận ${value.length}`,
+    );
+  }
+
+  const result: number[] = [];
+  value.forEach((entry, index) => {
+    if (typeof entry !== 'number' || !Number.isFinite(entry) || entry <= 0) {
+      problems.add(`${fieldPath}[${index}]`, `phải là số hữu hạn > 0, nhận ${describe(entry)}`);
+      result.push(1);
+      return;
+    }
+    result.push(entry);
+  });
+  return result;
+}
+
+/** Mặc định khi config thiếu: không scale (mọi chapter như chapter 1). */
+const CHAPTERS_PER_RUN_MULTIPLIERS: readonly number[] = Array.from(
+  { length: CHAPTERS_PER_RUN },
+  () => 1,
+);
+
 function zeroCombat(): CombatTuning {
   return {
     fireRatePerSecond: 0,
@@ -346,6 +399,37 @@ function zeroRole(): EnemyRoleTuning {
     chargeSpeedTilesPerSecond: 0,
     chargeDurationMs: 0,
     scale: 1,
+  };
+}
+
+function parseChapters(
+  raw: Record<string, unknown>,
+  problems: ProblemList,
+): ChapterScalingTuning {
+  const source = readObject(raw, 'chapters', '', problems, [
+    'enemyHealthMultipliers',
+    'enemyDamageMultipliers',
+  ] as const);
+  if (source === undefined) {
+    return {
+      enemyHealthMultipliers: CHAPTERS_PER_RUN_MULTIPLIERS,
+      enemyDamageMultipliers: CHAPTERS_PER_RUN_MULTIPLIERS,
+    };
+  }
+
+  return {
+    enemyHealthMultipliers: readMultiplierArray(
+      source,
+      'enemyHealthMultipliers',
+      'chapters',
+      problems,
+    ),
+    enemyDamageMultipliers: readMultiplierArray(
+      source,
+      'enemyDamageMultipliers',
+      'chapters',
+      problems,
+    ),
   };
 }
 
@@ -593,6 +677,7 @@ export function parseTuning(raw: unknown): TuningConfig {
   const config: TuningConfig = {
     version,
     combat: parseCombat(raw, problems),
+    chapters: parseChapters(raw, problems),
     enemies: parseEnemies(raw, problems),
   };
 

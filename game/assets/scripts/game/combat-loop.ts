@@ -21,10 +21,20 @@
  */
 import { Node as CocosNodeValue, Sprite as CocosSprite } from 'cc';
 import type { AnimationManifest } from '../core/art/manifest';
+import type { BossDef, BossPhase } from '../core/boss/boss-defs';
+import { summonedEnemies } from '../core/boss/summon';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
 import { fireEnemyVolley } from '../core/combat/enemy-fire';
 import { segmentHitsCircle } from '../core/combat/hitbox';
 import { HitstopClock } from '../core/combat/hitstop';
+import {
+  HOMING_TURN_RATE_RADIANS_PER_SECOND,
+  damageAfterExecute,
+  lifestealHeal,
+  ricochetTarget,
+  steerVelocity,
+} from '../core/combat/shot-effects';
+import { StatusEffects } from '../core/combat/status-effects';
 import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
 import type { EnemyState } from '../core/enemies/behaviours';
@@ -33,9 +43,12 @@ import { eliteVolleyAngles } from '../core/enemies/elite';
 import { spawnWave } from '../core/enemies/waves';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { distance, type Vec2 } from '../core/math/vec2';
+import type { SeededRng } from '../core/rng';
 import { SpriteAnimator } from './anim/sprite-animator';
+import { BossView } from './boss-view';
 import type { BulletView } from './bullet-view';
 import { EnemyView } from './enemy-view';
+import type { FxBurstPool } from './fx-burst';
 import { ACTOR_SCALE } from './level-view';
 import type { PlayerController } from './player-controller';
 
@@ -47,6 +60,8 @@ export const PLAYER_RADIUS_TILES = 0.25;
 
 /** Số enemy và số đạn enemy mà `stress()` duy trì. */
 export const STRESS_ENEMY_COUNT = 8;
+/** Id của boss trong collision/auto-aim — trùng `boss-run.ts` để debug đọc được. */
+export const BOSS_TARGET_ID = 'boss';
 /**
  * Mốc của milestone là "8 enemy + 40 đạn". Giữ 44 để sau khi vài viên trúng
  * player/bị vật cản ăn trong frame, con số đo được vẫn **>= 40**.
@@ -67,6 +82,12 @@ export interface CombatLoopOptions {
   readonly level: LevelData;
   /** Tên actor trong manifest theo vai trò của chapter hiện tại. */
   readonly monsterFor: (role: EnemyRole) => string;
+  /** RNG của run: boss pattern + summon + trí crit đạn đã nằm ở PlayerController. */
+  readonly rng: SeededRng;
+  /** Callback khi boss đổi phase (bootstrap hiện banner). */
+  readonly onBossPhase?: (phase: BossPhase) => void;
+  /** Pool flash vụ nổ; vắng mặt thì vẫn chạy, chỉ không có hình. */
+  readonly fx?: FxBurstPool;
 }
 
 export interface CombatUpdateResult {
@@ -94,8 +115,13 @@ export class CombatLoop {
   private readonly manifest: AnimationManifest;
   private readonly actorLayer: Node;
   private readonly monsterFor: (role: EnemyRole) => string;
+  private readonly rng: SeededRng;
+  private readonly onBossPhase: (phase: BossPhase) => void;
+  private readonly fx: FxBurstPool | null;
   private readonly hitstop = new HitstopClock(DEFAULT_COMBAT.enemyHitstopMs);
   private readonly enemies: EnemyView[] = [];
+  private boss: BossView | null = null;
+  private readonly bossStatus = new StatusEffects();
   private level: LevelData;
   private waveIndex = 0;
   private nowMs = 0;
@@ -115,6 +141,9 @@ export class CombatLoop {
     this.actorLayer = options.actorLayer;
     this.level = options.level;
     this.monsterFor = options.monsterFor;
+    this.rng = options.rng;
+    this.onBossPhase = options.onBossPhase ?? (() => undefined);
+    this.fx = options.fx ?? null;
   }
 
   get currentLevel(): LevelData {
@@ -142,6 +171,40 @@ export class CombatLoop {
     return this.enemies.filter((enemy) => !enemy.isDead).length;
   }
 
+  get hasBoss(): boolean {
+    return this.boss !== null && !this.boss.isDefeated;
+  }
+
+  /** Snapshot boss cho debug `boss()`; `null` khi phòng thường. */
+  bossSnapshot(): {
+    readonly id: string;
+    readonly name: string;
+    readonly health: number;
+    readonly maxHealth: number;
+    readonly phase: BossPhase;
+  } | null {
+    const boss = this.boss;
+    if (boss === null) return null;
+    return {
+      id: boss.id,
+      name: boss.displayName,
+      health: boss.health,
+      maxHealth: boss.maxHealth,
+      phase: boss.phase,
+    };
+  }
+
+  /** Debug `setBossHp`: trừ máu qua đúng đường `takeDamage` để phase đổi tự nhiên. */
+  setBossHealthFraction(fraction: number): boolean {
+    const boss = this.boss;
+    if (boss === null || boss.isDefeated) return false;
+    const clamped = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 0;
+    const target = Math.round(boss.maxHealth * clamped);
+    const damage = boss.health - target;
+    if (damage > 0) boss.takeDamage(damage, this.nowMs);
+    return true;
+  }
+
   setGodMode(on: boolean): void {
     this.god = on;
   }
@@ -154,6 +217,47 @@ export class CombatLoop {
     this.playerDied = false;
     this.awaitingAdvance = false;
     this.hitstop.reset();
+  }
+
+  /**
+   * Sinh boss thật của phòng. Gọi trước `startWave` để telegraph/đạn boss có
+   * ngay trong frame đầu phòng (bootstrap gọi khi `enterRoom`).
+   */
+  spawnBoss(def: BossDef, start: Vec2): BossView {
+    this.boss?.destroy();
+    this.bossStatus.clear();
+    const boss = new BossView({
+      def,
+      start,
+      actorLayer: this.actorLayer,
+      bullets: this.player.bullets,
+      rng: this.rng,
+      onPhase: this.onBossPhase,
+      onSummon: (role, count) => this.summon(role, count),
+    });
+    this.boss = boss;
+    return boss;
+  }
+
+  /** Gọi quái theo vòng quanh boss; vị trí do core/summon quyết (tất định). */
+  private summon(role: EnemyRole, count: number): void {
+    const boss = this.boss;
+    if (boss === null) return;
+
+    for (const enemy of summonedEnemies(boss.bossState, role, count, this.rng)) {
+      const maxHealth = maxHealthFor(role, false, undefined, this.level.chapter);
+      const state: EnemyState = {
+        id: enemy.id,
+        role: enemy.role,
+        elite: false,
+        position: { x: enemy.position.x, y: enemy.position.y },
+        health: maxHealth,
+        maxHealth,
+        action: { kind: 'idle' },
+        actionStartedMs: this.nowMs,
+      };
+      this.addEnemy(state);
+    }
   }
 
   /** Sinh wave `index` của phòng hiện tại. Gọi sau `enterRoom` (và sau khi đã spawn boss). */
@@ -185,21 +289,53 @@ export class CombatLoop {
     const targets: Targetable[] = this.enemies
       .filter((enemy) => !enemy.isDead)
       .map((enemy) => ({ id: enemy.id, position: enemy.position, alive: true }));
+    const boss = this.boss;
+    if (boss !== null && !boss.isDefeated) {
+      targets.push({ id: BOSS_TARGET_ID, position: boss.position, alive: true });
+    }
 
     player.step(this.nowMs, deltaMs, targets, level);
+    this.stepBoss(deltaMs, player.position);
     this.stepEnemies(deltaMs);
     this.stepBullets(deltaMs, level);
     this.applyContactDamage();
+    this.fx?.update(deltaMs);
 
     this.bulletView?.sync();
     if (this.stress) this.topUpStress();
 
     if (player.isDead) this.playerDied = true;
 
-    const cleared = this.enemies.every((enemy) => enemy.isDead);
+    const cleared =
+      this.enemies.every((enemy) => enemy.isDead) &&
+      (this.boss === null || this.boss.isDefeated);
     if (cleared) this.awaitingAdvance = true;
 
     return { frozen: false, playerDied: this.playerDied, cleared };
+  }
+
+  /** Đi một frame pattern boss + poison DoT (Freeze không áp lên boss — xem report M4). */
+  private stepBoss(deltaMs: number, playerPosition: Vec2): void {
+    const boss = this.boss;
+    if (boss === null || boss.isDefeated) return;
+
+    boss.step(this.nowMs, deltaMs, playerPosition);
+    const poison = this.bossStatus.poisonDamage(this.nowMs, deltaMs);
+    if (poison > 0) boss.takeDamage(poison, this.nowMs);
+
+    // Thân boss lúc lao cũng gây sát thương — nếu không, Samurai charge xuyên
+    // qua người chơi mà không có gì xảy ra. i-frame chặn trúng nhiều frame.
+    if (
+      boss.isCharging &&
+      distance(boss.position, playerPosition) <= boss.hitboxRadiusTiles + PLAYER_RADIUS_TILES
+    ) {
+      const heartsBefore = this.player.hearts;
+      this.damagePlayer(DEFAULT_COMBAT.contactDamage, boss.position);
+      const thorns = this.player.derivedStats.thorns;
+      if (thorns !== undefined && this.player.hearts < heartsBefore) {
+        boss.takeDamage(thorns.damage, this.nowMs);
+      }
+    }
   }
 
   /**
@@ -242,12 +378,25 @@ export class CombatLoop {
 
   /**
    * Đạn bay + va chạm. Đạn enemy trừ máu player (i-frame của `HealthState` chặn
-   * hai viên trong 0.8 s); đạn player trừ máu enemy và **xin hitstop**
-   * (`enemyHitstopMs`) — hitstop chỉ xảy ra khi đòn của người chơi trúng.
+   * hai viên trong 0.8 s); đạn player áp toàn bộ skill (crit/execute/pierce/
+   * ricochet/homing/nổ/freeze/poison/lifesteal) và **xin hitstop** khi trúng.
    */
   private stepBullets(deltaMs: number, level: LevelData): void {
     const player = this.player;
+    const stats = player.derivedStats;
     const pool = player.bullets;
+
+    // Homing xoay trước khi bay, dùng vị trí đầu frame.
+    for (const bullet of pool.active()) {
+      if (!bullet.homing || bullet.owner !== 'player') continue;
+      const aim = this.nearestTarget(bullet.position);
+      if (aim === null) continue;
+      const turn = (HOMING_TURN_RATE_RADIANS_PER_SECOND * deltaMs) / 1000;
+      const next = steerVelocity(bullet.velocity, bullet.position, aim, turn);
+      bullet.velocity.x = next.x;
+      bullet.velocity.y = next.y;
+    }
+
     pool.update(deltaMs);
     pool.consumeWhere((bullet) => !isInsideRoom(level, bullet.position));
 
@@ -276,16 +425,52 @@ export class CombatLoop {
         continue;
       }
 
-      const victim = this.enemies.find(
-        (enemy) =>
-          !enemy.isDead &&
-          hitsCircle(area, { position: enemy.position, radiusTiles: enemy.radiusTiles }),
-      );
-      if (victim === undefined) continue;
+      let consumed = false;
 
-      spent.add(bullet.id);
-      victim.takeDamage(bullet.damage, bullet.position, this.nowMs);
-      this.hitstop.request();
+      // Boss trước (mục tiêu chính của phòng boss), rồi mới tới quái.
+      const boss = this.boss;
+      if (
+        boss !== null &&
+        !boss.isDefeated &&
+        !bullet.hitIds.includes(BOSS_TARGET_ID) &&
+        hitsCircle(area, { position: boss.position, radiusTiles: boss.hitboxRadiusTiles })
+      ) {
+        const damage = damageAfterExecute(
+          stats,
+          bullet.damage,
+          boss.health / boss.maxHealth,
+        );
+        boss.takeDamage(damage, this.nowMs);
+        this.bossStatus.apply(stats, this.nowMs);
+        player.heal(lifestealHeal(stats, damage));
+        bullet.hitIds.push(BOSS_TARGET_ID);
+        this.explode(bullet, boss.position, null);
+        this.hitstop.request();
+        consumed = this.resolveBullet(bullet);
+        if (consumed) {
+          spent.add(bullet.id);
+          continue;
+        }
+      }
+
+      for (const victim of this.enemies) {
+        if (victim.isDead || bullet.hitIds.includes(victim.id)) continue;
+        if (!hitsCircle(area, { position: victim.position, radiusTiles: victim.radiusTiles })) {
+          continue;
+        }
+
+        const damage = damageAfterExecute(stats, bullet.damage, victim.health / victim.maxHealth);
+        victim.takeDamage(damage, bullet.position, this.nowMs);
+        victim.applyStatus(stats, this.nowMs);
+        player.heal(lifestealHeal(stats, damage));
+        bullet.hitIds.push(victim.id);
+        this.explode(bullet, victim.position, victim);
+        this.hitstop.request();
+        consumed = this.resolveBullet(bullet);
+        if (consumed) break;
+      }
+
+      if (consumed) spent.add(bullet.id);
     }
 
     if (spent.size > 0) {
@@ -293,20 +478,119 @@ export class CombatLoop {
     }
   }
 
+  /** Nổ AoE quanh điểm trúng: damage phụ lên mọi mục tiêu khác trong bán kính. */
+  private explode(
+    bullet: { readonly explosiveRadiusTiles: number; readonly explosiveDamage: number; readonly hitIds: readonly string[] },
+    center: Vec2,
+    direct: EnemyView | null,
+  ): void {
+    if (bullet.explosiveRadiusTiles <= 0 || bullet.explosiveDamage <= 0) return;
+
+    for (const enemy of this.enemies) {
+      if (enemy.isDead || enemy === direct || bullet.hitIds.includes(enemy.id)) continue;
+      if (distance(center, enemy.position) > bullet.explosiveRadiusTiles) continue;
+      enemy.takeDamage(bullet.explosiveDamage, center, this.nowMs);
+    }
+
+    const boss = this.boss;
+    if (
+      boss !== null &&
+      !boss.isDefeated &&
+      !bullet.hitIds.includes(BOSS_TARGET_ID) &&
+      distance(center, boss.position) <= bullet.explosiveRadiusTiles
+    ) {
+      boss.takeDamage(bullet.explosiveDamage, this.nowMs);
+    }
+
+    this.fx?.spawn(center, bullet.explosiveRadiusTiles);
+  }
+
+  /**
+   * Sau một lần trúng: Piercing giữ đạn, Ricochet đổi hướng, còn lại thu hồi.
+   * Trả `true` khi viên đạn phải bị bỏ.
+   */
+  private resolveBullet(bullet: {
+    pierceRemaining: number;
+    ricochetRemaining: number;
+    velocity: { x: number; y: number };
+    position: Vec2;
+    hitIds: string[];
+  }): boolean {
+    if (bullet.pierceRemaining > 0) {
+      bullet.pierceRemaining -= 1;
+      return false;
+    }
+
+    if (bullet.ricochetRemaining > 0) {
+      const candidates: Array<{ id: string; position: Vec2 }> = this.enemies
+        .filter((enemy) => !enemy.isDead)
+        .map((enemy) => ({ id: enemy.id, position: enemy.position }));
+      const boss = this.boss;
+      if (boss !== null && !boss.isDefeated) {
+        candidates.push({ id: BOSS_TARGET_ID, position: boss.position });
+      }
+
+      const next = ricochetTarget(bullet.position, candidates, bullet.hitIds);
+      if (next !== null) {
+        bullet.ricochetRemaining -= 1;
+        const speed = Math.hypot(bullet.velocity.x, bullet.velocity.y);
+        const dx = next.position.x - bullet.position.x;
+        const dy = next.position.y - bullet.position.y;
+        const length = Math.hypot(dx, dy) || 1;
+        bullet.velocity.x = (dx / length) * speed;
+        bullet.velocity.y = (dy / length) * speed;
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /** Mục tiêu gần nhất cho Homing: boss hoặc enemy còn sống. */
+  private nearestTarget(from: Vec2): Vec2 | null {
+    let best: Vec2 | null = null;
+    let bestGap = Number.POSITIVE_INFINITY;
+
+    const boss = this.boss;
+    if (boss !== null && !boss.isDefeated) {
+      best = boss.position;
+      bestGap = distance(from, boss.position);
+    }
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      const gap = distance(from, enemy.position);
+      if (gap < bestGap) {
+        best = enemy.position;
+        bestGap = gap;
+      }
+    }
+    return best;
+  }
+
   /** Sát thương khi chạm của chaser/tank (i-frame lo phần "không mất 2 tim liên tiếp"). */
   private applyContactDamage(): void {
     const player = this.player;
+    const thorns = player.derivedStats.thorns;
 
     for (const enemy of this.enemies) {
       if (enemy.isDead || !enemy.melee) continue;
       if (distance(enemy.position, player.position) > enemy.contactRangeTiles) continue;
+
+      const heartsBefore = player.hearts;
       this.damagePlayer(enemy.contactDamage, enemy.position);
+      // Thorns chỉ nổ khi đòn **thật sự** vào tim, không phải khi khiên chặn/i-frame.
+      if (thorns !== undefined && player.hearts < heartsBefore) {
+        enemy.takeDamage(thorns.damage, player.position, this.nowMs);
+      }
     }
   }
 
-  private damagePlayer(amount: number, source: Vec2 | null): void {
-    if (this.god) return;
+  /** Trả `true` khi tim thật sự giảm (để Thorns không kích hoạt lúc khiên/i-frame). */
+  private damagePlayer(amount: number, source: Vec2 | null): boolean {
+    if (this.god) return false;
+    const before = this.player.hearts;
     this.player.applyDamage(this.nowMs, amount, source);
+    return this.player.hearts < before;
   }
 
   /** Sinh một enemy và gắn node. Boss/debug dùng chung đường này. */
@@ -358,12 +642,17 @@ export class CombatLoop {
       enemy.takeDamage(enemy.health, null, this.nowMs);
       killed += 1;
     }
+    const boss = this.boss;
+    if (boss !== null && !boss.isDefeated) {
+      boss.takeDamage(boss.health, this.nowMs);
+      killed += 1;
+    }
     return killed;
   }
 
   /** Debug: spawn một enemy ở vị trí chỉ định (mặc định quanh tâm phòng). */
   spawnDebug(role: EnemyRole, elite: boolean, at?: Vec2): string {
-    const maxHealth = maxHealthFor(role, elite);
+    const maxHealth = maxHealthFor(role, elite, undefined, this.level.chapter);
     const position = at ?? this.defaultSpawnPoint(role);
     const state: EnemyState = {
       id: `debug-${this.debugSeq + 1}`,
@@ -419,12 +708,16 @@ export class CombatLoop {
       if (enemy.node.isValid) enemy.node.destroy();
     }
     this.enemies.length = 0;
+    this.boss?.destroy();
+    this.boss = null;
+    this.bossStatus.clear();
     this.player.bullets.clear();
   }
 
   /** Dọn node + trạng thái; gọi khi rời run. */
   destroy(): void {
     this.clear();
+    this.fx?.destroy();
     this.stress = false;
     this.awaitingAdvance = false;
     this.nowMs = 0;

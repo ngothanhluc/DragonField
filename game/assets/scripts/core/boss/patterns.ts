@@ -152,6 +152,8 @@ export type BossMotion =
   | { readonly kind: 'chase'; readonly speedTilesPerSecond: number }
   | { readonly kind: 'swim'; readonly speedTilesPerSecond: number }
   | { readonly kind: 'charge'; readonly speedTilesPerSecond: number }
+  /** Đi theo trục y tới hàng của player (Samurai lấy đà ngang). */
+  | { readonly kind: 'line-up'; readonly speedTilesPerSecond: number }
   | { readonly kind: 'teleport' };
 
 /**
@@ -167,6 +169,15 @@ export interface VolleySpec {
   readonly spreadRadians: number;
   /** Góc tuyệt đối của viên đầu tiên trong `ring`, radian. Bỏ qua với shape khác. */
   readonly baseAngleRadians: number;
+  /**
+   * Ring có xoay sao cho viên đầu tiên nhắm thẳng player không.
+   *
+   * Vòng 8 viên quanh boss vẫn là vòng 8 viên; cờ này chỉ đảm bảo **một** viên
+   * đi đúng đường tới player, nên đứng yên là trúng. Không có nó, ring bắn từ
+   * vị trí teleport ngẫu nhiên có thể để lọt player đứng ở góc — và "pattern
+   * buộc phải di chuyển" sẽ chỉ đúng trên giấy.
+   */
+  readonly ringAimsAtPlayer?: boolean;
   readonly speedTilesPerSecond: number;
   readonly damage: number;
   readonly radiusTiles: number;
@@ -257,6 +268,7 @@ const TENGU_RING: BossAction = {
     count: 8,
     spreadRadians: 0,
     baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
     speedTilesPerSecond: 5,
     damage: 1,
     radiusTiles: 0.25,
@@ -345,6 +357,20 @@ const SAMURAI_CHARGE: BossAction = {
   kind: 'move',
   motion: { kind: 'charge', speedTilesPerSecond: 9 },
 };
+
+/**
+ * Lấy đà theo hàng của player trước khi charge ngang (GDD §5: charge L/R là
+ * dấu hiệu đọc đòn). Nếu boss cứ charge ở hàng cũ, player đứng ở hàng khác
+ * không bao giờ bị đe doạ; line-up làm cú charge có ý nghĩa mà vẫn giữ hướng
+ * ngang và animation L/R.
+ */
+const SAMURAI_LINE_UP: BossAction = {
+  kind: 'move',
+  motion: { kind: 'line-up', speedTilesPerSecond: 8 },
+};
+
+/** Line-up đủ lâu để từ hàng boss tới hàng player ở arena 18 tile. */
+const SAMURAI_LINE_UP_MS = 1600;
 
 const TELEPORT: BossAction = {
   kind: 'move',
@@ -450,6 +476,7 @@ export const BOSS_SCRIPTS: BossScripts = {
   samurai: {
     1: {
       steps: [
+        { durationMs: SAMURAI_LINE_UP_MS, actions: [SAMURAI_LINE_UP, anim('walk')] },
         {
           durationMs: TELEGRAPH_MS.boss,
           actions: [face('player'), TELEGRAPH_ACTION, anim('charge')],
@@ -462,6 +489,7 @@ export const BOSS_SCRIPTS: BossScripts = {
     },
     2: {
       steps: [
+        { durationMs: SAMURAI_LINE_UP_MS, actions: [SAMURAI_LINE_UP, anim('walk')] },
         {
           durationMs: TELEGRAPH_MS.boss,
           actions: [face('player'), TELEGRAPH_ACTION, anim('charge')],
@@ -472,13 +500,14 @@ export const BOSS_SCRIPTS: BossScripts = {
           actions: [face('opposite'), TELEGRAPH_ACTION, anim('charge')],
         },
         { durationMs: 900, actions: [SAMURAI_CHARGE, anim('charge')] },
-        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [face('player'), TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [SAMURAI_SLASH] },
         { durationMs: 600, actions: [anim('idle')] },
       ],
     },
     3: {
       steps: [
+        { durationMs: SAMURAI_LINE_UP_MS, actions: [SAMURAI_LINE_UP, anim('walk')] },
         {
           durationMs: TELEGRAPH_MS.boss,
           actions: [face('player'), TELEGRAPH_ACTION, anim('charge')],
@@ -714,6 +743,17 @@ function planMotion(state: BossState, step: BossStep, player: Vec2): MotionPlan 
         speedTilesPerSecond: motion.speedTilesPerSecond,
       };
 
+    case 'line-up':
+      state.chargeDirection = null;
+      return {
+        motion,
+        target: {
+          x: state.position.x,
+          y: clamp(player.y, MIN_Y, MAX_Y),
+        },
+        speedTilesPerSecond: motion.speedTilesPerSecond,
+      };
+
     case 'teleport':
       state.chargeDirection = null;
       return {
@@ -782,6 +822,16 @@ function advanceMotion(
       state.position = { x: clamp(nextX, MIN_X, MAX_X), y: state.position.y };
       break;
     }
+
+    case 'line-up': {
+      const targetY = clamp(player.y, MIN_Y, MAX_Y);
+      const dy = targetY - state.position.y;
+      const travel = motion.speedTilesPerSecond * dt;
+      const nextY =
+        Math.abs(dy) <= travel ? targetY : state.position.y + Math.sign(dy) * travel;
+      state.position = { x: state.position.x, y: clamp(nextY, MIN_Y, MAX_Y) };
+      break;
+    }
   }
 }
 
@@ -830,6 +880,23 @@ function emitSpiralTicks(
   }
 }
 
+/**
+ * Vận tốc thật của một `BulletVerb` — quy ước góc nằm ở đây để game và sim
+ * không tự `atan2` khác nhau. `toward !== null` thì bay về đó rồi xoay thêm
+ * `angleOffset`; ngược lại `angleOffset` là góc tuyệt đối.
+ */
+export function bulletVelocity(verb: BulletVerb): Vec2 {
+  const baseAngle =
+    verb.toward === null
+      ? 0
+      : Math.atan2(verb.toward.y - verb.from.y, verb.toward.x - verb.from.x);
+  const angle = baseAngle + verb.angleOffset;
+  return {
+    x: Math.cos(angle) * verb.speed,
+    y: Math.sin(angle) * verb.speed,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Nội bộ: dựng đạn
 // ---------------------------------------------------------------------------
@@ -857,11 +924,15 @@ function buildVolley(spec: VolleySpec, state: BossState, player: Vec2): BulletVe
     }
 
     case 'ring': {
+      const startAngle =
+        spec.ringAimsAtPlayer === true
+          ? angleBetween(from, player)
+          : spec.baseAngleRadians;
       for (let index = 0; index < spec.count; index += 1) {
         bullets.push({
           from: copy(from),
           toward: null,
-          angleOffset: spec.baseAngleRadians + (index * TWO_PI) / spec.count,
+          angleOffset: startAngle + (index * TWO_PI) / spec.count,
           speed: spec.speedTilesPerSecond,
           damage: spec.damage,
           radiusTiles: spec.radiusTiles,

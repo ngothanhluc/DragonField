@@ -35,11 +35,24 @@ export type BulletOwner = 'player' | 'enemy';
 export interface Bullet {
   id: number;
   position: Vec2;
-  velocity: Vec2;
+  /** Mutable để Homing/Ricochet xoay hướng bay của chính viên đạn. */
+  velocity: { x: number; y: number };
   radiusTiles: number;
   damage: number;
   owner: BulletOwner;
   ttlMs: number;
+  /** Số enemy còn xuyên qua được (Piercing). 0 = dừng ở enemy đầu tiên. */
+  pierceRemaining: number;
+  /** Số lần còn nảy sang enemy khác (Ricochet). 0 = không nảy. */
+  ricochetRemaining: number;
+  /** Đạn tự bám mục tiêu (Homing). */
+  homing: boolean;
+  /** Bán kính nổ khi trúng, tile; 0 = không nổ (Explosive). */
+  explosiveRadiusTiles: number;
+  /** Damage vụ nổ, đã tính crit + ratio. */
+  explosiveDamage: number;
+  /** Id actor đã trúng — đạn xuyên/nảy không bao giờ trúng lại cùng một mục tiêu. */
+  hitIds: string[];
 }
 
 export interface CircleArea {
@@ -54,6 +67,11 @@ export interface BulletSpawnArgs {
   readonly damage: number;
   readonly owner: BulletOwner;
   readonly ttlMs: number;
+  readonly pierceRemaining?: number;
+  readonly ricochetRemaining?: number;
+  readonly homing?: boolean;
+  readonly explosiveRadiusTiles?: number;
+  readonly explosiveDamage?: number;
 }
 
 /** Sức chứa mặc định: hơn 5× số đạn tối đa trên màn của mục tiêu M3 (40). */
@@ -155,6 +173,12 @@ export class BulletPool {
     bullet.damage = args.damage;
     bullet.owner = args.owner;
     bullet.ttlMs = args.ttlMs;
+    bullet.pierceRemaining = Math.max(0, Math.floor(args.pierceRemaining ?? 0));
+    bullet.ricochetRemaining = Math.max(0, Math.floor(args.ricochetRemaining ?? 0));
+    bullet.homing = args.homing === true;
+    bullet.explosiveRadiusTiles = Math.max(0, args.explosiveRadiusTiles ?? 0);
+    bullet.explosiveDamage = Math.max(0, args.explosiveDamage ?? 0);
+    bullet.hitIds.length = 0;
 
     this.live.push(bullet);
     return bullet;
@@ -261,6 +285,12 @@ export class BulletPool {
       damage: bullet.damage,
       owner: bullet.owner,
       ttlMs: bullet.ttlMs,
+      pierceRemaining: bullet.pierceRemaining,
+      ricochetRemaining: bullet.ricochetRemaining,
+      homing: bullet.homing,
+      explosiveRadiusTiles: bullet.explosiveRadiusTiles,
+      explosiveDamage: bullet.explosiveDamage,
+      hitIds: bullet.hitIds.slice(),
     }));
   }
 
@@ -304,6 +334,12 @@ export class BulletPool {
       damage: 0,
       owner: 'enemy',
       ttlMs: 0,
+      pierceRemaining: 0,
+      ricochetRemaining: 0,
+      homing: false,
+      explosiveRadiusTiles: 0,
+      explosiveDamage: 0,
+      hitIds: [],
     };
   }
 }

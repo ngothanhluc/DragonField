@@ -61,6 +61,8 @@ export type SkillTag =
 export interface SkillDef {
   readonly id: string;
   readonly name: string;
+  /** Chữ tắt 2 ký tự cho HUD. Viết tay vì initials tự động bị trùng (Sharpen/Shield). */
+  readonly short: string;
   readonly rarity: Rarity;
   readonly maxStacks: number;
   readonly tags: readonly SkillTag[];
@@ -70,6 +72,7 @@ export interface SkillDef {
 export const SKILLS: readonly SkillDef[] = [
   {
     id: 'sharpen',
+    short: 'SH',
     name: 'Sharpen',
     rarity: 'common',
     maxStacks: 5,
@@ -77,6 +80,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'rapid-fire',
+    short: 'RF',
     name: 'Rapid Fire',
     rarity: 'common',
     maxStacks: 5,
@@ -84,6 +88,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'twin-shot',
+    short: 'TW',
     name: 'Twin Shot',
     rarity: 'rare',
     maxStacks: 3,
@@ -91,6 +96,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'piercing',
+    short: 'PR',
     name: 'Piercing',
     rarity: 'rare',
     maxStacks: 3,
@@ -98,6 +104,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'ricochet',
+    short: 'RI',
     name: 'Ricochet',
     rarity: 'epic',
     maxStacks: 2,
@@ -105,6 +112,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'homing',
+    short: 'HO',
     name: 'Homing',
     rarity: 'epic',
     maxStacks: 1,
@@ -112,6 +120,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'explosive',
+    short: 'XP',
     name: 'Explosive',
     rarity: 'rare',
     maxStacks: 3,
@@ -119,6 +128,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'crit-eye',
+    short: 'CE',
     name: 'Crit Eye',
     rarity: 'rare',
     maxStacks: 3,
@@ -126,6 +136,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'vitality',
+    short: 'VI',
     name: 'Vitality',
     rarity: 'common',
     maxStacks: 5,
@@ -135,6 +146,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'second-wind',
+    short: '2W',
     name: 'Second Wind',
     rarity: 'epic',
     maxStacks: 2,
@@ -142,6 +154,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'shield',
+    short: 'SD',
     name: 'Shield',
     rarity: 'rare',
     maxStacks: 3,
@@ -149,6 +162,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'thorns',
+    short: 'TH',
     name: 'Thorns',
     rarity: 'rare',
     maxStacks: 3,
@@ -156,6 +170,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'swift',
+    short: 'SW',
     name: 'Swift',
     rarity: 'common',
     maxStacks: 5,
@@ -163,6 +178,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'long-iframe',
+    short: 'IF',
     name: 'Long i-frame',
     rarity: 'rare',
     maxStacks: 2,
@@ -170,6 +186,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'freeze',
+    short: 'FR',
     name: 'Freeze',
     rarity: 'rare',
     maxStacks: 2,
@@ -177,6 +194,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'poison',
+    short: 'PO',
     name: 'Poison',
     rarity: 'rare',
     maxStacks: 2,
@@ -184,6 +202,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'lifesteal',
+    short: 'LS',
     name: 'Lifesteal',
     rarity: 'epic',
     maxStacks: 2,
@@ -191,6 +210,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'greed',
+    short: 'GR',
     name: 'Greed',
     rarity: 'common',
     maxStacks: 4,
@@ -198,6 +218,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'luck',
+    short: 'LK',
     name: 'Luck',
     rarity: 'rare',
     maxStacks: 3,
@@ -205,6 +226,7 @@ export const SKILLS: readonly SkillDef[] = [
   },
   {
     id: 'executioner',
+    short: 'EX',
     name: 'Executioner',
     rarity: 'epic',
     maxStacks: 2,

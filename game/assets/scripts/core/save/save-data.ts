@@ -262,6 +262,25 @@ export function withBest(save: SaveData, chapter: number, room: number): SaveDat
 }
 
 /**
+ * Mở chapter kế sau khi dọn boss chapter `clearedChapter` (GDD §2: "chapter sau
+ * mở khi thắng chapter trước"). Không bao giờ thu hẹp tiến trình đã mở.
+ *
+ * Trả save **mới**; save đầu vào không bị sửa. Save hỏng ném lỗi như `withBest`.
+ */
+export function unlockNextChapter(save: SaveData, clearedChapter: number): SaveData {
+  const valid = parseSaveData(save);
+  if (!Number.isInteger(clearedChapter) || clearedChapter < 1 || clearedChapter > CHAPTERS_PER_RUN) {
+    throw new Error(
+      `unlockNextChapter: chapter phải là số nguyên 1..${CHAPTERS_PER_RUN}, nhận ${clearedChapter}`,
+    );
+  }
+
+  const unlocked = Math.min(CHAPTERS_PER_RUN, Math.max(valid.chaptersUnlocked, clearedChapter + 1));
+  if (unlocked === valid.chaptersUnlocked) return valid;
+  return { ...valid, chaptersUnlocked: unlocked };
+}
+
+/**
  * Track máu/nhịp bắn từng tên là `hp`/`firerate` trong bản nháp GDD §10; nay đổi
  * sang key của `UpgradeTrack`. Vẫn đọc tên cũ khi migrate để không mất tiến trình.
  */

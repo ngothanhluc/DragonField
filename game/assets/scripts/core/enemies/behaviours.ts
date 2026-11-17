@@ -30,7 +30,7 @@ import { isTelegraphElapsed } from '../combat/telegraph';
 import type { EnemyRole, LevelData } from '../level/level-data';
 import { obstacleAt } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
-import { ENEMY_TUNING, type EnemiesTuning, type EnemyRoleTuning } from './tuning';
+import { ENEMY_TUNING, CHAPTER_TUNING, type EnemiesTuning, type EnemyRoleTuning } from './tuning';
 
 export interface EnemyState {
   id: string;
@@ -162,19 +162,31 @@ export function contactDamageFor(
   role: EnemyRole,
   elite: boolean,
   tuning: EnemiesTuning = ENEMY_TUNING,
+  chapter = 1,
 ): number {
   const base = tuning.roles[role].contactDamage;
-  return elite ? base * tuning.eliteDamageMultiplier : base;
+  const scaled = elite ? base * tuning.eliteDamageMultiplier : base;
+  // Tim là đơn vị nguyên: 2 × 1.25 = 2.5 phải thành 3 chứ không để HUD hiện 3.5.
+  return Math.max(1, Math.round(scaled * chapterMultiplier(CHAPTER_TUNING.enemyDamageMultipliers, chapter)));
 }
 
-/** Máu tối đa, đã tính scale elite. `waves.ts` dùng hàm này để spawn. */
+/** Máu tối đa, đã tính scale elite và scale chapter. `waves.ts` dùng hàm này để spawn. */
 export function maxHealthFor(
   role: EnemyRole,
   elite: boolean,
   tuning: EnemiesTuning = ENEMY_TUNING,
+  chapter = 1,
 ): number {
   const base = tuning.roles[role].health;
-  return elite ? base * tuning.eliteHealthMultiplier : base;
+  const scaled = elite ? base * tuning.eliteHealthMultiplier : base;
+  return Math.max(1, Math.round(scaled * chapterMultiplier(CHAPTER_TUNING.enemyHealthMultipliers, chapter)));
+}
+
+/** Hệ số của `chapter` (1-based); ngoài phạm vi thì kẹp về chapter đầu/cuối. */
+function chapterMultiplier(multipliers: readonly number[], chapter: number): number {
+  if (!Number.isFinite(chapter)) return 1;
+  const index = Math.min(Math.max(Math.floor(chapter), 1), multipliers.length) - 1;
+  return multipliers[index] ?? 1;
 }
 
 /**
