@@ -17,7 +17,7 @@ Ngày chốt: 2026-11-15. Trạng thái: đã chốt, chỉ mở lại khi có b
 
 ## ADR-002 — Rewrite từ đầu, không port parity
 
-**Quyết định.** Không port 1:1 codebase Unity. Thể loại mới: **roguelite né đạn một màn hình** (tham chiếu Archero). Người chơi tự động bắn, kỹ năng nằm ở di chuyển; dọn phòng → chọn 1/3 skill; chết là hết run, giữ vàng mua upgrade vĩnh viễn. 3 chapter × (8 phòng + boss rồng). Bỏ hub, NPC, dialog, inventory. Chi tiết ở `docs/gdd.md`.
+**Quyết định.** Không port 1:1 codebase Unity. Thể loại mới: **roguelite né đạn một màn hình** (tham chiếu Archero). Người chơi tự động bắn, kỹ năng nằm ở di chuyển; dọn phòng → chọn 1/3 skill; chết là hết run, giữ vàng mua upgrade vĩnh viễn. 3 chapter × (8 phòng + 1 boss theo GDD §5). Bỏ hub, NPC, dialog, inventory. Chi tiết ở `docs/gdd.md`.
 
 **Lý do.** Audit cho thấy nội dung cũ rất mỏng (Level1 = 14 quái rải rác, damage hardcode = 1, không có state machine). Không có baseline nào đáng giữ, nên đổi thể loại không mất gì thêm.
 
@@ -119,7 +119,7 @@ Chi tiết + bảng coverage: `docs/art/pack-inventory.md`.
 - Đạn: 1 viên, damage 1, tốc độ 12 tile/s.
 - Player 6 tim; nhận 1 damage; **i-frame 0.8 s**; knockback 3 px.
 - Enemy: hitstop 70 ms khi trúng, stagger 150 ms; telegraph 500 ms (caster) / 700 ms (brute).
-- Boss rồng 60 máu, 3 phase (100–66 / 66–33 / 33–0%).
+- Boss theo GDD §5: Tengu 60 / Squid 80 / Samurai 100 máu, 3 phase (100–66 / 66–33 / 33–0%).
 
 Bảng đầy đủ: `docs/gdd.md` §3–§5. Toàn bộ số nằm trong `src/core/config`, có test.
 

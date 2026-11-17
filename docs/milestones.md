@@ -68,12 +68,14 @@ Nguồn thiết kế: `docs/gdd.md`. Quyết định kỹ thuật: `docs/tech-de
 
 ## M4 — Skill và boss
 
-**Việc.** 20 skill theo GDD §6, rarity weight, stack, màn hình chọn 1/3. Boss rồng placeholder (hình khối) với 3 phase và pattern ở GDD §5. Chapter 2, 3 với scaling.
+**Việc.** 20 skill theo GDD §6, rarity weight, stack, màn hình chọn 1/3. Boss thật của GDD §5 — **TenguBlue / SquidGreen / GiantBlueSamurai**, 60/80/100 máu, 3 phase, pattern đọc được — không còn boss rồng/placeholder hình khối. Chapter 2, 3 với scaling.
 
 **Nghiệm thu.**
 - Test: rarity roll có seed cố định; stack cộng dồn đúng; skill ảnh hưởng DPS đúng công thức.
-- Chơi trọn 1 run 9 phòng + boss bằng placeholder.
-- 3 phase boss khác nhau rõ, và mỗi phase có ít nhất 1 pattern buộc phải di chuyển.
+- Chơi trọn 1 run 9 phòng + boss ở cả 3 chapter.
+- 3 phase boss khác nhau rõ (tint + màu vòng telegraph + banner riêng), và mỗi phase có ít nhất 1 pattern buộc phải di chuyển (test: player đứng yên tại `playerStart` vẫn trúng đòn ở cả 9 phase).
+
+**Trạng thái: ✅ Xong (2026-11-17).** 538 test xanh (39 file; mới `skills-loadout`, `combat-effects`, `boss-phases`, `chapter-scaling`, `chapter-assets`, `save-unlock`, `integer-damage`). 20 skill sống trong game qua `DerivedStats` + `core/combat/*` (crit, pierce, ricochet, homing, nổ AoE có flash, freeze/poison có tint + DoT, lifesteal, execute, shield 20 s có tint, thorns, Second Wind, Vitality…); sim dùng đúng các helper đó. Màn chọn 1/3 dựng bằng code (`skill-pick.ts`): 3 thẻ có tên/rarity màu/hiệu ứng/stack, chọn bằng chuột **và** phím 1/2/3 (phải nghe `document` capture — xem bẫy AGENTS.md), roll bằng RNG seed của run, tôn trọng max stack. HUD có hàng chữ tắt 2 ký tự + stack (20 mã không trùng) và thanh máu boss. Boss dùng `core/boss/patterns.ts`: Tengu 60 / Squid 80 / Samurai 100 máu, phase 66%/33%, Summon 2 caster của Squid chạy, Samurai line-up theo hàng player trước khi charge ngang (nếu không, player đứng hàng khác không bao giờ bị đe doạ); mỗi phase có tint + màu vòng telegraph + banner `PHASE 2` / `ENRAGE` riêng. Chapter 2–3 author đủ 9 phòng mỗi chapter (5–6 enemy/phòng, brute từ phòng 3; 7–8 enemy + elite), mỗi phòng chia 2–3 wave; scale máu theo `config/tuning.json` (`chapters.enemyHealthMultipliers` 1/1.05/1.05, damage giữ 1/1/1 — độ khó chính đến từ số lượng/elite, đúng tinh thần GDD §4). Thắng chapter ghi `chaptersUnlocked` vào save; chapter select hiện đúng 1 → 2 → 3. Headless Chrome (1280×960): ch1 → ch2 → ch3, mỗi chapter qua 9 phòng + 3 phase boss + unlock, **không lỗi console**; `stress()` giữ 8 enemy + 44 đạn; đo riêng 12 mẫu **60.0 fps** (16.67 ms/frame); run full-flow 3 chapter + 3 boss đo **58.1 fps** trung bình. Sim balance (3 seed, policy né): đứng yên chết phòng 1 sau 8.2–11.2 s; né không skill sống 9.9–121.2 s; né + loadout tiêu biểu **thắng cả 3 chapter** (trung bình 85 / 93 / 135 s). Round 2 thêm test riêng cho chapter 2–3 với run 0 skill: đứng yên thua phòng 1 (14.3 / 13.4 s), né không skill sống **254–256 s** (ch2, dọn 6 phòng) và **187–205 s** (ch3, dọn 3–4 phòng). Ảnh: `/tmp/yokai-m4/shots/`. Còn thiếu: Greed chưa có vàng trong run (M5), Freeze không làm chậm boss (chỉ enemy thường), crit/lifesteal dùng RNG chung với boss pattern, HUD skill dùng chữ tắt vì pack không có icon skill 16×16 phù hợp.
 
 ---
 
