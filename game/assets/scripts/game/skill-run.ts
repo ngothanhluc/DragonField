@@ -7,7 +7,8 @@
  * đó sau khi `choose()` trả về.
  */
 import { SkillLoadout, type AcquireResult } from '../core/skills/loadout';
-import type { DerivedStats } from '../core/skills/derived-stats';
+import type { DerivedStats, StatsBaseline } from '../core/skills/derived-stats';
+import { DEFAULT_COMBAT } from '../core/config';
 import type { OwnedSkillStacks, SkillDef } from '../core/skills/pool';
 import { rollChoices } from '../core/skills/roll';
 import { SeededRng } from '../core/rng';
@@ -29,16 +30,19 @@ export interface SkillGrant {
 export class SkillRun {
   private loadout = new SkillLoadout();
   private rng = SeededRng.fromSeed(1);
+  /** Baseline đã cộng meta upgrade (M5); skill cộng dồn trên nền này. */
+  private base: StatsBaseline = DEFAULT_COMBAT;
   private screen: SkillPickScreen | null = null;
   private offered: readonly SkillDef[] | null = null;
   /** Tăng mỗi lần mở/đóng để bỏ kết quả build screen cũ (đổi phòng nhanh). */
   private token = 0;
 
-  /** Bắt đầu run mới: loadout rỗng, RNG lấy từ seed của run. */
-  reset(seed: number): void {
+  /** Bắt đầu run mới: loadout rỗng, RNG lấy từ seed của run, baseline từ meta. */
+  reset(seed: number, base: StatsBaseline = DEFAULT_COMBAT): void {
     this.destroy();
     this.loadout = new SkillLoadout();
     this.rng = SeededRng.fromSeed(seed);
+    this.base = base;
   }
 
   get entries(): OwnedSkillStacks[] {
@@ -50,7 +54,7 @@ export class SkillRun {
   }
 
   stats(): DerivedStats {
-    return this.loadout.stats();
+    return this.loadout.stats(this.base);
   }
 
   snapshot(): ReadonlyMap<string, number> {

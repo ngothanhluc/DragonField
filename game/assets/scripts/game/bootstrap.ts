@@ -5,7 +5,7 @@
  *
  * ```text
  * animations.json (validate) ─┐
- * save (localStorage)        ─┼─> chapter select ─> loadDir .tmx ─> parse TMX ─> room + player + HUD ─> wave 1
+ * save (localStorage)        ─┼─> title ─> chapter select ─> loadDir .tmx ─> parse TMX ─> room + player + HUD ─> wave 1
  * ```
  *
  * Phòng là **dữ liệu**: bootstrap load mọi `.tmx` trong `data/levels/chapter-<n>/`
@@ -18,9 +18,8 @@
  * tự `core/sim/run-simulation.ts`, để hành vi trong engine khớp với thứ đã được đo
  * balance ở sim.
  *
- * Boss M2 là **placeholder**: một `EnemyView` dùng art boss thật (`TenguBlue`) với
- * máu/hitbox từ `core/boss/boss-defs.ts`, hành vi tank có sẵn (telegraph + charge).
- * Dọn sạch phòng boss ⇒ CHAPTER CLEAR ⇒ về chapter select.
+ * Boss thật của GDD §5 (`core/boss/boss-defs.ts`): 3 phase, pattern đọc được.
+ * Dọn sạch phòng boss ⇒ CHAPTER CLEAR ⇒ result (thắng) ⇒ chapter select.
  */
 import {
   _decorator,
@@ -28,20 +27,15 @@ import {
   Canvas as CocosCanvas,
   Color as CocosColor,
   Component,
-  Input,
   JsonAsset as CocosJsonAsset,
-  KeyCode,
   Layers,
   Node as CocosNode,
-  Rect as CocosRect,
   RenderRoot2D,
   ResolutionPolicy,
   Sprite as CocosSprite,
   TiledMapAsset as CocosTiledMapAsset,
   director,
-  input,
   resources,
-  screen,
   view,
 } from 'cc';
 import { resolve, validateManifest } from '../core/art/manifest';
@@ -54,22 +48,22 @@ import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data';
 import { parseTmxLevel } from '../core/level/tmx';
 import type { Vec2 } from '../core/math/vec2';
+import { metaBaseline } from '../core/meta/run-stats';
 import { SeededRng } from '../core/rng';
 import { RunState } from '../core/run/run-state';
+import { RunRewards } from '../core/run/run-rewards';
+import { chapterGate } from '../core/save/chapter-gate';
 import { withBest } from '../core/save/save-data';
 import type { SaveData } from '../core/save/save-data';
 import type { SaveRepository } from '../core/save/storage';
-import { letterboxRect } from '../core/view/letterbox';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { preloadSheets } from './assets/texture-cache';
 import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
 import { BulletView, ENEMY_BULLET_SHEET, PLAYER_BULLET_SHEET } from './bullet-view';
-import { buildChapterSelect } from './chapter-select';
-import type { ChapterButton } from './chapter-select';
 import { CombatLoop, STRESS_ENEMY_BULLETS } from './combat-loop';
 import { installDebugApi } from './debug-api';
-import type { DebugProvider, DebugStatus } from './debug-api';
+import type { DebugProvider, DebugStatus, DebugUiText } from './debug-api';
 import { TELEGRAPH_RING_SHEET } from './enemy-view';
 import { createFxBurstPool } from './fx-burst';
 import type { FxBurstPool } from './fx-burst';
@@ -78,9 +72,13 @@ import { Hud, HEART_SHEET } from './hud';
 import { syncCombatHud } from './hud-sync';
 import { ACTOR_SCALE, OBSTACLE_SHEET, buildRoom } from './level-view';
 import { PlayerController } from './player-controller';
-import { persistChapterUnlock } from './run-end';
 import { createSaveRepository } from './save-storage';
+import { ScreenFlow } from './screen-flow';
+import type { RunSnapshot } from './screen-flow';
+import { SkillPreview } from './skill-preview';
 import { SkillRun } from './skill-run';
+import { collectUiText } from './ui-text';
+import { applyWorldLetterbox, fillBrowserViewport } from './viewport';
 
 const { ccclass } = _decorator;
 
@@ -105,9 +103,6 @@ const CHAPTER_FOLDERS: Readonly<Record<number, string>> = {
   2: 'data/levels/chapter-2',
   3: 'data/levels/chapter-3',
 };
-
-/** GDD §1: 3 chapter mỗi run. Chapter select luôn hiện đủ 3 nút. */
-const CHAPTER_COUNT = 3;
 
 /**
  * Trần thời gian một frame. Tab bị ẩn vài giây rồi quay lại sẽ có `dt` rất lớn; kẹp lại
@@ -195,7 +190,6 @@ export class Bootstrap extends Component {
   private bulletLayer: Node | null = null;
   private roomRoot: Node | null = null;
   private uiRoot: Node | null = null;
-  private menuRoot: Node | null = null;
   private worldCamera: Camera | null = null;
 
   private player: PlayerController | null = null;
@@ -204,7 +198,11 @@ export class Bootstrap extends Component {
   private hud: Hud | null = null;
   private fx: FxBurstPool | null = null;
   private roomClearBanner: Node | null = null;
-  private endBanner: Node | null = null;
+  /** Overlay debug: xem trước card skill mà không grant (M5 round 3). */
+  private readonly skillPreview = new SkillPreview(() => this.ensureUiRoot());
+
+  /** Vàng/kill của run hiện tại — ghi vào save ở cuối run (M5). */
+  private rewards = new RunRewards();
 
   /** Skill của run hiện tại (loadout, RNG roll, màn chọn 1/3). */
   private readonly skills = new SkillRun();
@@ -220,6 +218,28 @@ export class Bootstrap extends Component {
   /** Frame time thật của N frame gần nhất — `fps()` debug đọc từ đây. */
   private readonly fpsMeter = new FpsMeter();
   private status: BootstrapStatus = 'loading';
+
+  /** Toàn bộ routing/màn M5 nằm ở đây để bootstrap chỉ còn boot + run + render. */
+  private readonly screens = new ScreenFlow({
+    uiRoot: () => this.ensureUiRoot(),
+    save: () => this.save,
+    repository: () => this.saveRepo,
+    setSave: (save) => {
+      this.save = save;
+    },
+    status: () => this.status,
+    setStatus: (status) => {
+      this.status = status;
+    },
+    chapterAvailable: (chapter) => CHAPTER_FOLDERS[chapter] !== undefined,
+    startChapter: (chapter) => {
+      void this.startChapter(chapter);
+    },
+    runSnapshot: () => this.runSnapshot(),
+    launchChapter: (chapter) => this.launchChapter(chapter),
+    teardownRun: () => this.teardownRun(),
+    fail: (error) => this.fail(error),
+  });
 
   start(): void {
     void this.boot().catch((error: unknown) => {
@@ -254,7 +274,7 @@ export class Bootstrap extends Component {
   }
 
   // -------------------------------------------------------------------------
-  // Boot → chapter select
+  // Boot → title
   // -------------------------------------------------------------------------
 
   private async boot(): Promise<void> {
@@ -263,6 +283,11 @@ export class Bootstrap extends Component {
     // `SHOW_ALL` tính lại band mỗi lần canvas đổi kích thước, nên camera world phải bám
     // theo đúng band đó; nếu không phòng bị cắt ở 4:3 và lệch ở 21:9 (xem applyViewport).
     view.on('canvas-resize', this.onCanvasResize, this);
+    // Build web-desktop ép `exactFitScreen = false`; canvas chỉ đổi khi `screen.windowSize`
+    // đổi. Gọi ngay + theo dõi resize để 16:9/16:10/4:3 đều dùng đúng diện tích trình duyệt.
+    fillBrowserViewport();
+    window.addEventListener('resize', this.onWindowResize);
+    document.addEventListener('fullscreenchange', this.onFullscreenChange);
     // Cocos chỉ nghe phím trên #GameCanvas: chưa focus thì WASD/R không ăn cho tới khi click.
     document.getElementById('GameCanvas')?.focus();
 
@@ -276,46 +301,22 @@ export class Bootstrap extends Component {
     this.manifest = await this.loadManifest();
     this.prepareCamera();
     this.createWorldLayers();
-    await this.showChapterSelect();
-  }
-
-  private async showChapterSelect(): Promise<void> {
-    const save = this.save;
-    if (save === null) throw new Error('Bootstrap: chưa load save');
-
-    const chapters: ChapterButton[] = [];
-    for (let chapter = 1; chapter <= CHAPTER_COUNT; chapter += 1) {
-      const hasData = CHAPTER_FOLDERS[chapter] !== undefined;
-      chapters.push({
-        chapter,
-        hasData,
-        playable: hasData && chapter <= save.chaptersUnlocked,
-      });
-    }
-
-    const canvas = this.ensureUiRoot();
-    this.menuRoot?.destroy();
-    this.menuRoot = await buildChapterSelect(canvas, {
-      chapters,
-      best: save.best,
-      onSelect: (chapter) => {
-        void this.startChapter(chapter);
-      },
-    });
-
-    // Chỉ báo 'menu' sau khi nút đã dựng xong: debug/headless click ngay khi thấy
-    // status 'menu' thì nút phải tồn tại rồi (nếu không click rơi vào hư không).
-    this.status = 'menu';
-
-    console.log(
-      `[YokaiField] Chapter select: best chapter ${save.best.chapter} · room ${save.best.room}, ` +
-        `unlocked ${save.chaptersUnlocked}/${CHAPTER_COUNT}.`,
-    );
+    await this.screens.showTitle();
   }
 
   /** Load toàn bộ `.tmx` của chapter rồi bắt đầu run ở phòng 1. Chỉ từ menu. */
   private async startChapter(chapterNumber: number): Promise<void> {
+    const save = this.save;
+    if (save === null) return;
     if (this.status !== 'menu') return;
+
+    // Cổng thật: nút disabled chỉ là hình, đây mới là chỗ chặn chapter chưa mở.
+    const gate = chapterGate(save, chapterNumber, CHAPTER_FOLDERS[chapterNumber] !== undefined);
+    if (!gate.allowed) {
+      console.warn(`[YokaiField] Không mở được chapter ${chapterNumber}: ${gate.reason}`);
+      return;
+    }
+
     try {
       await this.launchChapter(chapterNumber);
     } catch (error: unknown) {
@@ -335,13 +336,18 @@ export class Bootstrap extends Component {
     }
 
     this.status = 'loading';
+    this.screens.setScreen('playing');
+    this.screens.clearMenu();
     this.skills.destroy();
-    this.menuRoot?.destroy();
-    this.menuRoot = null;
+
+    const save = this.save;
+    if (save === null) throw new Error('Bootstrap: chưa load save');
 
     const seed =
       seedArg ?? ((Date.now() ^ (chapterNumber * 0x9e3779b1)) >>> 0);
-    this.skills.reset(seed);
+    // Baseline của run = chỉ số gốc + meta đã mua (tim/damage/nhịp bắn).
+    this.skills.reset(seed, metaBaseline(DEFAULT_COMBAT, save));
+    this.rewards = new RunRewards();
     // Dòng RNG chiến đấu tách khỏi roll skill: crit/boss pattern không đổi khi
     // người chơi chọn thẻ khác.
     this.combatRng = SeededRng.fromSeed((seed ^ 0x85ebca6b) >>> 0);
@@ -365,6 +371,8 @@ export class Bootstrap extends Component {
 
     const player = this.createPlayer(firstRoom.playerStart);
     player.applyStats(this.skills.stats());
+    // Trần máu meta cao hơn 6: vào run phải đầy tim, không phải 6/7.
+    player.heal(player.maxHearts);
     this.createRoom(firstRoom);
 
     await this.createBullets(player);
@@ -383,14 +391,17 @@ export class Bootstrap extends Component {
       monsterFor: (role) => this.monsterFor(firstRoom.chapter, role),
       rng: this.combatRng,
       onBossPhase: (phase) => this.bossPhases.show(phase),
+      onKill: (role, elite) => this.awardKill(role, elite),
       ...(this.fx !== null ? { fx: this.fx } : {}),
     });
 
     this.status = 'playing';
+    this.screens.setScreen('playing');
     this.persistBest(firstRoom.room);
     this.combat.startWave(0);
     if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
     this.hud?.setSkills(this.skills.entries);
+    this.hud?.setGold(0);
     console.log(
       `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} phòng từ ` +
         `resources/${folder}. Bắt đầu phòng ${run.roomLabel} ` +
@@ -574,14 +585,17 @@ export class Bootstrap extends Component {
    * (orthoHeight = nửa chiều cao canvas / scaleY), nên HUD tự dán mép phòng.
    */
   private applyViewport(): void {
-    const canvas = screen.windowSize;
-    const band = letterboxRect(canvas.width, canvas.height, DESIGN_WIDTH, DESIGN_HEIGHT);
-
-    const world = this.worldCamera;
-    if (world !== null) {
-      world.rect = new CocosRect(band.x, band.y, band.width, band.height);
-    }
+    applyWorldLetterbox(this.worldCamera, DESIGN_WIDTH, DESIGN_HEIGHT);
   }
+  private readonly onWindowResize = (): void => {
+    fillBrowserViewport();
+    this.applyViewport();
+  };
+
+  /** Esc của trình duyệt thoát fullscreen không tới `keydown`; đồng bộ từ event này. */
+  private readonly onFullscreenChange = (): void => {
+    this.screens.syncFullscreen();
+  };
 
   private onCanvasResize(): void {
     this.applyViewport();
@@ -752,6 +766,13 @@ export class Bootstrap extends Component {
     run.onRoomCleared();
     this.persistBest(level.room);
 
+    // Thưởng dọn phòng (GDD §7): boss 50, phòng thường 5, nhân Greed.
+    const roomGold = this.rewards.awardRoomClear(
+      level.isBossRoom,
+      this.player?.derivedStats.goldMultiplier ?? 1,
+    );
+    this.hud?.setGold(this.rewards.goldEarned);
+
     // Second Wind: hồi tim mỗi khi dọn phòng (GDD §6).
     const healPerRoom = this.player?.derivedStats.healPerRoom ?? 0;
     if (healPerRoom > 0) this.player?.heal(healPerRoom);
@@ -759,7 +780,7 @@ export class Bootstrap extends Component {
       syncCombatHud(this.hud, this.player, this.combat);
     }
     this.hud?.setSkills(this.skills.entries);
-    console.log(`[YokaiField] Phòng ${run.roomLabel} sạch.`);
+    console.log(`[YokaiField] Phòng ${run.roomLabel} sạch (+${roomGold} vàng).`);
 
     // Dừng sim (update() return khi status khác 'playing') và giữ chữ ~1 s để
     // người chơi đọc được "phòng sạch" trước khi màn hình đổi. Hẹn giờ bằng
@@ -778,7 +799,6 @@ export class Bootstrap extends Component {
       // Phòng cuối của chapter (số phòng lấy từ dữ liệu) = hết run của chapter này.
       // Không dùng `RunState.isBossRoom`: chapter có thể có phòng thường sau boss.
       if (current.room >= current.roomsTotal) {
-        current.markWon();
         this.finishWin();
         return;
       }
@@ -798,6 +818,7 @@ export class Bootstrap extends Component {
     }
 
     this.status = 'skill-pick';
+    this.screens.setScreen('skill-pick');
     const canvas = this.ensureUiRoot();
 
     void this.skills
@@ -847,6 +868,7 @@ export class Bootstrap extends Component {
     if (run === null) return;
 
     this.status = 'playing';
+    this.screens.setScreen('playing');
     run.advanceToNextRoom();
     this.enterRoom(run.room);
   }
@@ -888,72 +910,37 @@ export class Bootstrap extends Component {
   private finishLoss(): void {
     const run = this.run;
     if (run === null) return;
+    if (run.status === 'lost' || run.status === 'won') return;
 
-    this.status = 'lost';
     run.markLost();
     console.log(`[YokaiField] Thua ở phòng ${run.roomLabel} (0 tim).`);
-    this.showEndScreen(
-      `GAME OVER\nPhòng ${run.roomLabel}\nNhấn R hoặc click để về chọn chapter`,
-      END_LOSS_COLOR,
-    );
+    this.screens.finishRun(false);
   }
 
   private finishWin(): void {
     const run = this.run;
-    this.status = 'won';
+    if (run === null) return;
+    if (run.status === 'won' || run.status === 'lost') return;
 
-    // GDD §2: thắng chapter mở chapter kế. Ghi save ngay để chapter select sau
-    // khi bấm R thấy nút mới; lỗi save không làm chết màn thắng.
-    const save = this.save;
-    const repo = this.saveRepo;
-    if (run !== null && save !== null && repo !== null) {
-      try {
-        const result = persistChapterUnlock(save, repo, run.chapter);
-        this.save = result.save;
-        if (result.unlocked) {
-          console.log(
-            `[YokaiField] Chapter ${run.chapter} clear → mở chapter ${result.chaptersUnlocked}.`,
-          );
-        }
-      } catch (error: unknown) {
-        console.warn(`[YokaiField] Không ghi được unlock chapter: ${errorMessage(error)}`);
-      }
-    }
-
-    const label = run?.roomLabel ?? '?/?';
-    console.log(`[YokaiField] CHAPTER CLEAR — chapter ${run?.chapter ?? '?'}, phòng ${label}.`);
-    this.showEndScreen(
-      `CHAPTER CLEAR\nChapter ${run?.chapter ?? '?'} · ${label}\nNhấn R hoặc click để về chọn chapter`,
-      END_WIN_COLOR,
-    );
+    // GDD §2: thắng chapter mở chapter kế; `commitRunEnd` ghi cả vàng lẫn unlock.
+    run.markWon();
+    console.log(`[YokaiField] CHAPTER CLEAR — chapter ${run.chapter}, phòng ${run.roomLabel}.`);
+    this.screens.finishRun(true);
   }
 
-  private showEndScreen(text: string, color: Color): void {
-    this.endBanner?.destroy();
-    this.endBanner = this.showBanner('end-screen', text, color);
-    input.on(Input.EventType.KEY_DOWN, this.onEndKey, this);
-    input.on(Input.EventType.MOUSE_DOWN, this.onEndClick, this);
+  /** Cộng vàng cho một kill; HUD cập nhật ngay (GDD §9). */
+  private awardKill(role: EnemyRole, elite: boolean): void {
+    const multiplier = this.player?.derivedStats.goldMultiplier ?? 1;
+    this.rewards.awardKill(role, elite, multiplier);
+    this.hud?.setGold(this.rewards.goldEarned);
   }
 
-  /** R hoặc click ở màn kết thúc → dọn run và về chapter select (không reload scene). */
-  private onEndKey(event: { readonly keyCode: number }): void {
-    if (event.keyCode !== KeyCode.KEY_R) return;
-    void this.returnToChapterSelect().catch((error: unknown) => this.fail(error));
+  /** Chụp run cho result trước khi teardown (ScreenFlow không biết RunState/combat). */
+  private runSnapshot(): RunSnapshot | null {
+    const run = this.run;
+    if (run === null) return null;
+    return { chapter: run.chapter, room: run.room, roomsTotal: run.roomsTotal, durationMs: this.combat?.clockMs ?? 0, goldEarned: this.rewards.goldEarned, kills: this.rewards.killCount };
   }
-
-  private onEndClick(): void {
-    void this.returnToChapterSelect().catch((error: unknown) => this.fail(error));
-  }
-
-  private async returnToChapterSelect(): Promise<void> {
-    input.off(Input.EventType.KEY_DOWN, this.onEndKey, this);
-    input.off(Input.EventType.MOUSE_DOWN, this.onEndClick, this);
-
-    this.teardownRun();
-    this.status = 'loading';
-    await this.showChapterSelect();
-  }
-
   /**
    * Dọn sạch một run khỏi scene. Huỷ từng nhóm node thay vì reload scene: reload sẽ
    * huỷ các load ảnh đang bay và devtools ghi `net::ERR_CONNECTION_RESET` (vô hại
@@ -963,8 +950,6 @@ export class Bootstrap extends Component {
     this.skills.destroy();
     this.roomClearBanner?.destroy();
     this.roomClearBanner = null;
-    this.endBanner?.destroy();
-    this.endBanner = null;
     this.bossPhases.destroy();
 
     this.combat?.destroy();
@@ -983,6 +968,7 @@ export class Bootstrap extends Component {
     this.chapter = null;
     this.chapterAssets = new Map();
     this.run = null;
+    this.rewards = new RunRewards();
     this.fpsMeter.clear();
   }
 
@@ -1040,6 +1026,7 @@ export class Bootstrap extends Component {
       setBossHp: (fraction) => this.combat?.setBossHealthFraction(fraction) ?? false,
       startChapter: async (chapter, seed) => {
         if (this.status === 'loading') return false;
+        this.screens.clearMenu();
         this.teardownRun();
         try {
           await this.launchChapter(chapter, seed);
@@ -1049,6 +1036,12 @@ export class Bootstrap extends Component {
           return false;
         }
       },
+      screen: () => this.screens.screenId,
+      save: () => this.save,
+      setGold: (gold) => this.screens.setGold(gold),
+      uiText: () => this.uiText(),
+      skillPreview: (ids) => this.skillPreview.show(ids),
+      closeSkillPreview: () => this.skillPreview.close(),
     };
 
     installDebugApi(provider);
@@ -1102,10 +1095,15 @@ export class Bootstrap extends Component {
     return killed;
   }
 
+  private uiText(): readonly DebugUiText[] {
+    return collectUiText(this.uiRoot);
+  }
+
   protected onDestroy(): void {
-    input.off(Input.EventType.KEY_DOWN, this.onEndKey, this);
-    input.off(Input.EventType.MOUSE_DOWN, this.onEndClick, this);
+    document.removeEventListener('fullscreenchange', this.onFullscreenChange);
+    window.removeEventListener('resize', this.onWindowResize);
     view.off('canvas-resize', this.onCanvasResize, this);
+    this.screens.destroy();
   }
 
   // -------------------------------------------------------------------------

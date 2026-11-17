@@ -86,6 +86,13 @@ export interface CombatLoopOptions {
   readonly rng: SeededRng;
   /** Callback khi boss đổi phase (bootstrap hiện banner). */
   readonly onBossPhase?: (phase: BossPhase) => void;
+  /**
+   * Một enemy vừa chết — bootstrap cộng vàng (M5). Gọi đúng **một lần** cho
+   * mỗi enemy, kể cả khi `killAll()`/debug giết hàng loạt.
+   */
+  readonly onKill?: (role: EnemyRole, elite: boolean) => void;
+  /** Boss vừa chết (thưởng phòng boss do bootstrap quyết ở `awardRoomClear`). */
+  readonly onBossKilled?: () => void;
   /** Pool flash vụ nổ; vắng mặt thì vẫn chạy, chỉ không có hình. */
   readonly fx?: FxBurstPool;
 }
@@ -117,10 +124,15 @@ export class CombatLoop {
   private readonly monsterFor: (role: EnemyRole) => string;
   private readonly rng: SeededRng;
   private readonly onBossPhase: (phase: BossPhase) => void;
+  private readonly onKill: (role: EnemyRole, elite: boolean) => void;
+  private readonly onBossKilled: () => void;
   private readonly fx: FxBurstPool | null;
   private readonly hitstop = new HitstopClock(DEFAULT_COMBAT.enemyHitstopMs);
   private readonly enemies: EnemyView[] = [];
   private boss: BossView | null = null;
+  /** Enemy/boss đã trả thưởng — chặn cộng vàng hai lần khi update quét lại. */
+  private readonly rewarded = new Set<string>();
+  private bossRewarded = false;
   private readonly bossStatus = new StatusEffects();
   private level: LevelData;
   private waveIndex = 0;
@@ -143,6 +155,8 @@ export class CombatLoop {
     this.monsterFor = options.monsterFor;
     this.rng = options.rng;
     this.onBossPhase = options.onBossPhase ?? (() => undefined);
+    this.onKill = options.onKill ?? (() => undefined);
+    this.onBossKilled = options.onBossKilled ?? (() => undefined);
     this.fx = options.fx ?? null;
   }
 
@@ -202,6 +216,7 @@ export class CombatLoop {
     const target = Math.round(boss.maxHealth * clamped);
     const damage = boss.health - target;
     if (damage > 0) boss.takeDamage(damage, this.nowMs);
+    this.reportDeaths();
     return true;
   }
 
@@ -217,6 +232,8 @@ export class CombatLoop {
     this.playerDied = false;
     this.awaitingAdvance = false;
     this.hitstop.reset();
+    this.rewarded.clear();
+    this.bossRewarded = false;
   }
 
   /**
@@ -226,6 +243,7 @@ export class CombatLoop {
   spawnBoss(def: BossDef, start: Vec2): BossView {
     this.boss?.destroy();
     this.bossStatus.clear();
+    this.bossRewarded = false;
     const boss = new BossView({
       def,
       start,
@@ -300,6 +318,7 @@ export class CombatLoop {
     this.stepBullets(deltaMs, level);
     this.applyContactDamage();
     this.fx?.update(deltaMs);
+    this.reportDeaths();
 
     this.bulletView?.sync();
     if (this.stress) this.topUpStress();
@@ -647,7 +666,28 @@ export class CombatLoop {
       boss.takeDamage(boss.health, this.nowMs);
       killed += 1;
     }
+    // Debug giết hàng loạt vẫn phải trả vàng đúng như chơi thật (M5).
+    this.reportDeaths();
     return killed;
+  }
+
+  /**
+   * Báo chết đúng một lần cho mỗi enemy/boss. Gọi sau mọi đường damage (update,
+   * `killAll`, `setBossHealthFraction`) để bootstrap cộng vàng ngay frame đó.
+   */
+  private reportDeaths(): void {
+    for (const enemy of this.enemies) {
+      if (!enemy.isDead || this.rewarded.has(enemy.id)) continue;
+      this.rewarded.add(enemy.id);
+      const role = enemy.role;
+      if (role !== null) this.onKill(role, enemy.isElite);
+    }
+
+    const boss = this.boss;
+    if (boss !== null && boss.isDefeated && !this.bossRewarded) {
+      this.bossRewarded = true;
+      this.onBossKilled();
+    }
   }
 
   /** Debug: spawn một enemy ở vị trí chỉ định (mặc định quanh tâm phòng). */
@@ -711,6 +751,8 @@ export class CombatLoop {
     this.boss?.destroy();
     this.boss = null;
     this.bossStatus.clear();
+    this.rewarded.clear();
+    this.bossRewarded = false;
     this.player.bullets.clear();
   }
 

@@ -1,58 +1,29 @@
 /**
- * Màn chọn chapter (stub M2) — dựng 100% bằng code, không sửa `.scene`.
+ * Màn chọn chapter (GDD §2, §9) — dựng 100% bằng code, không sửa `.scene`.
  *
- * Ba nút, chapter 1 mở, chapter 2–3 khoá; hiện kỷ lục `best` lấy từ save
- * (`core/save/save-data.ts`). Nút dùng `Button` của engine để nhận click chuột
- * thật (headless test click đúng toạ độ design), không phải hack phím tắt.
+ * Ba nút chapter (khoá/mở + best) và Back về title. Nút khoá **không** bấm được,
+ * và bootstrap còn gọi `core/save/chapter-gate.ts` trước khi load `.tmx` — nút
+ * disabled không phải lớp bảo vệ duy nhất.
  *
- * Toạ độ tính bằng pixel design (512×288 nhìn thấy), gốc ở tâm UI canvas — cùng
- * hệ với HUD (`hud.ts`). Nền tối phía sau do camera world tô (`BACKDROP_COLOR`).
+ * Dùng chung `screens/menu.ts` cho frame nút, focus nhìn thấy được và phím
+ * ↑/↓/←/→ + Enter/Space + Esc.
  */
-import {
-  Button as CocosButton,
-  Color as CocosColor,
-  Layers,
-  Node as CocosNode,
-  Sprite as CocosSprite,
-  UITransform as CocosUITransform,
-} from 'cc';
+import { Layers, Node as CocosNode } from 'cc';
 import type { BestProgress } from '../core/save/save-data';
-import { loadTexture } from './assets/texture-cache';
+import {
+  FocusList,
+  MENU_MUTED_COLOR,
+  MENU_TEXT_COLOR,
+  MENU_TITLE_COLOR,
+  createMenuButton,
+  createScreenBackdrop,
+  loadMenuFrames,
+  visibleUiSize,
+  type MenuButtonHandle,
+} from './screens/menu';
 import { createLabel } from './hud';
-import { sliceFrame } from './level-view';
-import type { TileRect } from './level-view';
 
-/**
- * `cc` trong repo là module any (xem `types/cc.d.ts`), nên tên import chỉ dùng được ở vị
- * trí value. `InstanceType` giữ đúng nghĩa khi mở project trong editor có type thật.
- */
-type Button = InstanceType<typeof CocosButton>;
-type Color = InstanceType<typeof CocosColor>;
 type Node = InstanceType<typeof CocosNode>;
-type Sprite = InstanceType<typeof CocosSprite>;
-type SpriteFrame = ReturnType<typeof sliceFrame>;
-type UITransform = InstanceType<typeof CocosUITransform>;
-
-/** Nút gỗ của pack (`Theme Wood`), 16×8 px — kéo giãn bằng `sizeMode = CUSTOM`. */
-const BUTTON_SHEET = 'resources/art/ui/theme-wood/button_normal.png';
-const BUTTON_DISABLED_SHEET = 'resources/art/ui/theme-wood/button_disabled.png';
-/** Ảnh 16×8 chỉ có 1 ô: lấy nguyên file. */
-const BUTTON_RECT: TileRect = { x: 0, y: 0, width: 16, height: 8 };
-
-const BUTTON_WIDTH = 116;
-const BUTTON_HEIGHT = 36;
-const BUTTON_GAP = 14;
-const BUTTON_ROW_Y = 8;
-
-const TITLE_Y = 108;
-const SUBTITLE_Y = 78;
-const BEST_Y = -52;
-const HINT_Y = -76;
-
-const TITLE_COLOR = new CocosColor(255, 230, 120, 255);
-const TEXT_COLOR = new CocosColor(236, 236, 236, 255);
-const MUTED_COLOR = new CocosColor(150, 150, 150, 255);
-const LOCKED_COLOR = new CocosColor(128, 128, 128, 255);
 
 export interface ChapterButton {
   readonly chapter: number;
@@ -67,6 +38,14 @@ export interface ChapterSelectOptions {
   readonly chapters: readonly ChapterButton[];
   readonly best: BestProgress;
   readonly onSelect: (chapter: number) => void;
+  /** Esc / nút Back. */
+  readonly onBack: () => void;
+}
+
+export interface ChapterSelectScreen {
+  readonly node: Node;
+  focus(index: number): void;
+  destroy(): void;
 }
 
 /** Kỷ lục dạng chữ: "Best: chapter 2 · room 4" hoặc "Best: —". */
@@ -81,96 +60,83 @@ export function chapterCaption(button: ChapterButton): string {
   return button.hasData ? `Chapter ${button.chapter}\nlocked` : `Chapter ${button.chapter}\nno data`;
 }
 
-/**
- * Dựng màn chọn chapter dưới `parent` (node của UI canvas) và trả về root để
- * bootstrap huỷ khi vào run. Texture nút load bất đồng bộ nên hàm là `async`.
- */
 export async function buildChapterSelect(
   parent: Node,
   options: ChapterSelectOptions,
-): Promise<Node> {
-  const [normalTexture, disabledTexture] = await Promise.all([
-    loadTexture(BUTTON_SHEET),
-    loadTexture(BUTTON_DISABLED_SHEET),
-  ]);
-  const normalFrame: SpriteFrame = sliceFrame(normalTexture, BUTTON_RECT);
-  const disabledFrame: SpriteFrame = sliceFrame(disabledTexture, BUTTON_RECT);
+): Promise<ChapterSelectScreen> {
+  const frames = await loadMenuFrames();
+  const size = visibleUiSize();
 
   const root = new CocosNode('chapter-select');
   root.layer = Layers.Enum.UI_2D;
   root.parent = parent;
 
+  createScreenBackdrop(root);
+
   const title = createLabel(root, 'title', 'YOKAI FIELD');
   title.fontSize = 30;
   title.lineHeight = 34;
-  title.color = TITLE_COLOR;
-  title.node.setPosition(0, TITLE_Y, 0);
+  title.color = MENU_TITLE_COLOR;
+  title.node.setPosition(0, size.height / 2 - 34, 0);
 
   const subtitle = createLabel(root, 'subtitle', 'SELECT CHAPTER');
   subtitle.fontSize = 12;
-  subtitle.color = TEXT_COLOR;
-  subtitle.node.setPosition(0, SUBTITLE_Y, 0);
-
-  const count = options.chapters.length;
-  const rowWidth = count * BUTTON_WIDTH + Math.max(0, count - 1) * BUTTON_GAP;
-  const firstX = -rowWidth / 2 + BUTTON_WIDTH / 2;
-
-  options.chapters.forEach((chapter, index) => {
-    const x = firstX + index * (BUTTON_WIDTH + BUTTON_GAP);
-    const node = makeButton(
-      root,
-      `chapter-${chapter.chapter}`,
-      chapterCaption(chapter),
-      chapter.playable ? normalFrame : disabledFrame,
-      chapter.playable ? TEXT_COLOR : LOCKED_COLOR,
-    );
-    node.setPosition(x, BUTTON_ROW_Y, 0);
-
-    if (chapter.playable) {
-      const button: Button = node.addComponent(CocosButton);
-      // Không cần sprite target: phản hồi thị giác đã nằm ở 2 texture khác nhau.
-      button.transition = CocosButton.Transition.NONE;
-      node.on(CocosButton.EventType.CLICK, () => options.onSelect(chapter.chapter));
-    }
-  });
+  subtitle.color = MENU_TEXT_COLOR;
+  subtitle.node.setPosition(0, size.height / 2 - 64, 0);
 
   const best = createLabel(root, 'best', formatBest(options.best));
   best.fontSize = 11;
-  best.color = TEXT_COLOR;
-  best.node.setPosition(0, BEST_Y, 0);
+  best.color = MENU_TEXT_COLOR;
+  best.node.setPosition(0, -38, 0);
 
   const hint = createLabel(root, 'hint', 'Clear a chapter to unlock the next');
   hint.fontSize = 10;
-  hint.color = MUTED_COLOR;
-  hint.node.setPosition(0, HINT_Y, 0);
+  hint.color = MENU_MUTED_COLOR;
+  hint.node.setPosition(0, -size.height / 2 + 16, 0);
 
-  return root;
-}
+  const handles: MenuButtonHandle[] = [];
+  const count = options.chapters.length;
+  const width = 120;
+  const gap = 10;
+  const rowWidth = count * width + Math.max(0, count - 1) * gap;
+  const firstX = -rowWidth / 2 + width / 2;
 
-/** Một nút: sprite nền + label ở giữa. Toạ độ/kích thước theo design px. */
-function makeButton(
-  parent: Node,
-  name: string,
-  caption: string,
-  frame: SpriteFrame,
-  labelColor: Color,
-): Node {
-  const node = new CocosNode(name);
-  node.layer = Layers.Enum.UI_2D;
-  node.parent = parent;
+  options.chapters.forEach((chapter, index) => {
+    const handle = createMenuButton(
+      root,
+      `chapter-${chapter.chapter}`,
+      {
+        label: `Chapter ${chapter.chapter}`,
+        detail: chapter.playable ? 'play' : chapter.hasData ? 'locked' : 'no data',
+        disabled: !chapter.playable,
+        activate: () => options.onSelect(chapter.chapter),
+      },
+      frames,
+      { width, height: 46, fontSize: 13 },
+    );
+    handle.node.setPosition(firstX + index * (width + gap), 14, 0);
+    handles.push(handle);
+  });
 
-  const sprite: Sprite = node.addComponent(CocosSprite);
-  sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
-  sprite.spriteFrame = frame;
+  const back = createMenuButton(
+    root,
+    'back',
+    { label: 'Back', activate: options.onBack },
+    frames,
+    { width: 120, height: 30, fontSize: 12 },
+  );
+  back.node.setPosition(0, -88, 0);
+  handles.push(back);
 
-  const transform: UITransform | null = node.getComponent(CocosUITransform);
-  if (transform !== null) transform.setContentSize(BUTTON_WIDTH, BUTTON_HEIGHT);
+  // Chapter 1 luôn ở index 0; nếu build không có dữ liệu thì vẫn focus nút đầu.
+  const focus = new FocusList({ handles, onBack: options.onBack });
 
-  const label = createLabel(node, 'caption', caption);
-  label.fontSize = 11;
-  label.lineHeight = 13;
-  label.color = labelColor;
-  label.node.setPosition(0, 0, 0);
-
-  return node;
+  return {
+    node: root,
+    focus: (index: number) => focus.focus(index),
+    destroy(): void {
+      focus.destroy();
+      if (root.isValid) root.destroy();
+    },
+  };
 }

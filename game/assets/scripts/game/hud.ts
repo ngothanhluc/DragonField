@@ -1,5 +1,5 @@
 /**
- * HUD tối thiểu: hàng tim, số vàng (placeholder), nhãn phòng.
+ * HUD tối thiểu: hàng tim, vàng kiếm trong run, nhãn phòng.
  *
  * Đây là UI thật (Canvas + Camera UI_2D riêng) chứ không phải sprite trong world: HUD
  * phải đứng yên khi camera world đổi, và toạ độ UI tính theo pixel design 512×288.
@@ -23,7 +23,7 @@ import {
   UITransform as CocosUITransform,
   view,
 } from 'cc';
-import { loadTexture } from './assets/texture-cache';
+import { loadPixelTexture } from './assets/texture-cache';
 import type { OwnedSkillStacks } from '../core/skills/pool';
 import { skillAbbreviation } from '../core/skills/description';
 import { sliceFrame } from './level-view';
@@ -105,6 +105,7 @@ export class Hud extends Component {
 
   /** Ô skill HUD: chữ tắt + stack, tô màu rarity. Tạo một lần, ẩn khi rỗng. */
   private readonly skillLabels: Label[] = [];
+  private skillRowBackdrop: Node | null = null;
   private shownSkills = '';
 
   /** Thanh máu boss: nền + fill (anchor trái) + nhãn tên/phase. */
@@ -119,8 +120,8 @@ export class Hud extends Component {
    */
   async init(maxHearts: number, roomText: string): Promise<void> {
     const [texture, barTexture] = await Promise.all([
-      loadTexture(HEART_SHEET),
-      loadTexture(BAR_SHEET),
+      loadPixelTexture(HEART_SHEET),
+      loadPixelTexture(BAR_SHEET),
     ]);
     const frames = {
       full: sliceFrame(texture, heartRect(HEART_FULL_INDEX)),
@@ -193,7 +194,7 @@ export class Hud extends Component {
     label.node.setPosition(view.getVisibleSize().width / 2 - PADDING_PX, label.node.position.y, 0);
   }
 
-  /** TODO(ui): thay bằng icon vàng + số của meta/save. */
+  /** Vàng kiếm trong run (M5); shop hiện tổng trong save. */
   setGold(gold: number): void {
     const label = this.goldLabel;
     if (label === null || gold === this.shownGold) return;
@@ -206,6 +207,8 @@ export class Hud extends Component {
    * Không có icon art cho skill trong pack nên dùng chữ tắt, tô màu rarity.
    */
   setSkills(entries: readonly OwnedSkillStacks[]): void {
+    // Không có skill thì ẩn luôn dải nền tối, đừng để một thanh đen trống ở HUD.
+    if (this.skillRowBackdrop !== null) this.skillRowBackdrop.active = entries.length > 0;
     const signature = entries
       .map((entry) => `${entry.def.id}:${entry.stacks}`)
       .join(',');
@@ -266,6 +269,8 @@ export class Hud extends Component {
     const width = SKILL_SLOTS * SKILL_SLOT_WIDTH_PX - 8;
     const backdrop = createBackdropPanel(this.node, 'skill-row-backdrop', width, 18, 150);
     backdrop.setPosition(left + width / 2 - 4, y, 0);
+    backdrop.active = false;
+    this.skillRowBackdrop = backdrop;
 
     for (let index = 0; index < SKILL_SLOTS; index += 1) {
       const label = createLabel(this.node, `skill-${index}`, '');

@@ -7,7 +7,6 @@
  */
 import { resources, Texture2D as CocosTexture2D } from 'cc';
 import { toResourcesPath } from '../../core/art/runtime';
-
 /**
  * `types/cc.d.ts` stub khai báo `cc` rỗng nên tên import từ `cc` là namespace, không dùng được ở
  * vị trí type. `InstanceType` giữ nguyên nghĩa (khi có type thật của engine thì đây chính là
@@ -63,6 +62,20 @@ export function loadTexture(sheet: string): Promise<Texture2D> {
 /** Load trước nhiều sheet (dùng ở màn load đầu chapter). Sheet trùng chỉ load một lần. */
 export function preloadSheets(sheets: readonly string[]): Promise<void> {
   return Promise.all(Array.from(new Set(sheets), (sheet) => loadTexture(sheet))).then(() => undefined);
+}
+
+/**
+ * Như `loadTexture` nhưng ép lọc **NEAREST** cho pixel-art UI.
+ *
+ * Mặc định asset import là bilinear, nên nút gỗ 16×8 phóng lên 300×38 và thẻ
+ * skill bị nhoè. UI frame/thẻ/chapter button dùng hàm này; world art giữ đường
+ * `loadTexture` để M6 quyết riêng.
+ */
+export function loadPixelTexture(sheet: string): Promise<Texture2D> {
+  return loadTexture(sheet).then((texture) => {
+    texture.setFilters(CocosTexture2D.Filter.NEAREST, CocosTexture2D.Filter.NEAREST);
+    return texture;
+  });
 }
 
 /** Xoá cache — chỉ dùng cho test/dev; không destroy texture vì sprite đang dùng có thể còn sống. */

@@ -10,6 +10,7 @@
 import {
   Button as CocosButton,
   Color as CocosColor,
+  Graphics as CocosGraphics,
   Input,
   KeyCode,
   Label as CocosLabel,
@@ -18,16 +19,18 @@ import {
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
   input,
+  view,
 } from 'cc';
 import { describeSkill } from '../core/skills/description';
 import type { SkillDef } from '../core/skills/pool';
-import { loadTexture } from './assets/texture-cache';
-import { RARITY_COLORS, createLabel } from './hud';
+import { loadPixelTexture } from './assets/texture-cache';
+import { createBackdropPanel, createLabel, RARITY_COLORS } from './hud';
 import { sliceFrame } from './level-view';
 import type { TileRect } from './level-view';
 
 /** `cc` là any module: tên import chỉ dùng được ở vị trí value. */
 type Button = InstanceType<typeof CocosButton>;
+type Graphics = InstanceType<typeof CocosGraphics>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = ReturnType<typeof sliceFrame>;
@@ -44,7 +47,6 @@ const TITLE_COLOR = new CocosColor(255, 230, 120, 255);
 const TEXT_COLOR = new CocosColor(238, 238, 238, 255);
 const MUTED_COLOR = new CocosColor(170, 170, 170, 255);
 const CARD_TINT = new CocosColor(126, 100, 74, 255);
-const DIM_COLOR = new CocosColor(10, 8, 16, 210);
 
 const HOTKEY_CODES = [KeyCode.KEY_1, KeyCode.KEY_2, KeyCode.KEY_3] as const;
 
@@ -76,6 +78,20 @@ export async function buildSkillPick(
   // Nghe phím **trước** khi load texture: người chơi có thể bấm 1/2/3 ngay frame
   // status đổi sang 'skill-pick', trước khi asset kịp về.
   let picked = false;
+  let focused = 0;
+  const cards: Array<{ readonly node: Node; readonly ring: Node }> = [];
+
+  const applyFocus = (): void => {
+    cards.forEach((card, index) => {
+      card.ring.active = index === focused;
+    });
+  };
+  const moveFocus = (delta: number): void => {
+    if (cards.length === 0) return;
+    focused = (focused + delta + cards.length) % cards.length;
+    applyFocus();
+  };
+
   const pick = (index: number): void => {
     if (picked) return;
     if (index < 0 || index >= options.choices.length) return;
@@ -91,7 +107,26 @@ export async function buildSkillPick(
   // `key`/`code` nhưng Cocos có thể đọc `keyCode` = 0). `picked` chặn trùng.
   const onDomKey = (event: KeyboardEvent): void => {
     const digit = /^Digit([1-3])$/.exec(event.code) ?? /^([1-3])$/.exec(event.key);
-    if (digit !== null) pick(Number(digit[1]) - 1);
+    if (digit !== null) {
+      pick(Number(digit[1]) - 1);
+      return;
+    }
+
+    const key = event.key;
+    if (key === 'ArrowLeft' || key === 'ArrowUp' || event.keyCode === 37 || event.keyCode === 38) {
+      event.preventDefault();
+      moveFocus(-1);
+      return;
+    }
+    if (key === 'ArrowRight' || key === 'ArrowDown' || event.keyCode === 39 || event.keyCode === 40) {
+      event.preventDefault();
+      moveFocus(1);
+      return;
+    }
+    if (key === 'Enter' || key === ' ' || event.keyCode === 13 || event.keyCode === 32) {
+      event.preventDefault();
+      pick(focused);
+    }
   };
   input.on(Input.EventType.KEY_DOWN, onKey);
   // Capture phase: Cocos gắn listener phím trên canvas và có thể chặn bubble của
@@ -100,7 +135,7 @@ export async function buildSkillPick(
 
   let texture;
   try {
-    texture = await loadTexture(CARD_SHEET);
+    texture = await loadPixelTexture(CARD_SHEET);
   } catch (error: unknown) {
     input.off(Input.EventType.KEY_DOWN, onKey);
     document.removeEventListener('keydown', onDomKey);
@@ -112,7 +147,7 @@ export async function buildSkillPick(
   root.layer = Layers.Enum.UI_2D;
   root.parent = parent;
 
-  addDim(root, frame);
+  addDim(root);
 
   const title = createLabel(root, 'skill-pick-title', 'CHOOSE A SKILL');
   title.fontSize = 20;
@@ -120,7 +155,7 @@ export async function buildSkillPick(
   title.color = TITLE_COLOR;
   title.node.setPosition(0, 112, 0);
 
-  const subtitle = createLabel(root, 'skill-pick-hint', 'Click a card or press 1 / 2 / 3');
+  const subtitle = createLabel(root, 'skill-pick-hint', 'Click a card, ←/→ + Enter, or press 1 / 2 / 3');
   subtitle.fontSize = 10;
   subtitle.color = MUTED_COLOR;
   subtitle.node.setPosition(0, 92, 0);
@@ -132,8 +167,18 @@ export async function buildSkillPick(
   options.choices.forEach((skill, index) => {
     const x = firstX + index * (CARD_WIDTH + CARD_GAP);
     const stacks = options.owned.get(skill.id) ?? 0;
-    makeCard(root, frame, skill, stacks, index + 1, x, () => pick(index));
+    const card = makeCard(root, frame, skill, stacks, index + 1, x, () => {
+      focused = index;
+      applyFocus();
+      pick(index);
+    });
+    card.node.on(CocosNode.EventType.MOUSE_ENTER, () => {
+      focused = index;
+      applyFocus();
+    });
+    cards.push(card);
   });
+  applyFocus();
 
   return {
     node: root,
@@ -146,20 +191,11 @@ export async function buildSkillPick(
 }
 
 /** Nền tối phủ cả màn để thẻ nổi bật, không phải nhìn xuyên qua phòng. */
-function addDim(parent: Node, frame: SpriteFrame): void {
-  const node = new CocosNode('skill-pick-dim');
-  node.layer = Layers.Enum.UI_2D;
-  node.parent = parent;
-
-  const sprite: Sprite = node.addComponent(CocosSprite);
-  sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
-  sprite.trim = false;
-  sprite.spriteFrame = frame;
-  sprite.color = DIM_COLOR;
-
-  const transform: UITransform | null = node.getComponent(CocosUITransform);
-  if (transform !== null) transform.setContentSize(512, 288);
-  node.setPosition(0, 0, -1);
+function addDim(parent: Node): void {
+  // Graphics thay vì kéo giãn frame nút 16×8: nearest làm 4 góc trong suốt của
+  // texture phóng to thành lỗ lớn, HUD/world lọt qua ở góc màn.
+  const size = view.getVisibleSize();
+  createBackdropPanel(parent, 'skill-pick-dim', size.width, size.height, 210);
 }
 
 function makeCard(
@@ -170,7 +206,7 @@ function makeCard(
   hotkey: number,
   x: number,
   onPick: () => void,
-): void {
+): { readonly node: Node; readonly ring: Node } {
   const node = new CocosNode(`skill-card-${skill.id}`);
   node.layer = Layers.Enum.UI_2D;
   node.parent = parent;
@@ -184,6 +220,16 @@ function makeCard(
 
   const transform: UITransform | null = node.getComponent(CocosUITransform);
   if (transform !== null) transform.setContentSize(CARD_WIDTH, CARD_HEIGHT);
+
+  const ring = new CocosNode('focus-ring');
+  ring.layer = Layers.Enum.UI_2D;
+  ring.parent = node;
+  const graphics: Graphics = ring.addComponent(CocosGraphics);
+  graphics.lineWidth = 2;
+  graphics.strokeColor = new CocosColor(255, 222, 96, 255);
+  graphics.rect(-CARD_WIDTH / 2 - 2, -CARD_HEIGHT / 2 - 2, CARD_WIDTH + 4, CARD_HEIGHT + 4);
+  graphics.stroke();
+  ring.active = false;
 
   const button: Button = node.addComponent(CocosButton);
   button.transition = CocosButton.Transition.NONE;
@@ -212,8 +258,14 @@ function makeCard(
   effect.enableWrapText = true;
   effect.overflow = CocosLabel.Overflow.RESIZE_HEIGHT;
   const effectTransform: UITransform | null = effect.node.getComponent(CocosUITransform);
-  if (effectTransform !== null) effectTransform.setContentSize(CARD_WIDTH - 16, 60);
+  if (effectTransform !== null) {
+    // Bề rộng cố định = lòng card; RESIZE_HEIGHT chỉ co giãn chiều cao.
+    effectTransform.setContentSize(CARD_WIDTH - 16, 60);
+  }
   effect.node.setPosition(0, 4, 0);
+  // Ép layout lại sau khi đổi overflow/width: system font đôi khi giữ kích thước
+  // một dòng cũ và vẽ tràn ra ngoài card (Thorns bị đúng lỗi này).
+  effect.updateRenderData?.(true);
 
   const stackLine =
     stacks <= 0 ? 'NEW' : `Stack ${stacks} / ${skill.maxStacks}`;
@@ -221,4 +273,6 @@ function makeCard(
   stack.fontSize = 9;
   stack.color = stacks > 0 ? RARITY_COLORS[skill.rarity] : MUTED_COLOR;
   stack.node.setPosition(0, -CARD_HEIGHT / 2 + 12, 0);
+
+  return { node, ring };
 }

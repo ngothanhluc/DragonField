@@ -11,6 +11,9 @@ export interface Settings {
 /** GDD §10 dùng 0.8 làm mặc định. */
 export const DEFAULT_VOLUME = 0.8;
 
+/** Mỗi lần bấm trái/phải trên hàng Volume đi 10%. */
+export const VOLUME_STEP = 0.1;
+
 export const DEFAULT_SETTINGS: Settings = { volume: DEFAULT_VOLUME, fullscreen: false };
 
 /**
@@ -20,6 +23,16 @@ export const DEFAULT_SETTINGS: Settings = { volume: DEFAULT_VOLUME, fullscreen: 
 export function clampVolume(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_VOLUME;
   return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Đi `steps` bước 10% từ volume hiện tại (âm = nhỏ đi). Làm tròn 1 chữ số thập
+ * phân để 0.8 → 0.9 chứ không thành 0.8999999999999999 khi hiển thị/serialize.
+ */
+export function stepVolume(volume: number, steps: number): number {
+  const current = clampVolume(volume);
+  const delta = Number.isFinite(steps) ? Math.trunc(steps) * VOLUME_STEP : 0;
+  return clampVolume(Math.round((current + delta) * 10) / 10);
 }
 
 /**

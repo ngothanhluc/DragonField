@@ -47,7 +47,7 @@ export function describeTag(tag: SkillTag): string {
     case 'shield':
       return `Block 1 hit (back in ${formatSeconds(tag.cooldownMs)})`;
     case 'thorns':
-      return `Touching enemies take ${formatNumber(tag.damage)}`;
+      return `Touching enemies take ${formatNumber(tag.damage)} damage`;
     case 'move-speed-mult':
       return `+${formatPercent(tag.amount)} move speed`;
     case 'iframe-mult':
