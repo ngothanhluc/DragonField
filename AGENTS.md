@@ -49,13 +49,19 @@ Build web (cần editor đã cài, không chạy trong CI):
 # exit code 36 = build thành công (quy ước của CLI Cocos), không phải lỗi
 ```
 
-Deploy (thủ công từ máy, CI không build được Cocos):
+Deploy: Cloudflare Workers Builds tự deploy khi push `master` (root `game`, không có build command,
+deploy `npx wrangler deploy`). Cloudflare **không chạy được editor Cocos**, nên `game/deploy/` được
+commit sẵn — ra bản mới = build bằng editor rồi:
 
 ```bash
 cd game
+bun run check
 bun run deploy:prepare   # build/web-desktop → deploy/ + sửa index.html, icon, OG, _headers; chặn nếu > 15 MB
-bun run deploy           # check + deploy:prepare + wrangler deploy (cần `bunx wrangler login` một lần)
+git add deploy && git commit -m "chore(deploy): ..." && git push   # Cloudflare deploy
+# bun run deploy = check + deploy:prepare + wrangler deploy từ máy (cần `bunx wrangler login`)
 ```
+
+`.gitignore` có `native/` (build native của Cocos) — `!game/deploy/**/native/` giữ lại texture/audio của bản web.
 
 ## Cấu trúc
 
