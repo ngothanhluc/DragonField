@@ -26,6 +26,7 @@ import {
 import { loadPixelTexture } from './assets/texture-cache';
 import type { OwnedSkillStacks } from '../core/skills/pool';
 import { skillAbbreviation } from '../core/skills/description';
+import { applyPixelFont } from './ui-font';
 import { sliceFrame } from './level-view';
 import type { TileRect } from './level-view';
 
@@ -403,8 +404,8 @@ export function createLabel(parent: Node, name: string, text: string): Label {
   label.fontSize = LABEL_FONT_SIZE;
   label.lineHeight = LABEL_FONT_SIZE + 2;
   label.color = TEXT_COLOR;
-  // TODO(ui): thay bằng font pixel của pack khi có file font trong resources.
-  label.useSystemFont = true;
+  // Font pixel của pack (NormalFont.ttf); load async nên label đổi font khi về.
+  applyPixelFont(label);
 
   return label;
 }

@@ -16,6 +16,7 @@ import {
   MENU_TEXT_COLOR,
   MENU_TITLE_COLOR,
   createMenuButton,
+  createMenuPanel,
   createScreenBackdrop,
   loadMenuFrames,
   visibleUiSize,
@@ -127,6 +128,9 @@ export async function buildChapterSelect(
   );
   back.node.setPosition(0, -88, 0);
   handles.push(back);
+
+  const panel = createMenuPanel(root, 'chapter-panel', frames.panel, Math.min(460, size.width - 24), size.height - 28);
+  panel.setSiblingIndex(1);
 
   // Chapter 1 luôn ở index 0; nếu build không có dữ liệu thì vẫn focus nút đầu.
   const focus = new FocusList({ handles, onBack: options.onBack });

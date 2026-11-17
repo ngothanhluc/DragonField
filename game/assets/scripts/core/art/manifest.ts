@@ -41,7 +41,22 @@ export interface SpriteEntry {
   readonly frames: number;
   readonly fps: number;
   readonly loop: boolean;
+  /**
+   * Cách neo frame vào node: actor đứng bằng **chân** (`feet`), FX nổ giữa
+   * (`center`). Mặc định `feet` khi entry cũ chưa khai.
+   */
+  readonly anchor: SpriteAnchor;
+  /**
+   * Số pixel trong suốt từ đáy frame tới pixel đặc thấp nhất (đọc từ PNG).
+   * `SpriteAnimator` dùng `footPx / frameHeight` làm anchor dọc, nên frame
+   * 96×48 và 96×96 vẫn đặt chân lên cùng một đường.
+   */
+  readonly footPx: number;
 }
+
+/** Cách neo một sprite vào node. */
+export type SpriteAnchor = 'feet' | 'center';
+
 
 /** Nội dung `assets/resources/data/animations.json` sau khi validate. */
 export interface AnimationManifest {
@@ -60,71 +75,70 @@ export const ANIMATION_KEY_PATTERN =
   /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/;
 
 /**
- * Key mà code game sẽ hỏi ở M1. Thiếu key nào trong đây là manifest hỏng, không phải "pack thiếu".
- * `player.dead` không có hướng nên đứng riêng.
+ * Key bắt buộc của M6, gom theo actor. Test dùng bảng này để chứng minh **mỗi
+ * vai trò** có đủ bộ animation tối thiểu, không chỉ "manifest có nhiều key".
  */
-export const REQUIRED_KEYS = [
-  'player.idle.down',
-  'player.idle.up',
-  'player.idle.left',
-  'player.idle.right',
-  'player.walk.down',
-  'player.walk.up',
-  'player.walk.left',
-  'player.walk.right',
-  'player.attack.down',
-  'player.attack.up',
-  'player.attack.left',
-  'player.attack.right',
-  'player.hit.down',
-  'player.hit.up',
-  'player.hit.left',
-  'player.hit.right',
-  'player.roll.down',
-  'player.roll.up',
-  'player.roll.left',
-  'player.roll.right',
-  'player.dead',
-  'bluebat.walk.down',
-  'bluebat.walk.up',
-  'bluebat.walk.left',
-  'bluebat.walk.right',
-  'spiderred.walk.down',
-  'spiderred.walk.up',
-  'spiderred.walk.left',
-  'spiderred.walk.right',
-  'snake3.walk.down',
-  'snake3.walk.up',
-  'snake3.walk.left',
-  'snake3.walk.right',
-  'eye.walk.down',
-  'eye.walk.up',
-  'eye.walk.left',
-  'eye.walk.right',
-  'greenoctopus.walk.down',
-  'greenoctopus.walk.up',
-  'greenoctopus.walk.left',
-  'greenoctopus.walk.right',
-  'lanternred.walk.down',
-  'lanternred.walk.up',
-  'lanternred.walk.left',
-  'lanternred.walk.right',
-  'bear.walk.down',
-  'bear.walk.up',
-  'bear.walk.left',
-  'bear.walk.right',
-  'trex.walk.down',
-  'trex.walk.up',
-  'trex.walk.left',
-  'trex.walk.right',
-  'cyclope.walk.down',
-  'cyclope.walk.up',
-  'cyclope.walk.left',
-  'cyclope.walk.right',
-] as const;
+export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[]>> = {
+  player: [
+    ...DIRECTIONS.map((dir) => `player.idle.${dir}`),
+    ...DIRECTIONS.map((dir) => `player.walk.${dir}`),
+    ...DIRECTIONS.map((dir) => `player.attack.${dir}`),
+    ...DIRECTIONS.map((dir) => `player.hit.${dir}`),
+    ...DIRECTIONS.map((dir) => `player.roll.${dir}`),
+    'player.dead',
+  ],
+  bluebat: monsterAnimations('bluebat'),
+  spiderred: monsterAnimations('spiderred'),
+  snake3: monsterAnimations('snake3'),
+  eye: monsterAnimations('eye'),
+  greenoctopus: monsterAnimations('greenoctopus'),
+  lanternred: monsterAnimations('lanternred'),
+  bear: monsterAnimations('bear'),
+  trex: monsterAnimations('trex'),
+  cyclope: monsterAnimations('cyclope'),
+  tengu: ['tengu.idle', 'tengu.walk', 'tengu.attack', 'tengu.hit', 'tengu.trans'],
+  squid: [
+    'squid.idle',
+    'squid.walk',
+    'squid.attack',
+    'squid.attack-loop',
+    'squid.shoot',
+    'squid.hit',
+  ],
+  samurai: [
+    'samurai.idle',
+    'samurai.walk',
+    'samurai.attack.left',
+    'samurai.attack.right',
+    'samurai.charge.left',
+    'samurai.charge.right',
+    'samurai.hit',
+  ],
+  fx: [
+    'fx.shuriken',
+    'fx.energy-ball',
+    'fx.impact',
+    'fx.explosion',
+    'fx.smoke',
+    'fx.shield',
+    'fx.ice',
+    'fx.poison',
+  ],
+};
 
-/** Một key bắt buộc, dùng được như union literal ở nơi gọi. */
-export type RequiredKey = (typeof REQUIRED_KEYS)[number];
+function monsterAnimations(actor: string): readonly string[] {
+  return [
+    ...DIRECTIONS.map((dir) => `${actor}.idle.${dir}`),
+    ...DIRECTIONS.map((dir) => `${actor}.walk.${dir}`),
+  ];
+}
+
+/** Danh sách phẳng của mọi key bắt buộc — dùng cho test "resolve được". */
+export const REQUIRED_KEYS: readonly string[] = Object.values(REQUIRED_ACTOR_ANIMATIONS).flat();
+
+/** Một key bắt buộc. */
+export type RequiredKey = string;
+
 
 /**
  * Validate JSON thô và trả manifest đã chuẩn hoá.
@@ -229,6 +243,8 @@ function validateEntry(
   const fps = readPositiveNumber(raw, 'fps', at, problems);
   const loop = readBoolean(raw, 'loop', at, problems);
   const directions = readDirections(raw, at, problems);
+  const anchor = readAnchor(raw, at, problems);
+  const footPx = readFootPx(raw, at, frameHeight, problems);
 
   if (directions !== undefined) {
     checkKeyMatchesDirections(key, directions, layout, at, problems);
@@ -242,12 +258,14 @@ function validateEntry(
     frames === undefined ||
     fps === undefined ||
     loop === undefined ||
-    directions === undefined
+    directions === undefined ||
+    anchor === undefined ||
+    footPx === undefined
   ) {
     return undefined;
   }
 
-  return { sheet, frameWidth, frameHeight, layout, directions, frames, fps, loop };
+  return { sheet, frameWidth, frameHeight, layout, directions, frames, fps, loop, anchor, footPx };
 }
 
 /** Key kết thúc bằng direction ⇒ entry phải có direction đó; không kết thúc bằng direction ⇒ rỗng. */
@@ -394,6 +412,39 @@ function readDirections(
   }
 
   return parsed;
+}
+
+function readAnchor(
+  record: Record<string, unknown>,
+  at: string,
+  problems: string[],
+): SpriteAnchor | undefined {
+  const value = record['anchor'];
+  if (value === undefined) return 'feet';
+  if (value === 'feet' || value === 'center') return value;
+  problems.push(`${at}.anchor phải là "feet" hoặc "center", nhận ${describeValue(value)}`);
+  return undefined;
+}
+
+function readFootPx(
+  record: Record<string, unknown>,
+  at: string,
+  frameHeight: number | undefined,
+  problems: string[],
+): number | undefined {
+  const value = record['footPx'];
+  if (value === undefined) return 0;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    problems.push(`${at}.footPx phải là số nguyên >= 0, nhận ${describeValue(value)}`);
+    return undefined;
+  }
+  if (frameHeight !== undefined && value >= frameHeight) {
+    problems.push(
+      `${at}.footPx (${value}) phải nhỏ hơn frameHeight (${frameHeight}) để anchor nằm trong frame`,
+    );
+    return undefined;
+  }
+  return value;
 }
 
 /** Thứ tự cột trong sheet là cố định; đảo thứ tự array sẽ cắt sai sprite. */

@@ -18,6 +18,8 @@ function entry(overrides: Partial<SpriteEntry> = {}): SpriteEntry {
     frames: 4,
     fps: 10,
     loop: true,
+    anchor: 'feet',
+    footPx: 0,
     ...overrides,
   };
 }

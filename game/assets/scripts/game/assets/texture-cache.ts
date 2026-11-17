@@ -50,6 +50,13 @@ export function loadTexture(sheet: string): Promise<Texture2D> {
   });
 
   textures.set(sheet, task);
+  // Pixel art: mọi texture world/UI load qua đây đều NEAREST. Trước M6 chỉ UI dùng;
+  // world art vẫn bilinear nên 16 px phóng lên bị nhoè.
+  task
+    .then((texture) => {
+      texture.setFilters(CocosTexture2D.Filter.NEAREST, CocosTexture2D.Filter.NEAREST);
+    })
+    .catch(() => undefined);
   // Load hỏng thì bỏ khỏi cache để lần sau còn thử lại (cache chỉ vĩnh viễn khi thành công).
   task.catch(() => {
     if (textures.get(sheet) === task) {

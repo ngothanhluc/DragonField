@@ -48,16 +48,64 @@ type UITransform = InstanceType<typeof CocosUITransform>;
 /** 1 tile = 1 world unit (world convention của milestone). */
 export const TILE_WORLD_UNITS = 1;
 
-/**
- * Sheet vật cản: `TilesetHouse.png` (528×368 px). Ba ô đá/bóng tối:
- * - `pillar` → tile (22, 0): khối đá `#5F7160` (204/256 px), có cột gỗ mảnh ở mép.
- * - `wall`   → tile (21, 0): cùng chất đá nhưng phẳng hơn, dùng cho tường thấp.
- * - `pit`    → tile (27, 2): gần đen `#141B1B` (202/256 px) ⇒ đọc thành hố.
- *
- * TODO(art): đây là tile tường nhà, không phải cột đá vẽ riêng. Khi map được author
- * trong Tiled (ADR-005) thì thay bằng tile cột/hố thật; rect là thứ duy nhất phải sửa.
- */
-export const OBSTACLE_SHEET = 'resources/art/tilesets/TilesetHouse.png';
+interface ObstacleVisual {
+  readonly sheet: string;
+  readonly rect: TileRect;
+  /** `true` = lặp tile theo rect; `false` = kéo frame (boulder 32×32) đúng 1:1 ở 2×2. */
+  readonly tile: boolean;
+}
+
+const BOUNDS = {
+  boulder: { x: 240, y: 224, width: 32, height: 32 },
+  smallRock: { x: 256, y: 192, width: 16, height: 16 },
+  natureWall: { x: 272, y: 208, width: 16, height: 16 },
+  crate: { x: 112, y: 0, width: 16, height: 16 },
+  stone: tileRectFromGid(33, 22),
+  stoneAlt: tileRectFromGid(33, 23),
+  hole: tileRectFromGid(11, 13),
+} as const satisfies Record<string, TileRect>;
+
+const OBSTACLE_VISUALS: Readonly<
+  Record<number, Readonly<Record<ObstacleKind | 'pillarSmall', ObstacleVisual>>>
+> = {
+  1: {
+    pillar: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
+    pillarSmall: { sheet: 'resources/art/tilesets/TilesetElement.png', rect: BOUNDS.crate, tile: true },
+    wall: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.natureWall, tile: true },
+    pit: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
+  },
+  2: {
+    pillar: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
+    pillarSmall: { sheet: 'resources/art/tilesets/TilesetElement.png', rect: BOUNDS.crate, tile: true },
+    wall: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.natureWall, tile: true },
+    pit: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
+  },
+  3: {
+    pillar: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
+    pillarSmall: { sheet: 'resources/art/tilesets/TilesetElement.png', rect: BOUNDS.crate, tile: true },
+    wall: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.natureWall, tile: true },
+    pit: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
+  },
+};
+
+
+/** Ô pixel của gid (1-based) trong sheet có `columns` cột. */
+export function tileRectFromGid(columns: number, gid: number): TileRect {
+  const index = Math.max(0, gid - 1);
+  return {
+    x: (index % columns) * 16,
+    y: Math.floor(index / columns) * 16,
+    width: 16,
+    height: 16,
+  };
+}
+
+/** Mọi sheet vật cản cần preload cho một chapter. */
+export function obstacleSheets(chapter: number): string[] {
+  const visuals = OBSTACLE_VISUALS[chapter] ?? OBSTACLE_VISUALS[1]!;
+  return Array.from(new Set(Object.values(visuals).map((visual) => visual.sheet)));
+}
+
 
 /** Một ô pixel trong sheet, gốc **trên-trái** (cùng quy ước với `manifest.frameRect`). */
 export interface TileRect {
@@ -67,11 +115,7 @@ export interface TileRect {
   readonly height: number;
 }
 
-const OBSTACLE_RECTS: Readonly<Record<ObstacleKind, TileRect>> = {
-  pillar: { x: 352, y: 0, width: 16, height: 16 },
-  wall: { x: 336, y: 0, width: 16, height: 16 },
-  pit: { x: 432, y: 32, width: 16, height: 16 },
-};
+const OBSTACLE_KEYS = ['pillar', 'pillarSmall', 'wall', 'pit'] as const;
 
 // ---------------------------------------------------------------------------
 // Hệ toạ độ
@@ -115,6 +159,15 @@ function obstacleWorldRect(obstacle: Obstacle): {
 export const ACTOR_SCALE = 1 / TILE_SIZE_PX;
 
 /**
+ * Offset world (unit) từ tâm hitbox xuống chân sprite. Anchor mới đặt **chân**
+ * frame vào node; offset này giữ vị trí hình gần như cũ (trước đây anchor giữa
+ * frame khiến chân nằm dưới tâm ~0.5 tile).
+ */
+export const ACTOR_FEET_OFFSET_TILES = 0.5;
+/** Boss to hơn nên chân hơi thấp hơn tâm để silhouette không che player. */
+export const BOSS_FEET_OFFSET_TILES = 0.75;
+
+/**
  * Cắt một ô pixel thành `SpriteFrame` độc lập trỏ vào `texture`.
  *
  * `SpriteFrame.rect` đếm `y` **từ trên xuống** (engine: `_initVertices` lật bằng
@@ -154,7 +207,6 @@ export function buildRoom(
   parent: Node,
   level: LevelData,
   tmxAsset: TiledMapAsset,
-  obstacleSheet: string,
 ): Node {
   const root = new CocosNode(`room-${level.id}`);
   root.parent = parent;
@@ -178,34 +230,49 @@ export function buildRoom(
   map.tmxAsset = tmxAsset;
   map.enableCulling = false;
 
-  void buildObstacles(root, level, obstacleSheet).catch((error: unknown) => {
-    reportLoadFailure('vật cản', obstacleSheet, error);
+  void buildObstacles(root, level).catch((error: unknown) => {
+    reportLoadFailure('vật cản', `chapter ${level.chapter}`, error);
   });
 
   return root;
 }
 
-/** Vật cản: một sprite cho mỗi `Obstacle`, kéo giãn đúng kích thước tile của nó. */
-async function buildObstacles(root: Node, level: LevelData, sheet: string): Promise<void> {
-  const texture = await loadTexture(sheet);
+/** Vật cản: một sprite lặp tile cho mỗi `Obstacle`, đúng kích thước tile của nó. */
+async function buildObstacles(root: Node, level: LevelData): Promise<void> {
+  const visuals = OBSTACLE_VISUALS[level.chapter] ?? OBSTACLE_VISUALS[1]!;
+  const sheets = Array.from(new Set(Object.values(visuals).map((visual) => visual.sheet)));
+  const textures = await Promise.all(sheets.map((sheet) => loadTexture(sheet)));
   if (!root.isValid) return;
-  const frames = new Map<ObstacleKind, SpriteFrame>();
-  for (const kind of ['pillar', 'wall', 'pit'] as const) {
-    const rect = OBSTACLE_RECTS[kind];
-    frames.set(kind, sliceFrame(texture, rect));
+
+  const textureOf = new Map<string, Awaited<ReturnType<typeof loadTexture>>>();
+  sheets.forEach((sheet, index) => {
+    const texture = textures[index];
+    if (texture !== undefined) textureOf.set(sheet, texture);
+  });
+
+  const frames = new Map<string, { frame: SpriteFrame; tile: boolean }>();
+  for (const kind of OBSTACLE_KEYS) {
+    const visual = visuals[kind];
+    const texture = textureOf.get(visual.sheet);
+    if (texture !== undefined) {
+      frames.set(kind, { frame: sliceFrame(texture, visual.rect), tile: visual.tile });
+    }
   }
 
   const obstacles = new CocosNode('obstacles');
   obstacles.parent = root;
 
   level.obstacles.forEach((obstacle, index) => {
-    const frame = frames.get(obstacle.kind);
-    if (frame === undefined) return;
+    const small = obstacle.kind === 'pillar' && obstacle.width <= 1 && obstacle.height <= 1;
+    const key = small ? 'pillarSmall' : obstacle.kind;
+    const visual = frames.get(key);
+    if (visual === undefined) return;
 
     const rect = obstacleWorldRect(obstacle);
-    const node = makeTileNode(
+    const node = makeObstacleNode(
       `obstacle-${index}-${obstacle.kind}`,
-      frame,
+      visual.frame,
+      visual.tile,
       rect.width * TILE_SIZE_PX,
       rect.height * TILE_SIZE_PX,
       TILE_WORLD_UNITS / TILE_SIZE_PX,
@@ -216,12 +283,13 @@ async function buildObstacles(root: Node, level: LevelData, sheet: string): Prom
 }
 
 /**
- * Node 1 sprite với `sizeMode = CUSTOM` (node giữ đúng kích thước ta đặt, không bị
- * frame tự resize) — cần cho vật cản nhiều tile.
+ * Node vật cản: `TILED` lặp tile cho tường/hố; `SIMPLE` + contentSize cho boulder
+ * 32×32 (2×2 tile) — không kéo giãn một ô 16×16 thành 4 blob rời.
  */
-function makeTileNode(
+function makeObstacleNode(
   name: string,
   frame: SpriteFrame,
+  tile: boolean,
   widthPx: number,
   heightPx: number,
   scale: number,
@@ -229,7 +297,9 @@ function makeTileNode(
   const node = new CocosNode(name);
 
   const sprite: Sprite = node.addComponent(CocosSprite);
+  sprite.type = tile ? CocosSprite.Type.TILED : CocosSprite.Type.SIMPLE;
   sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+  sprite.trim = false;
   sprite.spriteFrame = frame;
 
   const transform: UITransform | null = node.getComponent(CocosUITransform);
@@ -240,6 +310,7 @@ function makeTileNode(
   node.setScale(scale, scale, 1);
   return node;
 }
+
 
 function reportLoadFailure(what: string, sheet: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);

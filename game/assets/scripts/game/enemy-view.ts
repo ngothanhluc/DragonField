@@ -57,7 +57,9 @@ import type { Vec2 } from '../core/math/vec2';
 import type { DerivedStats } from '../core/skills/derived-stats';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { loadTexture } from './assets/texture-cache';
-import { sliceFrame, tileToWorld } from './level-view';
+import type { FxPool } from './fx/effect-pool';
+import { playSfx } from './audio/sfx';
+import { ACTOR_FEET_OFFSET_TILES, sliceFrame, tileToWorld } from './level-view';
 import type { TileRect } from './level-view';
 
 const { ccclass } = _decorator;
@@ -146,11 +148,8 @@ export interface EnemyViewInitArgs {
   readonly level: LevelData;
   /** Scale node đã tính từ frame (xem `actorScale` trong `level-view.ts`). */
   readonly baseScale: number;
-  /**
-   * Key animation đi bộ **không hướng** (sheet `strip` của boss, vd `tengu.walk`).
-   * Bỏ trống thì dùng `<monster>.walk.<direction>` như monster thường.
-   */
-  readonly walkKey?: string;
+  /** Pool FX của chapter — chết/status phát hiệu ứng, không cần node mới. */
+  readonly fx?: FxPool;
   /** Bán kính hitbox, tile. Mặc định bằng `DEFAULT_ENEMY_RADIUS_TILES` × silhouette của vai trò. */
   readonly radiusTiles?: number;
   /** Tầm gây sát thương khi chạm, tile. Mặc định bằng tầm của chaser × silhouette. */
@@ -181,8 +180,9 @@ export class EnemyView extends Component {
   private dead = false;
   private animKey = '';
   private animDirection: Direction = 'down';
-  /** Key đi bộ không hướng (boss); rỗng = dùng `<monster>.walk.<direction>`. */
-  private walkKey = '';
+  private animMoving = true;
+  /** Pool FX (chết/status). */
+  private fx: FxPool | null = null;
   private hitRadius = DEFAULT_ENEMY_RADIUS_TILES;
   private contactRange = CHASER_CONTACT_RANGE_TILES;
   /** Cú đẩy nhỏ sau khi trúng đạn; `null` = không bị đẩy. */
@@ -267,7 +267,7 @@ export class EnemyView extends Component {
     const roleScale = args.roleScale ?? visualScaleFor(args.state.role);
     this.baseScale = args.baseScale * roleScale;
     this.ringScaleCompensation = roleScale > 0 ? 1 / roleScale : 1;
-    this.walkKey = args.walkKey ?? '';
+    this.fx = args.fx ?? null;
     this.hitRadius = args.radiusTiles ?? DEFAULT_ENEMY_RADIUS_TILES * roleScale;
     this.contactRange = args.contactRangeTiles ?? CHASER_CONTACT_RANGE_TILES * roleScale;
     this.animator = this.getComponent(SpriteAnimator);
@@ -276,7 +276,7 @@ export class EnemyView extends Component {
 
     this.syncNodePosition();
     this.applyScale(1);
-    this.playWalk('down', true);
+    this.playMotion(false, 'down', true);
     this.applyTint(this.idleTint());
 
     // Vòng telegraph load sau (texture đã preload ở đầu chapter nên gần như tức thì).
@@ -374,9 +374,20 @@ export class EnemyView extends Component {
     }
   }
 
-  /** Freeze/Poison khi đạn player trúng. Core quyết hiệu ứng, view chỉ giữ state. */
+  /** Freeze/Poison khi đạn player trúng. Core quyết hiệu ứng, view giữ state + báo FX. */
   applyStatus(stats: DerivedStats, nowMs: number): void {
+    const wasSlowed = this.statuses.isSlowed(nowMs);
+    const wasPoisoned = this.statuses.isPoisoned(nowMs);
     this.statuses.apply(stats, nowMs);
+
+    if (!wasSlowed && this.statuses.isSlowed(nowMs)) {
+      this.fx?.spawn('fx.ice', this.position);
+      playSfx('freeze');
+    }
+    if (!wasPoisoned && this.statuses.isPoisoned(nowMs)) {
+      this.fx?.spawn('fx.poison', this.position);
+      playSfx('poison');
+    }
   }
 
   /** Cú lao hiện tại đã gây sát thương chưa — battle loop gọi để tránh trừ máu 2 lần. */
@@ -397,8 +408,14 @@ export class EnemyView extends Component {
     this.dead = true;
     this.animator?.stop();
     this.hideRing();
-    // TODO(fx): thay `active = false` bằng FX explosion + fade out (art đã stage ở
-    // `resources/art/fx/explosion`). Chết "biến mất" là tạm để không chặn milestone.
+    // GDD §12.3: monster không có frame chết — chết là FX của pack, không phải sprite.
+    this.fx?.spawn('fx.smoke', this.position);
+    this.fx?.spawn('fx.impact', this.position, {
+      tint: new CocosColor(255, 220, 160, 255),
+      drawUnits: 2.2,
+      lifetimeMs: 420,
+    });
+    playSfx('enemy-death');
     this.node.active = false;
   }
 
@@ -458,7 +475,7 @@ export class EnemyView extends Component {
     if (state === null) return;
 
     const facing = directionFromVector(this.facingVector(action, player), this.animDirection);
-    this.playWalk(facing);
+    this.playMotion(action.kind === 'walk' || action.kind === 'charge', facing);
 
     const hitFlash = nowMs < this.hitFlashUntilMs;
 
@@ -507,22 +524,23 @@ export class EnemyView extends Component {
     return { x: player.x - position.x, y: player.y - position.y };
   }
 
-  private playWalk(direction: Direction, force = false): void {
-    if (this.walkKey !== '') {
-      if (!force && this.animKey === this.walkKey) return;
-      this.animKey = this.walkKey;
-      this.animDirection = direction;
-      // Boss dùng sheet một hàng (không cột hướng) — truyền key không hướng.
-      this.animator?.play(this.walkKey);
+  /**
+   * Idle vs walk: pack chỉ có một sheet walk, nên idle là cùng sheet phát chậm
+   * (`<actor>.idle.*`, fps 4 trong manifest). Đứng telegraph mà vẫn chạy animation
+   * đi bộ 10 fps trông như đang lướt — đổi sang idle là dấu hiệu đọc được.
+   */
+  private playMotion(moving: boolean, direction: Direction, force = false): void {
+    const clip = moving ? 'walk' : 'idle';
+    const key = `${this.monster}.${clip}`;
+    if (!force && this.animKey === key && this.animDirection === direction && this.animMoving === moving) {
       return;
     }
 
-    if (!force && this.animKey === `${this.monster}.walk` && this.animDirection === direction) {
-      return;
-    }
-    this.animKey = `${this.monster}.walk`;
+    this.animKey = key;
     this.animDirection = direction;
-    this.animator?.play(`${this.monster}.walk.${direction}`, direction);
+    this.animMoving = moving;
+    this.animator?.setPlaybackScale(moving ? 1 : 1);
+    this.animator?.play(`${key}.${direction}`, direction);
   }
 
   private applyScale(pulse: number): void {
@@ -604,7 +622,7 @@ export class EnemyView extends Component {
 
   private syncNodePosition(): void {
     const world = tileToWorld(this.position);
-    this.node.setPosition(world.x, world.y, 0);
+    this.node.setPosition(world.x, world.y - ACTOR_FEET_OFFSET_TILES, 0);
   }
 }
 

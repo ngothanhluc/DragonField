@@ -39,6 +39,16 @@ export function loopDurationMs(entry: SpriteEntry): number {
 }
 
 /**
+ * Anchor dọc (0..1, tính từ đáy frame) để giữ pivot nhất quán giữa các anim
+ * khác kích thước. Actor đứng bằng chân tại `footPx`; FX neo giữa frame.
+ */
+export function entryAnchorY(entry: SpriteEntry): number {
+  if (entry.anchor === 'center') return 0.5;
+  if (entry.frameHeight <= 0) return 0.5;
+  return Math.min(1, Math.max(0, entry.footPx / entry.frameHeight));
+}
+
+/**
  * Frame đang hiển thị tại thời điểm `elapsedMs` kể từ lúc `play`.
  *
  * - `loop`: quay vòng; thời gian đúng bằng một vòng trở về frame 0.

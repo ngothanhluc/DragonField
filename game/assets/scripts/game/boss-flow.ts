@@ -7,6 +7,7 @@
 import { bossForSpriteName, type BossDef } from '../core/boss/boss-defs';
 import type { LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
+import { playSfx } from './audio/sfx';
 import type { CombatLoop } from './combat-loop';
 
 /** Màu RGBA tối thiểu của Cocos `Color` — không import value chỉ dùng ở type. */
@@ -77,6 +78,7 @@ export class BossPhaseBanner {
 
   show(phase: number): void {
     this.banner?.destroy();
+    playSfx('boss-phase');
     const text = phase >= 3 ? 'ENRAGE' : `PHASE ${phase}`;
     const color = phase >= 3 ? this.ui.lossColor : this.ui.winColor;
     const banner = this.ui.showBanner(`boss-phase-${phase}`, text, color, 22);

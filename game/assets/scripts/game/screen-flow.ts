@@ -19,6 +19,7 @@ import type { SaveRepository } from '../core/save/storage';
 import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
 import type { UpgradeTrack } from '../core/meta/upgrades';
 import type { DebugScreenId, DebugStatus } from './debug-api';
+import type { MusicId } from './audio/audio-manager';
 import { commitRunEnd } from './run-end';
 import { buildChapterSelect, type ChapterButton } from './chapter-select';
 import { buildCreditsScreen } from './screens/credits-screen';
@@ -56,6 +57,10 @@ export interface ScreenFlowHost {
   runSnapshot(): RunSnapshot | null;
   launchChapter(chapter: number): Promise<void>;
   teardownRun(): void;
+  /** Nhạc nền theo màn; `null` = dừng (result/pause không đổi). */
+  setMusic(id: MusicId | null): void;
+  /** Master volume áp ngay sau khi save settings đổi. */
+  setVolume(volume: number): void;
   fail(error: unknown): void;
 }
 
@@ -148,6 +153,7 @@ export class ScreenFlow {
     this.menu = built;
     this.currentScreen = 'title';
     this.host.setStatus('menu');
+    this.host.setMusic('title');
     console.log(`[YokaiField] Title: gold ${save.gold}, unlocked ${save.chaptersUnlocked}/3.`);
   }
 
@@ -182,6 +188,7 @@ export class ScreenFlow {
     this.menu = built;
     this.currentScreen = 'chapter-select';
     this.host.setStatus('menu');
+    this.host.setMusic('title');
     console.log(
       `[YokaiField] Chapter select: best chapter ${save.best.chapter} · room ${save.best.room}, ` +
         `unlocked ${save.chaptersUnlocked}/3.`,
@@ -281,6 +288,7 @@ export class ScreenFlow {
     this.menu = built;
     this.currentScreen = 'result';
     this.host.setStatus(data.won ? 'won' : 'lost');
+    this.host.setMusic(null);
   }
 
   private async showShop(backTo: () => void, initialFocus = 0): Promise<void> {
@@ -310,6 +318,7 @@ export class ScreenFlow {
     this.menu = built;
     this.currentScreen = 'shop';
     this.host.setStatus('menu');
+    this.host.setMusic('title');
   }
 
   /** Mua một cấp; `null` khi thiếu vàng/track max/save lỗi. Luật nằm ở core. */
@@ -359,6 +368,7 @@ export class ScreenFlow {
     this.menu = built;
     this.currentScreen = 'settings';
     this.host.setStatus('menu');
+    this.host.setMusic('title');
   }
 
   private async showCredits(backTo: () => void): Promise<void> {
@@ -372,6 +382,7 @@ export class ScreenFlow {
     this.menu = built;
     this.currentScreen = 'credits';
     this.host.setStatus('menu');
+    this.host.setMusic('title');
   }
 
   async showPause(): Promise<void> {
@@ -480,6 +491,7 @@ export class ScreenFlow {
       const next: SaveData = { ...save, settings: normalized };
       repo.save(next);
       this.host.setSave(next);
+      if (normalized.volume !== save.settings.volume) this.host.setVolume(normalized.volume);
     } catch (error: unknown) {
       console.warn(`[YokaiField] Không ghi được settings: ${errorMessage(error)}`);
     }

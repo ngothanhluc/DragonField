@@ -28,7 +28,9 @@ import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-int
 import { SeededRng } from '../core/rng';
 import { computeDerivedStats, type DerivedStats } from '../core/skills/derived-stats';
 import { SpriteAnimator } from './anim/sprite-animator';
-import { tileToWorld } from './level-view';
+import { playSfx } from './audio/sfx';
+import type { FxPool } from './fx/effect-pool';
+import { ACTOR_FEET_OFFSET_TILES, tileToWorld } from './level-view';
 
 const { ccclass } = _decorator;
 
@@ -88,6 +90,8 @@ export interface PlayerInitArgs {
   readonly startAt: Vec2;
   /** RNG của run cho crit từng viên đạn (cùng nguồn với roll skill). */
   readonly rng?: SeededRng;
+  /** Pool FX (khiên chặn). */
+  readonly fx?: FxPool;
 }
 
 @ccclass('PlayerController')
@@ -99,6 +103,7 @@ export class PlayerController extends Component {
   private stats: DerivedStats = computeDerivedStats(new Map<string, number>());
   private shield = new ShieldCharger(0, 0);
   private rng = SeededRng.fromSeed(1);
+  private fx: FxPool | null = null;
   private sprite: Sprite | null = null;
   private tintUntilMs = 0;
   private tint: Color = PLAYER_NO_TINT;
@@ -189,6 +194,7 @@ export class PlayerController extends Component {
     this.animator = this.getComponent(SpriteAnimator);
     this.sprite = this.getComponent(CocosSprite);
     if (args.rng !== undefined) this.rng = args.rng;
+    this.fx = args.fx ?? null;
     this.attackAnimMs = Math.max(1, loopDurationMs(resolve(args.manifest, 'player.attack.down')));
 
     this.tilePosition = { x: args.startAt.x, y: args.startAt.y };
@@ -262,6 +268,8 @@ export class PlayerController extends Component {
     if (this.shield.tryBlock(nowMs)) {
       this.tintUntilMs = nowMs + PLAYER_TINT_MS;
       this.tint = PLAYER_SHIELD_TINT;
+      this.fx?.spawn('fx.shield', this.tilePosition, { lifetimeMs: 450 });
+      playSfx('shield');
       return true;
     }
 
@@ -272,9 +280,11 @@ export class PlayerController extends Component {
     this.tintUntilMs = nowMs + PLAYER_TINT_MS;
     this.tint = PLAYER_HURT_TINT;
     this.playAnimation(`player.hit.${this.facing}`, this.facing);
+    playSfx('player-hurt');
 
     if (result.dead) {
       this.playAnimation('player.dead');
+      playSfx('game-over');
       return true;
     }
 
@@ -335,6 +345,7 @@ export class PlayerController extends Component {
     });
 
     this.attackUntilMs = nowMs + this.attackAnimMs;
+    playSfx('shoot');
   }
 
   /**
@@ -364,6 +375,11 @@ export class PlayerController extends Component {
       return;
     }
     const clip = moving ? 'walk' : 'idle';
+    this.animator?.setPlaybackScale(
+      moving
+        ? this.stats.moveSpeedTilesPerSecond / DEFAULT_COMBAT.moveSpeedTilesPerSecond
+        : 1,
+    );
     this.playAnimation(`player.${clip}.${this.facing}`, this.facing);
   }
 
@@ -379,7 +395,7 @@ export class PlayerController extends Component {
 
   private syncNodePosition(): void {
     const world = tileToWorld(this.tilePosition);
-    this.node.setPosition(world.x, world.y, 0);
+    this.node.setPosition(world.x, world.y - ACTOR_FEET_OFFSET_TILES, 0);
   }
 
   private onKeyDown(event: KeyEvent): void {

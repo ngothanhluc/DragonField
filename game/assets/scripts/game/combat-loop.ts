@@ -19,7 +19,7 @@
  * Debug (`?debug=1`) dùng các method `spawnDebug` / `startStress` / `godMode`;
  * bình thường không code nào gọi chúng.
  */
-import { Node as CocosNodeValue, Sprite as CocosSprite } from 'cc';
+import { Color as CocosColor, Node as CocosNodeValue, Sprite as CocosSprite } from 'cc';
 import type { AnimationManifest } from '../core/art/manifest';
 import type { BossDef, BossPhase } from '../core/boss/boss-defs';
 import { summonedEnemies } from '../core/boss/summon';
@@ -48,9 +48,10 @@ import { SpriteAnimator } from './anim/sprite-animator';
 import { BossView } from './boss-view';
 import type { BulletView } from './bullet-view';
 import { EnemyView } from './enemy-view';
-import type { FxBurstPool } from './fx-burst';
+import type { FxPool } from './fx/effect-pool';
 import { ACTOR_SCALE } from './level-view';
 import type { PlayerController } from './player-controller';
+import { playSfx } from './audio/sfx';
 
 /** `cc` là module any: tên import chỉ dùng được ở vị trí value. */
 type Node = InstanceType<typeof CocosNodeValue>;
@@ -94,7 +95,7 @@ export interface CombatLoopOptions {
   /** Boss vừa chết (thưởng phòng boss do bootstrap quyết ở `awardRoomClear`). */
   readonly onBossKilled?: () => void;
   /** Pool flash vụ nổ; vắng mặt thì vẫn chạy, chỉ không có hình. */
-  readonly fx?: FxBurstPool;
+  readonly fx?: FxPool;
 }
 
 export interface CombatUpdateResult {
@@ -126,7 +127,7 @@ export class CombatLoop {
   private readonly onBossPhase: (phase: BossPhase) => void;
   private readonly onKill: (role: EnemyRole, elite: boolean) => void;
   private readonly onBossKilled: () => void;
-  private readonly fx: FxBurstPool | null;
+  private readonly fx: FxPool | null;
   private readonly hitstop = new HitstopClock(DEFAULT_COMBAT.enemyHitstopMs);
   private readonly enemies: EnemyView[] = [];
   private boss: BossView | null = null;
@@ -252,6 +253,7 @@ export class CombatLoop {
       rng: this.rng,
       onPhase: this.onBossPhase,
       onSummon: (role, count) => this.summon(role, count),
+      ...(this.fx !== null ? { fx: this.fx } : {}),
     });
     this.boss = boss;
     return boss;
@@ -461,6 +463,11 @@ export class CombatLoop {
         );
         boss.takeDamage(damage, this.nowMs);
         this.bossStatus.apply(stats, this.nowMs);
+        this.fx?.spawn('fx.impact', bullet.position, {
+          tint: new CocosColor(255, 236, 190, 255),
+          drawUnits: 1.4,
+        });
+        playSfx('enemy-hit');
         player.heal(lifestealHeal(stats, damage));
         bullet.hitIds.push(BOSS_TARGET_ID);
         this.explode(bullet, boss.position, null);
@@ -481,6 +488,11 @@ export class CombatLoop {
         const damage = damageAfterExecute(stats, bullet.damage, victim.health / victim.maxHealth);
         victim.takeDamage(damage, bullet.position, this.nowMs);
         victim.applyStatus(stats, this.nowMs);
+        this.fx?.spawn('fx.impact', victim.position, {
+          tint: new CocosColor(255, 236, 190, 255),
+          drawUnits: 1.4,
+        });
+        playSfx('enemy-hit');
         player.heal(lifestealHeal(stats, damage));
         bullet.hitIds.push(victim.id);
         this.explode(bullet, victim.position, victim);
@@ -521,7 +533,11 @@ export class CombatLoop {
       boss.takeDamage(bullet.explosiveDamage, this.nowMs);
     }
 
-    this.fx?.spawn(center, bullet.explosiveRadiusTiles);
+    this.fx?.spawn('fx.explosion', center, {
+      drawUnits: Math.max(1.2, bullet.explosiveRadiusTiles * 2),
+      lifetimeMs: 820,
+    });
+    playSfx('explosion');
   }
 
   /**
@@ -617,7 +633,6 @@ export class CombatLoop {
     state: EnemyState,
     options: {
       readonly monster?: string;
-      readonly walkKey?: string;
       readonly radiusTiles?: number;
       readonly contactRangeTiles?: number;
       readonly roleScale?: number;
@@ -643,10 +658,10 @@ export class CombatLoop {
       monster,
       level: this.level,
       baseScale: scale,
-      walkKey: options.walkKey,
       radiusTiles: options.radiusTiles,
       contactRangeTiles: options.contactRangeTiles,
       roleScale: options.roleScale,
+      ...(this.fx !== null ? { fx: this.fx } : {}),
     });
 
     this.enemies.push(enemyView);
@@ -681,6 +696,13 @@ export class CombatLoop {
       this.rewarded.add(enemy.id);
       const role = enemy.role;
       if (role !== null) this.onKill(role, enemy.isElite);
+      // Gold sparkle tại chỗ chết (không có đồ nhặt riêng trong run).
+      this.fx?.spawn('fx.impact', enemy.position, {
+        tint: new CocosColor(255, 214, 90, 255),
+        drawUnits: 0.9,
+        lifetimeMs: 320,
+      });
+      playSfx('gold');
     }
 
     const boss = this.boss;

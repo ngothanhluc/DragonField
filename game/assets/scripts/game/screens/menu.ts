@@ -24,6 +24,7 @@ import {
 } from 'cc';
 import { createBackdropPanel, createLabel } from '../hud';
 import { loadPixelTexture } from '../assets/texture-cache';
+import { playSfx } from '../audio/sfx';
 import { sliceFrame } from '../level-view';
 import type { TileRect } from '../level-view';
 
@@ -41,6 +42,13 @@ const BUTTON_NORMAL = 'resources/art/ui/theme-wood/button_normal.png';
 const BUTTON_HOVER = 'resources/art/ui/theme-wood/button_hover.png';
 const BUTTON_DISABLED = 'resources/art/ui/theme-wood/button_disabled.png';
 const BUTTON_RECT: TileRect = { x: 0, y: 0, width: 16, height: 8 };
+const PANEL_SHEET = 'resources/art/ui/theme-wood/nine_path_panel.png';
+const PANEL_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
+/** Border 9-slice: nút 16×8 giữ 4 px góc; panel 16×16 giữ 4 px viền. */
+const BUTTON_BORDERS = { left: 4, right: 4, top: 3, bottom: 3 } as const;
+const PANEL_BORDERS = { left: 4, right: 4, top: 4, bottom: 4 } as const;
+const PANEL_TINT = new CocosColor(92, 62, 42, 255);
+
 
 export const MENU_TITLE_COLOR = new CocosColor(255, 230, 120, 255);
 export const MENU_TEXT_COLOR = new CocosColor(238, 238, 238, 255);
@@ -60,11 +68,12 @@ export interface MenuFrames {
   readonly normal: SpriteFrame;
   readonly hover: SpriteFrame;
   readonly disabled: SpriteFrame;
+  readonly panel: SpriteFrame;
 }
 
 let framesPromise: Promise<MenuFrames> | null = null;
 
-/** Load 3 frame nút một lần cho cả phiên (cache texture đã có sẵn). */
+/** Load frame nút + panel một lần cho cả phiên (cache texture đã có sẵn). */
 export function loadMenuFrames(): Promise<MenuFrames> {
   if (framesPromise !== null) return framesPromise;
 
@@ -72,10 +81,12 @@ export function loadMenuFrames(): Promise<MenuFrames> {
     loadPixelTexture(BUTTON_NORMAL),
     loadPixelTexture(BUTTON_HOVER),
     loadPixelTexture(BUTTON_DISABLED),
-  ]).then(([normal, hover, disabled]) => ({
-    normal: sliceFrame(normal, BUTTON_RECT),
-    hover: sliceFrame(hover, BUTTON_RECT),
-    disabled: sliceFrame(disabled, BUTTON_RECT),
+    loadPixelTexture(PANEL_SHEET),
+  ]).then(([normal, hover, disabled, panel]) => ({
+    normal: sliceSliced(normal, BUTTON_RECT, BUTTON_BORDERS),
+    hover: sliceSliced(hover, BUTTON_RECT, BUTTON_BORDERS),
+    disabled: sliceSliced(disabled, BUTTON_RECT, BUTTON_BORDERS),
+    panel: sliceSliced(panel, PANEL_RECT, PANEL_BORDERS),
   }));
 
   framesPromise = task;
@@ -84,6 +95,52 @@ export function loadMenuFrames(): Promise<MenuFrames> {
   });
   return task;
 }
+
+/**
+ * Cắt một frame rồi khai border 9-slice. `Sprite.Type.SLICED` mới dùng border;
+ * thiếu inset thì engine kéo giãn cả 4 góc và viền gỗ bị méo.
+ */
+export function sliceSliced(
+  texture: Parameters<typeof sliceFrame>[0],
+  rect: TileRect,
+  borders: { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number },
+): SpriteFrame {
+  const frame = sliceFrame(texture, rect);
+  frame.insetLeft = borders.left;
+  frame.insetRight = borders.right;
+  frame.insetTop = borders.top;
+  frame.insetBottom = borders.bottom;
+  return frame;
+}
+
+/**
+ * Panel gỗ 9-slice (nền menu / chapter select). Trả node để caller đặt kích
+ * thước/vị trí; sprite đã `SLICED` nên góc không bị kéo giãn.
+ */
+export function createMenuPanel(
+  parent: Node,
+  name: string,
+  frame: SpriteFrame,
+  width: number,
+  height: number,
+): Node {
+  const node = new CocosNode(name);
+  node.layer = Layers.Enum.UI_2D;
+  node.parent = parent;
+
+  const sprite: Sprite = node.addComponent(CocosSprite);
+  sprite.type = CocosSprite.Type.SLICED;
+  sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+  sprite.trim = false;
+  sprite.spriteFrame = frame;
+  sprite.color = PANEL_TINT;
+
+  const transform: UITransform | null = node.getComponent(CocosUITransform);
+  if (transform !== null) transform.setContentSize(width, height);
+
+  return node;
+}
+
 
 /** Một hành động trên màn. `detail` là dòng nhỏ thứ hai (giá, level, lý do khoá). */
 export interface MenuItem {
@@ -207,6 +264,12 @@ export async function buildMenuScreen(options: MenuScreenOptions): Promise<MenuS
   hint.color = MENU_MUTED_COLOR;
   hint.node.setPosition(0, -size.height / 2 + 12, 0);
 
+  // Panel 9-slice phía sau nội dung (đặt sau backdrop nhưng trước label).
+  const panelHeight = Math.max(80, size.height / 2 - 8 - y + 20);
+  const panel = createMenuPanel(root, `${options.name}-panel`, frames.panel, Math.min(480, size.width - 24), panelHeight);
+  panel.setPosition(0, (size.height / 2 - 8 + y - 20) / 2, 0);
+  panel.setSiblingIndex(1);
+
   const focus = new FocusList({
     handles,
     ...(options.onBack !== undefined ? { onBack: options.onBack } : {}),
@@ -246,6 +309,7 @@ export function createMenuButton(
   node.parent = parent;
 
   const sprite: Sprite = node.addComponent(CocosSprite);
+  sprite.type = CocosSprite.Type.SLICED;
   sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
   sprite.trim = false;
   sprite.spriteFrame = item.disabled === true ? frames.disabled : frames.normal;
@@ -366,6 +430,7 @@ export class FocusList {
   focus(index: number): void {
     if (this.handles.length === 0) return;
     const next = Math.min(Math.max(0, index), this.handles.length - 1);
+    if (next !== this.index) playSfx('ui-move');
     this.index = next;
     this.handles.forEach((handle, handleIndex) => handle.setFocused(handleIndex === next));
   }
@@ -379,6 +444,7 @@ export class FocusList {
   private activate(): void {
     const handle = this.handles[this.index];
     if (handle === undefined || handle.item.disabled === true) return;
+    playSfx('ui-confirm');
     handle.item.activate();
   }
 

@@ -10,6 +10,7 @@ import {
   Component,
   JsonAsset as CocosJsonAsset,
   Sprite as CocosSprite,
+  UITransform as CocosUITransform,
   resources,
   warn,
 } from 'cc';
@@ -20,7 +21,7 @@ import {
   type Direction,
   type SpriteEntry,
 } from '../../core/art/manifest';
-import { frameIndexAt } from '../../core/art/runtime';
+import { entryAnchorY, frameIndexAt } from '../../core/art/runtime';
 import { getFrame } from '../assets/sprite-frame-cache';
 
 /** Stub `cc` chỉ cho dùng tên import ở vị trí value; xem `texture-cache.ts`. */
@@ -31,10 +32,34 @@ const { ccclass } = _decorator;
 
 const MANIFEST_PATH = 'data/animations';
 
+/**
+ * Key animation từng fail (thiếu trong manifest / texture lỗi). Debug
+ * `placeholders()` đọc danh sách này — rỗng mới là "không còn art tạm".
+ */
+const animationProblems: string[] = [];
+
+/** Ghi nhận lỗi art để `placeholders()` báo được thay vì chỉ `console.warn`. */
+export function reportAnimationProblem(message: string): void {
+  if (animationProblems.includes(message)) return;
+  animationProblems.push(message);
+  warn(message);
+}
+
+/** Snapshot lỗi art (rỗng = mọi anim resolve được). */
+export function animationProblemSnapshot(): readonly string[] {
+  return Array.from(animationProblems);
+}
+
+/** Xoá log lỗi — chỉ debug/test dùng. */
+export function clearAnimationProblems(): void {
+  animationProblems.length = 0;
+}
+
+
 let manifestPromise: Promise<AnimationManifest> | null = null;
 
 /** Load + validate `resources/data/animations.json` một lần cho cả scene. */
-function loadManifest(): Promise<AnimationManifest> {
+export function loadAnimationManifest(): Promise<AnimationManifest> {
   if (manifestPromise !== null) return manifestPromise;
 
   manifestPromise = new Promise<AnimationManifest>((onLoad, onFail) => {
@@ -70,6 +95,12 @@ export class SpriteAnimator extends Component {
   private token = 0;
   private finished = false;
   private sprite: Sprite | null = null;
+  /** Hệ số tốc độ phát (walk của player scale theo vận tốc — GDD §12.2). */
+  private playbackScale = 1;
+  /** Anchor dọc của entry hiện tại, giữ để set lại khi UITransform bị engine reset. */
+  private anchorY = 0.5;
+  private frameWidth = 0;
+  private frameHeight = 0;
 
   /** Key đang phát; rỗng khi chưa play hoặc đã stop. */
   get key(): string {
@@ -81,6 +112,33 @@ export class SpriteAnimator extends Component {
     return this.facing;
   }
 
+  /**
+   * Scale thời gian phát. `1` = đúng fps trong manifest; player walk dùng
+   * `speed / walkSpeed` để chân không trượt khi tốc độ đổi do skill.
+   */
+  setPlaybackScale(scale: number): void {
+    this.playbackScale = Number.isFinite(scale) && scale > 0 ? Math.min(4, Math.max(0.1, scale)) : 1;
+  }
+
+  get currentPlaybackScale(): number {
+    return this.playbackScale;
+  }
+
+  /** Kích thước frame hiện tại (px texture) — view dùng để tính offset chân. */
+  get frameSize(): { readonly width: number; readonly height: number } {
+    return { width: this.frameWidth, height: this.frameHeight };
+  }
+
+  /** Anchor dọc hiện tại (0..1) — debug/pivot test đọc được. */
+  get anchorYRatio(): number {
+    return this.anchorY;
+  }
+
+  /** Clip không loop đã chạy hết chưa (giữ frame cuối). */
+  get isFinished(): boolean {
+    return this.finished;
+  }
+
   /** Phát `key` (vd `player.walk.left`). Không truyền `direction` thì giữ hướng hiện tại. */
   play(key: string, direction?: Direction): void {
     this.entryKey = key;
@@ -88,20 +146,21 @@ export class SpriteAnimator extends Component {
     this.entry = null;
     this.reset();
 
-    loadManifest()
+    loadAnimationManifest()
       .then((manifest) => {
         if (this.entryKey !== key || !this.isValid) return; // đã play clip khác
         let found: SpriteEntry;
         try {
           found = resolve(manifest, key);
         } catch (error) {
-          warn(error instanceof Error ? error.message : String(error));
+          reportAnimationProblem(error instanceof Error ? error.message : String(error));
           return;
         }
         this.entry = found;
+        this.applyFrameGeometry(found);
         this.requestFrame(found, 0);
       })
-      .catch((error: unknown) => warn(error instanceof Error ? error.message : String(error)));
+      .catch((error: unknown) => reportAnimationProblem(error instanceof Error ? error.message : String(error)));
   }
 
   /** Đổi hướng; chỉ restart khi hướng thật sự đổi và sheet có cột cho hướng đó. */
@@ -127,7 +186,7 @@ export class SpriteAnimator extends Component {
     const entry = this.entry;
     if (entry === null || (!entry.loop && this.finished)) return;
 
-    this.elapsedMs += dt * 1000;
+    this.elapsedMs += dt * 1000 * this.playbackScale;
     const index = frameIndexAt(entry, this.elapsedMs);
     if (index !== this.requestedIndex) this.requestFrame(entry, index);
 
@@ -156,7 +215,30 @@ export class SpriteAnimator extends Component {
         if (token !== this.token || !this.isValid) return;
         this.getSprite().spriteFrame = frame;
       })
-      .catch((error: unknown) => warn(error instanceof Error ? error.message : String(error)));
+      .catch((error: unknown) =>
+        reportAnimationProblem(error instanceof Error ? error.message : String(error)),
+      );
+  }
+
+  /**
+   * Neo frame theo chân (actor) hoặc giữa (FX) và đặt contentSize đúng frame.
+   *
+   * `sizeMode = CUSTOM` + UITransform quyết kích thước hiển thị; thiếu bước này
+   * samurai 96×96 hiển thị bằng 96×48 cũ, còn anchor mặc định (0.5, 0.5) làm
+   * chân nhảy khi đổi sang sheet có chiều cao khác.
+   */
+  private applyFrameGeometry(entry: SpriteEntry): void {
+    this.anchorY = entryAnchorY(entry);
+    this.frameWidth = entry.frameWidth;
+    this.frameHeight = entry.frameHeight;
+
+    // Sprite requireComponent(UITransform) — tạo Sprite trước để chắc chắn có transform.
+    this.getSprite();
+    const transform = this.getComponent(CocosUITransform);
+    if (transform !== null) {
+      transform.setAnchorPoint(0.5, this.anchorY);
+      transform.setContentSize(entry.frameWidth, entry.frameHeight);
+    }
   }
 
   /** Animation 3 hướng (Jump) không có `right`: rơi về cột đầu thay vì để `frameRect` ném lỗi. */

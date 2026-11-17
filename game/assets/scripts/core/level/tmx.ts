@@ -371,7 +371,7 @@ function readObjects(
       case TMX_OBJECTS.obstacle: {
         const kind = readStringProperty(properties, 'kind', problems);
         if (kind === null) {
-          problems.add(path, 'obstacle cần property "kind" (pillar|wall|pit)');
+          problems.add(path, `obstacle cần property "kind" (${OBSTACLE_KINDS.join('|')})`);
           break;
         }
         if (!isObstacleKind(kind)) {

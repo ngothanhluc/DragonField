@@ -34,7 +34,6 @@ import {
   ResolutionPolicy,
   Sprite as CocosSprite,
   TiledMapAsset as CocosTiledMapAsset,
-  director,
   resources,
   view,
 } from 'cc';
@@ -47,6 +46,8 @@ import { chapterFromLevels } from '../core/level/chapter';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data';
 import { parseTmxLevel } from '../core/level/tmx';
+import { parseWaterLayout, waterAreasFor } from '../core/level/water-layout';
+import type { WaterLayout } from '../core/level/water-layout';
 import type { Vec2 } from '../core/math/vec2';
 import { metaBaseline } from '../core/meta/run-stats';
 import { SeededRng } from '../core/rng';
@@ -62,23 +63,27 @@ import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
 import { BulletView, ENEMY_BULLET_SHEET, PLAYER_BULLET_SHEET } from './bullet-view';
 import { CombatLoop, STRESS_ENEMY_BULLETS } from './combat-loop';
-import { installDebugApi } from './debug-api';
-import type { DebugProvider, DebugStatus, DebugUiText } from './debug-api';
+import type { DebugStatus, DebugUiText } from './debug-api';
 import { TELEGRAPH_RING_SHEET } from './enemy-view';
-import { createFxBurstPool } from './fx-burst';
-import type { FxBurstPool } from './fx-burst';
+import { createFxPool } from './fx/effect-pool';
+import type { FxPool } from './fx/effect-pool';
 import { FpsMeter } from './fps-meter';
 import { Hud, HEART_SHEET } from './hud';
 import { syncCombatHud } from './hud-sync';
-import { ACTOR_SCALE, OBSTACLE_SHEET, buildRoom } from './level-view';
+import { ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
 import { PlayerController } from './player-controller';
+import { attachRoomWater } from './room-water';
+import { WorldCamera } from './world-camera';
+import { AudioManager } from './audio/audio-manager';
+import type { MusicId } from './audio/audio-manager';
+import { playSfx } from './audio/sfx';
+import { installDebugWiring } from './debug-wiring';
 import { createSaveRepository } from './save-storage';
 import { ScreenFlow } from './screen-flow';
 import type { RunSnapshot } from './screen-flow';
 import { SkillPreview } from './skill-preview';
 import { SkillRun } from './skill-run';
 import { collectUiText } from './ui-text';
-import { applyWorldLetterbox, fillBrowserViewport } from './viewport';
 
 const { ccclass } = _decorator;
 
@@ -110,30 +115,12 @@ const CHAPTER_FOLDERS: Readonly<Record<number, string>> = {
  */
 const MAX_STEP_MS = 50;
 
-/** Camera world: `orthoHeight = 9` và đứng ở tâm phòng (16, 9). */
-const CAMERA_ORTHO_HEIGHT = ROOM_ROWS / 2;
-const ROOM_CENTER: Vec2 = { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 };
-
-/**
- * Design resolution đúng bằng một phòng: 32×18 tile 16 px = 512×288 (16:9). Canvas
- * tỉ lệ khác thì giữ nguyên khung này và letterbox — xem `applyViewport`.
- */
-const DESIGN_WIDTH = ROOM_COLS * TILE_SIZE_PX;
-const DESIGN_HEIGHT = ROOM_ROWS * TILE_SIZE_PX;
-
-/**
- * Camera ortho nhìn theo -Z với `near = 1`, nên sprite ở z = 0 **bị cắt** nếu camera
- * cũng đứng ở z = 0. Đặt camera lùi về z = 1000 (chuẩn 2D của Cocos) rồi khai near/far.
- */
-const CAMERA_Z = 1000;
-const CAMERA_NEAR = 1;
-const CAMERA_FAR = 2000;
-
 const END_LOSS_COLOR = new CocosColor(255, 96, 96, 255);
 const END_WIN_COLOR = new CocosColor(255, 230, 120, 255);
 
-/** Màu bar letterbox / nền ngoài phòng và nền chapter select. */
-const BACKDROP_COLOR = new CocosColor(14, 12, 20, 255);
+/** Design resolution = đúng một phòng 32×18 tile 16 px (512×288). */
+const DESIGN_WIDTH = ROOM_COLS * TILE_SIZE_PX;
+const DESIGN_HEIGHT = ROOM_ROWS * TILE_SIZE_PX;
 
 /** Thời gian giữ chữ "ROOM CLEAR" trước khi sang phòng kế, giây. */
 const ROOM_CLEAR_BANNER_SECONDS = 1;
@@ -174,6 +161,7 @@ interface LoadedChapter {
 @ccclass('Bootstrap')
 export class Bootstrap extends Component {
   private manifest: AnimationManifest | null = null;
+  private waterLayout: WaterLayout | null = null;
   private chapter: ChapterData | null = null;
   private chapterAssets: ReadonlyMap<number, TiledMapAsset> = new Map();
   private run: RunState | null = null;
@@ -188,15 +176,17 @@ export class Bootstrap extends Component {
   private roomLayer: Node | null = null;
   private actorLayer: Node | null = null;
   private bulletLayer: Node | null = null;
+  private fxLayer: Node | null = null;
   private roomRoot: Node | null = null;
   private uiRoot: Node | null = null;
-  private worldCamera: Camera | null = null;
+  private camera: WorldCamera | null = null;
 
   private player: PlayerController | null = null;
   private bulletView: BulletView | null = null;
   private combat: CombatLoop | null = null;
   private hud: Hud | null = null;
-  private fx: FxBurstPool | null = null;
+  private fx: FxPool | null = null;
+  private audio: AudioManager | null = null;
   private roomClearBanner: Node | null = null;
   /** Overlay debug: xem trước card skill mà không grant (M5 round 3). */
   private readonly skillPreview = new SkillPreview(() => this.ensureUiRoot());
@@ -238,6 +228,11 @@ export class Bootstrap extends Component {
     runSnapshot: () => this.runSnapshot(),
     launchChapter: (chapter) => this.launchChapter(chapter),
     teardownRun: () => this.teardownRun(),
+    setMusic: (id) => {
+      if (id === null) this.audio?.stopMusic();
+      else this.audio?.playMusic(id);
+    },
+    setVolume: (volume) => this.audio?.setVolume(volume),
     fail: (error) => this.fail(error),
   });
 
@@ -248,6 +243,12 @@ export class Bootstrap extends Component {
   }
 
   update(deltaTime: number): void {
+    const rawDeltaMs = Math.min(Math.max(deltaTime, 0) * 1000, MAX_STEP_MS);
+    // Chết: sim đứng yên nhưng FX chết vẫn chạy cho tới khi result mở.
+    if (this.status === 'dying') {
+      this.fx?.update(rawDeltaMs);
+      return;
+    }
     if (this.status !== 'playing') return;
 
     const player = this.player;
@@ -257,7 +258,7 @@ export class Bootstrap extends Component {
     // Đo frame thật (chưa kẹp trần): `fps()` phải phản ánh cả frame dài, không
     // được "đẹp hoá" bằng `MAX_STEP_MS`.
     this.fpsMeter.record(Math.max(deltaTime, 0) * 1000);
-    const deltaMs = Math.min(Math.max(deltaTime, 0) * 1000, MAX_STEP_MS);
+    const deltaMs = rawDeltaMs;
 
     const result = combat.update(deltaMs);
     if (result.frozen) return;
@@ -265,12 +266,29 @@ export class Bootstrap extends Component {
     if (this.hud !== null) syncCombatHud(this.hud, player, combat);
 
     if (result.playerDied) {
-      this.finishLoss();
+      this.beginDeath();
       return;
     }
     if (result.cleared) {
       this.onWaveCleared();
     }
+  }
+
+  /** Chết: FX tại chỗ + giữ player.dead ~1.4 s rồi mở result (GDD §9). */
+  private beginDeath(): void {
+    if (this.status !== 'playing') return;
+    this.status = 'dying';
+    this.screens.setScreen('playing');
+    const player = this.player;
+    if (player !== null) {
+      this.fx?.spawn('fx.smoke', player.position, { drawUnits: 2.2, lifetimeMs: 1000 });
+      this.fx?.spawn('fx.explosion', player.position, { drawUnits: 2.4, lifetimeMs: 900 });
+    }
+    playSfx('explosion');
+    this.scheduleOnce(() => {
+      if (!this.isValid || this.status !== 'dying') return;
+      this.finishLoss();
+    }, 1.4);
   }
 
   // -------------------------------------------------------------------------
@@ -282,11 +300,6 @@ export class Bootstrap extends Component {
     view.setDesignResolutionSize(DESIGN_WIDTH, DESIGN_HEIGHT, ResolutionPolicy.SHOW_ALL);
     // `SHOW_ALL` tính lại band mỗi lần canvas đổi kích thước, nên camera world phải bám
     // theo đúng band đó; nếu không phòng bị cắt ở 4:3 và lệch ở 21:9 (xem applyViewport).
-    view.on('canvas-resize', this.onCanvasResize, this);
-    // Build web-desktop ép `exactFitScreen = false`; canvas chỉ đổi khi `screen.windowSize`
-    // đổi. Gọi ngay + theo dõi resize để 16:9/16:10/4:3 đều dùng đúng diện tích trình duyệt.
-    fillBrowserViewport();
-    window.addEventListener('resize', this.onWindowResize);
     document.addEventListener('fullscreenchange', this.onFullscreenChange);
     // Cocos chỉ nghe phím trên #GameCanvas: chưa focus thì WASD/R không ăn cho tới khi click.
     document.getElementById('GameCanvas')?.focus();
@@ -296,10 +309,16 @@ export class Bootstrap extends Component {
     if (this.saveRepo.lastLoadError !== null) {
       console.warn(`[YokaiField] Save hỏng, dùng save mặc định: ${this.saveRepo.lastLoadError}`);
     }
+
+    this.audio = new AudioManager(this.node);
+    this.audio.setVolume(this.save.settings.volume);
+    this.audio.preload();
+    this.audio.playMusic('title');
     this.installDebugHook();
 
     this.manifest = await this.loadManifest();
-    this.prepareCamera();
+    this.waterLayout = await this.loadWaterLayout();
+    this.camera = new WorldCamera(this.node, DESIGN_WIDTH, DESIGN_HEIGHT);
     this.createWorldLayers();
     await this.screens.showTitle();
   }
@@ -369,6 +388,10 @@ export class Bootstrap extends Component {
       throw new Error(`"resources/${folder}" không có phòng 1`);
     }
 
+    const fxLayer = this.fxLayer;
+    if (fxLayer === null) throw new Error('Bootstrap: chưa có fx-layer');
+    this.fx = await createFxPool(fxLayer);
+
     const player = this.createPlayer(firstRoom.playerStart);
     player.applyStats(this.skills.stats());
     // Trần máu meta cao hơn 6: vào run phải đầy tim, không phải 6/7.
@@ -378,9 +401,10 @@ export class Bootstrap extends Component {
     await this.createBullets(player);
     await this.createHud();
     const actorLayer = this.actorLayer;
-    if (actorLayer !== null) this.fx = await createFxBurstPool(actorLayer);
 
     if (actorLayer === null) throw new Error('Bootstrap: chưa có actor-layer');
+
+    this.audio?.playMusic(chapterMusic(firstRoom.chapter));
 
     this.combat = new CombatLoop({
       player,
@@ -415,6 +439,17 @@ export class Bootstrap extends Component {
         return validateManifest(json);
       } catch (error: unknown) {
         throw new Error(`"resources/${MANIFEST_PATH}.json" không hợp lệ: ${errorMessage(error)}`);
+      }
+    });
+  }
+
+  /** Layout nước động (ch2); file do `scripts/dress-rooms.ts` sinh. */
+  private loadWaterLayout(): Promise<WaterLayout> {
+    return this.loadJson('data/water-layout').then((json) => {
+      try {
+        return parseWaterLayout(json);
+      } catch (error: unknown) {
+        throw new Error(`"resources/data/water-layout.json" không hợp lệ: ${errorMessage(error)}`);
       }
     });
   }
@@ -518,107 +553,13 @@ export class Bootstrap extends Component {
       }
     }
 
-    sheets.add(OBSTACLE_SHEET);
     sheets.add(PLAYER_BULLET_SHEET);
     sheets.add(ENEMY_BULLET_SHEET);
     sheets.add(TELEGRAPH_RING_SHEET);
     sheets.add(HEART_SHEET);
+    for (const sheet of obstacleSheets(chapter.chapter)) sheets.add(sheet);
 
     return Array.from(sheets);
-  }
-
-  /**
-   * Camera world: ép đúng world convention (ortho, `orthoHeight = 9`, đứng ở tâm phòng).
-   * Làm trong code để scene dựng tay sai thông số vẫn chạy đúng; scene không có camera thì
-   * báo lỗi rõ ràng thay vì màn hình đen.
-   */
-  private prepareCamera(): void {
-    const camera = this.pickWorldCamera();
-
-    camera.projection = CocosCamera.ProjectionType.ORTHO;
-    camera.orthoHeight = CAMERA_ORTHO_HEIGHT;
-    // Camera world phải thấy layer DEFAULT. Camera của scene 2D template là camera UI
-    // (`visibility = UI_2D`), dùng nhầm thì sprite world vô hình dù code vẫn chạy.
-    camera.visibility = Layers.Enum.DEFAULT;
-    camera.priority = 0;
-    camera.clearFlags = CocosCamera.ClearFlag.SOLID_COLOR;
-    camera.clearColor = BACKDROP_COLOR;
-    camera.near = CAMERA_NEAR;
-    camera.far = CAMERA_FAR;
-
-    const node = camera.node;
-    node.setPosition(ROOM_CENTER.x, ROOM_CENTER.y, CAMERA_Z);
-
-    this.worldCamera = camera;
-    this.createBackdropCamera();
-    this.applyViewport();
-  }
-
-  /**
-   * Camera nền cho bar letterbox. Camera thường chỉ clear trong viewport của nó, nên phần
-   * ngoài band 16:9 là backbuffer (màu không đảm bảo); camera này phủ cả canvas nhưng
-   * `visibility = 0` (không vẽ layer nào) để chỉ tô `BACKDROP_COLOR` phía sau mọi thứ.
-   */
-  private createBackdropCamera(): void {
-    const node = new CocosNode('letterbox-camera');
-    node.layer = Layers.Enum.DEFAULT;
-    node.parent = this.node;
-
-    const camera: Camera = node.addComponent(CocosCamera);
-    camera.projection = CocosCamera.ProjectionType.ORTHO;
-    camera.visibility = 0;
-    // Vẽ trước camera world (priority 0) và camera UI (priority 1).
-    camera.priority = -1;
-    camera.clearFlags = CocosCamera.ClearFlag.SOLID_COLOR;
-    camera.clearColor = BACKDROP_COLOR;
-    camera.near = CAMERA_NEAR;
-    camera.far = CAMERA_FAR;
-    node.setPosition(ROOM_CENTER.x, ROOM_CENTER.y, CAMERA_Z);
-  }
-
-  /**
-   * Letterbox: camera world chỉ vẽ đúng band 16:9 mà `SHOW_ALL` dành cho design
-   * resolution (xem `core/view/letterbox.ts`), nên phòng 32×18 luôn vừa khít và canh
-   * giữa; phần thừa của canvas do camera nền tô màu tối (xem `createBackdropCamera`).
-   *
-   * HUD không phải chỉnh: camera UI của Canvas đã vẽ design unit đúng 1:1 với band
-   * (orthoHeight = nửa chiều cao canvas / scaleY), nên HUD tự dán mép phòng.
-   */
-  private applyViewport(): void {
-    applyWorldLetterbox(this.worldCamera, DESIGN_WIDTH, DESIGN_HEIGHT);
-  }
-  private readonly onWindowResize = (): void => {
-    fillBrowserViewport();
-    this.applyViewport();
-  };
-
-  /** Esc của trình duyệt thoát fullscreen không tới `keydown`; đồng bộ từ event này. */
-  private readonly onFullscreenChange = (): void => {
-    this.screens.syncFullscreen();
-  };
-
-  private onCanvasResize(): void {
-    this.applyViewport();
-  }
-
-  /**
-   * Camera dùng để vẽ world.
-   *
-   * Scene 2D mặc định có `Canvas > Camera` — camera đó thuộc Canvas và chỉ thấy UI_2D.
-   * Ta ưu tiên camera **không** nằm dưới Canvas; nếu scene chỉ có camera UI thì tự tạo
-   * camera world để người dùng không phải sửa lại cấu trúc scene.
-   */
-  private pickWorldCamera(): Camera {
-    const scene = director.getScene();
-    const candidates: Camera[] = scene === null ? [] : scene.getComponentsInChildren(CocosCamera);
-    const world = candidates.find((candidate) => !hasCanvasAncestor(candidate.node));
-    if (world !== undefined) return world;
-
-    const node = new CocosNode('world-camera');
-    node.layer = Layers.Enum.DEFAULT;
-    node.parent = this.node;
-    const created: Camera = node.addComponent(CocosCamera);
-    return created;
   }
 
   /** world → room/actor/bullet, thứ tự này là thứ tự vẽ của Cocos 2D. */
@@ -631,6 +572,8 @@ export class Bootstrap extends Component {
     this.roomLayer = this.addLayer('room-layer', worldRoot);
     this.actorLayer = this.addLayer('actor-layer', worldRoot);
     this.bulletLayer = this.addLayer('bullet-layer', worldRoot);
+    // FX trên actor + đạn: nổ/impact không bị enemy vẽ đè.
+    this.fxLayer = this.addLayer('fx-layer', worldRoot);
   }
 
   private addLayer(name: string, parent: Node): Node {
@@ -650,7 +593,11 @@ export class Bootstrap extends Component {
     }
 
     this.roomRoot?.destroy();
-    this.roomRoot = buildRoom(roomLayer, level, asset, OBSTACLE_SHEET);
+    this.roomRoot = buildRoom(roomLayer, level, asset);
+    const water = this.waterLayout;
+    if (water !== null) {
+      attachRoomWater(this.roomRoot, waterAreasFor(water, level.chapter, level.room));
+    }
     this.currentLevel = level;
   }
 
@@ -665,8 +612,8 @@ export class Bootstrap extends Component {
     node.parent = actorLayer;
 
     const sprite: Sprite = node.addComponent(CocosSprite);
-    // TRIMMED: node size = đúng frame, nên đổi sheet (Dead.png cao 64 px) không bị kéo giãn.
-    sprite.sizeMode = CocosSprite.SizeMode.TRIMMED;
+    // CUSTOM: animator đặt contentSize/anchor theo frame (Idle 32×32, Dead 32×64).
+    sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     sprite.trim = false;
 
     // 1 texture px = 1/16 unit. Player frame 32 px → 2 unit, art thật ~1 tile.
@@ -675,7 +622,12 @@ export class Bootstrap extends Component {
 
     node.addComponent(SpriteAnimator);
     const player: PlayerController = node.addComponent(PlayerController);
-    player.init({ manifest, startAt, rng: this.combatRng });
+    player.init({
+      manifest,
+      startAt,
+      rng: this.combatRng,
+      ...(this.fx !== null ? { fx: this.fx } : {}),
+    });
 
     this.player = player;
     return player;
@@ -894,6 +846,9 @@ export class Bootstrap extends Component {
       const combat = this.combat;
       if (combat === null) throw new Error('Bootstrap: chưa có CombatLoop');
       spawnBossForRoom(combat, level);
+      this.audio?.playMusic('boss');
+    } else {
+      this.audio?.playMusic(chapterMusic(level.chapter));
     }
     this.combat?.startWave(0);
     const player = this.player;
@@ -913,6 +868,7 @@ export class Bootstrap extends Component {
     if (run.status === 'lost' || run.status === 'won') return;
 
     run.markLost();
+    this.audio?.stopMusic();
     console.log(`[YokaiField] Thua ở phòng ${run.roomLabel} (0 tim).`);
     this.screens.finishRun(false);
   }
@@ -924,6 +880,8 @@ export class Bootstrap extends Component {
 
     // GDD §2: thắng chapter mở chapter kế; `commitRunEnd` ghi cả vàng lẫn unlock.
     run.markWon();
+    this.audio?.stopMusic();
+    playSfx('chapter-clear');
     console.log(`[YokaiField] CHAPTER CLEAR — chapter ${run.chapter}, phòng ${run.roomLabel}.`);
     this.screens.finishRun(true);
   }
@@ -954,6 +912,7 @@ export class Bootstrap extends Component {
 
     this.combat?.destroy();
     this.combat = null;
+    this.fx?.destroy();
     this.fx = null;
     this.player?.node.destroy();
     this.player = null;
@@ -998,7 +957,7 @@ export class Bootstrap extends Component {
 
   /** `?debug=1` → `window.__yokai` cho acceptance headless. Không có debug thì không có gì. */
   private installDebugHook(): void {
-    const provider: DebugProvider = {
+    installDebugWiring({
       status: () => this.status,
       chapter: () => this.run?.chapter ?? 0,
       room: () => this.run?.room ?? 0,
@@ -1042,10 +1001,15 @@ export class Bootstrap extends Component {
       uiText: () => this.uiText(),
       skillPreview: (ids) => this.skillPreview.show(ids),
       closeSkillPreview: () => this.skillPreview.close(),
-    };
-
-    installDebugApi(provider);
+      roomRoot: () => this.roomRoot,
+      actorLayer: () => this.actorLayer,
+      bulletLayer: () => this.bulletLayer,
+      fxLayer: () => this.fxLayer,
+      uiRoot: () => this.uiRoot,
+      audioManager: () => this.audio,
+    });
   }
+
 
   /** Debug: nhặt skill ngoài màn chọn; trả stack sau khi nhặt (0 nếu id lạ). */
   private debugGrantSkill(id: string, stacks: number): number {
@@ -1099,10 +1063,18 @@ export class Bootstrap extends Component {
     return collectUiText(this.uiRoot);
   }
 
+  /** Debug: art tạm/key animation hỏng còn hiển thị; rỗng là sạch. */
+
+
+
+
+
+
   protected onDestroy(): void {
     document.removeEventListener('fullscreenchange', this.onFullscreenChange);
-    window.removeEventListener('resize', this.onWindowResize);
-    view.off('canvas-resize', this.onCanvasResize, this);
+    this.camera?.destroy();
+    this.audio?.destroy();
+    this.audio = null;
     this.screens.destroy();
   }
 
@@ -1165,12 +1137,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** true nếu node nằm dưới một node có component Canvas (tức camera UI, không phải camera world). */
-function hasCanvasAncestor(node: Node): boolean {
-  let current: Node | null = node;
-  while (current !== null) {
-    if (current.getComponent(CocosCanvas) !== null) return true;
-    current = current.parent;
-  }
-  return false;
+function chapterMusic(chapter: number): MusicId {
+  if (chapter === 2) return 'chapter-2';
+  if (chapter === 3) return 'chapter-3';
+  return 'chapter-1';
 }

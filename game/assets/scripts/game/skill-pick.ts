@@ -24,8 +24,9 @@ import {
 import { describeSkill } from '../core/skills/description';
 import type { SkillDef } from '../core/skills/pool';
 import { loadPixelTexture } from './assets/texture-cache';
+import { playSfx } from './audio/sfx';
 import { createBackdropPanel, createLabel, RARITY_COLORS } from './hud';
-import { sliceFrame } from './level-view';
+import { sliceSliced } from './screens/menu';
 import type { TileRect } from './level-view';
 
 /** `cc` là any module: tên import chỉ dùng được ở vị trí value. */
@@ -33,11 +34,12 @@ type Button = InstanceType<typeof CocosButton>;
 type Graphics = InstanceType<typeof CocosGraphics>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
-type SpriteFrame = ReturnType<typeof sliceFrame>;
+type SpriteFrame = ReturnType<typeof sliceSliced>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 
-const CARD_SHEET = 'resources/art/ui/theme-wood/button_normal.png';
-const CARD_RECT: TileRect = { x: 0, y: 0, width: 16, height: 8 };
+const CARD_SHEET = 'resources/art/ui/theme-wood/nine_path_panel_2.png';
+const CARD_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
+const CARD_BORDERS = { left: 4, right: 4, top: 4, bottom: 4 } as const;
 const CARD_WIDTH = 140;
 const CARD_HEIGHT = 150;
 const CARD_GAP = 12;
@@ -89,6 +91,7 @@ export async function buildSkillPick(
   const moveFocus = (delta: number): void => {
     if (cards.length === 0) return;
     focused = (focused + delta + cards.length) % cards.length;
+    playSfx('ui-move');
     applyFocus();
   };
 
@@ -96,6 +99,7 @@ export async function buildSkillPick(
     if (picked) return;
     if (index < 0 || index >= options.choices.length) return;
     picked = true;
+    playSfx('skill-pick');
     options.onPick(index);
   };
   const onKey = (event: KeyEvent): void => {
@@ -141,7 +145,7 @@ export async function buildSkillPick(
     document.removeEventListener('keydown', onDomKey);
     throw error;
   }
-  const frame = sliceFrame(texture, CARD_RECT);
+  const frame = sliceSliced(texture, CARD_RECT, CARD_BORDERS);
 
   const root = new CocosNode('skill-pick');
   root.layer = Layers.Enum.UI_2D;
@@ -213,6 +217,7 @@ function makeCard(
   node.setPosition(x, CARD_Y, 0);
 
   const sprite: Sprite = node.addComponent(CocosSprite);
+  sprite.type = CocosSprite.Type.SLICED;
   sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
   sprite.trim = false;
   sprite.spriteFrame = frame;

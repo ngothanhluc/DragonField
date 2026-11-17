@@ -38,8 +38,10 @@ import type { EnemyRole } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import type { SeededRng } from '../core/rng';
 import { SpriteAnimator } from './anim/sprite-animator';
+import { playSfx } from './audio/sfx';
 import { loadTelegraphFrames } from './enemy-view';
-import { ACTOR_SCALE, tileToWorld } from './level-view';
+import type { FxPool } from './fx/effect-pool';
+import { ACTOR_SCALE, BOSS_FEET_OFFSET_TILES, tileToWorld } from './level-view';
 
 /** `cc` là module any: type phải suy ra từ import value. */
 type Color = InstanceType<typeof CocosColor>;
@@ -55,8 +57,6 @@ const RING_MAX_OPACITY = 220;
 const RING_MIN_OPACITY = 80;
 /** Thời gian flash khi trúng đạn, ms. */
 const HIT_FLASH_MS = 80;
-/** Boss đứng hơi cao hơn tâm để silhouette không che player. */
-const BOSS_VISUAL_OFFSET_Y_PX = 2;
 
 /** Màu tint theo phase — dấu hiệu thứ nhất (rõ kể cả khi nhìn silhouette). */
 const PHASE_TINT: Readonly<Record<BossPhase, Color>> = {
@@ -79,6 +79,8 @@ export interface BossViewOptions {
   readonly actorLayer: Node;
   readonly bullets: BulletPool;
   readonly rng: SeededRng;
+  /** Pool FX (chết boss). */
+  readonly fx?: FxPool;
   /** Gọi khi boss đổi phase (bootstrap hiện banner). */
   readonly onPhase?: (phase: BossPhase) => void;
   /** Gọi khi pattern yêu cầu gọi quái; CombatLoop tự spawn EnemyView. */
@@ -91,6 +93,7 @@ export class BossView {
   private readonly rng: SeededRng;
   private readonly onPhase: (phase: BossPhase) => void;
   private readonly onSummon: (role: EnemyRole, count: number) => void;
+  private readonly fx: FxPool | null;
   private readonly node: Node;
   private readonly animator: SpriteAnimator;
   private readonly sprite: Sprite;
@@ -106,6 +109,9 @@ export class BossView {
   private ringVisible = false;
   private telegraphStartedMs = Number.NEGATIVE_INFINITY;
   private telegraphDurationMs = 0;
+  /** Đang trong cú charge (animation loop) hay vừa kết thúc để về idle. */
+  private charging = false;
+  private lastAnimKey = '';
 
   constructor(options: BossViewOptions) {
     this.def = options.def;
@@ -113,13 +119,15 @@ export class BossView {
     this.rng = options.rng;
     this.onPhase = options.onPhase ?? (() => undefined);
     this.onSummon = options.onSummon ?? (() => undefined);
+    this.fx = options.fx ?? null;
     this.state = initialBossState(options.def.id, options.start);
 
     const node = new CocosNode(`boss-${options.def.id}`);
     node.parent = options.actorLayer;
 
     const sprite: Sprite = node.addComponent(CocosSprite);
-    sprite.sizeMode = CocosSprite.SizeMode.TRIMMED;
+    // CUSTOM: animator đặt contentSize/anchor theo frame (samurai 96×48 ↔ 96×96).
+    sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     sprite.trim = false;
     node.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
     sprite.color = PHASE_TINT[1];
@@ -128,6 +136,9 @@ export class BossView {
     this.node = node;
     this.sprite = sprite;
     this.animator = node.getComponent(SpriteAnimator) as SpriteAnimator;
+    this.animator.onFinished = () => {
+      if (!this.isDefeated) this.playAnimation(animationFor(this.def.id, 'idle', this.state.facing));
+    };
     this.syncPosition();
     this.playAnimation(animationFor(this.def.id, 'idle', this.state.facing));
 
@@ -223,6 +234,8 @@ export class BossView {
           // Vị trí thật nằm trong `state.position`; event chỉ để debug/animation.
           if (event.speedTilesPerSecond >= TELEPORT_SNAP_SPEED_TILES_PER_SECOND) {
             this.playAnimation(animationFor(this.def.id, 'teleport', this.state.facing));
+          } else {
+            this.playAnimation(animationFor(this.def.id, 'walk', this.state.facing));
           }
           break;
       }
@@ -231,6 +244,13 @@ export class BossView {
     this.syncPosition();
     this.applyTint(nowMs);
     this.updateRing(nowMs);
+
+    if (this.state.chargeDirection !== null) {
+      this.charging = true;
+    } else if (this.charging) {
+      this.charging = false;
+      this.playAnimation(animationFor(this.def.id, 'idle', this.state.facing));
+    }
     return result.events;
   }
 
@@ -248,6 +268,7 @@ export class BossView {
       health: Math.max(0, this.state.health - step.whole),
     };
     this.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+    playSfx('enemy-hit');
 
     if (this.state.health <= 0) {
       this.defeated = true;
@@ -255,6 +276,11 @@ export class BossView {
       this.playAnimation(animationFor(this.def.id, 'hit', this.state.facing));
       this.animator.stop();
       this.hideRing();
+      // Boss chết = explosion lớn + smoke (GDD: chết là FX, không có frame chết).
+      this.fx?.spawn('fx.explosion', this.state.position, { drawUnits: 5, lifetimeMs: 1200 });
+      this.fx?.spawn('fx.smoke', this.state.position, { drawUnits: 4, lifetimeMs: 1100 });
+      playSfx('explosion');
+      playSfx('enemy-death');
       this.node.active = false;
     }
   }
@@ -283,13 +309,16 @@ export class BossView {
   }
 
   private playAnimation(key: string): void {
+    // Cùng clip mà chưa chạy xong thì không restart (step boss phát `move` mỗi frame).
+    if (key === this.lastAnimKey && !this.animator.isFinished) return;
+    this.lastAnimKey = key;
     // Samurai tách sheet L/R; `animationFor` đã ghép hậu tố, `play` không cần direction.
     this.animator.play(key);
   }
 
   private syncPosition(): void {
     const world = tileToWorld(this.state.position);
-    this.node.setPosition(world.x, world.y + BOSS_VISUAL_OFFSET_Y_PX * ACTOR_SCALE, 0);
+    this.node.setPosition(world.x, world.y - BOSS_FEET_OFFSET_TILES, 0);
   }
 
   private async createRing(): Promise<void> {

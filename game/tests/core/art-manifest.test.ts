@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { AnimationManifest, SpriteEntry } from '../../assets/scripts/core/art/manifest';
-import { REQUIRED_KEYS, resolve, validateManifest } from '../../assets/scripts/core/art/manifest';
+import { REQUIRED_ACTOR_ANIMATIONS, REQUIRED_KEYS, resolve, validateManifest } from '../../assets/scripts/core/art/manifest';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = join(HERE, '..', '..', 'assets', 'resources', 'data', 'animations.json');
@@ -51,7 +51,7 @@ describe('animations.json', () => {
   });
 
   it('chỉ dùng actor đã chốt trong GDD', () => {
-    const actors: ReadonlySet<string> = new Set<string>(['player', ...MONSTERS, ...BOSSES]);
+    const actors: ReadonlySet<string> = new Set<string>(['player', ...MONSTERS, ...BOSSES, 'fx']);
     for (const [key] of entries) {
       expect(actors.has(actorOf(key)), `actor lạ trong key ${key}`).toBe(true);
     }
@@ -64,16 +64,19 @@ describe('animations.json', () => {
     }
   });
 
-  it('REQUIRED_KEYS đúng bộ M1 cần, không trùng', () => {
-    const expected = [
-      ...['idle', 'walk', 'attack', 'hit', 'roll'].flatMap((anim) =>
-        DIRS.map((dir) => `player.${anim}.${dir}`),
-      ),
-      'player.dead',
-      ...MONSTERS.flatMap((actor) => DIRS.map((dir) => `${actor}.walk.${dir}`)),
-    ];
+  it('mỗi vai trò có đủ bộ animation tối thiểu', () => {
+    for (const [actor, keys] of Object.entries(REQUIRED_ACTOR_ANIMATIONS)) {
+      for (const key of keys) {
+        expect(() => resolve(manifest, key), `${actor} thiếu ${key}`).not.toThrow();
+      }
+    }
 
-    expect([...REQUIRED_KEYS].sort()).toEqual(expected.sort());
+    for (const monster of MONSTERS) {
+      for (const dir of DIRS) {
+        expect(manifest.sprites[`${monster}.idle.${dir}`], `${monster} idle ${dir}`).toBeDefined();
+        expect(manifest.sprites[`${monster}.walk.${dir}`], `${monster} walk ${dir}`).toBeDefined();
+      }
+    }
   });
 
   it('key có direction thì directions khai báo đúng trục', () => {
@@ -111,7 +114,7 @@ describe('animations.json', () => {
         expect([entry.frameWidth, entry.frameHeight], `${key} phải là frame 32×32`).toEqual([32, 32]);
       } else if (MONSTER_ACTORS.has(actor)) {
         expect([entry.frameWidth, entry.frameHeight], `${key} phải là frame 16×16`).toEqual([16, 16]);
-      } else {
+      } else if (BOSS_ACTORS.has(actor)) {
         expect(entry.frameWidth, `${key} là frame boss, phải ≥ 60px`).toBeGreaterThanOrEqual(60);
       }
     }
@@ -163,7 +166,9 @@ describe('animations.json', () => {
 
   it('layout khớp loại sheet: player/monster là grid, boss là strip', () => {
     for (const [key, entry] of entries) {
-      const expected = BOSS_ACTORS.has(actorOf(key)) ? 'strip' : 'grid';
+      const actor = actorOf(key);
+      if (actor === 'fx') continue;
+      const expected = BOSS_ACTORS.has(actor) ? 'strip' : 'grid';
       expect(entry.layout, `${key} phải layout ${expected}`).toBe(expected);
     }
   });
@@ -172,7 +177,7 @@ describe('animations.json', () => {
     for (const [key, entry] of entries) {
       const actor = actorOf(key);
       // Sheet monster tên chung là SpriteSheet.png, không mang tên animation.
-      if (MONSTER_ACTORS.has(actor)) continue;
+      if (MONSTER_ACTORS.has(actor) || actor === 'fx') continue;
 
       const file = entry.sheet.split('/').pop() ?? '';
       const fileStem = file.toLowerCase().replace(/\.png$/, '').replace(/[^a-z0-9]/g, '');

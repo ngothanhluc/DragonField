@@ -19,7 +19,7 @@ export function buildCreditsScreen(options: CreditsScreenOptions): Promise<MenuS
     subtitle: 'Yokai Field',
     info: [
       'Ninja Adventure Asset Pack',
-      'Art & audio: Pixel-boy and AAA',
+      'Assets created by Pixel-boy and AAA',
       'CC0 1.0 Universal — attribution not required',
       'pixel-boy.itch.io  ·  instagram.com/challenger.aaa',
       'Engine: Cocos Creator 3.8.8',

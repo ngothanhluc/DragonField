@@ -14,6 +14,7 @@ export type DebugStatus =
   | 'paused'
   | 'room-clear'
   | 'skill-pick'
+  | 'dying'
   | 'lost'
   | 'won'
   | 'error';
@@ -65,6 +66,21 @@ export interface DebugBossSnapshot {
   readonly phase: number;
 }
 
+/** Trạng thái audio để acceptance headless kiểm không cần nghe. */
+export interface DebugAudioSnapshot {
+  readonly unlocked: boolean;
+  readonly volume: number;
+  readonly music: string | null;
+  readonly lastSfx: readonly string[];
+}
+
+/** Animation đang phát của từng actor (key manifest). */
+export interface DebugAnimationSnapshot {
+  readonly player: string | null;
+  readonly enemies: Readonly<Record<string, string>>;
+  readonly boss: string | null;
+}
+
 /** Dữ liệu bootstrap cấp cho API; mọi method đều là closure sống. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
@@ -100,6 +116,12 @@ export interface DebugProvider {
   /** Debug: mở màn xem trước N skill (không grant) để test text fit. */
   readonly skillPreview: (ids: readonly string[]) => Promise<boolean>;
   readonly closeSkillPreview: () => boolean;
+  /** Node/anim còn dùng art tạm hoặc key animation hỏng (rỗng = sạch). */
+  readonly placeholders: () => readonly string[];
+  /** Trạng thái audio: đã unlock chưa, volume, track, SFX gần nhất. */
+  readonly audio: () => DebugAudioSnapshot;
+  /** Animation key đang phát; truyền tên node để lấy một actor. */
+  readonly anim: (nodeName?: string) => string | DebugAnimationSnapshot | null;
 }
 
 export type YokaiDebugApi = Omit<
@@ -141,6 +163,9 @@ export function installDebugApi(provider: DebugProvider): boolean {
     uiText: { value: provider.uiText, enumerable: true },
     skillPreview: { value: provider.skillPreview, enumerable: true },
     closeSkillPreview: { value: provider.closeSkillPreview, enumerable: true },
+    placeholders: { value: provider.placeholders, enumerable: true },
+    audio: { value: provider.audio, enumerable: true },
+    anim: { value: provider.anim, enumerable: true },
   });
 
   (window as unknown as { __yokai?: YokaiDebugApi }).__yokai = api;
@@ -148,7 +173,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
     '[YokaiField] debug=1: window.__yokai sẵn sàng ' +
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, ' +
-      'screen, save, setGold, uiText, skillPreview, closeSkillPreview).',
+      'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim).',
   );
   return true;
 }

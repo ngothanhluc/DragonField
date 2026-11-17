@@ -1,0 +1,103 @@
+/**
+ * Nối `Bootstrap` vào `window.__yokai` (chỉ khi `?debug=1`).
+ *
+ * Tách khỏi bootstrap để run-flow không phình theo acceptance hooks; logic
+ * `placeholders`/`audio`/`anim` cũng nằm đây thay vì rải trong class.
+ */
+import type { Node as CocosNode } from 'cc';
+import type { AudioManager } from './audio/audio-manager';
+import type {
+  DebugAnimationSnapshot,
+  DebugAudioSnapshot,
+  DebugBossSnapshot,
+  DebugEnemySnapshot,
+  DebugProvider,
+  DebugScreenId,
+  DebugStatus,
+  DebugUiText,
+} from './debug-api';
+import { installDebugApi } from './debug-api';
+import { animationOfNode, collectAnimations, collectPlaceholders } from './debug-extras';
+import type { DerivedStats } from '../core/skills/derived-stats';
+import type { Vec2 } from '../core/math/vec2';
+
+type Node = InstanceType<typeof CocosNode>;
+
+export interface DebugWiringHost {
+  readonly status: () => DebugStatus;
+  readonly chapter: () => number;
+  readonly room: () => number;
+  readonly roomTotal: () => number;
+  readonly killAll: () => number;
+  readonly spawn: (role: string, elite?: boolean, at?: Vec2) => string;
+  readonly stress: () => boolean;
+  readonly fps: () => { readonly fps: number; readonly frameMs: number; readonly samples: number };
+  readonly godMode: (on: boolean) => boolean;
+  readonly enemies: () => readonly DebugEnemySnapshot[];
+  readonly bulletCount: () => number;
+  readonly skillChoices: () => string[] | null;
+  readonly pickSkill: (indexOrId: number | string) => boolean;
+  readonly grantSkill: (id: string, stacks?: number) => number;
+  readonly stats: () => DerivedStats;
+  readonly boss: () => DebugBossSnapshot | null;
+  readonly setBossHp: (fraction: number) => boolean;
+  readonly startChapter: (chapter: number, seed?: number) => Promise<boolean>;
+  readonly screen: () => DebugScreenId;
+  readonly save: () => unknown;
+  readonly setGold: (gold: number) => boolean;
+  readonly uiText: () => readonly DebugUiText[];
+  readonly skillPreview: (ids: readonly string[]) => Promise<boolean>;
+  readonly closeSkillPreview: () => boolean;
+  readonly roomRoot: () => Node | null;
+  readonly actorLayer: () => Node | null;
+  readonly bulletLayer: () => Node | null;
+  readonly fxLayer: () => Node | null;
+  readonly uiRoot: () => Node | null;
+  readonly audioManager: () => AudioManager | null;
+}
+
+/** Cài API nếu URL có `?debug=1`; trả `true` khi đã cài. */
+export function installDebugWiring(host: DebugWiringHost): boolean {
+  const provider: DebugProvider = {
+    status: host.status,
+    chapter: host.chapter,
+    room: host.room,
+    roomTotal: host.roomTotal,
+    killAll: host.killAll,
+    spawn: host.spawn,
+    stress: host.stress,
+    fps: host.fps,
+    godMode: host.godMode,
+    enemies: host.enemies,
+    bulletCount: host.bulletCount,
+    skillChoices: host.skillChoices,
+    pickSkill: host.pickSkill,
+    grantSkill: host.grantSkill,
+    stats: host.stats,
+    boss: host.boss,
+    setBossHp: host.setBossHp,
+    startChapter: host.startChapter,
+    screen: host.screen,
+    save: host.save,
+    setGold: host.setGold,
+    uiText: host.uiText,
+    skillPreview: host.skillPreview,
+    closeSkillPreview: host.closeSkillPreview,
+    placeholders: () =>
+      collectPlaceholders([
+        host.roomRoot(),
+        host.actorLayer(),
+        host.bulletLayer(),
+        host.fxLayer(),
+        host.uiRoot(),
+      ]),
+    audio: (): DebugAudioSnapshot =>
+      host.audioManager()?.snapshot() ?? { unlocked: false, volume: 0, music: null, lastSfx: [] },
+    anim: (nodeName?: string): string | DebugAnimationSnapshot | null =>
+      nodeName === undefined
+        ? collectAnimations(host.actorLayer())
+        : animationOfNode(host.actorLayer(), nodeName),
+  };
+
+  return installDebugApi(provider);
+}
