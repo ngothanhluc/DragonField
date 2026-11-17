@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="10">
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="11">
  <properties>
     <property name="chapter" type="int" value="1"/>
     <property name="room" type="int" value="8"/>
@@ -34,7 +34,7 @@
    <properties>
     <property name="role" value="caster"/>
     <property name="wave" type="int" value="1"/>
-    <property name="elite" type="bool" value="false"/>
+    <property name="elite" type="bool" value="true"/>
    </properties>
   <point/></object>
   <object id="3" name="spawn" x="96" y="144">
@@ -47,6 +47,13 @@
   <object id="4" name="spawn" x="416" y="144">
    <properties>
     <property name="role" value="chaser"/>
+    <property name="wave" type="int" value="1"/>
+    <property name="elite" type="bool" value="false"/>
+   </properties>
+  <point/></object>
+  <object id="10" name="spawn" x="64" y="224">
+   <properties>
+    <property name="role" value="tank"/>
     <property name="wave" type="int" value="1"/>
     <property name="elite" type="bool" value="false"/>
    </properties>

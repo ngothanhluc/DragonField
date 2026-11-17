@@ -19,11 +19,30 @@ export const TUNING_DATA = {
     playerKnockbackDurationMs: 180,
     enemyKnockbackDistanceTiles: 0.35,
     enemyKnockbackDurationMs: 120,
+    enemyHitstopMs: 70,
+    enemyStaggerMs: 150,
   },
   enemies: {
     eliteHealthMultiplier: 2,
     eliteDamageMultiplier: 2,
     roomEdgeMarginTiles: 0.5,
+    elite: {
+      scale: 1.15,
+      chaser: {
+        pounceTelegraphMs: 300,
+        pounceSpeedTilesPerSecond: 6,
+        pounceDurationMs: 300,
+        pounceCooldownMs: 900,
+        pounceRangeTiles: 6,
+      },
+      caster: {
+        volleyShots: 3,
+        volleySpreadRadians: 0.22,
+      },
+      tank: {
+        extraCharges: 1,
+      },
+    },
     roles: {
       chaser: {
         health: 6,
@@ -35,6 +54,7 @@ export const TUNING_DATA = {
         contactDamage: 1,
         chargeSpeedTilesPerSecond: 0,
         chargeDurationMs: 0,
+        scale: 1,
       },
       caster: {
         health: 4,
@@ -46,6 +66,7 @@ export const TUNING_DATA = {
         contactDamage: 1,
         chargeSpeedTilesPerSecond: 0,
         chargeDurationMs: 0,
+        scale: 1,
       },
       tank: {
         health: 10,
@@ -57,6 +78,7 @@ export const TUNING_DATA = {
         contactDamage: 2,
         chargeSpeedTilesPerSecond: 7,
         chargeDurationMs: 450,
+        scale: 1.75,
       },
     },
   },

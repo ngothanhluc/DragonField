@@ -130,6 +130,14 @@ export class BulletPool {
   }
 
   /**
+   * Số slot đang chờ tái dùng. `size + recycledCount` **không bao giờ vượt
+   * `capacity`** — test "1000 phát không rò rỉ" dựa vào bất biến này.
+   */
+  get recycledCount(): number {
+    return this.recycled.length;
+  }
+
+  /**
    * Sinh một viên đạn. Khi pool đầy, viên **cũ nhất** bị thu hồi để lấy slot —
    * pool không bao giờ vượt `capacity`.
    */

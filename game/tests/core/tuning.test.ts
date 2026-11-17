@@ -11,6 +11,7 @@ import {
   decideAction,
   maxHealthFor,
   speedFor,
+  visualScaleFor,
   type EnemyState,
 } from '../../assets/scripts/core/enemies/behaviours';
 import {
@@ -264,5 +265,76 @@ describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => 
     // `isTelegraphElapsed` là hàm thuần nhận duration, nên cùng một số với JSON.
     expect(isTelegraphElapsed(0, ENEMY_TUNING.roles.caster.telegraphMs - 1, ENEMY_TUNING.roles.caster.telegraphMs)).toBe(false);
     expect(isTelegraphElapsed(0, ENEMY_TUNING.roles.caster.telegraphMs, ENEMY_TUNING.roles.caster.telegraphMs)).toBe(true);
+  });
+});
+
+describe('tuning — M3: hitstop, stagger, đòn thêm của elite', () => {
+  it('hitstop 70 ms và stagger 150 ms đọc từ JSON, không hardcode', () => {
+    const rawCombat = (cloneSource().combat as Record<string, unknown>);
+    expect(DEFAULT_COMBAT.enemyHitstopMs).toBe(70);
+    expect(DEFAULT_COMBAT.enemyStaggerMs).toBe(150);
+    expect(rawCombat.enemyHitstopMs).toBe(DEFAULT_COMBAT.enemyHitstopMs);
+    expect(rawCombat.enemyStaggerMs).toBe(DEFAULT_COMBAT.enemyStaggerMs);
+
+    const changed = cloneSource();
+    (changed.combat as Record<string, unknown>).enemyStaggerMs = 400;
+    expect(parseTuning(changed).combat.enemyStaggerMs).toBe(400);
+  });
+
+  it('elite scale / volley / extraCharges đọc từ JSON', () => {
+    const elite = (cloneSource().enemies as { elite: Record<string, unknown> }).elite;
+    expect(ENEMY_TUNING.elite.scale).toBe(elite.scale);
+    expect(ENEMY_TUNING.elite.caster).toEqual(elite.caster);
+    expect(ENEMY_TUNING.elite.tank).toEqual(elite.tank);
+    expect(ENEMY_TUNING.elite.chaser).toEqual(elite.chaser);
+  });
+
+  it('elite sai kiểu/âm bị bắt ngay lúc parse, kèm đường dẫn', () => {
+    const negativeCharges = cloneSource();
+    const tank = (
+      (negativeCharges.enemies as { elite: { tank: Record<string, unknown> } }).elite
+    ).tank;
+    tank.extraCharges = -1;
+    expect(() => parseTuning(negativeCharges)).toThrowError(/enemies\.elite\.tank\.extraCharges/);
+
+    const fractionalShots = cloneSource();
+    const caster = (
+      (fractionalShots.enemies as { elite: { caster: Record<string, unknown> } }).elite
+    ).caster;
+    caster.volleyShots = 2.5;
+    expect(() => parseTuning(fractionalShots)).toThrowError(/phải là số nguyên/);
+
+    const missingElite = cloneSource();
+    delete (missingElite.enemies as Record<string, unknown>).elite;
+    expect(() => parseTuning(missingElite)).toThrowError(/enemies\.elite.*thiếu field/);
+  });
+});
+
+describe('tuning — M3 round 2: silhouette theo vai trò', () => {
+  it('scale của brute lớn hơn hẳn chaser/caster, đọc từ JSON', () => {
+    const roles = (cloneSource().enemies as Record<string, unknown>).roles as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(visualScaleFor('tank')).toBe(roles.tank?.scale);
+    expect(visualScaleFor('tank')).toBeGreaterThanOrEqual(1.6);
+    expect(visualScaleFor('tank')).toBeLessThanOrEqual(1.8);
+    expect(visualScaleFor('chaser')).toBe(1);
+    expect(visualScaleFor('caster')).toBe(1);
+  });
+
+  it('đổi scale trong JSON thì helper đổi theo, không hardcode', () => {
+    const tuning = tuningWith((raw) => {
+      roleOf(raw, 'tank').scale = 2.25;
+    });
+    expect(visualScaleFor('tank', tuning)).toBe(2.25);
+    // Bộ mặc định không bị ghi.
+    expect(visualScaleFor('tank')).toBe(ENEMY_TUNING.roles.tank.scale);
+  });
+
+  it('scale <= 0 bị từ chối', () => {
+    const raw = cloneSource();
+    roleOf(raw, 'tank').scale = 0;
+    expect(() => parseTuning(raw)).toThrowError(/enemies\.roles\.tank\.scale.*phải > 0/);
   });
 });

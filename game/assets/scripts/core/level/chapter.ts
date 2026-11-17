@@ -18,8 +18,9 @@ export function sortLevelsByRoom(levels: readonly LevelData[]): LevelData[] {
 /**
  * `LevelData[]` (mỗi file `.tmx` một phần tử, thứ tự load tuỳ engine) → `ChapterData`.
  *
- * Ném lỗi nếu rỗng, nếu các phòng thuộc chapter khác nhau, hoặc nếu
- * `parseChapterData` phát hiện trùng số phòng / door hỏng.
+ * Ném lỗi nếu rỗng, nếu các phòng thuộc chapter khác nhau, nếu
+ * `parseChapterData` phát hiện trùng số phòng / door hỏng, nếu dãy phòng đứt
+ * quãng, hoặc nếu phòng boss không phải phòng cuối / có hơn một phòng boss.
  */
 export function chapterFromLevels(levels: readonly LevelData[]): ChapterData {
   if (levels.length === 0) {
@@ -55,6 +56,26 @@ export function chapterFromLevels(levels: readonly LevelData[]): ChapterData {
       );
     }
   });
+
+  // Boss phải là phòng cuối, và chỉ một phòng boss. `RunState`/bootstrap coi phòng cuối
+  // của chapter là hết run; boss nằm giữa sẽ khiến người chơi gặp boss rồi vẫn còn
+  // phòng thường phía sau, còn hai boss room là dữ liệu author nhầm (copy .tmx).
+  // Không bắt buộc **phải có** boss: chapter đang author dở vẫn load được.
+  const bossRooms = sorted.filter((level) => level.isBossRoom);
+  if (bossRooms.length > 1) {
+    throw new Error(
+      `chapterFromLevels: chapter ${first.chapter} có ${bossRooms.length} phòng boss ` +
+        `(${bossRooms.map((level) => level.id).join(', ')}), chỉ được có một.`,
+    );
+  }
+  const onlyBoss = bossRooms[0];
+  const last = sorted[sorted.length - 1];
+  if (onlyBoss !== undefined && last !== undefined && onlyBoss.room !== last.room) {
+    throw new Error(
+      `chapterFromLevels: phòng boss ${onlyBoss.id} phải là phòng cuối, nhưng chapter ` +
+        `${first.chapter} còn phòng ${last.room} (${last.id}) sau nó.`,
+    );
+  }
 
   return chapter;
 }

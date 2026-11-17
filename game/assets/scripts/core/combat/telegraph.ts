@@ -6,12 +6,15 @@
  * `telegraphProgress` để scale vòng `Magic/Circle` dưới chân enemy.
  *
  * Số của enemy đọc từ `config/tuning.json` (`enemies.roles.<role>.telegraphMs`).
+ * Riêng chaser elite dùng `enemies.elite.chaser.pounceTelegraphMs` vì cú lao
+ * (đòn thêm của bản elite) là thứ duy nhất nó telegraph.
  * Boss giữ 800 ms ở đây vì pattern boss do `core/boss/` sở hữu và chưa nằm
  * trong bảng tune enemy thường.
  */
 import { ENEMY_TUNING } from '../enemies/tuning';
 
 export const TELEGRAPH_MS = {
+  chaser: ENEMY_TUNING.elite.chaser.pounceTelegraphMs,
   caster: ENEMY_TUNING.roles.caster.telegraphMs,
   tank: ENEMY_TUNING.roles.tank.telegraphMs,
   boss: 800,

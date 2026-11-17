@@ -32,13 +32,28 @@ describe('chapterFromLevels — khám phá phòng từ dữ liệu', () => {
 
   it('thêm room-10.tmx là chapter có 10 phòng, RunState hiện "x/10"', () => {
     const levels = loadTmxLevels();
-    const first = levels[0];
-    if (first === undefined) throw new Error('thiếu phòng 1');
+    const bossRoom = levels[8];
+    if (bossRoom === undefined) throw new Error('thiếu phòng 9');
 
-    const chapter = chapterFromLevels([...levels, renumber(first, 10)]);
+    // Boss phải là phòng cuối (rule mới của M3), nên thêm phòng 10 = dời boss
+    // xuống phòng 10 và trả phòng 9 về phòng thường. Đây đúng là việc author
+    // trong Tiled: sửa property `boss`/`isBossRoom` của hai file .tmx.
+    const nonBossCopy: LevelData = {
+      ...bossRoom,
+      id: 'ch1-r9',
+      room: 9,
+      isBossRoom: false,
+      doors: [],
+    };
+    delete (nonBossCopy as { boss?: unknown }).boss;
+    delete (nonBossCopy as { bossStart?: unknown }).bossStart;
+
+    const chapter = chapterFromLevels([...levels.slice(0, 8), nonBossCopy, renumber(bossRoom, 10)]);
 
     expect(chapter.rooms).toHaveLength(10);
+    expect(chapter.rooms[8]?.room).toBe(9);
     expect(chapter.rooms[9]?.room).toBe(10);
+    expect(chapter.rooms[9]?.isBossRoom).toBe(true);
 
     const run = new RunState(1, chapter.rooms.length);
     expect(run.roomLabel).toBe('1/10');
@@ -53,6 +68,32 @@ describe('chapterFromLevels — khám phá phòng từ dữ liệu', () => {
     expect(run.room).toBe(10);
     expect(run.isBossRoom).toBe(true);
     expect(run.roomLabel).toBe('10/10');
+  });
+
+  it('từ chối boss room nằm giữa chapter', () => {
+    const levels = loadTmxLevels();
+    const first = levels[0];
+    if (first === undefined) throw new Error('thiếu phòng 1');
+
+    // Thả thêm phòng thường sau boss: run sẽ "thắng" ở phòng 9 nên phòng 10
+    // không bao giờ tới được — author nhầm chỗ đặt boss.
+    expect(() => chapterFromLevels([...levels, renumber(first, 10)])).toThrow(
+      /phòng boss .* phải là phòng cuối/,
+    );
+  });
+
+  it('từ chối hai phòng boss trong một chapter', () => {
+    const levels = loadTmxLevels();
+    const bossRoom = levels[8];
+    if (bossRoom === undefined) throw new Error('thiếu phòng 9');
+
+    const secondBoss = renumber(levels[7] ?? bossRoom, 10);
+    expect(() =>
+      chapterFromLevels([
+        ...levels,
+        { ...secondBoss, isBossRoom: true, boss: { name: 'TenguBlue' }, doors: [] },
+      ]),
+    ).toThrow(/chỉ được có một/);
   });
 
   it('từ chối thư mục rỗng', () => {

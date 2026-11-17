@@ -7,19 +7,24 @@
  *   vào node và tự di chuyển theo action đó.
  * - Gọi hai lần với cùng tham số ở cùng `nowMs` phải cho cùng kết quả.
  *
- * Số liệu (máu, tốc độ, cooldown, telegraph, dải khoảng cách, hệ số elite)
- * **không nằm ở file này** — tất cả đọc từ `enemies/tuning.ts`, tức
- * `game/config/tuning.json` (sinh sang `tuning.generated.ts` bằng `bun run gen`).
+ * Số liệu (máu, tốc độ, cooldown, telegraph, dải khoảng cách, hệ số elite, đòn
+ * thêm của elite) **không nằm ở file này** — tất cả đọc từ `enemies/tuning.ts`,
+ * tức `game/config/tuning.json` (sinh sang `tuning.generated.ts` bằng `bun run gen`).
  * Các hàm nhận thêm tham số `tuning` tuỳ chọn để
  * test có thể bơm một bộ số khác và chứng minh không còn số nào bị hardcode;
  * mặc định luôn là `ENEMY_TUNING`.
  *
- * Hợp đồng thời gian: `state.actionStartedMs` là thời điểm action hiện tại bắt
- * đầu, do **caller** cập nhật mỗi khi thay action. Enemy vừa spawn đặt
+ * Hợp đồng thời gian: `state.actionStartedMs` là mốc **chu kỳ đòn** hiện tại (lúc
+ * telegraph bắt đầu hoặc lúc đòn được thả), do **caller** cập nhật. Không cập nhật
+ * nó khi action đổi vì stagger: cooldown phải chạy tiếp qua cú choáng, nếu không
+ * enemy bị bắn liên tục sẽ không bao giờ ra đòn. Enemy vừa spawn đặt
  * `action = { kind: 'idle' }` và `actionStartedMs = 0`, nên nó chờ hết một
  * cooldown trước đòn đầu tiên — đúng ý đồ "cho người chơi thở" đầu phòng.
  *
- * Elite chỉ đổi máu và sát thương, không đổi hành vi (GDD §4).
+ * Elite đổi máu/sát thương (GDD §4) **và** có một đòn thêm theo vai trò (M3):
+ * chaser elite lao (pounce), caster elite bắn loạt 3 viên, tank elite lao hai
+ * lần. Đòn đạn của caster elite do `elite.ts` mô tả (loạt góc), hai đòn còn lại
+ * là action nên nằm ở đây.
  */
 import { isTelegraphElapsed } from '../combat/telegraph';
 import type { EnemyRole, LevelData } from '../level/level-data';
@@ -42,8 +47,35 @@ export type EnemyAction =
   | { kind: 'idle' }
   | { kind: 'walk'; target: Vec2 }
   | { kind: 'telegraph'; sinceMs: number }
-  | { kind: 'charge'; direction: Vec2; untilMs: number }
+  /**
+   * Lao một đường thẳng. `speedTilesPerSecond` đi kèm action (không đọc từ vai
+   * trò trong adapter) vì hai vai trò cùng lao với tốc độ khác nhau: tank 7
+   * tile/s, elite chaser 6 tile/s.
+   *
+   * `followUps` = số cú lao **còn lại sau cú này**, dùng cho elite tank: mỗi cú
+   * sau chốt lại hướng theo player, nên né cú đầu là chưa đủ.
+   */
+  | {
+      kind: 'charge';
+      direction: Vec2;
+      untilMs: number;
+      speedTilesPerSecond: number;
+      followUps: number;
+    }
+  /**
+   * Trúng đạn: đứng yên tới `untilMs` rồi mới quyết lại. Có action riêng thay vì
+   * dùng `idle` để caster không "bắn nốt" telegraph bị ngắt (xem `attackReleased`).
+   */
+  | { kind: 'stagger'; untilMs: number }
   | { kind: 'dead' };
+
+/**
+ * Action stagger bắt đầu tại `nowMs` và kéo dài `durationMs` (ADR-008: 150 ms).
+ * Thuần: trả action, không sửa state.
+ */
+export function staggerAction(nowMs: number, durationMs: number): EnemyAction {
+  return { kind: 'stagger', untilMs: nowMs + durationMs };
+}
 
 /** Chaser gây sát thương khi chạm; trong bán kính này nó đứng yên thay vì run rẩy. */
 export const CHASER_CONTACT_RANGE_TILES = ENEMY_TUNING.roles.chaser.preferredRangeMaxTiles;
@@ -59,6 +91,20 @@ export const TANK_CHARGE_DURATION_MS = ENEMY_TUNING.roles.tank.chargeDurationMs;
 /** Tốc độ lúc lao — nhanh hơn đi bộ nhiều để đọc được đòn. */
 export const TANK_CHARGE_SPEED_TILES_PER_SECOND =
   ENEMY_TUNING.roles.tank.chargeSpeedTilesPerSecond;
+
+/** Elite chaser: telegraph trước cú lao ngắn. */
+export const ELITE_POUNCE_TELEGRAPH_MS = ENEMY_TUNING.elite.chaser.pounceTelegraphMs;
+/** Elite chaser: tốc độ lúc lao, tile/giây. */
+export const ELITE_POUNCE_SPEED_TILES_PER_SECOND =
+  ENEMY_TUNING.elite.chaser.pounceSpeedTilesPerSecond;
+/** Elite chaser: thời gian lao, ms. */
+export const ELITE_POUNCE_DURATION_MS = ENEMY_TUNING.elite.chaser.pounceDurationMs;
+/** Elite chaser: cooldown giữa hai cú lao, ms. */
+export const ELITE_POUNCE_COOLDOWN_MS = ENEMY_TUNING.elite.chaser.pounceCooldownMs;
+/** Elite chaser: chỉ lao khi player trong tầm này, tile. */
+export const ELITE_POUNCE_RANGE_TILES = ENEMY_TUNING.elite.chaser.pounceRangeTiles;
+/** Elite tank: số cú lao thêm sau cú đầu. */
+export const ELITE_EXTRA_TANK_CHARGES = ENEMY_TUNING.elite.tank.extraCharges;
 
 /** Giữ enemy trong phòng, không cho tâm chạm đúng mép tường. */
 export const ROOM_EDGE_MARGIN_TILES = ENEMY_TUNING.roomEdgeMarginTiles;
@@ -97,6 +143,18 @@ export function speedFor(
   // Elite chỉ đổi máu và sát thương, không đổi tốc độ — tham số giữ cho API đối xứng.
   void elite;
   return tuning.roles[role].speedTilesPerSecond;
+}
+
+/**
+ * Hệ số silhouette của vai trò (1 = frame gốc). Cả 3 monster chapter 1 đều là
+ * frame 16×16, nên đây là thứ duy nhất làm brute trông to hơn hẳn chaser/caster.
+ * Số nằm trong `config/tuning.json` (`enemies.roles.<role>.scale`).
+ */
+export function visualScaleFor(
+  role: EnemyRole,
+  tuning: EnemiesTuning = ENEMY_TUNING,
+): number {
+  return tuning.roles[role].scale;
 }
 
 /** Sát thương khi chạm người (chaser/tank) hoặc khi đạn của caster trúng. */
@@ -150,30 +208,78 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
 
   if (state.action.kind === 'dead' || state.health <= 0) return { kind: 'dead' };
 
+  // Đang choáng: giữ nguyên tới hết thời gian, không di chuyển, không ra đòn.
+  // Trả action mới (cùng `untilMs`) thay vì dùng lại object của state — hàm thuần.
+  if (state.action.kind === 'stagger' && nowMs < state.action.untilMs) {
+    return { kind: 'stagger', untilMs: state.action.untilMs };
+  }
+
   const role = tuning.roles[state.role];
+  const elite = tuning.elite;
 
   switch (state.role) {
     case 'chaser':
-      return decideChaser(state, player, level, role);
+      return decideChaser(state, player, nowMs, level, role, elite.chaser);
     case 'caster':
       return decideCaster(state, player, nowMs, level, role);
     case 'tank':
-      return decideTank(state, player, nowMs, level, role);
+      return decideTank(state, player, nowMs, level, role, elite.tank);
   }
 }
 
 /**
  * Chaser: lao thẳng vào player, chạm là gây sát thương (phần sát thương do
  * adapter xử lý qua `contactDamageFor`). Trong tầm chạm thì đứng yên.
+ *
+ * Bản **elite** có thêm cú lao (pounce) khi player trong tầm: telegraph rồi
+ * lao ngắn, cooldown riêng. Chaser thường không bao giờ telegraph, nên nhìn
+ * thấy vòng telegraph dưới chân một con dơi là biết nó là elite.
  */
 function decideChaser(
   state: EnemyState,
   player: Vec2,
+  nowMs: number,
   level: LevelData,
   tuning: EnemyRoleTuning,
+  elite: EnemiesTuning['elite']['chaser'],
 ): EnemyAction {
+  const current = state.action;
+  const canPounce = state.elite && elite.pounceTelegraphMs > 0;
+
+  if (current.kind === 'charge') {
+    if (nowMs < current.untilMs) {
+      return { ...current, direction: { x: current.direction.x, y: current.direction.y } };
+    }
+    return { kind: 'idle' };
+  }
+
+  if (current.kind === 'telegraph') {
+    if (
+      canPounce &&
+      !isTelegraphElapsed(current.sinceMs, nowMs, elite.pounceTelegraphMs)
+    ) {
+      return { kind: 'telegraph', sinceMs: current.sinceMs };
+    }
+    if (canPounce) {
+      return {
+        kind: 'charge',
+        direction: directionBetween(state.position, player),
+        untilMs: nowMs + elite.pounceDurationMs,
+        speedTilesPerSecond: elite.pounceSpeedTilesPerSecond,
+        followUps: 0,
+      };
+    }
+    return { kind: 'idle' };
+  }
+
   const gap = distance(state.position, player);
   if (gap <= tuning.preferredRangeMaxTiles) return { kind: 'idle' };
+
+  const cooldown = elite.pounceCooldownMs;
+  if (canPounce && gap <= elite.pounceRangeTiles && nowMs - state.actionStartedMs >= cooldown) {
+    return { kind: 'telegraph', sinceMs: nowMs };
+  }
+
   return { kind: 'walk', target: clampToRoom(level, player) };
 }
 
@@ -223,6 +329,7 @@ function decideTank(
   nowMs: number,
   level: LevelData,
   tuning: EnemyRoleTuning,
+  elite: EnemiesTuning['elite']['tank'],
 ): EnemyAction {
   const current = state.action;
 
@@ -232,6 +339,20 @@ function decideTank(
         kind: 'charge',
         direction: { x: current.direction.x, y: current.direction.y },
         untilMs: current.untilMs,
+        speedTilesPerSecond: current.speedTilesPerSecond,
+        followUps: current.followUps,
+      };
+    }
+
+    // Elite tank: cú lao kế tiếp chốt hướng **mới** theo player, không telegraph
+    // lại. Né cú đầu bằng cách bước ngang là chưa đủ.
+    if (current.followUps > 0) {
+      return {
+        kind: 'charge',
+        direction: directionBetween(state.position, player),
+        untilMs: nowMs + tuning.chargeDurationMs,
+        speedTilesPerSecond: tuning.chargeSpeedTilesPerSecond,
+        followUps: current.followUps - 1,
       };
     }
     return { kind: 'idle' };
@@ -245,6 +366,8 @@ function decideTank(
       kind: 'charge',
       direction: directionBetween(state.position, player),
       untilMs: nowMs + tuning.chargeDurationMs,
+      speedTilesPerSecond: tuning.chargeSpeedTilesPerSecond,
+      followUps: state.elite ? Math.max(0, elite.extraCharges) : 0,
     };
   }
 

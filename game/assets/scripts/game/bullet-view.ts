@@ -12,6 +12,7 @@
  */
 import {
   _decorator,
+  Color as CocosColor,
   Component,
   Node as CocosNode,
   Sprite as CocosSprite,
@@ -26,6 +27,7 @@ import type { TileRect } from './level-view';
 const { ccclass } = _decorator;
 
 /** `cc` là module any trong repo: type phải suy ra từ import value (xem `texture-cache.ts`). */
+type Color = InstanceType<typeof CocosColor>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = ReturnType<typeof sliceFrame>;
@@ -37,6 +39,10 @@ export const ENEMY_BULLET_SHEET = 'resources/art/fx/energy-ball/EnergyBall.png';
 
 const PLAYER_BULLET_RECT: TileRect = { x: 0, y: 0, width: 46, height: 54 };
 const ENEMY_BULLET_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
+
+/** Màu gốc (không đổi) và màu **cam ấm** cho đạn enemy — khác hẳn shuriken xanh của player. */
+const BULLET_NO_TINT = new CocosColor(255, 255, 255, 255);
+const ENEMY_BULLET_TINT = new CocosColor(255, 142, 78, 255);
 
 /**
  * Số node tối đa dựng sẵn. Pool chứa được 256 viên nhưng màn hình 32×18 tile hiếm
@@ -60,7 +66,7 @@ export class BulletView extends Component {
   private readonly nodes: Node[] = [];
   private limit = MAX_BULLET_NODES;
 
-  /** Load sẵn hai sheet đạn. Gọi một lần, sau khi đã có pool của player. */
+  /** Load sẵn hai sheet đạn và **dựng sẵn toàn bộ node** — không cấp phát trong lúc chơi. */
   async init(pool: BulletPool): Promise<void> {
     this.pool = pool;
     this.limit = Math.max(1, Math.min(pool.capacity, MAX_BULLET_NODES));
@@ -73,6 +79,11 @@ export class BulletView extends Component {
       player: sliceFrame(playerTexture, PLAYER_BULLET_RECT),
       enemy: sliceFrame(enemyTexture, ENEMY_BULLET_RECT),
     };
+
+    // Pool node dựng một lần ở đây: 8 enemy + 40 viên đạn không sinh node nào giữa run.
+    for (let index = 0; index < this.limit; index += 1) {
+      this.ensureNode(index);
+    }
   }
 
   /** Gọi mỗi frame **sau** `BulletPool.update()` để vị trí là vị trí cuối cùng. */
@@ -93,7 +104,7 @@ export class BulletView extends Component {
 
       const frame = frames[frameKeyFor(bullet.owner)];
       const rect = bullet.owner === 'player' ? PLAYER_BULLET_RECT : ENEMY_BULLET_RECT;
-      this.applyFrame(node, frame, rect);
+      this.applyFrame(node, frame, rect, bullet.owner);
       this.applyPosition(node, bullet.position);
       node.active = true;
     }
@@ -121,11 +132,20 @@ export class BulletView extends Component {
     return node;
   }
 
-  private applyFrame(node: Node, frame: SpriteFrame, rect: TileRect): void {
+  private applyFrame(
+    node: Node,
+    frame: SpriteFrame,
+    rect: TileRect,
+    owner: BulletOwner,
+  ): void {
     const sprite: Sprite | null = node.getComponent(CocosSprite);
     if (sprite === null) return;
     if (sprite.spriteFrame === frame) return;
     sprite.spriteFrame = frame;
+
+    // Đạn enemy tint cam ấm: khác shuriken xanh của player và khác thân enemy.
+    const tint: Color = owner === 'enemy' ? ENEMY_BULLET_TINT : BULLET_NO_TINT;
+    sprite.color = tint;
 
     const transform = node.getComponent(CocosUITransform);
     if (transform !== null) transform.setContentSize(rect.width, rect.height);

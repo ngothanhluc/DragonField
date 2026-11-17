@@ -36,6 +36,10 @@ export interface CombatConfig {
   readonly enemyKnockbackDistanceTiles: number;
   /** Thời gian đi hết quãng knockback enemy, ms. */
   readonly enemyKnockbackDurationMs: number;
+  /** Hitstop toàn cục khi đạn player trúng enemy, ms (ADR-008: 70). */
+  readonly enemyHitstopMs: number;
+  /** Thời gian enemy đứng yên sau khi trúng đạn, ms (ADR-008: 150). */
+  readonly enemyStaggerMs: number;
 }
 
 /** Số liệu combat cơ bản, đọc từ `config/tuning.json` (không chép lại số). */

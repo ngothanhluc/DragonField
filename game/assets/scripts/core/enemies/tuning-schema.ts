@@ -42,6 +42,54 @@ export interface CombatTuning {
   readonly enemyKnockbackDistanceTiles: number;
   /** Thời gian đi hết quãng knockback enemy, ms. */
   readonly enemyKnockbackDurationMs: number;
+  /**
+   * Hitstop khi đạn player trúng enemy, ms (ADR-008: 70). Toàn bộ mô phỏng
+   * đứng yên trong khoảng này — xem `core/combat/hitstop.ts`.
+   */
+  readonly enemyHitstopMs: number;
+  /** Thời gian enemy đứng yên sau khi trúng đạn, ms (ADR-008: 150). */
+  readonly enemyStaggerMs: number;
+}
+
+/**
+ * Đòn thêm của elite chaser: telegraph rồi lao một quãng ngắn.
+ *
+ * Chaser thường không có đòn nào ngoài chạm người, nên "1 đòn thêm" của bản
+ * elite chính là cú lao này.
+ */
+export interface EliteChaserTuning {
+  /** Thời lượng telegraph trước khi lao, ms. */
+  readonly pounceTelegraphMs: number;
+  /** Tốc độ lúc lao, tile/giây. */
+  readonly pounceSpeedTilesPerSecond: number;
+  /** Thời gian lao một đường thẳng, ms. */
+  readonly pounceDurationMs: number;
+  /** Cooldown giữa hai cú lao, ms. */
+  readonly pounceCooldownMs: number;
+  /** Chỉ lao khi player trong tầm này, tile. */
+  readonly pounceRangeTiles: number;
+}
+
+/** Đòn thêm của elite caster: một loạt đạn toả quạt thay vì một viên. */
+export interface EliteCasterTuning {
+  /** Số viên mỗi loạt; lẻ và >= 1 để có viên giữa. */
+  readonly volleyShots: number;
+  /** Góc lệch giữa hai viên kề, radian. */
+  readonly volleySpreadRadians: number;
+}
+
+/** Đòn thêm của elite tank: lao thêm `extraCharges` lần, mỗi lần chốt hướng mới. */
+export interface EliteTankTuning {
+  readonly extraCharges: number;
+}
+
+/** Toàn bộ số liệu riêng của bản elite (GDD §4 + M3). */
+export interface EliteTuning {
+  /** Scale node so với bản thường (GDD §4: 1.15). */
+  readonly scale: number;
+  readonly chaser: EliteChaserTuning;
+  readonly caster: EliteCasterTuning;
+  readonly tank: EliteTankTuning;
 }
 
 /**
@@ -76,6 +124,12 @@ export interface EnemyRoleTuning {
   readonly chargeSpeedTilesPerSecond: number;
   /** Thời gian lao một đường thẳng, ms; 0 = vai trò không lao. */
   readonly chargeDurationMs: number;
+  /**
+   * Hệ số silhouette: scale node so với frame gốc (1 texture px = 1/16 unit).
+   * Tất cả monster của pack đều là frame 16×16, nên brute chỉ "to" hơn được nhờ
+   * số này (M3: 1.75; elite nhân thêm `enemies.elite.scale`).
+   */
+  readonly scale: number;
 }
 
 export interface EnemiesTuning {
@@ -85,6 +139,8 @@ export interface EnemiesTuning {
   readonly eliteDamageMultiplier: number;
   /** Lề tường để tâm enemy/player không chạm mép phòng, tile. */
   readonly roomEdgeMarginTiles: number;
+  /** Số liệu riêng của bản elite: scale, đòn thêm theo vai trò. */
+  readonly elite: EliteTuning;
   readonly roles: Readonly<Record<EnemyRole, EnemyRoleTuning>>;
 }
 
@@ -112,6 +168,8 @@ const COMBAT_FIELDS = [
   'playerKnockbackDurationMs',
   'enemyKnockbackDistanceTiles',
   'enemyKnockbackDurationMs',
+  'enemyHitstopMs',
+  'enemyStaggerMs',
 ] as const;
 
 const ENEMY_GROUP_FIELDS = [
@@ -119,7 +177,20 @@ const ENEMY_GROUP_FIELDS = [
   'eliteHealthMultiplier',
   'eliteDamageMultiplier',
   'roomEdgeMarginTiles',
+  'elite',
 ] as const;
+
+const ELITE_CHASER_FIELDS = [
+  'pounceTelegraphMs',
+  'pounceSpeedTilesPerSecond',
+  'pounceDurationMs',
+  'pounceCooldownMs',
+  'pounceRangeTiles',
+] as const;
+
+const ELITE_CASTER_FIELDS = ['volleyShots', 'volleySpreadRadians'] as const;
+
+const ELITE_TANK_FIELDS = ['extraCharges'] as const;
 
 const ROLE_FIELDS = [
   'health',
@@ -131,6 +202,7 @@ const ROLE_FIELDS = [
   'contactDamage',
   'chargeSpeedTilesPerSecond',
   'chargeDurationMs',
+  'scale',
 ] as const;
 
 /** Gom toàn bộ lỗi rồi ném một `Error` duy nhất (cùng kiểu `level-data.ts`). */
@@ -242,6 +314,23 @@ function zeroCombat(): CombatTuning {
     playerKnockbackDurationMs: 0,
     enemyKnockbackDistanceTiles: 0,
     enemyKnockbackDurationMs: 0,
+    enemyHitstopMs: 0,
+    enemyStaggerMs: 0,
+  };
+}
+
+function zeroElite(): EliteTuning {
+  return {
+    scale: 1,
+    chaser: {
+      pounceTelegraphMs: 0,
+      pounceSpeedTilesPerSecond: 0,
+      pounceDurationMs: 0,
+      pounceCooldownMs: 0,
+      pounceRangeTiles: 0,
+    },
+    caster: { volleyShots: 1, volleySpreadRadians: 0 },
+    tank: { extraCharges: 0 },
   };
 }
 
@@ -256,6 +345,7 @@ function zeroRole(): EnemyRoleTuning {
     contactDamage: 0,
     chargeSpeedTilesPerSecond: 0,
     chargeDurationMs: 0,
+    scale: 1,
   };
 }
 
@@ -310,6 +400,75 @@ function parseCombat(
       readNumber(source, 'enemyKnockbackDistanceTiles', path, problems) ?? 0,
     enemyKnockbackDurationMs:
       readNumber(source, 'enemyKnockbackDurationMs', path, problems) ?? 0,
+    enemyHitstopMs: readNumber(source, 'enemyHitstopMs', path, problems) ?? 0,
+    enemyStaggerMs: readNumber(source, 'enemyStaggerMs', path, problems) ?? 0,
+  };
+}
+
+function parseElite(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): EliteTuning {
+  const elite = readObject(source, 'elite', 'enemies', problems, [
+    'scale',
+    'chaser',
+    'caster',
+    'tank',
+  ] as const);
+  if (elite === undefined) return zeroElite();
+
+  const path = 'enemies.elite';
+  const chaserSource =
+    readObject(elite, 'chaser', path, problems, ELITE_CHASER_FIELDS) ?? {};
+  const casterSource =
+    readObject(elite, 'caster', path, problems, ELITE_CASTER_FIELDS) ?? {};
+  const tankSource = readObject(elite, 'tank', path, problems, ELITE_TANK_FIELDS) ?? {};
+
+  const chaser: EliteChaserTuning = {
+    pounceTelegraphMs:
+      readNumber(chaserSource, 'pounceTelegraphMs', `${path}.chaser`, problems) ?? 0,
+    pounceSpeedTilesPerSecond:
+      readNumber(chaserSource, 'pounceSpeedTilesPerSecond', `${path}.chaser`, problems) ?? 0,
+    pounceDurationMs:
+      readNumber(chaserSource, 'pounceDurationMs', `${path}.chaser`, problems) ?? 0,
+    pounceCooldownMs:
+      readNumber(chaserSource, 'pounceCooldownMs', `${path}.chaser`, problems) ?? 0,
+    pounceRangeTiles:
+      readNumber(chaserSource, 'pounceRangeTiles', `${path}.chaser`, problems) ?? 0,
+  };
+  if (chaser.pounceRangeTiles < 0) {
+    problems.add(`${path}.chaser.pounceRangeTiles`, 'không được âm');
+  }
+  if (chaser.pounceTelegraphMs > 0 && chaser.pounceDurationMs <= 0) {
+    problems.add(
+      `${path}.chaser.pounceDurationMs`,
+      'phải > 0 khi có telegraph — cú lao cần thời gian bay',
+    );
+  }
+
+  const caster: EliteCasterTuning = {
+    volleyShots:
+      readNumber(casterSource, 'volleyShots', `${path}.caster`, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    volleySpreadRadians:
+      readNumber(casterSource, 'volleySpreadRadians', `${path}.caster`, problems) ?? 0,
+  };
+
+  const tank: EliteTankTuning = {
+    extraCharges:
+      readNumber(tankSource, 'extraCharges', `${path}.tank`, problems, {
+        integer: true,
+      }) ?? 0,
+  };
+
+  return {
+    scale:
+      readNumber(elite, 'scale', path, problems, { positive: true }) ?? 1,
+    chaser,
+    caster,
+    tank,
   };
 }
 
@@ -342,6 +501,7 @@ function parseRole(
     chargeSpeedTilesPerSecond:
       readNumber(own, 'chargeSpeedTilesPerSecond', path, problems) ?? 0,
     chargeDurationMs: readNumber(own, 'chargeDurationMs', path, problems) ?? 0,
+    scale: readNumber(own, 'scale', path, problems, { positive: true }) ?? 1,
   };
 
   if (tuning.preferredRangeMaxTiles < tuning.preferredRangeMinTiles) {
@@ -364,6 +524,7 @@ function parseEnemies(
       eliteHealthMultiplier: 1,
       eliteDamageMultiplier: 1,
       roomEdgeMarginTiles: 0,
+      elite: zeroElite(),
       roles: { chaser: zeroRole(), caster: zeroRole(), tank: zeroRole() },
     };
   }
@@ -385,6 +546,7 @@ function parseEnemies(
       }) ?? 1,
     roomEdgeMarginTiles:
       readNumber(source, 'roomEdgeMarginTiles', 'enemies', problems) ?? 0,
+    elite: parseElite(source, problems),
     roles,
   };
 }
