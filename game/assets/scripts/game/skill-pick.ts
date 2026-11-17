@@ -37,7 +37,8 @@ type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = ReturnType<typeof sliceSliced>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 
-const CARD_SHEET = 'resources/art/ui/theme-wood/nine_path_panel_2.png';
+// Cùng lý do với panel menu: `nine_path_panel_2` có ô vuông trong, 9-slice ra khung lệch.
+const CARD_SHEET = 'resources/art/ui/theme-wood/nine_path_panel_interior.png';
 const CARD_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
 const CARD_BORDERS = { left: 4, right: 4, top: 4, bottom: 4 } as const;
 const CARD_WIDTH = 140;
@@ -48,7 +49,7 @@ const CARD_Y = -12;
 const TITLE_COLOR = new CocosColor(255, 230, 120, 255);
 const TEXT_COLOR = new CocosColor(238, 238, 238, 255);
 const MUTED_COLOR = new CocosColor(170, 170, 170, 255);
-const CARD_TINT = new CocosColor(126, 100, 74, 255);
+const CARD_TINT = new CocosColor(150, 110, 90, 255);
 
 const HOTKEY_CODES = [KeyCode.KEY_1, KeyCode.KEY_2, KeyCode.KEY_3] as const;
 

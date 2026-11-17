@@ -30,6 +30,10 @@ export class WorldCamera {
   private readonly camera: Camera;
   private readonly designWidth: number;
   private readonly designHeight: number;
+  /** Tỉ lệ band world / band UI hiện tại (≤ 1); HUD nhân node theo số này. */
+  hudScale = 1;
+  /** Gọi mỗi lần band world đổi (resize, fullscreen). */
+  onViewportChange: ((hudScale: number) => void) | null = null;
 
   constructor(parent: Node, designWidth: number, designHeight: number) {
     this.designWidth = designWidth;
@@ -55,7 +59,8 @@ export class WorldCamera {
   }
 
   applyViewport(): void {
-    applyWorldLetterbox(this.camera, this.designWidth, this.designHeight);
+    this.hudScale = applyWorldLetterbox(this.camera, this.designWidth, this.designHeight);
+    this.onViewportChange?.(this.hudScale);
   }
 
   destroy(): void {

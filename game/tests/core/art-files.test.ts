@@ -11,6 +11,7 @@ import {
   type SpriteEntry,
 } from '../../assets/scripts/core/art/manifest';
 import { entryAnchorY } from '../../assets/scripts/core/art/runtime';
+import { BOSSES, BOSS_IDS } from '../../assets/scripts/core/boss/boss-defs';
 import { bottomPadding, readPng } from '../../scripts/lib/png';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -166,6 +167,35 @@ describe('bộ animation bắt buộc theo vai trò', () => {
     }
     for (const key of ['fx.shuriken', 'fx.energy-ball']) {
       expect(manifest.sprites[key]?.loop, key).toBe(true);
+    }
+  });
+});
+
+describe('kích thước sprite boss khai báo trong core', () => {
+  it('spriteExtentTiles phủ mọi pixel đặc của mọi frame boss (neo theo chân)', () => {
+    for (const id of BOSS_IDS) {
+      const declared = BOSSES[id].spriteExtentTiles;
+      const measured = { left: 0, right: 0, up: 0 };
+      for (const key of BOSSES[id].animations) {
+        const entry = manifest.sprites[key];
+        expect(entry, `${id}: thiếu ${key} trong manifest`).toBeDefined();
+        if (entry === undefined) continue;
+        const png = readPng(sheetPath(entry));
+        const feetRow = entry.frameHeight * (1 - entryAnchorY(entry));
+        for (let y = 0; y < png.height; y += 1) {
+          for (let x = 0; x < png.width; x += 1) {
+            if (png.data[(y * png.width + x) * 4 + 3] === 0) continue;
+            const localX = x % entry.frameWidth;
+            const localY = y % entry.frameHeight;
+            measured.left = Math.max(measured.left, (entry.frameWidth / 2 - localX) / 16);
+            measured.right = Math.max(measured.right, (localX + 1 - entry.frameWidth / 2) / 16);
+            measured.up = Math.max(measured.up, (feetRow - localY) / 16);
+          }
+        }
+      }
+      expect(declared.left, `${id}.left`).toBeGreaterThanOrEqual(measured.left);
+      expect(declared.right, `${id}.right`).toBeGreaterThanOrEqual(measured.right);
+      expect(declared.up, `${id}.up`).toBeGreaterThanOrEqual(measured.up);
     }
   });
 });

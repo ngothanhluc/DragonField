@@ -6,6 +6,7 @@
  * thêm hook M5 không làm file run-flow phình tiếp.
  */
 import type { DerivedStats } from '../core/skills/derived-stats';
+import { keyLog } from './keyboard-move';
 
 export type DebugStatus =
   | 'loading'
@@ -128,6 +129,8 @@ export type YokaiDebugApi = Omit<
   DebugProvider,
   'status' | 'chapter' | 'room' | 'roomTotal'
 > & {
+  /** 200 event bàn phím gần nhất (key/code/keyCode/isComposing) — chẩn đoán bộ gõ tiếng Việt. */
+  readonly keyLog: typeof keyLog;
   readonly status: DebugStatus;
   readonly chapter: number;
   readonly room: number;
@@ -166,6 +169,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
     placeholders: { value: provider.placeholders, enumerable: true },
     audio: { value: provider.audio, enumerable: true },
     anim: { value: provider.anim, enumerable: true },
+    keyLog: { value: keyLog, enumerable: true },
   });
 
   (window as unknown as { __yokai?: YokaiDebugApi }).__yokai = api;
@@ -173,7 +177,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
     '[YokaiField] debug=1: window.__yokai sẵn sàng ' +
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, ' +
-      'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim).',
+      'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, keyLog).',
   );
   return true;
 }

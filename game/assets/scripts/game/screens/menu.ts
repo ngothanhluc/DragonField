@@ -42,12 +42,14 @@ const BUTTON_NORMAL = 'resources/art/ui/theme-wood/button_normal.png';
 const BUTTON_HOVER = 'resources/art/ui/theme-wood/button_hover.png';
 const BUTTON_DISABLED = 'resources/art/ui/theme-wood/button_disabled.png';
 const BUTTON_RECT: TileRect = { x: 0, y: 0, width: 16, height: 8 };
-const PANEL_SHEET = 'resources/art/ui/theme-wood/nine_path_panel.png';
+// `nine_path_panel*.png` có sẵn một ô vuông lệch tâm bên trong: kéo 9-slice ra hai khung chồng lệch.
+// `nine_path_panel_interior.png` có tâm đồng màu nên kéo giãn sạch.
+const PANEL_SHEET = 'resources/art/ui/theme-wood/nine_path_panel_interior.png';
 const PANEL_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
 /** Border 9-slice: nút 16×8 giữ 4 px góc; panel 16×16 giữ 4 px viền. */
 const BUTTON_BORDERS = { left: 4, right: 4, top: 3, bottom: 3 } as const;
 const PANEL_BORDERS = { left: 4, right: 4, top: 4, bottom: 4 } as const;
-const PANEL_TINT = new CocosColor(92, 62, 42, 255);
+const PANEL_TINT = new CocosColor(150, 110, 90, 255);
 
 
 export const MENU_TITLE_COLOR = new CocosColor(255, 230, 120, 255);

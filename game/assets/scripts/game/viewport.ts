@@ -9,7 +9,7 @@
  */
 import { Rect, screen, Size } from 'cc';
 import type { Camera as CocosCamera } from 'cc';
-import { letterboxRect } from '../core/view/letterbox';
+import { pixelPerfectRect, worldToUiScale } from '../core/view/letterbox';
 
 type Camera = InstanceType<typeof CocosCamera>;
 
@@ -41,14 +41,19 @@ export function fillBrowserViewport(): void {
   screen.windowSize = new Size(width, height);
 }
 
-/** Camera world chỉ vẽ đúng band 16:9 mà `SHOW_ALL` dành cho design resolution. */
+/**
+ * Camera world vẽ phòng ở bội số nguyên của design (512×288 × 2/3/4…) để pixel art
+ * không bị nhoè/lệch texel (M7). Trả tỉ lệ world/UI để HUD thu theo, bám mép phòng.
+ */
 export function applyWorldLetterbox(
   camera: Camera | null,
   designWidth: number,
   designHeight: number,
-): void {
-  if (camera === null) return;
+): number {
   const canvas = screen.windowSize;
-  const band = letterboxRect(canvas.width, canvas.height, designWidth, designHeight);
-  camera.rect = new Rect(band.x, band.y, band.width, band.height);
+  if (camera !== null) {
+    const band = pixelPerfectRect(canvas.width, canvas.height, designWidth, designHeight);
+    camera.rect = new Rect(band.x, band.y, band.width, band.height);
+  }
+  return worldToUiScale(canvas.width, canvas.height, designWidth, designHeight);
 }

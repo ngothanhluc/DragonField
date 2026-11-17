@@ -109,10 +109,30 @@ export interface BossDef {
    * Hitbox nhỏ hơn sprite nên player không bị "trúng không khí".
    */
   readonly hitboxRadiusTiles: number;
+  /**
+   * Phần **pixel đặc** của sprite tính từ điểm neo chân, tile, lấy max qua mọi
+   * frame của mọi animation (đo từ PNG — `tests/core/art-files.test.ts` kiểm lại).
+   * Pattern dùng số này để boss không bao giờ đi tới chỗ sprite tràn ra ngoài
+   * phòng và bị camera cắt (Samurai charge sát tường bị cắt nửa người ở M6).
+   */
+  readonly spriteExtentTiles: SpriteExtent;
   readonly phaseThresholds: PhaseThresholds;
   /** Mọi key animation boss này có trong manifest. Adapter preload theo danh sách này. */
   readonly animations: readonly string[];
 }
+
+/** Phần sprite nằm bên trái / phải / phía trên điểm neo chân, tile. */
+export interface SpriteExtent {
+  readonly left: number;
+  readonly right: number;
+  readonly up: number;
+}
+
+/**
+ * Chân sprite boss nằm thấp hơn tâm hitbox chừng này (tile, trục y của room
+ * hướng xuống) để silhouette không che player. View đặt node theo đúng số này.
+ */
+export const BOSS_FEET_OFFSET_TILES = 0.75;
 
 function animationsOf(id: BossId): readonly string[] {
   const table = ANIMATION_TABLE[id];
@@ -138,6 +158,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     maxHealth: 60,
     hitboxRadiusTiles: 1.75,
     phaseThresholds: PHASE_THRESHOLDS,
+    spriteExtentTiles: { left: 2.375, right: 2.3125, up: 5.0625 },
     animations: animationsOf('tengu'),
   },
   squid: {
@@ -148,6 +169,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     maxHealth: 80,
     hitboxRadiusTiles: 2,
     phaseThresholds: PHASE_THRESHOLDS,
+    spriteExtentTiles: { left: 2.125, right: 2.125, up: 3.9375 },
     animations: animationsOf('squid'),
   },
   samurai: {
@@ -158,6 +180,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     maxHealth: 100,
     hitboxRadiusTiles: 2.25,
     phaseThresholds: PHASE_THRESHOLDS,
+    spriteExtentTiles: { left: 2.4375, right: 2.25, up: 3.6875 },
     animations: animationsOf('samurai'),
   },
 };

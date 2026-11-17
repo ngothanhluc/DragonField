@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   BOSSES,
+  BOSS_FEET_OFFSET_TILES,
   BOSS_IDS,
   animationFor,
   bossForSpriteName,
@@ -14,6 +15,7 @@ import {
 } from '../../assets/scripts/core/boss/boss-defs';
 import {
   BOSS_SCRIPTS,
+  bossRoomBounds,
   initialBossState,
   isBossDefeated,
   isDamagingStep,
@@ -627,5 +629,50 @@ describe('summon', () => {
     const summons = events.filter((event) => event.kind === 'summon');
     expect(summons).toHaveLength(1);
     expect(summons[0]).toEqual({ kind: 'summon', role: 'caster', count: 2 });
+  });
+});
+
+describe('boss không tràn sprite ra ngoài phòng', () => {
+  /** Player bám từng góc/mép để kéo boss (chase/line-up/charge) ra sát tường. */
+  const EDGE_PLAYERS: readonly Vec2[] = [
+    { x: 0.5, y: 0.5 },
+    { x: ROOM_COLS - 0.5, y: 0.5 },
+    { x: 0.5, y: ROOM_ROWS - 0.5 },
+    { x: ROOM_COLS - 0.5, y: ROOM_ROWS - 0.5 },
+    { x: 16, y: 0.5 },
+    { x: 0.5, y: 9 },
+  ];
+
+  it('mọi vị trí qua cả 3 phase giữ trọn sprite (theo spriteExtentTiles) trong 32×18', () => {
+    for (const id of BOSS_IDS) {
+      const extent = BOSSES[id].spriteExtentTiles;
+      for (const fraction of [1, 0.5, 0.2]) {
+        for (const [index, player] of EDGE_PLAYERS.entries()) {
+          const rng = new SeededRng(7 + index);
+          let state: BossState = {
+            ...initialBossState(id, { x: 1, y: 1 }),
+            health: BOSSES[id].maxHealth * fraction,
+            phase: phaseFor(id, fraction),
+          };
+          for (let nowMs = 40; nowMs <= 20_000; nowMs += 40) {
+            state = stepBoss({ state, nowMs, deltaMs: 40, player, rng }).state;
+            const { x, y } = state.position;
+            const feetY = y + BOSS_FEET_OFFSET_TILES;
+            const where = `${id} phase ${state.phase} player (${player.x},${player.y}) t=${nowMs}`;
+            expect(x - extent.left, where).toBeGreaterThanOrEqual(0);
+            expect(x + extent.right, where).toBeLessThanOrEqual(ROOM_COLS);
+            expect(feetY - extent.up, where).toBeGreaterThanOrEqual(0);
+            expect(feetY, where).toBeLessThanOrEqual(ROOM_ROWS);
+          }
+        }
+      }
+    }
+  });
+
+  it('spawn sát góc bị kéo vào vùng đứng hợp lệ', () => {
+    for (const id of BOSS_IDS) {
+      const bounds = bossRoomBounds(id);
+      expect(initialBossState(id, { x: 0, y: 0 }).position).toEqual({ x: bounds.minX, y: bounds.minY });
+    }
   });
 });

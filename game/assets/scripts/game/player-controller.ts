@@ -9,7 +9,7 @@
  * Không tự chạy trong `update()`: bootstrap gọi `step()` để thứ tự một frame là tất
  * định (player → enemy → đạn → va chạm), giống `core/sim/run-simulation.ts`.
  */
-import { _decorator, Color as CocosColor, Component, Input, KeyCode, Sprite as CocosSprite, input } from 'cc';
+import { _decorator, Color as CocosColor, Component, Sprite as CocosSprite } from 'cc';
 import type { AnimationManifest, Direction } from '../core/art/manifest';
 import { resolve } from '../core/art/manifest';
 import { directionFromVector, loopDurationMs } from '../core/art/runtime';
@@ -28,6 +28,7 @@ import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-int
 import { SeededRng } from '../core/rng';
 import { computeDerivedStats, type DerivedStats } from '../core/skills/derived-stats';
 import { SpriteAnimator } from './anim/sprite-animator';
+import { KeyboardMove } from './keyboard-move';
 import { playSfx } from './audio/sfx';
 import type { FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, tileToWorld } from './level-view';
@@ -44,15 +45,6 @@ const PLAYER_SHIELD_TINT = new CocosColor(150, 225, 255, 255);
 const PLAYER_HURT_TINT = new CocosColor(255, 150, 150, 255);
 /** Thời gian giữ tint trúng đòn / chặn đòn, ms. */
 const PLAYER_TINT_MS = 140;
-
-/**
- * Hình dạng tối thiểu của event bàn phím mà file này dùng. `cc` là module any trong repo
- * (xem `types/cc.d.ts`) nên `EventKeyboard` của engine không dùng được ở vị trí type;
- * khai báo đúng phần mình đọc (`keyCode`) là đủ và không che lỗi thật.
- */
-interface KeyEvent {
-  readonly keyCode: number;
-}
 
 /** Bán kính đạn player, tile — cùng quy ước với `run-simulation.ts`. */
 const BULLET_RADIUS_TILES = 0.15;
@@ -75,14 +67,6 @@ const HIT_ANIM_MS = 150;
 
 /** Hướng mặc định khi chưa có input nào. */
 const START_FACING: Direction = 'down';
-
-/** Trạng thái 4 phím, mutable — `MoveInput` của core là readonly nên giữ bản riêng. */
-interface KeyState {
-  up: boolean;
-  down: boolean;
-  left: boolean;
-  right: boolean;
-}
 
 export interface PlayerInitArgs {
   readonly manifest: AnimationManifest;
@@ -107,12 +91,7 @@ export class PlayerController extends Component {
   private sprite: Sprite | null = null;
   private tintUntilMs = 0;
   private tint: Color = PLAYER_NO_TINT;
-  private readonly keys: KeyState = {
-    up: false,
-    down: false,
-    left: false,
-    right: false,
-  };
+  private readonly keyboard = new KeyboardMove();
 
   /** Vị trí hiện tại hệ **tile** của `LevelData` (y hướng xuống), không phải world. */
   private tilePosition: Vec2 = { x: 0, y: 0 };
@@ -228,7 +207,7 @@ export class PlayerController extends Component {
 
     this.shield.update(nowMs);
 
-    const input2D = normalizeMoveInput(this.keys);
+    const input2D = normalizeMoveInput(this.keyboard.keys);
     // `normalizeMoveInput` dùng quy ước màn hình: up = +y. Dữ liệu tile có y hướng
     // **xuống**, nên lật dấu y đúng một lần, ở đây.
     const moveIntent: Vec2 = { x: input2D.x, y: -input2D.y };
@@ -315,13 +294,11 @@ export class PlayerController extends Component {
   }
 
   protected onEnable(): void {
-    input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
-    input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
+    this.keyboard.attach();
   }
 
   protected onDisable(): void {
-    input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
-    input.off(Input.EventType.KEY_UP, this.onKeyUp, this);
+    this.keyboard.detach();
   }
 
   private fireIfReady(nowMs: number, deltaMs: number, targets: readonly Targetable[]): void {
@@ -396,37 +373,6 @@ export class PlayerController extends Component {
   private syncNodePosition(): void {
     const world = tileToWorld(this.tilePosition);
     this.node.setPosition(world.x, world.y - ACTOR_FEET_OFFSET_TILES, 0);
-  }
-
-  private onKeyDown(event: KeyEvent): void {
-    this.setKey(event.keyCode, true);
-  }
-
-  private onKeyUp(event: KeyEvent): void {
-    this.setKey(event.keyCode, false);
-  }
-
-  private setKey(keyCode: number, pressed: boolean): void {
-    switch (keyCode) {
-      case KeyCode.KEY_W:
-      case KeyCode.ARROW_UP:
-        this.keys.up = pressed;
-        break;
-      case KeyCode.KEY_S:
-      case KeyCode.ARROW_DOWN:
-        this.keys.down = pressed;
-        break;
-      case KeyCode.KEY_A:
-      case KeyCode.ARROW_LEFT:
-        this.keys.left = pressed;
-        break;
-      case KeyCode.KEY_D:
-      case KeyCode.ARROW_RIGHT:
-        this.keys.right = pressed;
-        break;
-      default:
-        break;
-    }
   }
 }
 

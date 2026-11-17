@@ -6,6 +6,12 @@ Death ends the run; gold is kept for permanent meta upgrades.
 
 Built with **Cocos Creator 3.8.8** (web-desktop), TypeScript and Bun.
 
+**Play:** https://yokai.lukeinc.tech · **Story:** https://lukeinc.tech/projects/dragon-field
+
+A remake of *Dragon Field*, our 2023 Game Development coursework at the University of Science,
+VNU-HCM (Nguyen Minh Tri & Ngo Thanh Luc, instructor MSc. Nguyen Le Hoang Dung), which was
+hand-coded in Unity. The Unity project lives at tag `unity-final`.
+
 - 3 chapters: grassland/forest → river/waterfall → abandoned village
 - 9 rooms per chapter (8 rooms + boss), 3-phase bosses: **Tengu → Squid → Samurai**
 - 20 stacking skills, meta shop with 3 permanent upgrade tracks

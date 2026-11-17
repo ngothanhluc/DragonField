@@ -108,13 +108,15 @@ Nguồn thiết kế: `docs/gdd.md`. Quyết định kỹ thuật: `docs/tech-de
 
 ## M7 — Ship
 
-**Việc.** Build web, host itch.io (chính) + GitHub Pages (test), pixel-perfect integer scaling (512×288 × 2/3/4), kiểm performance, trang giới thiệu.
+**Việc.** Build web, host **Cloudflare** (Worker chỉ file tĩnh `yokai-field`, custom domain `yokai.lukeinc.tech`; bỏ itch.io và GitHub Pages), pixel-perfect integer scaling (512×288 × 2/3/4), kiểm performance, trang giới thiệu = trang dự án trên portfolio `lukeinc.tech/projects/dragon-field` (kể bản Unity 2023 → bản này). Sửa trước khi ship: Samurai bị cắt sprite ở mép arena, WASD kẹt khi bật bộ gõ tiếng Việt.
 
 **Nghiệm thu.**
 - Link mở được trên Chrome/Safari/Firefox.
 - 60 fps ở 1920×1080 trên laptop tầm trung.
 - Build < 15 MB (audio stream riêng nếu cần).
 - Không lỗi console ở lần chơi đầu.
+
+**Trạng thái: 🚧 Đang làm (2026-11-18).** 598 test xanh (mới: `move-keys`, `deploy-html`, bound boss trong `boss.test`, extent sprite trong `art-files`, `pixelPerfectRect`/`worldToUiScale` trong `letterbox`). World vẽ ở bội số nguyên (1920×1080 → 1536×864 ×3, lề pixel nguyên), HUD thu theo `hudScale` để bám mép phòng, menu vẫn `SHOW_ALL`. Boss đứng trong `bossRoomBounds` theo extent sprite đo từ PNG — Samurai charge sát tường không còn bị cắt (đã xem ở 1920×1080). WASD đọc `event.code` trên `document` — event giả lập `key: 'đ'`, `keyCode: 229` vẫn đi đúng; **chờ thử bằng Telex thật** (`?debug=1` → `__yokai.keyLog()`). Panel/thẻ skill đổi sang `nine_path_panel_interior` (hết khung chồng lệch từ M6). `bun run deploy:prepare`: 431 file, 6.66 MB, file lớn nhất 2.42 MB. Local 1920×1080: `stress()` 8 enemy + 44 đạn **60.0 fps** (6 mẫu × 120 frame). Còn lại: deploy thật, kiểm Chrome trên domain, Safari/Firefox (người kiểm), Telex thật.
 
 ---
 

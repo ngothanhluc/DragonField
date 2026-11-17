@@ -319,6 +319,7 @@ export class Bootstrap extends Component {
     this.manifest = await this.loadManifest();
     this.waterLayout = await this.loadWaterLayout();
     this.camera = new WorldCamera(this.node, DESIGN_WIDTH, DESIGN_HEIGHT);
+    this.camera.onViewportChange = (scale) => this.hud?.node.setScale(scale, scale, 1);
     this.createWorldLayers();
     await this.screens.showTitle();
   }
@@ -653,6 +654,9 @@ export class Bootstrap extends Component {
 
     const hud: Hud = node.addComponent(Hud);
     await hud.init(this.player?.maxHearts ?? DEFAULT_COMBAT.playerMaxHearts, run.roomLabel);
+    // World vẽ ở bội số nguyên nên có thể nhỏ hơn band UI; thu HUD để bám mép phòng.
+    const hudScale = this.camera?.hudScale ?? 1;
+    node.setScale(hudScale, hudScale, 1);
     this.hud = hud;
   }
 

@@ -164,8 +164,8 @@ export const ACTOR_SCALE = 1 / TILE_SIZE_PX;
  * frame khiến chân nằm dưới tâm ~0.5 tile).
  */
 export const ACTOR_FEET_OFFSET_TILES = 0.5;
-/** Boss to hơn nên chân hơi thấp hơn tâm để silhouette không che player. */
-export const BOSS_FEET_OFFSET_TILES = 0.75;
+/** Boss to hơn nên chân hơi thấp hơn tâm để silhouette không che player (core giữ số này). */
+export { BOSS_FEET_OFFSET_TILES } from '../core/boss/boss-defs';
 
 /**
  * Cắt một ô pixel thành `SpriteFrame` độc lập trỏ vào `texture`.

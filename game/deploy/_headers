@@ -1,0 +1,9 @@
+# Cocos đặt hash vào tên file engine → cache vĩnh viễn được.
+/cocos-js/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Mọi thứ khác (index.html, settings, asset bundle theo uuid) giữ tên giữa các build:
+# trình duyệt luôn hỏi lại (ETag → 304), nên deploy mới có hiệu lực ngay.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

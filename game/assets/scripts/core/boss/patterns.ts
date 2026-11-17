@@ -36,6 +36,7 @@ import { distance, type Vec2 } from '../math/vec2';
 import type { SeededRng } from '../rng';
 import {
   BOSSES,
+  BOSS_FEET_OFFSET_TILES,
   animationFor,
   healthFraction,
   oppositeFacing,
@@ -104,7 +105,8 @@ export interface StepBossArgs {
 export function initialBossState(id: BossId, position: Vec2): BossState {
   return {
     id,
-    position: { x: position.x, y: position.y },
+    // Spawn trong `.tmx` có thể sát tường; kéo vào để sprite không bị cắt ngay frame đầu.
+    position: clampToRoom(position, bossRoomBounds(id)),
     health: BOSSES[id].maxHealth,
     phase: 1,
     step: 0,
@@ -142,10 +144,28 @@ const TWO_PI = Math.PI * 2;
 const HALF_PI = Math.PI / 2;
 const DEG = Math.PI / 180;
 
-const MIN_X = BOSS_EDGE_MARGIN_TILES;
-const MAX_X = ROOM_COLS - BOSS_EDGE_MARGIN_TILES;
-const MIN_Y = BOSS_EDGE_MARGIN_TILES;
-const MAX_Y = ROOM_ROWS - BOSS_EDGE_MARGIN_TILES;
+/** Vùng tâm hitbox boss được phép đứng, toạ độ room (tile, y hướng xuống). */
+export interface RoomBounds {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minY: number;
+  readonly maxY: number;
+}
+
+/**
+ * Vùng đứng của một boss: chừa ít nhất `BOSS_EDGE_MARGIN_TILES`, và đủ rộng để
+ * **cả sprite** (`spriteExtentTiles`, tính từ chân) nằm trong phòng. Chỉ chừa
+ * theo hitbox thì boss 96 px charge sát tường bị cắt mất nửa người.
+ */
+export function bossRoomBounds(id: BossId): RoomBounds {
+  const extent = BOSSES[id].spriteExtentTiles;
+  return {
+    minX: Math.max(BOSS_EDGE_MARGIN_TILES, extent.left),
+    maxX: ROOM_COLS - Math.max(BOSS_EDGE_MARGIN_TILES, extent.right),
+    minY: Math.max(BOSS_EDGE_MARGIN_TILES, extent.up - BOSS_FEET_OFFSET_TILES),
+    maxY: ROOM_ROWS - Math.max(BOSS_EDGE_MARGIN_TILES, BOSS_FEET_OFFSET_TILES),
+  };
+}
 
 /** Cách boss di chuyển trong một bước. */
 export type BossMotion =
@@ -644,7 +664,7 @@ function enterStep(context: StepContext, step: BossStep): void {
 
   // Dịch chuyển là bước duy nhất cần RNG, và chỉ rút **một lần** lúc vào bước.
   if (plan !== null && plan.motion.kind === 'teleport') {
-    const target = pickTeleportTarget(context.rng, state.position, player);
+    const target = pickTeleportTarget(context.rng, state.position, player, bossRoomBounds(state.id));
     state.position = { x: target.x, y: target.y };
     plan = { ...plan, target };
   }
@@ -708,6 +728,7 @@ function enterStep(context: StepContext, step: BossStep): void {
  * đích tạm là vị trí hiện tại; `enterStep` mới thay bằng điểm RNG chọn.
  */
 function planMotion(state: BossState, step: BossStep, player: Vec2): MotionPlan | null {
+  const bounds = bossRoomBounds(state.id);
   const move = step.actions.find(
     (action): action is Extract<BossAction, { kind: 'move' }> => action.kind === 'move',
   );
@@ -722,7 +743,7 @@ function planMotion(state: BossState, step: BossStep, player: Vec2): MotionPlan 
       state.chargeDirection = null;
       return {
         motion,
-        target: clampToRoom(player),
+        target: clampToRoom(player, bounds),
         speedTilesPerSecond: motion.speedTilesPerSecond,
       };
 
@@ -749,7 +770,7 @@ function planMotion(state: BossState, step: BossStep, player: Vec2): MotionPlan 
         motion,
         target: {
           x: state.position.x,
-          y: clamp(player.y, MIN_Y, MAX_Y),
+          y: clamp(player.y, bounds.minY, bounds.maxY),
         },
         speedTilesPerSecond: motion.speedTilesPerSecond,
       };
@@ -779,6 +800,7 @@ function advanceMotion(
   if (move === undefined) return;
 
   const { state, player, events } = context;
+  const { minX, maxX, minY, maxY } = bossRoomBounds(state.id);
   const dt = (toMs - fromMs) / 1000;
   const motion = move.motion;
 
@@ -788,28 +810,32 @@ function advanceMotion(
       break;
 
     case 'chase': {
-      const target = clampToRoom(player);
+      const bounds = { minX, maxX, minY, maxY };
+      const target = clampToRoom(player, bounds);
       const dir = directionBetween(state.position, target);
       const travel = Math.min(motion.speedTilesPerSecond * dt, distance(state.position, target));
-      state.position = clampToRoom({
-        x: state.position.x + dir.x * travel,
-        y: state.position.y + dir.y * travel,
-      });
+      state.position = clampToRoom(
+        {
+          x: state.position.x + dir.x * travel,
+          y: state.position.y + dir.y * travel,
+        },
+        bounds,
+      );
       break;
     }
 
     case 'swim': {
       const sign = state.facing === 'right' ? 1 : -1;
       const nextX = state.position.x + sign * motion.speedTilesPerSecond * dt;
-      state.position = { x: clamp(nextX, MIN_X, MAX_X), y: state.position.y };
+      state.position = { x: clamp(nextX, minX, maxX), y: state.position.y };
 
-      const hitEdge = nextX <= MIN_X || nextX >= MAX_X;
+      const hitEdge = nextX <= minX || nextX >= maxX;
       if (hitEdge) {
         state.facing = oppositeFacing(state.facing);
         // Đổi hướng giữa bước: báo adapter đích mới, nếu không nó đi tiếp về tường.
         events.push({
           kind: 'move',
-          to: { x: state.facing === 'right' ? MAX_X : MIN_X, y: state.position.y },
+          to: { x: state.facing === 'right' ? maxX : minX, y: state.position.y },
           speedTilesPerSecond: motion.speedTilesPerSecond,
         });
       }
@@ -819,17 +845,17 @@ function advanceMotion(
     case 'charge': {
       const direction = state.chargeDirection ?? directionForFacing(state.facing);
       const nextX = state.position.x + direction.x * motion.speedTilesPerSecond * dt;
-      state.position = { x: clamp(nextX, MIN_X, MAX_X), y: state.position.y };
+      state.position = { x: clamp(nextX, minX, maxX), y: state.position.y };
       break;
     }
 
     case 'line-up': {
-      const targetY = clamp(player.y, MIN_Y, MAX_Y);
+      const targetY = clamp(player.y, minY, maxY);
       const dy = targetY - state.position.y;
       const travel = motion.speedTilesPerSecond * dt;
       const nextY =
         Math.abs(dy) <= travel ? targetY : state.position.y + Math.sign(dy) * travel;
-      state.position = { x: state.position.x, y: clamp(nextY, MIN_Y, MAX_Y) };
+      state.position = { x: state.position.x, y: clamp(nextY, minY, maxY) };
       break;
     }
   }
@@ -1012,8 +1038,11 @@ function clamp(value: number, min: number, max: number): number {
   return value;
 }
 
-function clampToRoom(point: Vec2): Vec2 {
-  return { x: clamp(point.x, MIN_X, MAX_X), y: clamp(point.y, MIN_Y, MAX_Y) };
+function clampToRoom(point: Vec2, bounds: RoomBounds): Vec2 {
+  return {
+    x: clamp(point.x, bounds.minX, bounds.maxX),
+    y: clamp(point.y, bounds.minY, bounds.maxY),
+  };
 }
 
 /** Hướng bay tương ứng `facing`; Samurai chỉ charge ngang (GDD §5). */
@@ -1030,8 +1059,9 @@ function directionForFacing(facing: Facing): Vec2 {
 function travelTarget(state: BossState, speedTilesPerSecond: number, durationMs: number): Vec2 {
   const sign = state.facing === 'right' ? 1 : -1;
   const travel = (speedTilesPerSecond * durationMs) / 1000;
+  const bounds = bossRoomBounds(state.id);
   return {
-    x: clamp(state.position.x + sign * travel, MIN_X, MAX_X),
+    x: clamp(state.position.x + sign * travel, bounds.minX, bounds.maxX),
     y: state.position.y,
   };
 }
@@ -1064,14 +1094,20 @@ function directionBetween(from: Vec2, to: Vec2): Vec2 {
  * phụ thuộc việc lần thử nào thành công — nếu không, determinism vẫn đúng
  * nhưng nhịp RNG sẽ nhảy theo vị trí player.
  */
-function pickTeleportTarget(rng: SeededRng, from: Vec2, player: Vec2): Vec2 {
-  let best = clampToRoom({ x: MAX_X, y: from.y });
+function pickTeleportTarget(
+  rng: SeededRng,
+  from: Vec2,
+  player: Vec2,
+  bounds: RoomBounds,
+): Vec2 {
+  const { minX, maxX, minY, maxY } = bounds;
+  let best = clampToRoom({ x: maxX, y: from.y }, bounds);
   let bestGap = -1;
 
   for (let attempt = 0; attempt < TELEPORT_ATTEMPTS; attempt += 1) {
     const candidate: Vec2 = {
-      x: MIN_X + rng.next() * (MAX_X - MIN_X),
-      y: MIN_Y + rng.next() * (MAX_Y - MIN_Y),
+      x: minX + rng.next() * (maxX - minX),
+      y: minY + rng.next() * (maxY - minY),
     };
     const gap = distance(candidate, player);
     if (gap >= TELEPORT_MIN_DISTANCE_FROM_PLAYER_TILES) return candidate;

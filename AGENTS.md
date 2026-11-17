@@ -23,8 +23,9 @@ Roguelite né đạn top-down, pixel 16px, chạy trên web. Người chơi **t�
 
 ## Trạng thái hiện tại
 
-Project Cocos **đã được tạo** tại `game/` (Cocos Creator 3.8.8, template Empty 2D, `package.json name: ninja-adventure`).
-`game/assets/` hiện còn rỗng — scaffold M0 chưa làm.
+M0–M6 xong, M7 (ship) đang làm — xem `docs/milestones.md`. Game chạy ở **https://yokai.lukeinc.tech**
+(Cloudflare Worker `yokai-field`, chỉ file tĩnh). Trang giới thiệu nằm ở portfolio:
+https://lukeinc.tech/projects/dragon-field (repo riêng `luke-tech`).
 
 Mọi lệnh và đường dẫn dưới đây tính từ repo root, trừ khi ghi rõ.
 
@@ -45,6 +46,15 @@ Build web (cần editor đã cài, không chạy trong CI):
 ```bash
 /Applications/Cocos/Creator/3.8.8/CocosCreator.app/Contents/MacOS/CocosCreator \
   --project game --build "platform=web-desktop;debug=false"
+# exit code 36 = build thành công (quy ước của CLI Cocos), không phải lỗi
+```
+
+Deploy (thủ công từ máy, CI không build được Cocos):
+
+```bash
+cd game
+bun run deploy:prepare   # build/web-desktop → deploy/ + sửa index.html, icon, OG, _headers; chặn nếu > 15 MB
+bun run deploy           # check + deploy:prepare + wrangler deploy (cần `bunx wrangler login` một lần)
 ```
 
 ## Cấu trúc
@@ -103,7 +113,10 @@ art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
 | `.tmx` tham chiếu `.tsx` bằng tên file trần, cùng thư mục | importer lưu đúng chuỗi `source` làm key và engine tra `tsxContentMap[source]` **không fallback** (ảnh thì có fallback theo basename). Đặt `field.tsx` cạnh `room-*.tmx`, `source="field.tsx"`; ảnh trong `.tsx` cứ dùng đường dẫn tương đối |
 | `TiledMap` vẽ tile bằng **pixel**, không phải unit | node map scale `1/16` (`ACTOR_SCALE`) và đặt ở tâm phòng `(16,9)`, anchor `(0.5,0.5)`; va chạm/vật cản lấy từ object layer (`.tmx` → `LevelData.obstacles`), **không** suy ra từ tile |
 | Stub `cc` là `any` nên `this.foo()` trên class extends `Component` không bị tsc kiểm tra | method không tồn tại chỉ nổ lúc runtime — chạy build web thử sau khi sửa `game/` |
-| Bộ gõ tiếng Việt (Telex/VNI) bật thì WASD bị kẹt lúc đầu, phải bấm đủ 4 phím mới đi bình thường; tắt bộ gõ (ABC) là hết. CDP/puppeteer không tái hiện được | **chưa sửa** — cần log `keydown/keyup` (code, keyCode, isComposing) lúc bật bộ gõ trước khi sửa `player-controller.ts` |
+| Bộ gõ tiếng Việt (Telex/VNI) đang soạn chữ gửi `keydown` với `keyCode = 229`, `key = 'Process'`/`'ư'`/`'đ'`; `input` của Cocos chỉ chuyển `keyCode` → WASD kẹt. CDP/puppeteer không qua bộ gõ nên không tái hiện | Phím di chuyển đọc `event.code` (phím vật lý) trên `document` capture (`game/keyboard-move.ts` + `core/movement/move-keys.ts`), nhả hết phím khi `blur`. `?debug=1` có `__yokai.keyLog()` để xem event thật |
+| `nine_path_panel*.png` (theme-wood) có sẵn một ô vuông lệch tâm bên trong → kéo 9-slice ra hai khung chồng lệch | panel/thẻ dùng `nine_path_panel_interior.png` (tâm đồng màu) |
+| Camera world ở bội số nguyên (M7) có thể nhỏ hơn band UI `SHOW_ALL` → HUD dựng theo mép design sẽ trôi ra vùng bar | `WorldCamera.hudScale` (`worldToUiScale`) — node HUD nhân theo số này để bám mép phòng |
+| Boss lớn hơn hitbox nhiều (Samurai 96 px); chừa tường theo hitbox thì charge sát tường bị camera cắt nửa người | `BOSSES[id].spriteExtentTiles` (đo từ PNG, `art-files.test` kiểm) → `bossRoomBounds` |
 | Scale sprite | **1 texture px = 1/16 unit** (`ACTOR_SCALE` trong `level-view.ts`). Không chuẩn hoá theo bề rộng frame — làm vậy player 32 px sẽ nhỏ bằng nửa con quái 16 px |
 | `Sprite.sizeMode = CUSTOM` lấy kích thước từ `UITransform.contentSize` (**mặc định 100×100**), không lấy từ frame | mọi sprite dựng bằng code phải gọi `transform.setContentSize(frame.width, frame.height)`; thiếu dòng đó thì hình to gấp ~3 lần dù rect/scale đúng (vòng telegraph M3 bị đúng lỗi này) |
 | Build `web-desktop` ép `exactFitScreen = false` (plugin build ghi đè trong settings) → canvas đứng yên ở kích thước lúc build, `window.resize` **không** tự đổi canvas; chỉ `screen.windowSize` mới đổi được (chế độ SubFrame) | Từ M5 `game/viewport.ts` (`fillBrowserViewport`) gán `screen.windowSize` lúc boot + mỗi `window.resize`, nên canvas bám viewport và UI 16:9/16:10/4:3 không bị cắt. Test phải kiểm `canvas.getBoundingClientRect()` = `innerWidth×innerHeight`, không chỉ `page.setViewport` |

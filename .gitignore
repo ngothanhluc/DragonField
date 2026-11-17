@@ -31,3 +31,6 @@ art-source/
 
 # accidental duplicate Cocos project (nested repo, no commits)
 NewProject/
+.shots/
+# bản deploy commit sẵn cho Cloudflare: native/ ở đây là texture/audio, không phải build native
+!game/deploy/**/native/

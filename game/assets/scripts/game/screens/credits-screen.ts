@@ -23,9 +23,20 @@ export function buildCreditsScreen(options: CreditsScreenOptions): Promise<MenuS
       'CC0 1.0 Universal — attribution not required',
       'pixel-boy.itch.io  ·  instagram.com/challenger.aaa',
       'Engine: Cocos Creator 3.8.8',
+      'Remake of Dragon Field (2023 HCMUS coursework)',
     ],
-    items: [{ label: 'Back', activate: options.onBack }],
+    items: [
+      { label: 'lukeinc.tech', activate: openPortfolio },
+      { label: 'Back', activate: options.onBack },
+    ],
     onBack: options.onBack,
     buttonHeight: 34,
   });
+}
+
+/** Trang dự án trên portfolio — kể bản Unity 2023 và bản này. Mở tab mới, không rời game. */
+export const PORTFOLIO_URL = 'https://lukeinc.tech/projects/dragon-field';
+
+function openPortfolio(): void {
+  window.open(PORTFOLIO_URL, '_blank', 'noopener');
 }

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+
+    <title>Yokai Field — top-down roguelite</title>
+    <meta name="description" content="Dodge-first pixel roguelite in the browser: auto-fire, clear 9 rooms, pick skills, beat 3 bosses. Built with Cocos Creator and the Ninja Adventure pack."/>
+    <meta name="theme-color" content="#0e0c14"/>
+    <link rel="canonical" href="https://yokai.lukeinc.tech/"/>
+    <meta property="og:type" content="website"/>
+    <meta property="og:title" content="Yokai Field — top-down roguelite"/>
+    <meta property="og:description" content="Dodge-first pixel roguelite in the browser: auto-fire, clear 9 rooms, pick skills, beat 3 bosses. Built with Cocos Creator and the Ninja Adventure pack."/>
+    <meta property="og:url" content="https://yokai.lukeinc.tech/"/>
+    <meta property="og:image" content="https://yokai.lukeinc.tech/og.png"/>
+    <meta name="twitter:card" content="summary_large_image"/>
+    <style>html,body{background:#0e0c14;margin:0;overflow:hidden}#GameDiv{position:fixed;inset:0;width:100vw!important;height:100vh!important;border:0;border-radius:0;box-shadow:none;margin:0}.header,.footer{display:none}</style>
+
+    <meta name="viewport" content="width=device-width,user-scalable=no,initial-scale=1,minimum-scale=1,maximum-scale=1,minimal-ui=true"/>
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+    <meta name="mobile-web-app-capable" content="yes"/>
+    <meta name="full-screen" content="yes"/>
+    <meta name="screen-orientation" content="landscape"/>
+    <meta name="x5-fullscreen" content="true"/>
+    <meta name="360-fullscreen" content="true"/>
+
+    <meta name="renderer" content="webkit"/>
+    <meta name="force-rendering" content="webkit"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+
+    <link rel="stylesheet" type="text/css" href="./style.css"/>
+    <link rel="icon" type="image/png" href="favicon.png"/>
+    <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+  </head>
+  <body>
+
+    <div id="GameDiv" cc_exact_fit_screen="false" style="width: 1280px; height: 960px;">
+      <div id="Cocos3dGameContainer">
+        <canvas id="GameCanvas" width="1280" height="960" tabindex="99"></canvas>
+      </div>
+    </div>
+    <!-- Polyfills bundle. -->
+
+<script src="src/polyfills.bundle.js" charset="utf-8"> </script>    
+
+
+<!-- SystemJS support. -->
+<script src="src/system.bundle.js" charset="utf-8"> </script>
+
+<!-- Import map -->
+<script src="src/import-map.json" type="systemjs-importmap" charset="utf-8"> </script>
+
+<script>
+    System.import('./index.js').catch(function(err) { console.error(err); })
+</script>
+  </body>
+</html>

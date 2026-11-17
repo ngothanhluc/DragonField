@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { letterboxRect } from '../../assets/scripts/core/view/letterbox';
+import { letterboxRect, pixelPerfectRect, worldToUiScale } from '../../assets/scripts/core/view/letterbox';
 
 const DESIGN_WIDTH = 512;
 const DESIGN_HEIGHT = 288;
@@ -80,5 +80,48 @@ describe('letterboxRect', () => {
       height: 1,
     });
     expect(letterboxRect(1280, 720, 0, DESIGN_HEIGHT)).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+  });
+});
+
+describe('pixelPerfectRect', () => {
+  function px(rect: { x: number; y: number; width: number; height: number }, w: number, h: number) {
+    return { x: rect.x * w, y: rect.y * h, width: rect.width * w, height: rect.height * h };
+  }
+
+  it('1920×1080 → ×3 = 1536×864, canh giữa đúng pixel nguyên', () => {
+    const rect = px(pixelPerfectRect(1920, 1080, DESIGN_WIDTH, DESIGN_HEIGHT), 1920, 1080);
+    expect(rect.width).toBeCloseTo(1536, 6);
+    expect(rect.height).toBeCloseTo(864, 6);
+    expect(rect.x).toBeCloseTo(192, 6);
+    expect(rect.y).toBeCloseTo(108, 6);
+  });
+
+  it('1280×720 → ×2, 2048×1152 → ×4, 1024×768 (4:3) → ×2', () => {
+    expect(px(pixelPerfectRect(1280, 720, DESIGN_WIDTH, DESIGN_HEIGHT), 1280, 720).width).toBeCloseTo(1024, 6);
+    expect(px(pixelPerfectRect(2048, 1152, DESIGN_WIDTH, DESIGN_HEIGHT), 2048, 1152).width).toBeCloseTo(2048, 6);
+    expect(px(pixelPerfectRect(1024, 768, DESIGN_WIDTH, DESIGN_HEIGHT), 1024, 768).height).toBeCloseTo(576, 6);
+  });
+
+  it('kích thước lẻ: lề làm tròn xuống pixel nguyên', () => {
+    const rect = px(pixelPerfectRect(1601, 901, DESIGN_WIDTH, DESIGN_HEIGHT), 1601, 901);
+    expect(Number.isInteger(Math.round(rect.x * 1e6) / 1e6)).toBe(true);
+    expect(rect.x).toBeCloseTo(32, 6); // (1601 − 1536) / 2 = 32.5 → 32
+    expect(rect.y).toBeCloseTo(18, 6); // (901 − 864) / 2 = 18.5 → 18
+  });
+
+  it('canvas nhỏ hơn design thì lùi về letterbox thường', () => {
+    expect(pixelPerfectRect(400, 300, DESIGN_WIDTH, DESIGN_HEIGHT)).toEqual(
+      letterboxRect(400, 300, DESIGN_WIDTH, DESIGN_HEIGHT),
+    );
+  });
+});
+
+describe('worldToUiScale', () => {
+  it('1920×1080: world ×3 trong band UI ×3.75 → 0.8', () => {
+    expect(worldToUiScale(1920, 1080, DESIGN_WIDTH, DESIGN_HEIGHT)).toBeCloseTo(0.8, 10);
+  });
+
+  it('canvas đúng bội số nguyên → 1', () => {
+    expect(worldToUiScale(1536, 864, DESIGN_WIDTH, DESIGN_HEIGHT)).toBeCloseTo(1, 10);
   });
 });
