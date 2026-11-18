@@ -1,18 +1,18 @@
 /**
- * Trang trí 27 phòng bằng tileset có thật trong pack (GDD §8): ch1
- * Nature/Relief/Element/Field, ch2 Water + thác + bờ Nature, ch3
+ * Decorate 27 rooms with tilesets that really exist in the pack (GDD §8): ch1
+ * Nature/Relief/Element/Field, ch2 Water + waterfall + Nature banks, ch3
  * VillageAbandoned/House/Towers/Hole.
  *
- * Nguyên tắc chống mâu thuẫn va chạm:
- * - Ô **đi được** (hàng 1..16, cột 1..30) chỉ nhận tile phẳng: cỏ, hoa, đất, sỏi,
- *   mặt nước nông. Không đặt mái nhà/thân cây ở đó.
- * - Hàng/cột sát mép (0/31, 0/17) **không đi được** vì player/enemy clamp ở
- *   `ROOM_EDGE_MARGIN_TILES = 1`, nên được dùng cho props đặc (mái nhà, tháp, mỏm đá)
- *   mà không cần thêm obstacle — không đổi gameplay.
- * - Nước ở ch2 là sông nông (đi qua được), không phải hố; vì vậy nó ở lớp decor,
- *   không phải obstacle.
+ * Collision consistency rules:
+ * - **Walkable** cells (rows 1..16, columns 1..30) only take flat tiles: grass, flowers, dirt, gravel,
+ *   shallow water. Never roof/canopy there.
+ * - Rows/columns against the edge (0/31, 0/17) are **not walkable** because player/enemy clamp at
+ *   `ROOM_EDGE_MARGIN_TILES = 1`, so they can hold solid props (roofs, towers, rocks)
+ *   without adding an obstacle — gameplay unchanged.
+ * - ch2 water is a shallow river (walkable), not a pit; so it lives in the decor layer,
+ *   not as an obstacle.
  *
- * Chạy: `bun run scripts/dress-rooms.ts`. Idempotent: chạy lại cho cùng kết quả.
+ * Run: `bun run scripts/dress-rooms.ts`. Idempotent: re-running gives the same result.
  */
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -57,7 +57,7 @@ const CHAPTER_SETS: Readonly<Record<number, readonly TilesetDef[]>> = {
   3: [TS.ground, TS.village, TS.house, TS.towers, TS.hole],
 };
 
-/** firstgid của từng tileset theo thứ tự trong chapter. */
+/** firstgid of each tileset in chapter order. */
 const FIRST_GID: Readonly<Record<string, number>> = (() => {
   const map: Record<string, number> = {};
   for (const set of Object.values(CHAPTER_SETS)) {
@@ -73,16 +73,16 @@ const FIRST_GID: Readonly<Record<string, number>> = (() => {
 function firstGid(chapter: number, name: string): number {
   const set = CHAPTER_SETS[chapter] ?? [];
   const index = set.findIndex((entry) => entry.name === name);
-  if (index < 0) throw new Error(`chapter ${chapter} không có tileset ${name}`);
+  if (index < 0) throw new Error(`chapter ${chapter} has no tileset ${name}`);
   return (FIRST_GID[`${index}:${name}`] ?? 1) + 0;
 }
 
-/** gid toàn cục của tile local 1-based trong tileset. */
+/** Global gid of a 1-based local tile inside a tileset. */
 function gid(chapter: number, name: string, local: number): number {
   return firstGid(chapter, name) + local - 1;
 }
 
-/** PRNG nhỏ, seed theo chapter+room để chạy lại ra cùng map. */
+/** Small PRNG, seeded by chapter+room so re-running gives the same map. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -96,7 +96,7 @@ function mulberry32(seed: number): () => number {
 
 interface Reserved {
   readonly cells: Set<string>;
-  /** Ô playerStart — nước không được đặt ngay dưới chân player lúc vào phòng. */
+  /** playerStart cell — water must not sit right under the player's feet on room entry. */
   readonly playerStart: string | null;
 }
 
@@ -154,12 +154,12 @@ function canPlace(reserved: Reserved, x: number, y: number): boolean {
 
 function pick<T>(rng: () => number, items: readonly T[]): T {
   const value = items[Math.floor(rng() * items.length)];
-  if (value === undefined) throw new Error('pick: mảng rỗng');
+  if (value === undefined) throw new Error('pick: empty array');
   return value;
 }
 
 // ---------------------------------------------------------------------------
-// Ch1 — cỏ, hoa, sỏi; mỏm đá Relief và barrel Element ở mép không đi được
+// Ch1 — grass, flowers, gravel; Relief rocks and Element barrels on non-walkable edges
 // ---------------------------------------------------------------------------
 
 function dressChapterOne(chapter: number, room: number, reserved: Reserved, rng: () => number): number[] {
@@ -183,10 +183,10 @@ function dressChapterOne(chapter: number, room: number, reserved: Reserved, rng:
     }
   }
 
-  // Hàng 0 để trống: props ở đó bị HUD cắt ngang, đọc thành mảnh vụn. Chỉ giữ
-  // cỏ/hoa thấp ở các mép còn lại (không chạm HUD).
+  // Row 0 is left empty: props there get cut by the HUD and read as debris. Only low
+  // grass/flowers along the other edges (not touching the HUD).
 
-  // Mép dưới/trái/phải: cỏ và hoa thấp.
+  // Bottom/left/right edges: low grass and flowers.
   for (let x = 2; x < COLS - 2; x += 3) {
     setTile(data, x, ROWS - 1, gid(chapter, 'nature', pick(rng, grass)));
   }
@@ -200,10 +200,10 @@ function dressChapterOne(chapter: number, room: number, reserved: Reserved, rng:
 }
 
 // ---------------------------------------------------------------------------
-// Ch2 — sông nông, thác, bờ cỏ
+// Ch2 — shallow river, waterfall, grass banks
 // ---------------------------------------------------------------------------
 
-/** Khối pond 4×3 hoàn chỉnh trong TilesetWater (có bờ sẵn). */
+/** A complete 4×3 pond block in TilesetWater (banks included). */
 
 function dressChapterTwo(
   chapter: number,
@@ -215,7 +215,7 @@ function dressChapterTwo(
   const bankGrass = [241, 242, 243, 244, 245, 246, 247, 248, 253, 254];
   const water: WaterArea[] = [];
 
-  // Sông 2 ô cao (nước động vẽ bằng RoomWater, không phải tile mosaic của Water sheet).
+  // A 2-cell-high river (animated water is drawn by RoomWater, not the Water sheet's mosaic tiles).
   const riverWidth = 12 + Math.floor(rng() * 7);
   const riverX = 1 + Math.floor(rng() * (COLS - riverWidth - 2));
   const riverY = 6 + Math.floor(rng() * 5);
@@ -234,7 +234,7 @@ function dressChapterTwo(
     water.push({ kind: 'river', x: riverX, y: riverY, width: riverWidth, height: 2 });
   }
 
-  // Thác 2 cột chảy từ mép trên xuống đúng hàng sông (nối liền, không lơ lửng).
+  // A 2-column waterfall running from the top edge down to exactly the river row (continuous, not floating).
   if (room % 2 === 1 || room === 9) {
     const fallX = Math.min(
       riverX + 2 + Math.floor(rng() * Math.max(1, riverWidth - 6)),
@@ -248,7 +248,7 @@ function dressChapterTwo(
     }
   }
 
-  // Bờ cỏ hai bên sông + hai đầu (chỉ nơi không có spawn/obstacle).
+  // Grass banks on both sides of the river + both ends (only where there is no spawn/obstacle).
   if (riverY >= 1) {
     for (let dx = 0; dx < riverWidth; dx += 1) {
       for (const by of [riverY - 1, riverY + 2]) {
@@ -266,7 +266,7 @@ function dressChapterTwo(
     }
   }
 
-  // Cỏ/hoa dọc mép dưới và hai bên.
+  // Grass/flowers along the bottom edge and both sides.
   for (let x = 2; x < COLS - 2; x += 2) {
     if (rng() < 0.7) setTile(data, x, ROWS - 1, gid(chapter, 'nature', pick(rng, bankGrass)));
   }
@@ -275,7 +275,7 @@ function dressChapterTwo(
     if (rng() < 0.6) setTile(data, COLS - 1, y, gid(chapter, 'nature', pick(rng, bankGrass)));
   }
 
-  // Cỏ/reeds + hoa ven sông, tránh đè lên vùng nước.
+  // Grass/reeds + flowers along the river, avoiding the water area.
   const inWater = (x: number, y: number): boolean =>
     water.some(
       (area) =>
@@ -311,7 +311,7 @@ function dressChapterTwo(
 }
 
 // ---------------------------------------------------------------------------
-// Ch3 — đất làng, gạch vụn, mái nhà/tháp ở mép trên
+// Ch3 — village dirt, rubble, roofs/towers on the top edge
 // ---------------------------------------------------------------------------
 
 function dressChapterThree(
@@ -321,8 +321,8 @@ function dressChapterThree(
   rng: () => number,
 ): number[] {
   const data = new Array<number>(COLS * ROWS).fill(0);
-  // Nội ô chỉ nhận props **phẳng** của Desert (bụi khô, xương/sỏi): VillageAbandoned
-  // toàn mảnh autotile có góc trong suốt, đặt lẻ giữa sân đọc thành giấy rách.
+  // Interior cells only take **flat** Desert props (dry bushes, bones/gravel): VillageAbandoned
+  // is all autotile pieces with transparent corners, and placing them alone mid-field reads as torn paper.
   const props = [189, 237, 238, 239, 240];
 
   for (let cluster = 0; cluster < 20; cluster += 1) {
@@ -332,8 +332,8 @@ function dressChapterThree(
     setTile(data, x, y, gid(chapter, 'ground', pick(rng, props)));
   }
 
-  // Không đặt props ở hàng 0/17: HUD/letterbox cắt ngang, các mảnh mái/rào
-  // nửa vời đọc thành rác. Chỉ giữ props hoàn chỉnh trong sân.
+  // No props on rows 0/17: the HUD/letterbox cuts them, and half-roof/fence pieces
+  // read as garbage. Keep only complete props inside the field.
 
   return data;
 }
@@ -344,7 +344,7 @@ function dressChapterThree(
 
 function tilesetXml(chapter: number): string {
   const set = CHAPTER_SETS[chapter];
-  if (set === undefined) throw new Error(`chapter ${chapter} chưa có tileset`);
+  if (set === undefined) throw new Error(`chapter ${chapter} has no tileset`);
   let next = 1;
   const lines: string[] = [];
   for (const entry of set) {
@@ -362,7 +362,7 @@ function csv(data: readonly number[]): string {
   return rows.join(',\n');
 }
 
-/** Nền đồng nhất theo chapter: xanh rêu (field) / cát làng (desert). */
+/** Uniform background per chapter: moss green (field) / village sand (desert). */
 const FLOOR_GID: Readonly<Record<number, number>> = { 1: 37, 2: 37, 3: 176 };
 
 function setFloor(xml: string, chapter: number): string {
@@ -412,7 +412,7 @@ function ensureTsx(chapterDir: string, def: TilesetDef): void {
 
 function dressFile(path: string, chapter: number, room: number): WaterArea[] {
   const raw = readFileSync(path, 'utf8');
-  // Dọn obstacle `kind=solid` từ vòng thử trước (đã bỏ: không đổi collision).
+  // Remove `kind=solid` obstacles from the previous trial run (dropped: does not change collision).
   const original = raw.replace(/ ?<object[^>]*name="obstacle"[\s\S]*?<\/object>\n?/g, (block) =>
     block.includes('value="solid"') ? '' : block,
   );
@@ -427,7 +427,7 @@ function dressFile(path: string, chapter: number, room: number): WaterArea[] {
         : { data: dressChapterThree(chapter, room, reserved, rng), water: [] as WaterArea[] };
   const decor = result.data;
 
-  // Bỏ tileset + decor cũ; giữ floor/objectgroup.
+  // Drop the old tilesets + decor; keep floor/objectgroup.
   const withoutTilesets = original.replace(/^ <tileset[^\n]*\/>\n?/gm, '');
   const withoutDecor = withoutTilesets.replace(
     / ?<layer[^>]*name="decor"[\s\S]*?<\/layer>\n?/g,
@@ -442,16 +442,16 @@ function dressFile(path: string, chapter: number, room: number): WaterArea[] {
     `<map${attributes.replace(/nextlayerid="\d+"/, `nextlayerid="${layerId + 1}"`)}>`,
   );
 
-  // Chèn tilesets ngay sau </properties> (hoặc sau thẻ <map ...> nếu không có).
+  // Insert tilesets right after </properties> (or after the <map ...> tag when absent).
   if (next.includes('</properties>')) {
     next = next.replace('</properties>\n', `</properties>\n${tilesets}`);
   } else {
     next = next.replace(/<map[^>]*>\n/, (match) => `${match}${tilesets}`);
   }
 
-  // Decor sau tile layer cuối, trước objectgroup.
+  // Decor after the last tile layer, before the objectgroup.
   const objectIndex = next.indexOf(' <objectgroup');
-  if (objectIndex < 0) throw new Error(`${path}: không có objectgroup`);
+  if (objectIndex < 0) throw new Error(`${path}: no objectgroup`);
   next = `${next.slice(0, objectIndex)}${decorLayer}${next.slice(objectIndex)}`;
 
   writeFileSync(path, next);
@@ -502,9 +502,9 @@ if (!existsSync(`${waterPath}.meta`)) {
 }
 console.log(`water-layout.json: ${JSON.stringify(waterRooms)}`);
 
-// art source checks: file phải tồn tại để TiledMap import được.
+// art source checks: files must exist for TiledMap to import them.
 for (const def of Object.values(TS)) {
   if (!existsSync(join(RES_ART, def.image))) {
-    throw new Error(`thiếu tileset ${def.image} trong resources/art/tilesets`);
+    throw new Error(`missing tileset ${def.image} in resources/art/tilesets`);
   }
 }

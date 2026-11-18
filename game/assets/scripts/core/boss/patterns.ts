@@ -16,8 +16,8 @@
  * everything else (advance step, loop, change phase) is `stepBoss`'s job.
  *
  * Phase only ever **advances, never regresses**: healing does not pull the boss back to an earlier
- * phase, because each threshold emits `phase-change` exactly once (state.phase is the memory of that).
- * việc đó).
+ * phase, because each threshold emits `phase-change` exactly once (state.phase remembers
+ * that).
  *
  * Position: `state.position` is the **source of truth** — `stepBoss` integrates movement
  * by `deltaMs` itself. The `move` event is only an *intent* for the adapter (where to go,

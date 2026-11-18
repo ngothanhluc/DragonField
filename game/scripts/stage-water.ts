@@ -1,8 +1,8 @@
 /**
- * Stage 4 sheet nước động (thác 3 phần + gợn nước) từ `Backgrounds/Animated/`.
- * Chúng là sprite strip 16×16, không phải tileset, nên được vẽ bằng `RoomWater`.
+ * Stage the animated water sheets (3-part waterfall + water ripples) from `Backgrounds/Animated/`.
+ * They are 16×16 sprite strips, not a tileset, so they are drawn by `RoomWater`.
  *
- * Chạy: `bun run scripts/stage-water.ts`
+ * Run: `bun run scripts/stage-water.ts`
  */
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -119,7 +119,7 @@ mkdirSync(TARGET, { recursive: true });
 for (const [sourceRel, targetName] of FILES) {
   const source = join(PACK, sourceRel);
   const target = join(TARGET, targetName);
-  if (!existsSync(source)) throw new Error(`thiếu ${source}`);
+  if (!existsSync(source)) throw new Error(`missing ${source}`);
   writeFileSync(target, readFileSync(source));
   writeFileSync(`${target}.meta`, `${JSON.stringify(meta(target), null, 2)}\n`);
   console.log(targetName, pngSize(target));

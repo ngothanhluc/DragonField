@@ -1,6 +1,6 @@
 /**
- * Đọc PNG tối thiểu (8-bit, RGB/RGBA, không interlace) cho script sinh manifest
- * và test pivot. Không phải decoder đầy đủ — chỉ đủ cho art pixel 16px của pack.
+ * Minimal PNG reader (8-bit, RGB/RGBA, no interlace) for the manifest generation script
+ * and the pivot test. Not a full decoder — just enough for the pack's 16 px pixel art.
  */
 import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
@@ -34,12 +34,12 @@ function chunks(buffer: Buffer): Chunk[] {
 export function readPng(path: string): PngImage {
   const buffer = readFileSync(path);
   if (buffer.toString('ascii', 1, 4) !== 'PNG') {
-    throw new Error(`không phải PNG: ${path}`);
+    throw new Error(`not a PNG: ${path}`);
   }
 
   const list = chunks(buffer);
   const ihdr = list.find((chunk) => chunk.type === 'IHDR')?.data;
-  if (ihdr === undefined) throw new Error(`PNG thiếu IHDR: ${path}`);
+  if (ihdr === undefined) throw new Error(`PNG is missing IHDR: ${path}`);
 
   const width = ihdr.readUInt32BE(0);
   const height = ihdr.readUInt32BE(4);
@@ -47,15 +47,15 @@ export function readPng(path: string): PngImage {
   const colorType = ihdr[9];
   const interlace = ihdr[12];
 
-  if (bitDepth !== 8) throw new Error(`PNG ${path}: chỉ hỗ trợ 8-bit, nhận ${bitDepth}`);
-  if (interlace !== 0) throw new Error(`PNG ${path}: không hỗ trợ interlace`);
+  if (bitDepth !== 8) throw new Error(`PNG ${path}: only 8-bit supported, got ${bitDepth}`);
+  if (interlace !== 0) throw new Error(`PNG ${path}: interlace not supported`);
   if (colorType !== 2 && colorType !== 3 && colorType !== 6) {
-    throw new Error(`PNG ${path}: chỉ hỗ trợ RGB/RGBA/palette, nhận colorType ${colorType}`);
+    throw new Error(`PNG ${path}: only RGB/RGBA/palette supported, got colorType ${colorType}`);
   }
 
   const palette = list.find((chunk) => chunk.type === 'PLTE')?.data;
   const transparency = list.find((chunk) => chunk.type === 'tRNS')?.data;
-  if (colorType === 3 && palette === undefined) throw new Error(`PNG palette thiếu PLTE: ${path}`);
+  if (colorType === 3 && palette === undefined) throw new Error(`PNG palette is missing PLTE: ${path}`);
 
   const compressed = Buffer.concat(
     list.filter((chunk) => chunk.type === 'IDAT').map((chunk) => chunk.data),
@@ -92,7 +92,7 @@ export function readPng(path: string): PngImage {
           decoded = value + paeth(left, up, upLeft);
           break;
         default:
-          throw new Error(`PNG ${path}: filter ${filter} không hợp lệ`);
+          throw new Error(`PNG ${path}: invalid filter ${filter}`);
       }
       row[x] = decoded & 0xff;
     }
@@ -130,7 +130,7 @@ function paeth(a: number, b: number, c: number): number {
   return c;
 }
 
-/** Số pixel trong suốt từ đáy ảnh tới pixel đặc thấp nhất. */
+/** Transparent pixels from the image bottom to the lowest solid pixel. */
 export function bottomPadding(image: PngImage): number {
   for (let y = image.height - 1; y >= 0; y -= 1) {
     for (let x = 0; x < image.width; x += 1) {

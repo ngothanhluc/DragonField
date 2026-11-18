@@ -7,7 +7,7 @@ import { CHAPTER_ONE_DIR, findTmxFiles, loadChapterOne } from '../helpers/tmx-le
 
 const FLOOR_CSV = Array.from({ length: 32 * 18 }, () => '22').join(',');
 
-/** TMX tối thiểu hợp lệ: 1 playerStart, 1 spawn chaser, 1 obstacle, 1 door → phòng 2. */
+/** Minimal valid TMX: 1 playerStart, 1 chaser spawn, 1 obstacle, 1 door → room 2. */
 function validTmx(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <map version="1.10" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16">
