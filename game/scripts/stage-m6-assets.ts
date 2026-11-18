@@ -234,6 +234,7 @@ copyPng('FX/Smoke/Smoke/SpriteSheet.png', 'art/fx/smoke/SpriteSheet.png');
 copyPng('FX/Magic/Shield/SpriteSheetBlue.png', 'art/fx/shield/SpriteSheetBlue.png');
 copyPng('FX/Elemental/Ice/SpriteSheet.png', 'art/fx/ice/SpriteSheet.png');
 copyPng('FX/Elemental/Plant/SpriteSheet.png', 'art/fx/poison/SpriteSheet.png');
+copyPng('Items/Treasure/Coin2.png', 'art/ui/coin/Coin2.png'); // #2 coin bay về HUD (4 frame 10×10)
 
 // Nhạc — chọn 5 track, mỗi nhóm một bài
 convertAudio('Audio/Musics/38 - Intro.ogg', 'audio/music/title.mp3', '64k', 2);
