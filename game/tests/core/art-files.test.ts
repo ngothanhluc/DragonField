@@ -12,6 +12,8 @@ import {
 } from '../../assets/scripts/core/art/manifest';
 import { entryAnchorY } from '../../assets/scripts/core/art/runtime';
 import { BOSSES, BOSS_IDS } from '../../assets/scripts/core/boss/boss-defs';
+import { SKILLS } from '../../assets/scripts/core/skills/pool';
+import { skillIconSheet } from '../../assets/scripts/core/skills/icons';
 import { bottomPadding, readPng } from '../../scripts/lib/png';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -196,6 +198,23 @@ describe('boss sprite size declared in core', () => {
       expect(declared.left, `${id}.left`).toBeGreaterThanOrEqual(measured.left);
       expect(declared.right, `${id}.right`).toBeGreaterThanOrEqual(measured.right);
       expect(declared.up, `${id}.up`).toBeGreaterThanOrEqual(measured.up);
+    }
+  });
+});
+
+describe('skill icon files (#5)', () => {
+  it('every skill icon and its Disabled variant exist as 24×24 PNGs with a valid image meta', () => {
+    for (const skill of SKILLS) {
+      for (const disabled of [false, true]) {
+        const sheet = skillIconSheet(skill.id, { disabled });
+        const path = join(ASSETS, sheet);
+        expect(existsSync(path), `${skill.id} → ${sheet} does not exist`).toBe(true);
+        const png = readPng(path);
+        expect([png.width, png.height], sheet).toEqual([24, 24]);
+        expect(existsSync(`${path}.meta`), `${sheet}.meta missing`).toBe(true);
+        const meta = JSON.parse(readFileSync(`${path}.meta`, 'utf8')) as { importer?: string };
+        expect(meta.importer, `${sheet}.meta importer`).toBe('image');
+      }
     }
   });
 });
