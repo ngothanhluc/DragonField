@@ -111,7 +111,8 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     },
     hint: '↑/↓ select · ←/→ adjust volume · Esc back',
     buttonHeight: 26,
-    buttonGap: 6,
+    // 6 rows since the Effects row (#3): gap 6 pushed Back into the bottom hint at 1280×720.
+    buttonGap: 4,
   });
 
   return task.then((built) => {
