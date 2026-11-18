@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""List tracked lines that still contain Vietnamese text (issue #11).
+
+Usage: scripts/check-english [path ...]
+  No paths: every tracked file. With paths: only files under those paths.
+Skips game/deploy/ (build output) and binary files. A line that must keep
+Vietnamese characters as real data (e.g. IME key values) carries the token
+`i18n-allow`. Exit 1 when any line is reported, 0 otherwise.
+"""
+import re
+import subprocess
+import sys
+
+VIETNAMESE = re.compile(
+    "[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ"  # i18n-allow
+    "ÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]"  # i18n-allow
+)
+SKIP_PREFIXES = ("game/deploy/",)
+ALLOW_TOKEN = "i18n-allow"
+
+
+def tracked_files(paths):
+    out = subprocess.run(["git", "ls-files", "-z", "--", *paths], capture_output=True, check=True)
+    return [p for p in out.stdout.decode().split("\0") if p and not p.startswith(SKIP_PREFIXES)]
+
+
+def main():
+    hits = 0
+    for path in tracked_files(sys.argv[1:]):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                lines = handle.readlines()
+        except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
+            continue
+        for number, line in enumerate(lines, 1):
+            if VIETNAMESE.search(line) and ALLOW_TOKEN not in line:
+                hits += 1
+                print(f"{path}:{number}: {line.rstrip()[:160]}")
+    print(f"check-english: {hits} line(s) with Vietnamese text", file=sys.stderr)
+    return 1 if hits else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
