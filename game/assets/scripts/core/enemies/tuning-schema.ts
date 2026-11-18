@@ -171,8 +171,6 @@ export interface ShakeTuning {
   readonly explosion: number;
   /** Trauma khi thân boss lao vào player (0..1). */
   readonly bossCharge: number;
-  /** Trauma khi một enemy chết (0..1) — nhịp "pop" nhỏ cho đám đông. */
-  readonly enemyKill: number;
 }
 
 /** Squash/stretch giữ diện tích, mỗi sự kiện một cặp thời lượng + biên độ. */
@@ -303,7 +301,6 @@ const SHAKE_FIELDS = [
   'playerHurt',
   'explosion',
   'bossCharge',
-  'enemyKill',
 ] as const;
 
 const SQUASH_FIELDS = [
@@ -771,7 +768,6 @@ function zeroFeel(): FeelTuning {
       playerHurt: 0,
       explosion: 0,
       bossCharge: 0,
-      enemyKill: 0,
     },
     squash: {
       playerTurnMs: 0,
@@ -808,7 +804,6 @@ function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTun
     playerHurt: readTrauma(shakeSource, 'playerHurt', shakePath, problems),
     explosion: readTrauma(shakeSource, 'explosion', shakePath, problems),
     bossCharge: readTrauma(shakeSource, 'bossCharge', shakePath, problems),
-    enemyKill: readTrauma(shakeSource, 'enemyKill', shakePath, problems),
   };
   const squashPath = 'feel.squash';
   const squash: SquashTuning = {

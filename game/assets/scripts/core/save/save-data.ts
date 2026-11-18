@@ -10,7 +10,7 @@
 import { UPGRADE_TRACKS, createDefaultUpgrades, maxLevelFor } from '../meta/upgrades';
 import type { UpgradeTrack } from '../meta/upgrades';
 import { CHAPTERS_PER_RUN } from '../run/run-state';
-import { DEFAULT_SETTINGS, applySettings, toPlainSettings } from './settings';
+import { DEFAULT_SETTINGS, applySettings } from './settings';
 import type { Settings } from './settings';
 
 export const SAVE_VERSION = 1;
@@ -215,14 +215,12 @@ export function parseSaveData(raw: unknown): SaveData {
     const damageNumbers = readFlag(rawSettings, 'damageNumbers', problems);
 
     // Chỉ dùng giá trị đọc được khi field hợp lệ; nếu không, giữ mặc định.
-    settings = toPlainSettings(
-      applySettings({
-        ...(volumeOk ? { volume } : {}),
-        ...(typeof fullscreen === 'boolean' ? { fullscreen } : {}),
-        ...(screenShake !== undefined ? { screenShake } : {}),
-        ...(damageNumbers !== undefined ? { damageNumbers } : {}),
-      }),
-    );
+    settings = applySettings({
+      ...(volumeOk ? { volume } : {}),
+      ...(typeof fullscreen === 'boolean' ? { fullscreen } : {}),
+      ...(screenShake !== undefined ? { screenShake } : {}),
+      ...(damageNumbers !== undefined ? { damageNumbers } : {}),
+    });
   }
 
   problems.throwIfAny('SaveData không hợp lệ');
@@ -254,7 +252,12 @@ export function serializeSave(data: SaveData): string {
     },
     chaptersUnlocked: valid.chaptersUnlocked,
     best: { chapter: valid.best.chapter, room: valid.best.room },
-    settings: toPlainSettings(valid.settings),
+    settings: {
+      volume: valid.settings.volume,
+      fullscreen: valid.settings.fullscreen,
+      screenShake: valid.settings.screenShake,
+      damageNumbers: valid.settings.damageNumbers,
+    },
   });
 }
 

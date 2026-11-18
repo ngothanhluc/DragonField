@@ -32,7 +32,6 @@ describe('feel tuning — config/tuning.json là nguồn duy nhất', () => {
       FEEL_TUNING.shake.playerHurt,
       FEEL_TUNING.shake.explosion,
       FEEL_TUNING.shake.bossCharge,
-      FEEL_TUNING.shake.enemyKill,
     ]) {
       expect(trauma).toBeGreaterThan(0);
       expect(trauma).toBeLessThanOrEqual(1);

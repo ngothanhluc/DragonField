@@ -12,7 +12,7 @@
 import type { Node as CocosNode } from 'cc';
 import { chapterGate } from '../core/save/chapter-gate';
 import { applyGold, MAX_GOLD, summariseRun } from '../core/run/rewards';
-import { applySettings, toPlainSettings } from '../core/save/settings';
+import { applySettings } from '../core/save/settings';
 import type { Settings } from '../core/save/settings';
 import type { SaveData } from '../core/save/save-data';
 import type { SaveRepository } from '../core/save/storage';
@@ -497,7 +497,7 @@ export class ScreenFlow {
     const repo = this.host.repository();
     if (save === null || repo === null) return;
 
-    const normalized = toPlainSettings(applySettings(settings));
+    const normalized = applySettings(settings);
     if (
       normalized.volume === save.settings.volume &&
       normalized.fullscreen === save.settings.fullscreen &&

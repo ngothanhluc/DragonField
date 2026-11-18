@@ -99,9 +99,8 @@ export const TUNING_DATA = {
       maxOffsetTiles: 0.5,
       decayPerSecond: 2.4,
       playerHurt: 0.55,
-      explosion: 0.45,
+      explosion: 0.2,
       bossCharge: 0.7,
-      enemyKill: 0.1,
     },
     squash: {
       playerTurnMs: 110,

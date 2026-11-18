@@ -51,63 +51,19 @@ export function stepVolume(volume: number, steps: number): number {
  * Bản chuẩn hoá của settings: volume được kẹp, field thiếu/sai kiểu lấy mặc định.
  * Nhận `Partial` vì dữ liệu đến từ save cũ có thể thiếu field.
  *
- * Hai cờ accessibility là **getter trên prototype**, không phải own key. Lý do:
- * `tests/core/save.test.ts` có sẵn assertion `toEqual({ volume, fullscreen })`
- * cho kết quả `applySettings` (file test bị khoá byte trong ticket #2); own key
- * thừa sẽ làm assertion đó đỏ. Cần object thường (spread/serialize/so sánh) thì
- * dùng `toPlainSettings`.
+ * Trả **object thường** đủ 4 own key, đúng thứ tự serialize (volume, fullscreen,
+ * screenShake, damageNumbers) — spread/JSON.stringify/caller đọc thẳng đều đúng.
  */
 export function applySettings(settings: Partial<Settings> = {}): Settings {
   const volume = settings.volume === undefined ? DEFAULT_VOLUME : settings.volume;
-  const view = new NormalizedSettings(
-    clampVolume(volume),
-    typeof settings.fullscreen === 'boolean' ? settings.fullscreen : DEFAULT_SETTINGS.fullscreen,
-  );
-  // Cờ để trong WeakMap, không phải own key (xem ghi chú ở `applySettings`).
-  ACCESSIBILITY_FLAGS.set(view, {
+  return {
+    volume: clampVolume(volume),
+    fullscreen: typeof settings.fullscreen === 'boolean' ? settings.fullscreen : DEFAULT_SETTINGS.fullscreen,
     screenShake:
       typeof settings.screenShake === 'boolean' ? settings.screenShake : DEFAULT_SETTINGS.screenShake,
     damageNumbers:
       typeof settings.damageNumbers === 'boolean'
         ? settings.damageNumbers
         : DEFAULT_SETTINGS.damageNumbers,
-  });
-  return view;
-}
-
-/** Object thường 4 key, đúng thứ tự serialize (volume, fullscreen, screenShake, damageNumbers). */
-export function toPlainSettings(settings: Settings): Settings {
-  return {
-    volume: settings.volume,
-    fullscreen: settings.fullscreen,
-    screenShake: settings.screenShake,
-    damageNumbers: settings.damageNumbers,
   };
-}
-
-interface AccessibilityFlags {
-  readonly screenShake: boolean;
-  readonly damageNumbers: boolean;
-}
-
-const ACCESSIBILITY_FLAGS = new WeakMap<Settings, AccessibilityFlags>();
-
-/**
- * Kết quả `applySettings`: `volume`/`fullscreen` là field công khai (own key),
- * hai cờ accessibility đọc qua getter + WeakMap — xem ghi chú ở `applySettings`.
- * Không dùng `#private` để build Cocos transpile không phải lo downlevel.
- */
-class NormalizedSettings implements Settings {
-  constructor(
-    readonly volume: number,
-    readonly fullscreen: boolean,
-  ) {}
-
-  get screenShake(): boolean {
-    return ACCESSIBILITY_FLAGS.get(this)?.screenShake ?? DEFAULT_SETTINGS.screenShake;
-  }
-
-  get damageNumbers(): boolean {
-    return ACCESSIBILITY_FLAGS.get(this)?.damageNumbers ?? DEFAULT_SETTINGS.damageNumbers;
-  }
 }

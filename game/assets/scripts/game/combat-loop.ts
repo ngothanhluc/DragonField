@@ -740,7 +740,6 @@ export class CombatLoop {
       this.rewarded.add(enemy.id);
       const role = enemy.role;
       if (role !== null) this.onKill(role, enemy.isElite, enemy.position);
-      this.shake?.addTrauma(FEEL_TUNING.shake.enemyKill);
       // Gold sparkle tại chỗ chết (không có đồ nhặt riêng trong run).
       this.fx?.spawn('fx.impact', enemy.position, {
         tint: new CocosColor(255, 214, 90, 255),
