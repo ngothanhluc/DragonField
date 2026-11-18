@@ -1,7 +1,7 @@
 /**
- * Credits (GDD §9). Nội dung lấy từ `art-source/ninja-adventure/README.md`:
- * pack của Pixel-boy và AAA, CC0 1.0 (không bắt buộc attribution nhưng ghi
- * nguồn vẫn đúng tinh thần pack).
+ * Credits (GDD §9). Content comes from `art-source/ninja-adventure/README.md`:
+ * the Pixel-boy and AAA pack, CC0 1.0 (attribution is not required, but crediting
+ * the source still honours the pack).
  */
 import { buildMenuScreen, type MenuScreen } from './menu';
 import type { TitleScreenOptions } from './title-screen';
@@ -34,7 +34,7 @@ export function buildCreditsScreen(options: CreditsScreenOptions): Promise<MenuS
   });
 }
 
-/** Trang dự án trên portfolio — kể bản Unity 2023 và bản này. Mở tab mới, không rời game. */
+/** Project page on the portfolio — covers the 2023 Unity build and this one. Opens a new tab without leaving the game. */
 export const PORTFOLIO_URL = 'https://lukeinc.tech/projects/dragon-field';
 
 function openPortfolio(): void {

@@ -1,5 +1,5 @@
 /**
- * Ghi kết quả run vào save **một lần** (M5). Xem `commitRunEnd` bên dưới.
+ * Write the run result to the save **once** (M5). See `commitRunEnd` below.
  */
 import { applyGold } from '../core/run/rewards';
 import { unlockNextChapter } from '../core/save/save-data';
@@ -14,19 +14,19 @@ export interface ChapterUnlock {
 
 export interface RunEndArgs {
   readonly chapter: number;
-  /** Vàng kiếm trong run (đã tính Greed). */
+  /** Gold earned in the run (Greed already applied). */
   readonly goldEarned: number;
   readonly won: boolean;
 }
 
 export interface RunEndCommit extends ChapterUnlock {
-  /** Tổng vàng trong save sau khi cộng. */
+  /** Total gold in the save after adding. */
   readonly gold: number;
 }
 
 /**
- * Ghi kết quả run vào save **một lần**: cộng vàng (giữ cả khi thua) và mở
- * chapter kế nếu thắng. Vàng vào save ở đây, không phải mỗi lần giết quái.
+ * Write the run result to the save **once**: add gold (kept even on a loss) and unlock the
+ * next chapter on a win. Gold reaches the save here, not on every kill.
  */
 export function commitRunEnd(
   save: SaveData,

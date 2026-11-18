@@ -1,19 +1,19 @@
 /**
- * Boss thật (GDD §5): art pack + máy trạng thái `core/boss/patterns.ts`.
+ * The real boss (GDD §5): pack art + the `core/boss/patterns.ts` state machine.
  *
- * Adapter chỉ làm 4 việc:
+ * The adapter does only 4 things:
  *
- * 1. Gọi `stepBoss` mỗi frame với state **phẳng** (vị trí là nguồn sự thật,
- *    đọc thẳng từ state chứ không nội suy event `move`).
- * 2. Đổi event thành hình: play animation, vòng telegraph, đạn thật trong cùng
- *    `BulletPool` của enemy, summon quái qua callback.
- * 3. Vẽ dấu hiệu phase: tint sprite + màu vòng telegraph + callback banner.
- *    Mỗi phase một màu/độ sáng khác nhau, để người chơi đọc được boss vừa đổi
- *    phase kể cả khi đang né.
- * 4. Nhận damage từ `CombatLoop` (đạn player) và báo chết qua `isDefeated`.
+ * 1. Call `stepBoss` every frame with **flat** state (position is the source of truth,
+ *    read straight from state rather than interpolating `move` events).
+ * 2. Turn events into visuals: play animations, telegraph rings, real bullets in the same
+ *    enemy `BulletPool`, summons through a callback.
+ * 3. Draw the phase cue: sprite tint + telegraph ring colour + banner callback.
+ *    Each phase has its own colour/brightness so the player can read a phase change
+ *    even while dodging.
+ * 4. Take damage from `CombatLoop` (player bullets) and report death via `isDefeated`.
  *
- * Không có AI riêng, không hardcode pattern: mọi bước nằm trong core và đã có
- * test bắt buộc telegraph trước đòn.
+ * No bespoke AI, no hardcoded patterns: every step lives in core and already has
+ * tests forcing a telegraph before every attack.
  */
 import {
   Color as CocosColor,
@@ -45,28 +45,28 @@ import { loadTelegraphFrames } from './enemy-view';
 import type { FxPool } from './fx/effect-pool';
 import { ACTOR_SCALE, BOSS_FEET_OFFSET_TILES, tileToWorld } from './level-view';
 
-/** `cc` là module any: type phải suy ra từ import value. */
+/** `cc` is an any module: types must be derived from the import value. */
 type Color = InstanceType<typeof CocosColor>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = Awaited<ReturnType<typeof loadTelegraphFrames>>[number];
 
-/** Đạn boss sống 10 s — đủ bay hết đường chéo arena ở tốc độ chậm nhất. */
+/** Boss bullets live 10 s — enough to cross the arena diagonal at the slowest speed. */
 const BOSS_BULLET_TTL_MS = 10_000;
 const RING_RECT_SIZE = 32;
 const RING_FRAMES = 4;
 const RING_MAX_OPACITY = 220;
 const RING_MIN_OPACITY = 80;
-/** Thời gian flash khi trúng đạn, ms. */
+/** Hit flash duration, ms. */
 const HIT_FLASH_MS = 80;
 
-/** Màu tint theo phase — dấu hiệu thứ nhất (rõ kể cả khi nhìn silhouette). */
+/** Tint colour by phase — the first cue (clear even from the silhouette alone). */
 const PHASE_TINT: Readonly<Record<BossPhase, Color>> = {
   1: new CocosColor(255, 255, 255, 255),
   2: new CocosColor(170, 220, 255, 255),
   3: new CocosColor(255, 160, 150, 255),
 };
-/** Màu vòng telegraph theo phase — dấu hiệu thứ hai, độc lập với tint thân. */
+/** Telegraph ring colour by phase — the second cue, independent of the body tint. */
 const PHASE_RING: Readonly<Record<BossPhase, Color>> = {
   1: new CocosColor(255, 226, 120, 255),
   2: new CocosColor(120, 220, 255, 255),
@@ -76,16 +76,16 @@ const HIT_TINT = new CocosColor(255, 250, 225, 255);
 
 export interface BossViewOptions {
   readonly def: BossDef;
-  /** Chỗ đứng đầu tiên, tile unit (thường từ `LevelData.bossStart`). */
+  /** Initial standing spot, tile units (usually from `LevelData.bossStart`). */
   readonly start: Vec2;
   readonly actorLayer: Node;
   readonly bullets: BulletPool;
   readonly rng: SeededRng;
-  /** Pool FX (chết boss). */
+  /** FX pool (boss death). */
   readonly fx?: FxPool;
-  /** Gọi khi boss đổi phase (bootstrap hiện banner). */
+  /** Called when the boss changes phase (bootstrap shows the banner). */
   readonly onPhase?: (phase: BossPhase) => void;
-  /** Gọi khi pattern yêu cầu gọi quái; CombatLoop tự spawn EnemyView. */
+  /** Called when the pattern requests adds; CombatLoop spawns the EnemyView itself. */
   readonly onSummon?: (role: EnemyRole, count: number) => void;
 }
 
@@ -101,11 +101,11 @@ export class BossView {
   private readonly sprite: Sprite;
   private state: BossState;
   private defeated = false;
-  /** Phần lẻ damage chưa đủ 1 máu (poison/crit/execute) — xem `integer-damage.ts`. */
+  /** Fractional damage that has not reached 1 HP yet (poison/crit/execute) — see `integer-damage.ts`. */
   private damageCarry = 0;
 
   private hitFlashUntilMs = 0;
-  /** Mốc bắt đầu squash khi trúng đạn (nhân từ `ACTOR_SCALE`, không trôi). */
+  /** Squash start time on a bullet hit (multiplied from `ACTOR_SCALE`, never drifts). */
   private squashStartMs = Number.NEGATIVE_INFINITY;
   private ring: Sprite | null = null;
   private readonly ringFrames: SpriteFrame[] = [];
@@ -113,7 +113,7 @@ export class BossView {
   private ringVisible = false;
   private telegraphStartedMs = Number.NEGATIVE_INFINITY;
   private telegraphDurationMs = 0;
-  /** Đang trong cú charge (animation loop) hay vừa kết thúc để về idle. */
+  /** Whether a charge is running (looping its animation) or just ended, to return to idle. */
   private charging = false;
   private lastAnimKey = '';
 
@@ -130,7 +130,7 @@ export class BossView {
     node.parent = options.actorLayer;
 
     const sprite: Sprite = node.addComponent(CocosSprite);
-    // CUSTOM: animator đặt contentSize/anchor theo frame (samurai 96×48 ↔ 96×96).
+    // CUSTOM: the animator sets contentSize/anchor per frame (samurai 96×48 ↔ 96×96).
     sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     sprite.trim = false;
     node.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
@@ -147,7 +147,7 @@ export class BossView {
     this.playAnimation(animationFor(this.def.id, 'idle', this.state.facing));
 
     void this.createRing().catch(() => {
-      // Boss vẫn chạy nếu FX lỗi — telegraph sẽ chỉ thiếu vòng.
+      // The boss still runs if FX fail — the telegraph just loses its ring.
     });
   }
 
@@ -159,7 +159,7 @@ export class BossView {
     return this.state.position;
   }
 
-  /** State phẳng hiện tại — `summon.ts` cần để đặt quái quanh boss. */
+  /** Current flat state — `summon.ts` needs it to place adds around the boss. */
   get bossState(): BossState {
     return this.state;
   }
@@ -188,12 +188,12 @@ export class BossView {
     return isBossDefeated(this.state) || this.defeated;
   }
 
-  /** Đang lao ngang (Samurai charge). Dùng để áp sát thương thân boss. */
+  /** Dashing sideways (Samurai charge). Used to apply body contact damage. */
   get isCharging(): boolean {
     return this.state.chargeDirection !== null;
   }
 
-  /** Một frame pattern. Trả event cho CombatLoop xử lý summon/đạn (đạn đã spawn ở đây). */
+  /** One pattern frame. Returns events for CombatLoop to handle summons (bullets are spawned here). */
   step(nowMs: number, deltaMs: number, player: Vec2): readonly BossEvent[] {
     if (this.isDefeated) return [];
 
@@ -235,7 +235,7 @@ export class BossView {
           this.onPhase(event.phase);
           break;
         case 'move':
-          // Vị trí thật nằm trong `state.position`; event chỉ để debug/animation.
+          // The real position lives in `state.position`; the event only drives debug/animation.
           if (event.speedTilesPerSecond >= TELEPORT_SNAP_SPEED_TILES_PER_SECOND) {
             this.playAnimation(animationFor(this.def.id, 'teleport', this.state.facing));
           } else {
@@ -259,11 +259,11 @@ export class BossView {
     return result.events;
   }
 
-  /** Trừ máu qua đường chuẩn. Không knockback boss; flash + hit animation ngắn. */
+  /** Subtract HP through the normal path. No boss knockback; a short flash + hit animation. */
   takeDamage(amount: number, nowMs: number): void {
     if (this.isDefeated || !(amount > 0)) return;
 
-    // Máu boss luôn nguyên: damage lẻ (poison, crit, execute) dồn sang frame sau.
+    // Boss HP is always whole: fractional damage (poison, crit, execute) carries to the next frame.
     const step = accumulateDamage(this.damageCarry, amount);
     this.damageCarry = step.carry;
     if (step.whole <= 0) return;
@@ -282,7 +282,7 @@ export class BossView {
       this.playAnimation(animationFor(this.def.id, 'hit', this.state.facing));
       this.animator.stop();
       this.hideRing();
-      // Boss chết = explosion lớn + smoke (GDD: chết là FX, không có frame chết).
+      // Boss death = big explosion + smoke (GDD: death is FX, there is no death frame).
       this.fx?.spawn('fx.explosion', this.state.position, { drawUnits: 5, lifetimeMs: 1200 });
       this.fx?.spawn('fx.smoke', this.state.position, { drawUnits: 4, lifetimeMs: 1100 });
       playSfx('explosion');
@@ -297,14 +297,14 @@ export class BossView {
   }
 
   // -------------------------------------------------------------------------
-  // Hình
+  // Visuals
   // -------------------------------------------------------------------------
 
   private applyPhase(phase: BossPhase): void {
     this.applyTint(Number.POSITIVE_INFINITY, phase);
     this.hideRing();
     this.telegraphStartedMs = Number.NEGATIVE_INFINITY;
-    // Phase mới bắt đầu bằng banner; cho boss đứng idle một nhịp đọc được.
+    // A new phase starts with a banner; let the boss stand idle for one readable beat.
     this.playAnimation(animationFor(this.def.id, 'idle', this.state.facing));
   }
 
@@ -315,14 +315,14 @@ export class BossView {
   }
 
   private playAnimation(key: string): void {
-    // Cùng clip mà chưa chạy xong thì không restart (step boss phát `move` mỗi frame).
+    // Do not restart the same clip while it is still playing (boss step emits `move` every frame).
     if (key === this.lastAnimKey && !this.animator.isFinished) return;
     this.lastAnimKey = key;
-    // Samurai tách sheet L/R; `animationFor` đã ghép hậu tố, `play` không cần direction.
+    // Samurai splits its L/R sheets; `animationFor` already appends the suffix, so `play` needs no direction.
     this.animator.play(key);
   }
 
-  /** Squash khi trúng đạn; về đúng `ACTOR_SCALE` khi hết `feel.squash.bossHitMs`. */
+  /** Squash on a bullet hit; returns exactly to `ACTOR_SCALE` after `feel.squash.bossHitMs`. */
   private applySquash(nowMs: number): void {
     const squash = squashScale(
       nowMs - this.squashStartMs,
@@ -352,7 +352,7 @@ export class BossView {
     const transform = node.getComponent(CocosUITransform);
     if (transform !== null) transform.setContentSize(RING_RECT_SIZE, RING_RECT_SIZE);
 
-    // Vòng 32 px dưới parent scale 1/16 = 2 tile; muốn đường kính ~2.6× hitbox.
+    // A 32 px ring under parent scale 1/16 = 2 tiles; target diameter ~2.6× the hitbox.
     const diameterTiles = this.def.hitboxRadiusTiles * 2.6;
     const scale = diameterTiles / 2;
     node.setScale(scale, scale, 1);

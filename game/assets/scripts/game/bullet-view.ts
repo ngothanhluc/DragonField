@@ -1,11 +1,11 @@
 /**
- * Vẽ đạn từ `BulletPool` bằng node sprite **pool sẵn** (không `new` mỗi phát).
+ * Draw bullets from `BulletPool` with **pre-pooled** sprite nodes (no `new` per shot).
  *
- * `core/combat/bullets.ts` lo vòng đời (bay, hết ttl, thu hồi, pool đầy). Ở đây
- * chỉ đọc `pool.active()` mỗi frame rồi gán vị trí/frame cho node có sẵn.
+ * `core/combat/bullets.ts` owns the lifecycle (travel, ttl expiry, recall, pool full). This
+ * file only reads `pool.active()` each frame and assigns positions/frames to existing nodes.
  *
- * Frame lấy từ manifest (`fx.shuriken`, `fx.energy-ball`) và phát theo thời gian:
- * shuriken xoay 15 frame, energy ball 4 frame. Tất cả frame slice một lần ở init.
+ * Frames come from the manifest (`fx.shuriken`, `fx.energy-ball`) and advance with time:
+ * the shuriken spins through 15 frames, the energy ball has 4. All frames are sliced once at init.
  */
 import {
   _decorator,
@@ -23,14 +23,14 @@ import type { TileRect } from './level-view';
 
 const { ccclass } = _decorator;
 
-/** `cc` là module any trong repo: type phải suy ra từ import value (xem `texture-cache.ts`). */
+/** `cc` is an any module in this repo: types must be derived from the import value (see `texture-cache.ts`). */
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = ReturnType<typeof sliceFrame>;
 
-/** Đạn player: `fx/shuriken`. Sheet 690×54 px; 690/15 = 46 ⇒ frame 46×54. */
+/** Player bullet: `fx/shuriken`. 690×54 px sheet; 690/15 = 46 ⇒ 46×54 frames. */
 export const PLAYER_BULLET_SHEET = 'resources/art/fx/shuriken/SpriteSheet.png';
-/** Đạn enemy: `fx/energy-ball`, 64×16 = 4 frame 16×16. */
+/** Enemy bullet: `fx/energy-ball`, 64×16 = 4 frames of 16×16. */
 export const ENEMY_BULLET_SHEET = 'resources/art/fx/energy-ball/EnergyBall.png';
 
 const PLAYER_BULLET_RECT: TileRect = { x: 0, y: 0, width: 46, height: 54 };
@@ -40,18 +40,18 @@ const ENEMY_FRAMES = 4;
 const PLAYER_FPS = 20;
 const ENEMY_FPS = 12;
 
-/** Màu gốc (không đổi) và màu **cam ấm** cho đạn enemy — khác hẳn shuriken xanh của player. */
+/** Base colour (unchanged) and a **warm orange** for enemy bullets — clearly unlike the player's blue shuriken. */
 const BULLET_NO_TINT = new CocosColor(255, 255, 255, 255);
 const ENEMY_BULLET_TINT = new CocosColor(255, 142, 78, 255);
 
 /**
- * Số node tối đa dựng sẵn. Pool chứa được 256 viên nhưng màn hình 32×18 tile hiếm
- * khi có quá vài chục viên cùng lúc; vượt ngưỡng này thì đạn thừa không được vẽ
- * (im lặng, không crash) thay vì cấp phát node không giới hạn.
+ * Maximum number of pre-built nodes. The pool holds 256 bullets, but a 32×18 tile screen
+ * rarely has more than a few dozen at once; past this threshold extra bullets are simply not
+ * drawn (silently, no crash) instead of allocating unbounded nodes.
  */
 const MAX_BULLET_NODES = 64;
 
-/** Đường kính vẽ của một viên đạn, world unit — to hơn hitbox 0.15 tile để nhìn thấy. */
+/** Drawn diameter of one bullet, world units — larger than the 0.15 tile hitbox so it is visible. */
 const BULLET_DRAW_UNITS = 0.6;
 
 interface BulletFrames {
@@ -74,7 +74,7 @@ export class BulletView extends Component {
   private limit = MAX_BULLET_NODES;
   private elapsedMs = 0;
 
-  /** Load sẵn hai sheet đạn và **dựng sẵn toàn bộ node** — không cấp phát trong lúc chơi. */
+  /** Preload both bullet sheets and **pre-build every node** — no allocation during play. */
   async init(pool: BulletPool): Promise<void> {
     this.pool = pool;
     this.limit = Math.max(1, Math.min(pool.capacity, MAX_BULLET_NODES));
@@ -92,18 +92,18 @@ export class BulletView extends Component {
       ),
     };
 
-    // Pool node dựng một lần ở đây: 8 enemy + 40 viên đạn không sinh node nào giữa run.
+    // The node pool is built once here: 8 enemies + 40 bullets spawn no nodes mid-run.
     for (let index = 0; index < this.limit; index += 1) {
       this.ensureNode(index);
     }
   }
 
-  /** Đồng hồ animation đạn (không phụ thuộc frame rate màn hình). */
+  /** Bullet animation clock (independent of the display frame rate). */
   update(deltaTime: number): void {
     this.elapsedMs += Math.max(0, deltaTime) * 1000;
   }
 
-  /** Gọi mỗi frame **sau** `BulletPool.update()` để vị trí là vị trí cuối cùng. */
+  /** Call every frame **after** `BulletPool.update()` so positions are final. */
   sync(): void {
     const pool = this.pool;
     const frames = this.frames;

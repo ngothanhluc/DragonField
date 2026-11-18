@@ -1,11 +1,11 @@
 /**
- * Màn chọn 1 trong 3 skill sau khi dọn phòng (GDD §6, §9).
+ * The 1-of-3 skill picker shown after a room is cleared (GDD §6, §9).
  *
- * Dựng 100% bằng code, không sửa scene/prefab. Ba thẻ hiện tên, rarity (màu),
- * hiệu ứng và stack hiện có; chọn bằng **click chuột hoặc phím 1/2/3**.
+ * Built 100% in code, no scene/prefab edits. The three cards show name, rarity (colour),
+ * effect and current stacks; pick with **a mouse click or keys 1/2/3**.
  *
- * File này chỉ là adapter UI: danh sách thẻ do `core/skills/roll.ts` quyết
- * (seed của run), luật stack do `core/skills/loadout.ts` quyết khi nhặt.
+ * This file is only the UI adapter: `core/skills/roll.ts` decides the cards (from the run
+ * seed), and `core/skills/loadout.ts` decides the stack rules on pickup.
  */
 import {
   Button as CocosButton,
@@ -29,7 +29,7 @@ import { createBackdropPanel, createLabel, RARITY_COLORS } from './hud';
 import { sliceSliced } from './screens/menu';
 import type { TileRect } from './level-view';
 
-/** `cc` là any module: tên import chỉ dùng được ở vị trí value. */
+/** `cc` is an any module: import names only work in value position. */
 type Button = InstanceType<typeof CocosButton>;
 type Graphics = InstanceType<typeof CocosGraphics>;
 type Node = InstanceType<typeof CocosNode>;
@@ -37,7 +37,7 @@ type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = ReturnType<typeof sliceSliced>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 
-// Cùng lý do với panel menu: `nine_path_panel_2` có ô vuông trong, 9-slice ra khung lệch.
+// Same reason as the menu panel: `nine_path_panel_2` has an inner square that 9-slices into an offset frame.
 const CARD_SHEET = 'resources/art/ui/theme-wood/nine_path_panel_interior.png';
 const CARD_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
 const CARD_BORDERS = { left: 4, right: 4, top: 4, bottom: 4 } as const;
@@ -55,12 +55,12 @@ const HOTKEY_CODES = [KeyCode.KEY_1, KeyCode.KEY_2, KeyCode.KEY_3] as const;
 
 export interface SkillPickOptions {
   readonly choices: readonly SkillDef[];
-  /** Stack hiện có theo id. */
+  /** Current stacks by id. */
   readonly owned: ReadonlyMap<string, number>;
   readonly onPick: (index: number) => void;
 }
 
-/** Màn đã dựng; gọi `destroy()` khi chọn xong hoặc rời run. */
+/** Built screen; call `destroy()` after picking or when leaving the run. */
 export interface SkillPickScreen {
   readonly node: Node;
   destroy(): void;
@@ -71,15 +71,15 @@ interface KeyEvent {
 }
 
 /**
- * Dựng màn chọn dưới `parent` (node UI canvas). Trả ngay; texture nút load
- * bất đồng bộ nên hàm là `async`.
+ * Build the picker under `parent` (the UI canvas node). Resolves quickly; the button texture
+ * loads asynchronously, hence `async`.
  */
 export async function buildSkillPick(
   parent: Node,
   options: SkillPickOptions,
 ): Promise<SkillPickScreen> {
-  // Nghe phím **trước** khi load texture: người chơi có thể bấm 1/2/3 ngay frame
-  // status đổi sang 'skill-pick', trước khi asset kịp về.
+  // Listen for keys **before** loading the texture: the player may hit 1/2/3 on the very frame
+  // the status becomes 'skill-pick', before assets arrive.
   let picked = false;
   let focused = 0;
   const cards: Array<{ readonly node: Node; readonly ring: Node }> = [];
@@ -107,9 +107,9 @@ export async function buildSkillPick(
     const index = HOTKEY_CODES.findIndex((code) => code === event.keyCode);
     if (index >= 0) pick(index);
   };
-  // Hai đường nghe: `input` của Cocos (giống player WASD) và DOM. DOM là đường
-  // dự phòng cho môi trường không gắn keyCode vào event engine (headless CDP gửi
-  // `key`/`code` nhưng Cocos có thể đọc `keyCode` = 0). `picked` chặn trùng.
+  // Two listening paths: Cocos `input` (like player WASD) and the DOM. The DOM path is the
+  // fallback for environments that do not put a keyCode on engine events (headless CDP sends
+  // `key`/`code` but Cocos may read `keyCode` = 0). `picked` prevents duplicates.
   const onDomKey = (event: KeyboardEvent): void => {
     const digit = /^Digit([1-3])$/.exec(event.code) ?? /^([1-3])$/.exec(event.key);
     if (digit !== null) {
@@ -134,8 +134,8 @@ export async function buildSkillPick(
     }
   };
   input.on(Input.EventType.KEY_DOWN, onKey);
-  // Capture phase: Cocos gắn listener phím trên canvas và có thể chặn bubble của
-  // sự kiện; capture ở document luôn chạy trước. `picked` chặn trùng.
+  // Capture phase: Cocos attaches its key listener on the canvas and may stop event bubbling;
+  // capture on the document always runs first. `picked` prevents duplicates.
   document.addEventListener('keydown', onDomKey, true);
 
   let texture;
@@ -195,10 +195,10 @@ export async function buildSkillPick(
   };
 }
 
-/** Nền tối phủ cả màn để thẻ nổi bật, không phải nhìn xuyên qua phòng. */
+/** Dark backdrop over the whole screen so the cards stand out instead of showing the room through. */
 function addDim(parent: Node): void {
-  // Graphics thay vì kéo giãn frame nút 16×8: nearest làm 4 góc trong suốt của
-  // texture phóng to thành lỗ lớn, HUD/world lọt qua ở góc màn.
+  // Graphics instead of stretching the 16×8 button frame: with nearest filtering the frame's
+  // transparent corners blow up into big holes, letting the HUD/world show through at the screen edges.
   const size = view.getVisibleSize();
   createBackdropPanel(parent, 'skill-pick-dim', size.width, size.height, 210);
 }
@@ -265,12 +265,12 @@ function makeCard(
   effect.overflow = CocosLabel.Overflow.RESIZE_HEIGHT;
   const effectTransform: UITransform | null = effect.node.getComponent(CocosUITransform);
   if (effectTransform !== null) {
-    // Bề rộng cố định = lòng card; RESIZE_HEIGHT chỉ co giãn chiều cao.
+    // Fixed width = the card interior; RESIZE_HEIGHT only stretches the height.
     effectTransform.setContentSize(CARD_WIDTH - 16, 60);
   }
   effect.node.setPosition(0, 4, 0);
-  // Ép layout lại sau khi đổi overflow/width: system font đôi khi giữ kích thước
-  // một dòng cũ và vẽ tràn ra ngoài card (Thorns bị đúng lỗi này).
+  // Force a relayout after changing overflow/width: the system font sometimes keeps the old
+  // single-line size and draws past the card (Thorns hit exactly this bug).
   effect.updateRenderData?.(true);
 
   const stackLine =

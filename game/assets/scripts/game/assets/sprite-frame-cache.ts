@@ -1,21 +1,21 @@
 /**
- * Cắt SpriteFrame lúc runtime.
+ * Slice SpriteFrames at runtime.
  *
- * Không slice trong editor (pack không có atlas JSON, Cocos 3.8 không có grid-slice), mỗi PNG là
- * 1 SpriteFrame duy nhất. Mỗi frame hiển thị là một `SpriteFrame` mới trỏ vào cùng texture, rect
- * lấy từ `frameRect()` trong core. Cache theo `sheet|direction|index` để đổi animation không tạo
- * rác mỗi frame.
+ * No editor slicing (the pack has no atlas JSON and Cocos 3.8 has no grid-slice), so each PNG is
+ * a single SpriteFrame. Every displayed frame is a new `SpriteFrame` pointing at the same texture,
+ * with its rect from `frameRect()` in core. Cached by `sheet|direction|index` so animation changes
+ * create no garbage per frame.
  */
 import { Rect, Size, SpriteFrame as CocosSpriteFrame, Vec2 } from 'cc';
 import { frameRect, type Direction, type SpriteEntry } from '../../core/art/manifest';
 import { loadTexture } from './texture-cache';
 
-/** Xem ghi chú ở `texture-cache.ts`: stub `cc` khiến tên import chỉ dùng được ở vị trí value. */
+/** See the note in `texture-cache.ts`: the `cc` stub only allows import names in value position. */
 type SpriteFrame = InstanceType<typeof CocosSpriteFrame>;
 
 const frames = new Map<string, SpriteFrame>();
 
-/** Lấy SpriteFrame của `index` tại `direction`. Texture được load (và cache) theo sheet. */
+/** Get the SpriteFrame for `index` at `direction`. The texture is loaded (and cached) per sheet. */
 export function getFrame(
   entry: SpriteEntry,
   direction: Direction,
@@ -28,7 +28,7 @@ export function getFrame(
   }
 
   return loadTexture(entry.sheet).then((texture) => {
-    // Hai caller cùng chờ một texture: caller thứ hai dùng frame caller đầu đã tạo.
+    // Two callers wait on one texture: the second reuses the frame the first created.
     const raced = frames.get(key);
     if (raced !== undefined) {
       return raced;
@@ -36,10 +36,10 @@ export function getFrame(
 
     const rect = frameRect(entry, direction, index);
     const frame = new CocosSpriteFrame();
-    // Thứ tự quan trọng: gán texture trước để SpriteFrame có rect/originalSize khởi tạo.
+    // Order matters: assign the texture first so SpriteFrame initialises rect/originalSize.
     frame.texture = texture;
     frame.rect = new Rect(rect.x, rect.y, rect.width, rect.height);
-    // Rect = đúng vùng cắt và offset 0 ⇒ frame không bị trim, mọi frame cùng kích thước.
+    // Rect = the exact crop and a zero offset ⇒ no trimming, so every frame keeps the same size.
     frame.originalSize = new Size(rect.width, rect.height);
     frame.offset = new Vec2(0, 0);
     frame.packable = false;
@@ -49,7 +49,7 @@ export function getFrame(
   });
 }
 
-/** Xoá cache — chỉ dùng cho test/dev. */
+/** Clear the cache — test/dev only. */
 export function clearFrameCache(): void {
   frames.clear();
 }

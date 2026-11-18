@@ -1,9 +1,9 @@
 /**
  * Pause (GDD §9): Resume, Restart run, Quit to title, volume.
  *
- * Không tự dừng gì cả — bootstrap chuyển `status` sang `paused` trước khi dựng
- * màn này, và `update()` chỉ chạy khi `status === 'playing'`, nên enemy, đạn,
- * telegraph, hitstop, shield/i-frame timer cùng đứng yên (sim clock không tăng).
+ * It stops nothing itself — bootstrap switches `status` to `paused` before building this
+ * screen, and `update()` only runs while `status === 'playing'`, so enemies, bullets,
+ * telegraphs, hitstop and shield/i-frame timers all stand still (the sim clock does not advance).
  */
 import { stepVolume } from '../../core/save/settings';
 import { buildMenuScreen, type MenuItem, type MenuScreen } from './menu';

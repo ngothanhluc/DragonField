@@ -1,9 +1,9 @@
 /**
- * `window.__yokai` — API chỉ tồn tại khi URL có `?debug=1`.
+ * `window.__yokai` — an API that only exists when the URL has `?debug=1`.
  *
- * Hàm dựng object ở đây, không ở `bootstrap.ts`: acceptance headless cần một
- * bề mặt ổn định, còn bootstrap chỉ cấp dữ liệu qua `DebugProvider`. Nhờ vậy
- * thêm hook M5 không làm file run-flow phình tiếp.
+ * The object is built here, not in `bootstrap.ts`: headless acceptance needs a stable
+ * surface, while bootstrap only supplies data through `DebugProvider`. That way M5 hooks
+ * do not keep growing the run-flow file.
  */
 import type { DerivedStats } from '../core/skills/derived-stats';
 import { keyLog } from './keyboard-move';
@@ -20,7 +20,7 @@ export type DebugStatus =
   | 'won'
   | 'error';
 
-/** Id màn hình cho `screen()` — UI hiển thị, không phải status của run. */
+/** Screen id for `screen()` — the visible UI, not the run status. */
 export type DebugScreenId =
   | 'title'
   | 'chapter-select'
@@ -32,20 +32,20 @@ export type DebugScreenId =
   | 'credits'
   | 'skill-pick';
 
-/** Một Label đang hiển thị + rect trong canvas để acceptance kiểm "không text bị cắt". */
+/** A visible Label + its canvas rect so acceptance can check "no text is clipped". */
 export interface DebugUiText {
   readonly text: string;
-  /** Rect trong pixel canvas (gốc dưới-trái), gồm cả phần chữ render. */
+  /** Rect in canvas pixels (bottom-left origin), covering the rendered text. */
   readonly x: number;
   readonly y: number;
   readonly width: number;
   readonly height: number;
   readonly insideCanvas: boolean;
-  /** Tên node Label (`effect`, `name`, `detail`, `label`, …). */
+  /** Label node name (`effect`, `name`, `detail`, `label`, …). */
   readonly node: string;
-  /** Tên node cha gần nhất có UITransform (button/card/…), `null` nếu không có. */
+  /** Name of the nearest parent node with a UITransform (button/card/…), `null` if none. */
   readonly parent: string | null;
-  /** Rect chữ có nằm trọn trong rect cha không (bắt text tràn khỏi card/button). */
+  /** Whether the text rect fits fully inside its parent's (catches text overflowing a card/button). */
   readonly insideParent: boolean;
 }
 
@@ -67,7 +67,7 @@ export interface DebugBossSnapshot {
   readonly phase: number;
 }
 
-/** Trạng thái audio để acceptance headless kiểm không cần nghe. */
+/** Audio state so headless acceptance can check without listening. */
 export interface DebugAudioSnapshot {
   readonly unlocked: boolean;
   readonly volume: number;
@@ -75,14 +75,14 @@ export interface DebugAudioSnapshot {
   readonly lastSfx: readonly string[];
 }
 
-/** Animation đang phát của từng actor (key manifest). */
+/** Currently playing animation of each actor (manifest key). */
 export interface DebugAnimationSnapshot {
   readonly player: string | null;
   readonly enemies: Readonly<Record<string, string>>;
   readonly boss: string | null;
 }
 
-/** Dữ liệu bootstrap cấp cho API; mọi method đều là closure sống. */
+/** Data bootstrap supplies to the API; every method is a live closure. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
   readonly chapter: () => number;
@@ -106,22 +106,22 @@ export interface DebugProvider {
   readonly boss: () => DebugBossSnapshot | null;
   readonly setBossHp: (fraction: number) => boolean;
   readonly startChapter: (chapter: number, seed?: number) => Promise<boolean>;
-  /** Màn hình hiện tại (title/chapter-select/playing/...). */
+  /** Current screen (title/chapter-select/playing/...). */
   readonly screen: () => DebugScreenId;
-  /** Bản save đang dùng (object, không phải chuỗi). */
+  /** The save in use (an object, not a string). */
   readonly save: () => unknown;
-  /** Debug-only: đặt vàng để test shop; `false` khi giá trị không hợp lệ. */
+  /** Debug-only: set gold for shop tests; `false` when the value is invalid. */
   readonly setGold: (gold: number) => boolean;
-  /** Mọi Label đang hiển thị + rect, để assert không bị cắt. */
+  /** Every visible Label + rect, so tests can assert nothing is clipped. */
   readonly uiText: () => readonly DebugUiText[];
-  /** Debug: mở màn xem trước N skill (không grant) để test text fit. */
+  /** Debug: open a preview of N skills (no grant) to test text fitting. */
   readonly skillPreview: (ids: readonly string[]) => Promise<boolean>;
   readonly closeSkillPreview: () => boolean;
-  /** Node/anim còn dùng art tạm hoặc key animation hỏng (rỗng = sạch). */
+  /** Nodes/animations still using placeholder art or broken keys (empty = clean). */
   readonly placeholders: () => readonly string[];
-  /** Trạng thái audio: đã unlock chưa, volume, track, SFX gần nhất. */
+  /** Audio state: unlocked or not, volume, track, most recent SFX. */
   readonly audio: () => DebugAudioSnapshot;
-  /** Animation key đang phát; truyền tên node để lấy một actor. */
+  /** Playing animation key; pass a node name to get a single actor. */
   readonly anim: (nodeName?: string) => string | DebugAnimationSnapshot | null;
 }
 
@@ -129,7 +129,7 @@ export type YokaiDebugApi = Omit<
   DebugProvider,
   'status' | 'chapter' | 'room' | 'roomTotal'
 > & {
-  /** 200 event bàn phím gần nhất (key/code/keyCode/isComposing) — chẩn đoán bộ gõ tiếng Việt. */
+  /** The last 200 keyboard events (key/code/keyCode/isComposing) — for IME diagnosis. */
   readonly keyLog: typeof keyLog;
   readonly status: DebugStatus;
   readonly chapter: number;
@@ -137,7 +137,7 @@ export type YokaiDebugApi = Omit<
   readonly roomTotal: number;
 };
 
-/** Cài API nếu `?debug=1`; trả `true` khi đã cài. */
+/** Install the API if `?debug=1`; returns `true` when installed. */
 export function installDebugApi(provider: DebugProvider): boolean {
   if (!isDebugEnabled()) return false;
 
@@ -174,7 +174,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
 
   (window as unknown as { __yokai?: YokaiDebugApi }).__yokai = api;
   console.log(
-    '[YokaiField] debug=1: window.__yokai sẵn sàng ' +
+    '[YokaiField] debug=1: window.__yokai ready ' +
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, ' +
       'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, keyLog).',
@@ -182,7 +182,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
   return true;
 }
 
-/** Bật API khi URL có `?debug=1` (acceptance tự động của milestone). */
+/** Enable the API when the URL has `?debug=1` (automated milestone acceptance). */
 export function isDebugEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   try {

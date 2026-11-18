@@ -1,12 +1,12 @@
 /**
- * Nhạc nền + SFX bằng `AudioSource` của engine, một node cho music và một cho
- * SFX (pool do engine lo, không tạo node mỗi tiếng).
+ * Background music + SFX through the engine's `AudioSource`: one node for music, one for
+ * SFX (the engine owns the pool; no node per sound).
  *
- * Hai điểm quan trọng:
- * - **Autoplay**: Chrome chặn audio trước input đầu tiên. Manager giữ track
- *   đang chờ và chỉ `play()` sau `pointerdown`/`keydown` đầu tiên.
- * - **Volume sống**: master volume lấy từ save; đổi ở Settings/Pause áp ngay
- *   cho cả music lẫn SFX, không cần restart run.
+ * Two important points:
+ * - **Autoplay**: Chrome blocks audio until the first input. The manager holds the pending
+ *   track and only calls `play()` after the first `pointerdown`/`keydown`.
+ * - **Live volume**: master volume comes from the save; changing it in Settings/Pause applies
+ *   to music and SFX immediately, without restarting the run.
  */
 import {
   AudioClip as CocosAudioClip,
@@ -49,9 +49,9 @@ const SFX_PATH: Readonly<Record<SfxId, string>> = {
   poison: 'audio/sfx/poison',
 };
 
-/** Chỉ giữ 12 tiếng gần nhất cho `audio()` debug (không phình theo thời gian chơi). */
+/** Keep only the 12 most recent sounds for the `audio()` debug hook (no growth over play time). */
 const SFX_HISTORY = 12;
-/** Nhạc nền nhỏ hơn SFX để tiếng bắn/hit vẫn nổi. */
+/** Music sits below SFX so shots/hits still stand out. */
 const MUSIC_LEVEL = 0.55;
 
 const clipCache = new Map<string, Promise<AudioClip>>();
@@ -62,9 +62,9 @@ function loadClip(path: string): Promise<AudioClip> {
 
   const task = new Promise<AudioClip>((resolve, reject) => {
     resources.load(path, CocosAudioClip, (err: Error | null, clip: AudioClip | null) => {
-      // Cocos gọi `null` hoặc `undefined` khi thành công — kiểm bằng truthiness.
+      // Cocos calls back with `null` or `undefined` on success — check by truthiness.
       if (err || !clip) {
-        reject(new Error(`Không load được audio "${path}": ${err?.message ?? 'clip rỗng'}`));
+        reject(new Error(`Could not load audio "${path}": ${err?.message ?? 'empty clip'}`));
         return;
       }
       resolve(clip);
@@ -81,7 +81,7 @@ export interface AudioSnapshot {
   readonly unlocked: boolean;
   readonly volume: number;
   readonly music: MusicId | null;
-  /** Lần lượt các SFX đã phát, mới nhất ở cuối. */
+  /** SFX played in order, most recent last. */
   readonly lastSfx: readonly SfxId[];
 }
 
@@ -116,7 +116,7 @@ export class AudioManager {
     window.addEventListener('keydown', this.onFirstInput, true);
   }
 
-  /** Track đang chờ (trước unlock) hoặc đang phát. */
+  /** The pending track (before unlock) or the one playing. */
   get musicId(): MusicId | null {
     return this.current ?? this.pending;
   }
@@ -130,7 +130,7 @@ export class AudioManager {
     return this.volume;
   }
 
-  /** Đổi nhạc; gọi lại cùng track đang phát là no-op. */
+  /** Change music; calling again with the current track is a no-op. */
   playMusic(id: MusicId): void {
     if (!this.unlocked) {
       this.pending = id;
@@ -187,7 +187,7 @@ export class AudioManager {
     };
   }
 
-  /** Preload mọi clip để lần phát đầu không trễ; lỗi chỉ warn. */
+  /** Preload every clip so the first playback is not late; failures only warn. */
   preload(): void {
     const paths = [...Object.values(MUSIC_PATH), ...Object.values(SFX_PATH)];
     for (const path of paths) {
@@ -207,7 +207,7 @@ export class AudioManager {
     if (this.node.isValid) this.node.destroy();
   }
 
-  /** Chỉ dùng test: danh sách id để soát map path. */
+  /** Test use only: the id list, to audit the path map. */
   static get sfxIds(): readonly SfxId[] {
     return SFX_IDS;
   }

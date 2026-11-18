@@ -1,8 +1,8 @@
 /**
- * Debug overlay xem trước card skill mà **không grant** skill (M5 round 3).
+ * Debug overlay that previews skill cards **without granting** a skill (M5 round 3).
  *
- * Dùng đúng `buildSkillPick` như màn chọn thật, nên text/layout được kiểm trên
- * chính component sẽ chạy trong game. Không đụng loadout/RNG của run.
+ * Uses the real `buildSkillPick`, so text/layout are checked on the exact component that runs
+ * in game. It never touches the run's loadout/RNG.
  */
 import type { Node as CocosNode } from 'cc';
 import { getSkill } from '../core/skills/pool';
@@ -17,7 +17,7 @@ export class SkillPreview {
 
   constructor(private readonly parent: () => Node) {}
 
-  /** Trả `false` khi id lạ hoặc không dựng được. */
+  /** Returns `false` for an unknown id or when the screen cannot be built. */
   async show(ids: readonly string[]): Promise<boolean> {
     this.close();
 
@@ -26,7 +26,7 @@ export class SkillPreview {
       try {
         choices.push(getSkill(id));
       } catch {
-        console.warn(`[YokaiField] debug skillPreview: id lạ "${id}"`);
+        console.warn(`[YokaiField] debug skillPreview: unknown id "${id}"`);
         return false;
       }
     }
@@ -40,7 +40,7 @@ export class SkillPreview {
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[YokaiField] debug skillPreview thất bại: ${message}`);
+      console.warn(`[YokaiField] debug skillPreview failed: ${message}`);
       return false;
     }
   }

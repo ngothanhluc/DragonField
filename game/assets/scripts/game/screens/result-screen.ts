@@ -1,9 +1,9 @@
 /**
- * Kết quả run (GDD §9): phòng đạt, vàng nhặt, thời gian, nút Shop / Chapter
- * select / Title — dùng chung cho chết và thắng chapter.
+ * Run result (GDD §9): rooms reached, gold picked up, time, and Shop / Chapter select /
+ * Title buttons — shared by death and chapter win.
  *
- * `RunResultData` được bootstrap đo trước khi teardown run, nên màn này không
- * đọc state sống và không thể hiện `0/0` sau khi combat bị huỷ.
+ * Bootstrap measures `RunResultData` before tearing the run down, so this screen never reads
+ * live state and cannot show `0/0` after combat is destroyed.
  */
 import { buildMenuScreen, type MenuScreen } from './menu';
 import type { TitleScreenOptions } from './title-screen';
@@ -17,7 +17,7 @@ export interface RunResultData {
   readonly durationMs: number;
   readonly kills: number;
   readonly won: boolean;
-  /** Chapter vừa được mở, `undefined` nếu không mở thêm. */
+  /** The chapter just unlocked, `undefined` if none was. */
   readonly unlockedChapter?: number;
 }
 
@@ -29,7 +29,7 @@ export interface ResultScreenOptions {
   readonly onTitle: () => void;
 }
 
-/** mm:ss, làm tròn xuống giây. */
+/** mm:ss, seconds rounded down. */
 export function formatDuration(durationMs: number): string {
   const total = Number.isFinite(durationMs) ? Math.max(0, Math.floor(durationMs / 1000)) : 0;
   const minutes = Math.floor(total / 60);
