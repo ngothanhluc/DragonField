@@ -251,12 +251,13 @@ export class Bootstrap extends Component {
 
   update(deltaTime: number): void {
     const rawDeltaMs = Math.min(Math.max(deltaTime, 0) * 1000, MAX_STEP_MS);
-    // Chết: sim đứng yên nhưng FX chết vẫn chạy cho tới khi result mở.
-    // Shake/coin/số damage chạy theo thời gian thật: đứng hình giữa hiệu ứng
-    // (hitstop) trông như lag, và camera lệch tâm sẽ bị giữ nguyên.
+    // Shake/coin/số damage chạy theo thời gian thật, trước mọi cổng status:
+    // đứng hình giữa hiệu ứng (hitstop/pause) trông như lag, và camera lệch tâm
+    // sẽ bị giữ nguyên.
     this.camera?.update(rawDeltaMs);
     this.feel?.update(rawDeltaMs);
 
+    // Chết: sim đứng yên nhưng FX chết vẫn chạy cho tới khi result mở.
     if (this.status === 'dying') {
       this.fx?.update(rawDeltaMs);
       return;
