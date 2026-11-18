@@ -10,6 +10,7 @@
     "check:config": "bun run scripts/gen-tuning.ts --check",
     "gen": "bun run scripts/gen-tuning.ts",
     "gen:anim": "bun run scripts/gen-animations.ts",
+    "gen:elites": "bun run scripts/gen-elites.ts",
     "stage:art": "bun run scripts/stage-m6-assets.ts",
     "fix:font": "bun run scripts/fix-font-spacing.ts",
     "typecheck": "tsc -p tsconfig.check.json",
