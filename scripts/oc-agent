@@ -2,7 +2,7 @@
 # Start interactive opencode with a role's model and effort.
 # Called by the hc templates (oc-impl, oc-impl-pro, oc-adversary), with cwd set to the worktree.
 #   scripts/oc-agent executor|executor-pro|adversary
-# Model: the newest in the line (resolve-models). Effort: the contents of .kol-auto/effort.<role>
+# Model: the newest in the line (resolve-models). Effort: the contents of .agent-auto/effort.<role>
 # in the worktree if present (the orchestrator writes it before starting), otherwise the first rung
 # of the role's `effort` ladder in models.json.
 set -eu
@@ -16,7 +16,7 @@ fi
 ladder=$(python3 -I -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["roles"][sys.argv[2]].get("effort", [])))' \
   "$here/../models.json" "$role")
 effort=""
-[ -f ".kol-auto/effort.$role" ] && effort=$(tr -d ' \n' < ".kol-auto/effort.$role")
+[ -f ".agent-auto/effort.$role" ] && effort=$(tr -d ' \n' < ".agent-auto/effort.$role")
 [ -z "$effort" ] && effort=${ladder%% *}
 target=$model
 if [ -n "$effort" ]; then
@@ -26,7 +26,7 @@ if [ -n "$effort" ]; then
   esac
 fi
 echo "oc-agent: $role → $target" >&2
-# .opencode/opencode.json: the default `kol` agent reads its model from this variable. The variant (#effort)
+# .opencode/opencode.json: the default `auto` agent reads its model from this variable. The variant (#effort)
 # only survives on the agent-level model; the root-level model drops it (opencode docs, verified with `opencode debug agents`).
 # --standalone is required: opencode's shared background server does not see this process's env.
-KB_OC_MODEL=$target KB_OC_ROLE=$role exec opencode --standalone --auto
+AUTO_OC_MODEL=$target AUTO_OC_ROLE=$role exec opencode --standalone --auto

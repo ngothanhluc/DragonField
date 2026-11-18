@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Effort
 
-**Start low, climb only after a verified failure**: red acceptance test, red checks, executor reported `blocked`, or a sent blocker fix is still unresolved. "The ticket looks hard" is not a reason to climb. Models self-allocate effort worse than a fixed table, and high effort on easy work costs several times more with no gain (source and numbers: `docs/agents/effort-research.md`).
+**Start low, climb only after a verified failure**: red acceptance test, red checks, executor reported `blocked`, or a sent blocker fix is still unresolved. "The ticket looks hard" is not a reason to climb. Models self-allocate effort worse than a fixed table, and high effort on easy work costs several times more with no gain.
 
 ## Executor ladder
 
@@ -14,11 +14,11 @@ Each rung is a `model#variant`. The ladder comes from `effort` in `models.json`;
 
 | Rung | Template | Effort file in the worktree |
 |---|---|---|
-| 1 | `oc-impl` | `.kol-auto/effort.executor` = `low` |
-| 2 | `oc-impl` | `.kol-auto/effort.executor` = `high` |
-| 3 | `oc-impl` | `.kol-auto/effort.executor` = `max` |
-| 4 | `oc-impl-pro` | `.kol-auto/effort.executor-pro` = `high` |
-| 5 | `oc-impl-pro` | `.kol-auto/effort.executor-pro` = `max` |
+| 1 | `oc-impl` | `.agent-auto/effort.executor` = `low` |
+| 2 | `oc-impl` | `.agent-auto/effort.executor` = `high` |
+| 3 | `oc-impl` | `.agent-auto/effort.executor` = `max` |
+| 4 | `oc-impl-pro` | `.agent-auto/effort.executor-pro` = `high` |
+| 5 | `oc-impl-pro` | `.agent-auto/effort.executor-pro` = `max` |
 | out of rungs | — | orchestrator rechecks the premise (`full-send`, executor ladder) |
 
 - Each rung gets **one lost round**. A fix round triggered by review findings does not count as a loss if the gate passes afterwards.
@@ -39,4 +39,4 @@ The Agent tool only takes an effort when a document asks for it: this table is t
 
 ## Recording
 
-Every time you start an executor or an adversary, append one line to `.kol-auto/ledger.md`: `effort | <role> | <model#variant> | <reason: default | lost at <gate>>`. The final report states the highest rung used and why.
+Every time you start an executor or an adversary, append one line to `.agent-auto/ledger.md`: `effort | <role> | <model#variant> | <reason: default | lost at <gate>>`. The final report states the highest rung used and why.

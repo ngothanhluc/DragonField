@@ -1,13 +1,13 @@
 ---
 name: executor-rules
-description: Working rules for the executor in the Yokai Field automation loop. Read before anything else when you are handed a ticket via hc.
+description: Working rules for the opencode executor in the full-send automation loop. Read before anything else when you are handed a ticket via hc. Not for the Claude Code orchestrator.
 ---
 
 # Executor rules
 
 You implement **exactly one ticket** in the current worktree (cwd).
 
-**Game skills.** You may load the gamedev skills in `.claude/skills/` (`game-feel`, `game-ui-ux`, `level-design`, `performance-optimization`, `game-ai`, `roguelike`, `game-docs`, `audio-design`, `camera-systems`, `input-systems`, `physics-tuning`, `save-systems`). The brief names which ones are needed; load them **before** designing that part. These skills are engine-neutral (e.g. Godot/Unity) — translate the technique to Cocos Creator 3.8 + TypeScript per `AGENTS.md`, do not copy Godot/Unity code. The coordination skills (`full-send`, `brief`, `review-loop`, `proof`, `watch-pr`, `effort`) are not yours. The orchestrator (Claude Opus) wrote the brief and the acceptance test; it will read the diff, run proof, open the PR and merge. Your part ends at the local commit.
+**Domain skills.** Besides this skill and `tdd`, you may load any other skill the repo's opencode config allows you. The brief names which ones are needed; load them **before** designing that part. When a skill targets a different stack than this repo's (check `AGENTS.md`), translate the technique to the repo's stack; do not copy its code. The coordination skills (`full-send`, `brief`, `review-loop`, `proof`, `watch-pr`, `effort`) are not yours. The orchestrator (Claude Code) wrote the brief and the acceptance test; it will read the diff, run proof, open the PR and merge. Your part ends at the local commit.
 
 ## Contract
 
@@ -30,7 +30,7 @@ You implement **exactly one ticket** in the current worktree (cwd).
 
 ## Report
 
-Overwrite `.kol-auto/report.md` in the worktree:
+Overwrite `.agent-auto/report.md` in the worktree:
 
 ```
 status: done | blocked
@@ -43,7 +43,7 @@ blocked because: <only when blocked: verbatim error + approaches tried>
 suggestions: <out-of-scope work worth doing later>
 ```
 
-Then run exactly one command: `hc send <parent terminal> "<done|blocked> #<issue number>: <one sentence>. Report: .kol-auto/report.md"`. The parent terminal is in the brief. After that, stop and wait for the next message.
+Then run exactly one command: `hc send <parent terminal> "<done|blocked> #<issue number>: <one sentence>. Report: .agent-auto/report.md"`. The parent terminal is in the brief. After that, stop and wait for the next message.
 
 ## Boundaries
 

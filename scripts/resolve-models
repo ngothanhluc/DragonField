@@ -5,7 +5,7 @@
   scripts/resolve-models --get ROLE # print only one role's full ID (used by oc-agent)
 
 Sources: `opencode models` (models available in the package) + models.dev (release dates, prices).
-Results are written to <git-common-dir>/kol-auto/models.resolved.json, shared by all worktrees.
+Results are written to <git-common-dir>/agent-auto/models.resolved.json, shared by all worktrees.
 A `changed:` line appears when a role's model differs from the previous run.
 Exit 0 when every role has a model, 1 when a role found no matching model.
 """
@@ -27,7 +27,7 @@ def git(*args: str) -> str:
 
 
 def state_dir() -> Path:
-    d = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "kol-auto"
+    d = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "agent-auto"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

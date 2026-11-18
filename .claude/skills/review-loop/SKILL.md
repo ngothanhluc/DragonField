@@ -16,14 +16,14 @@ The code was written by a model from another vendor; you are the reviewer. The g
 
 ## One round
 
-1. **Read the report** `.kol-auto/report.md`. `status: blocked` is a lost round (executor ladder in `full-send`); do not review.
+1. **Read the report** `.agent-auto/report.md`. `status: blocked` is a lost round (executor ladder in `full-send`); do not review.
 2. **Check the contract.** `git diff <red-test SHA> HEAD -- <acceptance test file>` must be empty. Run the acceptance test and the brief's check command in the worktree; record the real output. Red is a lost round.
 3. **Read the diff** `git diff <red-test SHA>...HEAD` plus the surrounding code. Look for: behavior that is wrong against the acceptance criteria, broken callers, drift from GLOSSARY/ADR, code/tests/guards the ticket does not need. Skip style unless it hides a bug.
 4. **Grade** each finding:
    - **blocker**: the case the ticket targets behaves wrongly.
    - **should**: a real bug callers will hit, within the ticket's scope.
    - **nit**: everything else. Another approach, rare cases, small cost, extra compatibility are nits even when they look serious.
-5. **Write the ledger** `.kol-auto/ledger.md`, one line per finding, stable across rounds: `R<id> | <grade> | <file:line> | <judgment> | <open|fixed|declined|disagree> | <evidence>`.
+5. **Write the ledger** `.agent-auto/ledger.md`, one line per finding, stable across rounds: `R<id> | <grade> | <file:line> | <judgment> | <open|fixed|declined|disagree> | <evidence>`.
 6. **Send fixes.** Blockers and shoulds go to the executor via `hc send`, with the id, file:line, and the smallest fix (prefer deleting or narrowing over adding locks, caches, helpers, options). Nits: decline in one line, record as follow-up. If the executor pushes back with evidence: check the evidence, then switch to `disagree` or keep `open`.
 
 If `git diff --shortstat <red-test SHA>` grows across rounds for anything other than fixing blockers/shoulds: trim it before the next round.
@@ -32,7 +32,7 @@ If `git diff --shortstat <red-test SHA>` grows across rounds for anything other 
 
 Once the first round has no blockers left, run two adversaries in parallel, each in its own one-off worktree created from the ticket's HEAD (`git worktree add --detach <temp dir> HEAD`):
 
-- `hc run --bg --name adv-<n> --cwd <temp-wt-1> oc-adversary "<ticket goal, acceptance criteria, diff path, report file .kol-auto/adversary.md, parent terminal $HC_TERMINAL_ID>"`
+- `hc run --bg --name adv-<n> --cwd <temp-wt-1> oc-adversary "<ticket goal, acceptance criteria, diff path, report file .agent-auto/adversary.md, parent terminal $HC_TERMINAL_ID>"`
 - A Claude subagent (Agent tool, `model: "opus"`, `effort: "medium"` per `.claude/skills/effort/SKILL.md`, no `isolation`) with the same information and the absolute path `<temp-wt-2>`: "Work only inside <temp-wt-2>. Break this change. Every finding must include the command you ran, the real output, and the output the goal requires. No run, no report. Do not change product code, do not commit."
 
 For each finding you get back, **rerun its command yourself** on the ticket worktree. If the output shows a bug that breaks the ticket's goal, add it to the ledger (graded per step 4). Otherwise drop it and record how many findings were dropped and why. Merge findings with the same root cause. Delete the temp worktrees and `hc rm adv-<n>` afterwards.

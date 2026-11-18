@@ -2,7 +2,7 @@
 """pr-wait: watch one GitHub pull request and print one line per real event.
 
 Ported from t3dotgg/tstack (MIT, Copyright (c) 2026 Theo Browne; see pr-wait.LICENSE).
-Yokai Field change: --allow-no-checks makes a PR with no CI checks at all count as
+Local change: --allow-no-checks makes a PR with no CI checks at all count as
 green once two polls agree, instead of waiting forever (the repo has no CI yet).
 
   pr-wait <pr> [--repo owner/name] [--until green|ready|any-change] [--interval 20]

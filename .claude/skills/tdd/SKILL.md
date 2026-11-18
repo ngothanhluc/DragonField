@@ -5,7 +5,7 @@ description: Test-driven development. Use when the user wants to build features 
 
 # Test-Driven Development
 
-> Copied from mattpocock/skills 1.3.1; only this note is added (MIT, Copyright (c) 2026 Matt Pocock; see LICENSE). For the Yokai Field executor, the seams are already agreed in your brief: treat them as confirmed and do not ask the user.
+> Copied from mattpocock/skills 1.3.1; only this note is added (MIT, Copyright (c) 2026 Matt Pocock; see LICENSE). When you run as the full-send executor (opencode, handed a ticket via hc), the seams are already agreed in your brief: treat them as confirmed and do not ask the user. Otherwise confirm seams with the user as usual.
 
 TDD is the red → green loop. This skill is the reference that makes that loop produce tests worth keeping: what a good test is, where tests go, the anti-patterns, and the rules of the loop. Every section applies on every cycle: consult them before and during the loop, not after.
 

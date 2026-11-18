@@ -18,7 +18,7 @@ The `/full-send` command is permission to:
 - Push and `--force-with-lease` to this ticket's own branch after rebasing.
 - Any testing the proof needs (run the app, dev server, browser, screenshots), even when some document says to ask first. Rules about *how* to test (which command, which fixture) still apply.
 
-Every `gh` and `git` command that touches the remote goes through `scripts/as-owner` (account `ngothanhluc`). Reports, PR descriptions and issue comments are written in English.
+Every `gh` and `git` command that touches the remote goes through `scripts/as-owner` (it pins the repo owner's GitHub account). Reports, PR descriptions and issue comments are written in English.
 
 ## Steps
 
@@ -31,14 +31,14 @@ Open a todo list with exactly the 9 steps below. If you skip one, keep it in the
    - `git ls-tree --name-only <default branch> .opencode/opencode.json scripts/oc-agent` must list both files: worktrees are created from the default branch, so the automation must be committed there.
    - `scripts/as-owner gh repo view --json defaultBranchRef` must return a branch name. Empty means the remote has no branches yet: ask the user (section **Asking the user**).
    - `scripts/as-owner gh issue view <n> --json number,title,state,labels`: the issue is open and labeled `ready-for-agent`. State the issue title.
-2. **Brief.** Read `.claude/skills/brief/SKILL.md` and follow it. Output: worktree, branch, red-test commit SHA, `.kol-auto/brief.md`, `risk` flag.
-3. **Hand off to the executor.** Read `.claude/skills/effort/SKILL.md`; start at rung 1 (write `low` to `.kol-auto/effort.executor`) and write the `effort` line to the ledger.
+2. **Brief.** Read `.claude/skills/brief/SKILL.md` and follow it. Output: worktree, branch, red-test commit SHA, `.agent-auto/brief.md`, `risk` flag.
+3. **Hand off to the executor.** Read `.claude/skills/effort/SKILL.md`; start at rung 1 (write `low` to `.agent-auto/effort.executor`) and write the `effort` line to the ledger.
    ```sh
    hc run --bg --name impl-<n> --cwd <worktree> oc-impl \
-     "Ticket #<n>. Brief: .kol-auto/brief.md. Parent terminal: $HC_TERMINAL_ID. Report back with hc send when done or blocked."
+     "Ticket #<n>. Brief: .agent-auto/brief.md. Parent terminal: $HC_TERMINAL_ID. Report back with hc send when done or blocked."
    ```
    Check `first_message.sent`; if false, `hc read impl-<n>`, clear whatever screen is waiting, then resend. Wait with `hc wait --children any` until a `<hc from="... impl-<n>">` message arrives. If hc reports the executor `blocked`/`error`/exited without sending a message, run `hc read impl-<n> --lines 80` to find out why.
-4. **Review.** Read `.claude/skills/review-loop/SKILL.md` and follow it, on the executor's `.kol-auto/report.md`. Send fix rounds with `hc send impl-<n> "<finding>"` and wait as in step 3. Apply the **executor ladder** below.
+4. **Review.** Read `.claude/skills/review-loop/SKILL.md` and follow it, on the executor's `.agent-auto/report.md`. Send fix rounds with `hc send impl-<n> "<finding>"` and wait as in step 3. Apply the **executor ladder** below.
 5. **Proof.** Read `.claude/skills/proof/SKILL.md` and follow it. No proof for a change means no full confidence: ask the user.
 6. **Open the PR.**
    - `scripts/as-owner git fetch origin`, rebase the branch onto `origin/<default branch>`, rerun the brief's check command.
@@ -53,7 +53,7 @@ Open a todo list with exactly the 9 steps below. If you skip one, keep it in the
 
 A **lost round** is an executor turn that ends with that step's gate still failing: reported `blocked`, red acceptance test, red checks, or a blocker finding that was sent for fixing still unresolved.
 
-- Each lost round → go up one rung on the **executor ladder** in `.claude/skills/effort/SKILL.md` (flash low → high → max → pro high → max), new terminal, same worktree.
+- Each lost round → go up one rung on the **executor ladder** in `.claude/skills/effort/SKILL.md` (rung 1 → 5: executor low → high → max → executor-pro high → max), new terminal, same worktree.
 - Losing at the last rung → stop delegating. On a turn containing `ultrathink`, write down the **premise** all attempts share as one sentence, then verify it directly (run it, read the code, read the issue). Wrong premise: fix the brief/red test and delegate again from rung 1. Right premise: implement it yourself in the worktree and say so clearly in the report.
 - Executor out of quota or model blocked: keep the worktree and ask the user: wait for quota reset, have Opus implement, or stop.
 
@@ -65,7 +65,7 @@ All true on the PR's latest commit:
 
 - Proof covers every change in the diff.
 - `pr-wait` exits 0 on this commit.
-  - Known exception (owner decision, 2026-11-19): the Cloudflare check `Workers Builds: yokai-field` always fails on non-production PR branches (preview `versions upload`; logs not reachable from here). It does not gate the merge. If `pr-wait` exits 1 **only** for that check and the GitHub `check` job is green on this commit, treat the CI gate as passed. Remove this exception once preview builds are disabled in Cloudflare.
+  - Project exceptions: if `AGENTS.md` lists CI checks that do not gate the merge (section **Automation**), and `pr-wait` exits 1 **only** for those checks while every other required check is green on this commit, treat the CI gate as passed. Never infer an exception that is not written there.
 - The review ledger has no open blocker or should.
 - No reviewer is requesting changes.
 - The branch is up to date with the default branch and GitHub reports it mergeable.
@@ -86,7 +86,7 @@ Questions in a message usually go unseen. Ask with `AskUserQuestion` so the thre
 - The merge gate is stuck and you cannot unstick it yourself.
 - The next step exceeds granted permission: deleting data, touching production, changing something outside the repo, closing a PR/issue, force-pushing another branch, pushing the default branch.
 - The goal is so ambiguous that it changes the outcome.
-- opencode-go quota is exhausted.
+- The executor provider's quota (`provider` in `models.json`) is exhausted.
 
 Everything else: decide with a sensible default and list it in the report. If the asking tool is unavailable or unanswered: take the safe path (leave the PR open, do not merge) and open the report with the question.
 

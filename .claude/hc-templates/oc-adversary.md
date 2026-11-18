@@ -1,6 +1,6 @@
 ---
 name: oc-adversary
-description: opencode adversary (gpt luna line) tries to break a change; only reports findings backed by a run.
+description: opencode adversary (`adversary` role in models.json) tries to break a change; only reports findings backed by a run.
 command: scripts/oc-agent adversary
 ---
 

@@ -10,7 +10,7 @@ You are the **coordinator**: you do not work any ticket yourself. Each ticket ha
 
 ## Frontier
 
-A ticket is a sub-issue of the spec (or an issue with `Part of #<spec>`). The **frontier** is the set of open tickets labeled `ready-for-agent` whose blocking tickets are all closed (`scripts/as-owner gh api repos/ngothanhluc/DragonField/issues/<n> --jq .issue_dependencies_summary.blocked_by` equals 0) and that have no owner yet. Take them in ascending issue number order.
+A ticket is a sub-issue of the spec (or an issue with `Part of #<spec>`). The **frontier** is the set of open tickets labeled `ready-for-agent` whose blocking tickets are all closed (`scripts/as-owner gh api repos/{owner}/{repo}/issues/<n> --jq .issue_dependencies_summary.blocked_by` equals 0) and that have no owner yet. Take them in ascending issue number order.
 
 ## Steps
 
@@ -29,7 +29,7 @@ A ticket is a sub-issue of the spec (or an issue with `Part of #<spec>`). The **
 
 ## Quota
 
-The executors of all owners share the opencode-go quota. If one owner reports quota exhausted, do not start new owners; ask the user once for the whole spec: wait for reset, have owners implement with Opus themselves, or stop.
+The executors of all owners share the executor provider's quota (`provider` in `models.json`). If one owner reports quota exhausted, do not start new owners; ask the user once for the whole spec: wait for reset, have owners implement with Opus themselves, or stop.
 
 ## Report
 

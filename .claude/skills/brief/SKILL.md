@@ -10,13 +10,13 @@ The brief is the **entire context** the executor has: it cannot see this convers
 
 ## Steps
 
-1. **Read the ticket.** `scripts/as-owner gh issue view <n> --json number,title,body,labels,comments`. If the issue has `## Parent` or is a sub-issue, read the parent spec too. Read `AGENTS.md`, `GLOSSARY.md` and the ADRs in `docs/adr/` the ticket touches. Use exactly the glossary's terms everywhere you write.
-2. **Worktree.** `scripts/as-owner git fetch origin`. Create branch `ticket/<n>-<slug>` from `origin/<default branch>` in worktree `<repo parent dir>/DragonField.worktrees/<n>-<slug>`. If this ticket's worktree or branch already exists (rerun after a stop): reuse it, read `git log` and `.kol-auto/` there to see how far it got.
-3. **Risk flag.** `risk: yes` when the ticket touches authentication or authorization, money or payments, deleting or migrating data, the booking state machine, or multiple actors writing the same record. Write the reason on one line. This flag adds an adversary round in `review-loop`.
+1. **Read the ticket.** `scripts/as-owner gh issue view <n> --json number,title,body,labels,comments`. If the issue has `## Parent` or is a sub-issue, read the parent spec too. Read `AGENTS.md` (or `CLAUDE.md`), and `GLOSSARY.md` and the ADRs the ticket touches if the repo has them. Use exactly the glossary's terms everywhere you write.
+2. **Worktree.** `scripts/as-owner git fetch origin`. Create branch `ticket/<n>-<slug>` from `origin/<default branch>` in worktree `<repo parent dir>/<repo dir name>.worktrees/<n>-<slug>`. If this ticket's worktree or branch already exists (rerun after a stop): reuse it, read `git log` and `.agent-auto/` there to see how far it got.
+3. **Risk flag.** `risk: yes` when the ticket touches authentication or authorization, money or payments, deleting or migrating data, a core state machine of the product, persisted user data (saves, schemas), or multiple actors writing the same record. `AGENTS.md` may list more risk areas for the project. Write the reason on one line. This flag adds an adversary round in `review-loop`.
 4. **Seam and red test.** Pick the highest seam that covers the issue's acceptance criteria; an existing seam beats a new one. Write the acceptance test at that seam, at least one assertion per criterion, with expected values taken from the issue or a concrete example (not recomputed the way the code will compute them). Run it: it must be **red for the right reason**, meaning the behavior assertion fails, not a syntax, import or fixture error. Commit in the worktree: `test(#<n>): red acceptance test`. Record the SHA.
    - If the repo has no test runner yet, or the ticket is pure config/scaffold: there is no red test. Write `skip: <reason>` and replace it with a runnable **acceptance command** (command + expected output) in the brief.
-5. **Check command.** Take it from `package.json` scripts or `AGENTS.md` (the command CI runs: typecheck, lint, test). If there is none, say "no check command yet" explicitly and use only the acceptance test.
-6. **Write `.kol-auto/brief.md`** in the worktree using the template below.
+5. **Check command.** Take it from `AGENTS.md` or the package manifest's scripts (the command CI runs: typecheck, lint, test). If there is none, say "no check command yet" explicitly and use only the acceptance test.
+6. **Write `.agent-auto/brief.md`** in the worktree using the template below.
 
 ## Brief template
 
@@ -40,4 +40,4 @@ Risk: yes | no — <reason>
 
 ## Done when
 
-`.kol-auto/brief.md` has every section; the acceptance test is committed and you have the red output showing the right reason (or a `skip:` line with a substitute acceptance command); `git status` in the worktree is clean apart from `.kol-auto/`.
+`.agent-auto/brief.md` has every section; the acceptance test is committed and you have the red output showing the right reason (or a `skip:` line with a substitute acceptance command); `git status` in the worktree is clean apart from `.agent-auto/`.

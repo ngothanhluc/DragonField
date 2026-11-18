@@ -36,4 +36,4 @@ NewProject/
 !game/deploy/**/native/
 
 # Brief, report and ledger of the automation loop in each ticket worktree
-.kol-auto/
+.agent-auto/

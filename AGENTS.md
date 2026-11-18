@@ -29,6 +29,22 @@ https://lukeinc.tech/projects/dragon-field (separate repo `luke-tech`).
 
 Every command and path below is relative to the repo root, unless stated otherwise.
 
+## Agent skills and automation
+
+All project skills live in **one place: `.claude/skills/<name>/SKILL.md`**. Claude Code reads it natively and opencode reads it as its Claude-compatible project source, so do not create `.opencode/skills/` or `.agents/skills/` (a same-named skill there would silently override this one in opencode).
+
+- The skills are **project-agnostic** so the same set can be copied to other repos: never write this project's name, engine, account, URLs or CI quirks into a `SKILL.md` or `.claude/hc-templates/*.md`. Put them in this file; the skills read `AGENTS.md`.
+- Who may load what is decided by config, not by folder: opencode's `auto` agent denies every skill and allowlists the executor ones (`tdd`, `executor-rules`, the gamedev skills) in `.opencode/opencode.json` → `permissions`. A new skill opencode should use needs an `allow` entry there.
+- Coordination skills (`full-send`, `full-send-spec`, `full-stop`, `brief`, `review-loop`, `proof`, `watch-pr`, `effort`) are for the Claude Code orchestrator only; `executor-rules` is for the opencode executor only.
+- Gamedev skills come from `gamedev-skills/awesome-gamedev-agent-skills` and are pinned in `skills-lock.json`; `tdd` is a copy of mattpocock/skills (see its LICENSE). The gamedev skills are engine-neutral: translate them to Cocos Creator 3.8 + TypeScript, do not copy Godot/Unity code.
+- The automation also needs, per repo: `models.json`, `.opencode/opencode.json`, `scripts/{as-owner,oc-agent,resolve-models,merge-lock,pr-wait,install-hc-templates}`, and `.agent-auto/` in `.gitignore`.
+
+### Automation
+
+Project facts the coordination skills look up here:
+
+- **CI checks that do not gate the merge** (owner decision, 2026-11-19): the Cloudflare check `Workers Builds: yokai-field` always fails on non-production PR branches (preview `versions upload`; logs not reachable from here). If it is the only failing check and the GitHub `check` job is green on that commit, the CI gate passes. Remove this line once preview builds are disabled in Cloudflare.
+
 ## Commands
 
 ```bash
