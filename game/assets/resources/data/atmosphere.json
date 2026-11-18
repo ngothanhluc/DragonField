@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "animal": {
+    "fleeRadiusTiles": 3,
+    "wanderSpeedTilesPerSec": 1.2,
+    "fleeSpeedTilesPerSec": 4
+  },
+  "chapters": {
+    "1": {
+      "chapter": 1,
+      "layers": [
+        {
+          "kind": "raylight",
+          "secondary": false,
+          "depth": "over-actors",
+          "sprite": "fx.raylight",
+          "opacity": 0.22,
+          "count": 3
+        },
+        {
+          "kind": "leaves",
+          "secondary": true,
+          "depth": "over-actors",
+          "sprite": "fx.leaf",
+          "opacity": 0.38,
+          "count": 16
+        }
+      ],
+      "decor": {
+        "animals": ["animal.frog", "animal.chicken", "animal.cat"],
+        "props": ["decor.flower", "decor.plant", "decor.flag-green"],
+        "animalsPerRoom": 2,
+        "propsPerRoom": 3
+      }
+    },
+    "2": {
+      "chapter": 2,
+      "layers": [
+        {
+          "kind": "fog",
+          "secondary": false,
+          "depth": "over-actors",
+          "sprite": "fx.fog",
+          "opacity": 0.22,
+          "count": 2
+        },
+        {
+          "kind": "ripples",
+          "secondary": true,
+          "depth": "under-actors",
+          "sprite": "fx.ripple",
+          "opacity": 0.8,
+          "count": 8
+        }
+      ],
+      "decor": {
+        "animals": ["animal.frog", "animal.cat", "animal.racoon"],
+        "props": ["decor.flag-blue", "decor.plant", "decor.flower"],
+        "animalsPerRoom": 2,
+        "propsPerRoom": 3
+      }
+    },
+    "3": {
+      "chapter": 3,
+      "layers": [
+        {
+          "kind": "ash",
+          "secondary": true,
+          "depth": "over-actors",
+          "sprite": "fx.ash",
+          "opacity": 0.35,
+          "count": 18
+        },
+        {
+          "kind": "vignette",
+          "secondary": false,
+          "depth": "over-actors",
+          "sprite": null,
+          "opacity": 0.35,
+          "count": 1
+        }
+      ],
+      "decor": {
+        "animals": ["animal.racoon", "animal.dog", "animal.chicken"],
+        "props": ["decor.flag-red", "decor.flag-black", "decor.plant"],
+        "animalsPerRoom": 2,
+        "propsPerRoom": 3
+      }
+    },
+    "4": {
+      "chapter": 4,
+      "layers": [
+        {
+          "kind": "sand",
+          "secondary": true,
+          "depth": "over-actors",
+          "sprite": "fx.sand",
+          "opacity": 0.38,
+          "count": 18
+        },
+        {
+          "kind": "heat-haze",
+          "secondary": false,
+          "depth": "over-actors",
+          "sprite": null,
+          "opacity": 0.12,
+          "count": 1
+        }
+      ],
+      "decor": {
+        "animals": [],
+        "props": [],
+        "animalsPerRoom": 0,
+        "propsPerRoom": 0
+      }
+    }
+  }
+}
