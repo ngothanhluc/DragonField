@@ -1121,7 +1121,12 @@ export class Bootstrap extends Component {
 
     this.roomRoot?.destroy();
     this.roomRoot = null;
+    // The over-actors atmosphere node lives on the world `atmosphere-layer`, not on `roomRoot`:
+    // destroying the room does not take it with it, so both handles must be torn down explicitly
+    // (otherwise ch1 shafts/leaves stay drawn over the next chapter and the menus).
+    this.atmosphereHandle?.destroy();
     this.atmosphereHandle = null;
+    this.decorHandle?.destroy();
     this.decorHandle = null;
     this.atmosphereSnapshot = { chapter: 0, layers: [], animals: 0, props: 0 };
     this.currentLevel = null;
