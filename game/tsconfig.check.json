@@ -25,9 +25,5 @@
     "scripts/**/*.ts",
     "tests/**/*.ts",
     "types/**/*.d.ts"
-  ],
-  // Ticket #3: the frozen acceptance test builds a union of literal loadouts whose optional
-  // keys infer as `number | undefined`; tsc rejects that while vitest runs it fine. The file
-  // may not be edited by the executor, so it is exercised at runtime instead of type-checked.
-  "exclude": ["tests/core/weapon-vfx.test.ts"]
+  ]
 }

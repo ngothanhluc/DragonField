@@ -179,7 +179,7 @@ describe('enemy projectile by chapter — round, per chapter', () => {
       { piercing: 1 },
       { sharpen: 3 },
       { sharpen: 3, piercing: 1 },
-    ]) {
+    ] as Record<string, number>[]) {
       expect(enemy.has(playerProjectileLook(owned(loadout)).key)).toBe(false);
     }
   });
