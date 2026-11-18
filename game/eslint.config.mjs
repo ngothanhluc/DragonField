@@ -26,7 +26,7 @@ export default tseslint.config(
     },
   },
   {
-    // Ranh giới kiến trúc: core/ phải test được mà không cần engine.
+    // Architecture boundary: core/ must be testable without the engine.
     files: ['assets/scripts/core/**/*.ts'],
     rules: {
       'no-restricted-imports': [
@@ -36,7 +36,7 @@ export default tseslint.config(
             {
               group: ['cc', 'cc/*'],
               message:
-                'core/ phải là TS thuần: không import cc. Đưa phần cần engine vào assets/scripts/game/.',
+                'core/ must be plain TS: do not import cc. Move engine-dependent code into assets/scripts/game/.',
             },
           ],
         },
