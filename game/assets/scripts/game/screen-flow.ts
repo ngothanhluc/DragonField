@@ -1,13 +1,13 @@
 /**
- * Điều hướng màn hình M5: title, chapter select, shop, settings, credits,
- * pause, result. Tách khỏi `bootstrap.ts` để run-flow không phình theo UI.
+ * M5 screen routing: title, chapter select, shop, settings, credits,
+ * pause, result. Split from `bootstrap.ts` so run-flow does not grow with UI.
  *
- * File này không sở hữu run/combat. Nó nhận một `ScreenFlowHost` hẹp:
- * UI canvas, save/repository, trạng thái run (`status`, snapshot) và các hành
- * động run (start/launch/teardown). Nhờ vậy mọi màn vẫn dựng bằng code trong
- * `screens/`, còn bootstrap chỉ còn boot + vòng chạy + render.
+ * This file owns neither run nor combat. It takes a narrow `ScreenFlowHost`:
+ * the UI canvas, save/repository, run state (`status`, snapshot) and run
+ * actions (start/launch/teardown). That way every screen is still built in code under
+ * `screens/`, while bootstrap keeps only boot + the run loop + rendering.
  *
- * Mọi chữ hiển thị trong game là tiếng Anh (console log có thể giữ tiếng Việt).
+ * All on-screen text is English (console logs included).
  */
 import type { Node as CocosNode } from 'cc';
 import { chapterGate } from '../core/save/chapter-gate';
@@ -31,7 +31,7 @@ import { buildTitleScreen } from './screens/title-screen';
 
 type Node = InstanceType<typeof CocosNode>;
 
-/** Một lần chụp run trước khi teardown; đủ để dựng result và cộng vàng. */
+/** One run snapshot taken before teardown; enough to build the result and credit gold. */
 export interface RunSnapshot {
   readonly chapter: number;
   readonly room: number;
@@ -42,26 +42,26 @@ export interface RunSnapshot {
 }
 
 export interface ScreenFlowHost {
-  /** UI canvas (tạo lazily bởi bootstrap). */
+  /** UI canvas (created lazily by bootstrap). */
   uiRoot(): Node;
   save(): SaveData | null;
   repository(): SaveRepository | null;
   setSave(save: SaveData): void;
   status(): DebugStatus;
   setStatus(status: DebugStatus): void;
-  /** Chapter có dữ liệu level trong build này. */
+  /** Whether a chapter has level data in this build. */
   chapterAvailable(chapter: number): boolean;
-  /** Bắt đầu run từ chapter select (có gate/status guard ở bootstrap). */
+  /** Start a run from chapter select (gate/status guard lives in bootstrap). */
   startChapter(chapter: number): void;
-  /** Chụp run hiện tại; `null` khi không ở trong run. */
+  /** Snapshot the current run; `null` when not in a run. */
   runSnapshot(): RunSnapshot | null;
   launchChapter(chapter: number): Promise<void>;
   teardownRun(): void;
-  /** Nhạc nền theo màn; `null` = dừng (result/pause không đổi). */
+  /** Background music per screen; `null` = stop (result/pause leave it alone). */
   setMusic(id: MusicId | null): void;
-  /** Master volume áp ngay sau khi save settings đổi. */
+  /** Master volume applied right after saved settings change. */
   setVolume(volume: number): void;
-  /** Cờ accessibility (rung, số damage) áp ngay lên run đang chơi. */
+  /** Accessibility flags (shake, damage numbers) applied immediately to the running game. */
   applyFeelSettings(settings: Settings): void;
   fail(error: unknown): void;
 }
@@ -81,7 +81,7 @@ export class ScreenFlow {
     document.addEventListener('keydown', this.onKey, true);
   }
 
-  /** Esc/P trong run mở pause. Capture phase để không lệ thuộc focus canvas. */
+  /** Esc/P during a run opens pause. Capture phase so it does not depend on canvas focus. */
   private readonly onKey = (event: KeyboardEvent): void => {
     if (event.repeat || this.host.status() !== 'playing') return;
     const key = event.key;
@@ -92,7 +92,7 @@ export class ScreenFlow {
     void this.showPause().catch((error: unknown) => this.host.fail(error));
   };
 
-  /** Gỡ listener + màn hiện tại khi Bootstrap bị destroy. */
+  /** Remove the listener + current screen when Bootstrap is destroyed. */
   destroy(): void {
     document.removeEventListener('keydown', this.onKey, true);
     this.clearMenu();
@@ -102,12 +102,12 @@ export class ScreenFlow {
     return this.currentScreen;
   }
 
-  /** bootstrap báo màn đang chạy (playing/skill-pick) — không đổi status. */
+  /** Bootstrap reports the running screen (playing/skill-pick) — status is unchanged. */
   setScreen(id: DebugScreenId): void {
     this.currentScreen = id;
   }
 
-  /** Huỷ màn đang mở (dùng trước khi vào run hoặc khi destroy component). */
+  /** Tear down the open screen (used before entering a run or when the component is destroyed). */
   clearMenu(): void {
     this.menu?.destroy();
     this.menu = null;
@@ -121,7 +121,7 @@ export class ScreenFlow {
 
   async showTitle(): Promise<void> {
     const save = this.host.save();
-    if (save === null) throw new Error('ScreenFlow: chưa load save');
+    if (save === null) throw new Error('ScreenFlow: save not loaded');
 
     const token = this.nextMenuToken();
     const built = await buildTitleScreen({
@@ -161,7 +161,7 @@ export class ScreenFlow {
 
   async showChapterSelect(): Promise<void> {
     const save = this.host.save();
-    if (save === null) throw new Error('ScreenFlow: chưa load save');
+    if (save === null) throw new Error('ScreenFlow: save not loaded');
 
     const token = this.nextMenuToken();
     const chapters: ChapterButton[] = [];
@@ -197,7 +197,7 @@ export class ScreenFlow {
     );
   }
 
-  /** Kết thúc run: cộng vàng/unlock một lần, dọn run, mở result. */
+  /** End the run: credit gold/unlocks once, tear the run down, open result. */
   finishRun(won: boolean): void {
     const run = this.host.runSnapshot();
     if (run === null) return;
@@ -228,11 +228,11 @@ export class ScreenFlow {
         if (commit.unlocked) {
           unlockedChapter = run.chapter + 1;
           console.log(
-            `[YokaiField] Chapter ${run.chapter} clear → mở chapter ${commit.chaptersUnlocked}.`,
+            `[YokaiField] Chapter ${run.chapter} clear → unlocked chapter ${commit.chaptersUnlocked}.`,
           );
         }
       } catch (error: unknown) {
-        console.warn(`[YokaiField] Không ghi được kết quả run: ${errorMessage(error)}`);
+        console.warn(`[YokaiField] Could not write the run result: ${errorMessage(error)}`);
       }
     }
 
@@ -250,8 +250,8 @@ export class ScreenFlow {
 
     console.log(
       `[YokaiField] ${won ? 'RUN WON' : 'RUN LOST'}: chapter ${data.chapter} · ` +
-        `phòng ${data.roomReached}/${data.roomsTotal} · +${data.goldEarned} vàng ` +
-        `(tổng ${data.goldTotal}) · ${summary.durationSeconds}s · ${data.kills} kill.`,
+        `room ${data.roomReached}/${data.roomsTotal} · +${data.goldEarned} gold ` +
+        `(total ${data.goldTotal}) · ${summary.durationSeconds}s · ${data.kills} kills.`,
     );
 
     this.currentScreen = 'result';
@@ -295,7 +295,7 @@ export class ScreenFlow {
 
   private async showShop(backTo: () => void, initialFocus = 0): Promise<void> {
     const save = this.host.save();
-    if (save === null) throw new Error('ScreenFlow: chưa load save');
+    if (save === null) throw new Error('ScreenFlow: save not loaded');
 
     this.shopBack = backTo;
     const token = this.nextMenuToken();
@@ -306,7 +306,7 @@ export class ScreenFlow {
       onBack: backTo,
       onBuy: (track) => {
         if (this.tryBuy(track) === null) return;
-        // Dựng lại để giá/level/vàng đúng; giữ focus ở đúng track vừa mua.
+        // Rebuild so prices/levels/gold are correct; keep focus on the track just bought.
         void this.showShop(backTo, UPGRADE_TRACKS.indexOf(track)).catch((error: unknown) =>
           this.host.fail(error),
         );
@@ -323,14 +323,14 @@ export class ScreenFlow {
     this.host.setMusic('title');
   }
 
-  /** Mua một cấp; `null` khi thiếu vàng/track max/save lỗi. Luật nằm ở core. */
+  /** Buy one level; `null` when gold is short / the track is maxed / saving fails. Rules live in core. */
   private tryBuy(track: UpgradeTrack): SaveData | null {
     const save = this.host.save();
     const repo = this.host.repository();
     if (save === null || repo === null) return null;
 
     if (!canBuy(save, track, save.gold)) {
-      console.warn(`[YokaiField] Không mua được '${track}': thiếu vàng hoặc đã max.`);
+      console.warn(`[YokaiField] Cannot buy '${track}': not enough gold or already maxed.`);
       return null;
     }
 
@@ -339,17 +339,17 @@ export class ScreenFlow {
       const next: SaveData = { ...save, gold: result.gold, upgrades: result.state.upgrades };
       repo.save(next);
       this.host.setSave(next);
-      console.log(`[YokaiField] Mua '${track}' lên cấp ${next.upgrades[track]}, còn ${next.gold} vàng.`);
+      console.log(`[YokaiField] Bought '${track}' up to level ${next.upgrades[track]}, ${next.gold} gold left.`);
       return next;
     } catch (error: unknown) {
-      console.warn(`[YokaiField] Mua upgrade thất bại: ${errorMessage(error)}`);
+      console.warn(`[YokaiField] Upgrade purchase failed: ${errorMessage(error)}`);
       return null;
     }
   }
 
   private async showSettings(backTo: () => void): Promise<void> {
     const save = this.host.save();
-    if (save === null) throw new Error('ScreenFlow: chưa load save');
+    if (save === null) throw new Error('ScreenFlow: save not loaded');
 
     this.settingsBack = backTo;
     const token = this.nextMenuToken();
@@ -398,8 +398,8 @@ export class ScreenFlow {
   async showPause(): Promise<void> {
     if (this.host.status() !== 'playing') return;
 
-    // Đặt status trước khi dựng: update() dừng ngay, nên sim clock/enemy/đạn/
-    // telegraph/shield/i-frame đều đứng yên trong lúc màn pause load texture.
+    // Set the status before building: update() stops immediately, so sim clock/enemies/bullets/
+    // telegraph/shield/i-frames all stand still while the pause screen loads textures.
     this.host.setStatus('paused');
     this.currentScreen = 'paused';
 
@@ -434,7 +434,7 @@ export class ScreenFlow {
     console.log('[YokaiField] Resume.');
   }
 
-  /** Restart: giữ vàng đã kiếm, bắt đầu run mới cùng chapter. */
+  /** Restart: keep the gold earned, start a new run in the same chapter. */
   private async restartRun(): Promise<void> {
     const chapter = this.host.runSnapshot()?.chapter ?? 1;
     this.bankRunGold();
@@ -461,7 +461,7 @@ export class ScreenFlow {
     await this.showChapterSelect();
   }
 
-  /** Thoát/restart giữa run vẫn giữ vàng (GDD §7: vàng nhặt được là của người chơi). */
+  /** Quitting/restarting mid-run still keeps the gold (GDD §7: gold you picked up is yours). */
   private bankRunGold(): void {
     const save = this.host.save();
     const repo = this.host.repository();
@@ -472,9 +472,9 @@ export class ScreenFlow {
       const next = applyGold(save, goldEarned).save;
       repo.save(next);
       this.host.setSave(next);
-      console.log(`[YokaiField] Giữ ${goldEarned} vàng khi rời run (tổng ${next.gold}).`);
+      console.log(`[YokaiField] Kept ${goldEarned} gold when leaving the run (total ${next.gold}).`);
     } catch (error: unknown) {
-      console.warn(`[YokaiField] Không ghi được vàng khi rời run: ${errorMessage(error)}`);
+      console.warn(`[YokaiField] Could not write gold when leaving the run: ${errorMessage(error)}`);
     }
   }
 
@@ -485,8 +485,8 @@ export class ScreenFlow {
   }
 
   /**
-   * Settings mới nhất từ save sống, không phải bản chụp lúc mở màn — bấm hai
-   * công tắc liên tiếp không được ghi đè lẫn nhau.
+   * The latest settings from the live save, not the copy taken when the screen opened — two
+   * toggles pressed in a row must not overwrite each other.
    */
   private currentSettings(fallback: Settings): Settings {
     return this.host.save()?.settings ?? fallback;
@@ -514,11 +514,11 @@ export class ScreenFlow {
       if (normalized.volume !== save.settings.volume) this.host.setVolume(normalized.volume);
       this.host.applyFeelSettings(normalized);
     } catch (error: unknown) {
-      console.warn(`[YokaiField] Không ghi được settings: ${errorMessage(error)}`);
+      console.warn(`[YokaiField] Could not write settings: ${errorMessage(error)}`);
     }
   }
 
-  /** Fullscreen thật qua DOM; headless/không hỗ trợ thì giữ nguyên + cảnh báo. */
+  /** Real fullscreen through the DOM; headless/unsupported keeps the old state + warns. */
   private async toggleFullscreen(): Promise<void> {
     const save = this.host.save();
     if (save === null) return;
@@ -531,13 +531,13 @@ export class ScreenFlow {
         await document.exitFullscreen?.();
       }
     } catch (error: unknown) {
-      console.warn(`[YokaiField] Fullscreen không đổi được: ${errorMessage(error)}`);
+      console.warn(`[YokaiField] Could not change fullscreen: ${errorMessage(error)}`);
     }
 
     this.syncFullscreen();
   }
 
-  /** Lưu trạng thái fullscreen thật và vẽ lại nhãn nếu đang ở màn Settings. */
+  /** Save the real fullscreen state and redraw the label if the Settings screen is open. */
   syncFullscreen(): void {
     const save = this.host.save();
     if (save === null) return;
@@ -555,10 +555,10 @@ export class ScreenFlow {
     }
   }
 
-  /** Debug-only: đặt vàng (test shop). */
+  /** Debug-only: set gold (shop testing). */
   setGold(gold: number): boolean {
     if (!Number.isInteger(gold) || gold < 0) {
-      console.warn(`[YokaiField] debug setGold bỏ qua: cần số nguyên >= 0, nhận ${gold}`);
+      console.warn(`[YokaiField] debug setGold skipped: needs an integer >= 0, got ${gold}`);
       return false;
     }
     const save = this.host.save();
@@ -570,7 +570,7 @@ export class ScreenFlow {
       repo.save(next);
       this.host.setSave(next);
       console.log(`[YokaiField] debug setGold → ${next.gold}.`);
-      // Shop đang mở thì vẽ lại để giá/nút disabled khớp vàng mới.
+      // If the shop is open, redraw so prices/disabled buttons match the new gold.
       if (this.currentScreen === 'shop') {
         const back = this.shopBack ?? (() => {
           void this.showTitle().catch((error: unknown) => this.host.fail(error));
@@ -579,7 +579,7 @@ export class ScreenFlow {
       }
       return true;
     } catch (error: unknown) {
-      console.warn(`[YokaiField] debug setGold không ghi được save: ${errorMessage(error)}`);
+      console.warn(`[YokaiField] debug setGold could not write the save: ${errorMessage(error)}`);
       return false;
     }
   }

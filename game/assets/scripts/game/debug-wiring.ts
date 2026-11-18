@@ -1,8 +1,8 @@
 /**
- * Nối `Bootstrap` vào `window.__yokai` (chỉ khi `?debug=1`).
+ * Wires `Bootstrap` into `window.__yokai` (only when `?debug=1`).
  *
- * Tách khỏi bootstrap để run-flow không phình theo acceptance hooks; logic
- * `placeholders`/`audio`/`anim` cũng nằm đây thay vì rải trong class.
+ * Split from bootstrap so run-flow does not grow with acceptance hooks; the
+ * `placeholders`/`audio`/`anim` logic lives here too instead of being scattered through the class.
  */
 import type { Node as CocosNode } from 'cc';
 import type { AudioManager } from './audio/audio-manager';
@@ -56,7 +56,7 @@ export interface DebugWiringHost {
   readonly audioManager: () => AudioManager | null;
 }
 
-/** Cài API nếu URL có `?debug=1`; trả `true` khi đã cài. */
+/** Install the API if the URL has `?debug=1`; returns `true` when installed. */
 export function installDebugWiring(host: DebugWiringHost): boolean {
   const provider: DebugProvider = {
     status: host.status,

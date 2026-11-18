@@ -1,10 +1,10 @@
 /**
- * Settings (GDD §9): volume, fullscreen, accessibility (rung, số damage), keybind
- * read-only.
+ * Settings (GDD §9): volume, fullscreen, accessibility (shake, damage numbers), read-only
+ * keybinds.
  *
- * Volume đi từng bước 10% và được ghi vào save ngay (`onVolume`), nên mở lại
- * sau khi reload vẫn đúng. Hai cờ ticket #2 áp **ngay** khi bấm (không cần
- * restart run): people nhạy chuyển động tắt rung được giữa run.
+ * Volume steps by 10% and is written to the save immediately (`onVolume`), so reopening after
+ * a reload shows the right value. The two ticket #2 flags apply **immediately** on click (no
+ * run restart needed): motion-sensitive players can turn shake off mid-run.
  */
 import { stepVolume, type Settings } from '../../core/save/settings';
 import { buildMenuScreen, type MenuItem, type MenuScreen } from './menu';
@@ -28,7 +28,7 @@ export function formatFullscreen(on: boolean): string {
   return `Fullscreen   ${on ? 'ON' : 'OFF'}`;
 }
 
-/** Nhãn công tắc chung cho các cờ accessibility. */
+/** Shared toggle label for accessibility flags. */
 export function formatToggle(label: string, on: boolean): string {
   return `${label}   ${on ? 'ON' : 'OFF'}`;
 }
@@ -84,8 +84,8 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     name: 'settings',
     title: 'SETTINGS',
     subtitle: 'Saved to this browser',
-    // Gọn: màn có 5 hàng nên keybind gộp còn 1 dòng, nếu không nút Back rơi
-    // ngoài canvas ở viewport thấp (1280×720) và hint đè lên hàng cuối.
+    // Compact: the screen has 5 rows, so keybinds are merged into one line; otherwise the Back
+    // button falls off the canvas at low viewports (1280×720) and the hint overlaps the last row.
     info: ['Keybinds fixed: WASD/arrows move · Esc/P pause · Enter/Space menus'],
     items,
     onBack: options.onBack,
@@ -103,5 +103,5 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
   });
 }
 
-/** Giữ type Settings được dùng từ file này để adapter khỏi import hai nơi. */
+/** Re-export the Settings type used here so adapters do not import from two places. */
 export type SettingsScreenState = Settings;

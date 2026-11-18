@@ -1,13 +1,13 @@
 /**
- * Player: đọc WASD, di chuyển, tự bắn, ăn sát thương, lái animation.
+ * Player: reads WASD, moves, auto-fires, takes damage, drives the animation.
  *
- * Adapter mỏng quanh `core/`:
- * - di chuyển: `normalizeMoveInput` + `velocityFromInput` (core quyết vector, file này áp vào toạ độ);
- * - bắn: `AutoFire` + `BulletPool` (core quyết khi nào bắn và bắn vào đâu);
- * - máu: `HealthState` (core quyết i-frame và trần tim).
+ * Thin adapter around `core/`:
+ * - movement: `normalizeMoveInput` + `velocityFromInput` (core decides the vector, this file applies it to coordinates);
+ * - firing: `AutoFire` + `BulletPool` (core decides when to fire and at what);
+ * - health: `HealthState` (core decides i-frames and the heart cap).
  *
- * Không tự chạy trong `update()`: bootstrap gọi `step()` để thứ tự một frame là tất
- * định (player → enemy → đạn → va chạm), giống `core/sim/run-simulation.ts`.
+ * It does not run from `update()`: bootstrap calls `step()` so the frame order is
+ * deterministic (player → enemy → bullets → collisions), the same as `core/sim/run-simulation.ts`.
  */
 import { _decorator, Color as CocosColor, Component, Sprite as CocosSprite } from 'cc';
 import type { AnimationManifest, Direction } from '../core/art/manifest';
@@ -37,25 +37,25 @@ import { ACTOR_FEET_OFFSET_TILES, tileToWorld } from './level-view';
 
 const { ccclass } = _decorator;
 
-/** `cc` là module any: tên import chỉ dùng được ở vị trí value. */
+/** `cc` is an any module: import names only work in value position. */
 type Color = InstanceType<typeof CocosColor>;
 type Sprite = InstanceType<typeof CocosSprite>;
 
-/** Tint khiên / lúc trúng đòn (đọc được trạng thái mà không cần icon riêng). */
+/** Shield / hit tint (state is readable without a dedicated icon). */
 const PLAYER_NO_TINT = new CocosColor(255, 255, 255, 255);
 const PLAYER_SHIELD_TINT = new CocosColor(150, 225, 255, 255);
 const PLAYER_HURT_TINT = new CocosColor(255, 150, 150, 255);
-/** Màu muzzle flash: vàng ấm, đọc được trên mọi nền chapter. */
+/** Muzzle flash colour: warm yellow, readable on every chapter background. */
 const MUZZLE_TINT = new CocosColor(255, 238, 170, 255);
-/** Thời gian giữ tint trúng đòn / chặn đòn, ms. */
+/** How long the hit / block tint stays on, ms. */
 const PLAYER_TINT_MS = 140;
 
-/** Bán kính đạn player, tile — cùng quy ước với `run-simulation.ts`. */
+/** Player bullet radius, tiles — same convention as `run-simulation.ts`. */
 const BULLET_RADIUS_TILES = 0.15;
 
 /**
- * Đạn phải sống đủ lâu để bay hết tầm auto-aim, nếu không "tầm bắn 8 tile" trong
- * `config/tuning.json` chỉ là số ảo trên giấy. Cùng công thức với sim.
+ * A bullet must live long enough to cover the auto-aim range, otherwise "8 tile range" in
+ * `config/tuning.json` is only a number on paper. Same formula as the sim.
  */
 const PLAYER_BULLET_TTL_MS = Math.max(
   1200,
@@ -66,19 +66,19 @@ const PLAYER_BULLET_TTL_MS = Math.max(
   ),
 );
 
-/** Thời gian giữ frame `player.hit.*` sau khi trúng đòn (GDD §3: đọc được là mình vừa ăn đòn). */
+/** How long the `player.hit.*` frame stays after a hit (GDD §3: it must read as "I just got hit"). */
 const HIT_ANIM_MS = 150;
 
-/** Hướng mặc định khi chưa có input nào. */
+/** Default facing while there is no input. */
 const START_FACING: Direction = 'down';
 
 export interface PlayerInitArgs {
   readonly manifest: AnimationManifest;
-  /** Vị trí spawn trong hệ tile của `LevelData`, y hướng xuống. */
+  /** Spawn position in `LevelData` tile space, y down. */
   readonly startAt: Vec2;
-  /** RNG của run cho crit từng viên đạn (cùng nguồn với roll skill). */
+  /** Run RNG for per-bullet crit (same source as skill rolls). */
   readonly rng?: SeededRng;
-  /** Pool FX (khiên chặn). */
+  /** FX pool (shield block). */
   readonly fx?: FxPool;
 }
 
@@ -87,7 +87,7 @@ export class PlayerController extends Component {
   private readonly health = new HealthState(DEFAULT_COMBAT);
   private autoFire = AutoFire.fromRate(DEFAULT_COMBAT.fireRatePerSecond);
   private readonly bulletPool = new BulletPool();
-  /** Chỉ số hiện tại sau skill — mọi phép tính dùng object này, không đọc DEFAULT_COMBAT. */
+  /** Current stats after skills — every calculation uses this object, never DEFAULT_COMBAT. */
   private stats: DerivedStats = computeDerivedStats(new Map<string, number>());
   private shield = new ShieldCharger(0, 0);
   private rng = SeededRng.fromSeed(1);
@@ -97,7 +97,7 @@ export class PlayerController extends Component {
   private tint: Color = PLAYER_NO_TINT;
   private readonly keyboard = new KeyboardMove();
 
-  /** Vị trí hiện tại hệ **tile** của `LevelData` (y hướng xuống), không phải world. */
+  /** Current position in `LevelData`'s **tile** space (y down), not world space. */
   private tilePosition: Vec2 = { x: 0, y: 0 };
   private facing: Direction = START_FACING;
   private animator: SpriteAnimator | null = null;
@@ -106,21 +106,21 @@ export class PlayerController extends Component {
   private attackUntilMs = 0;
   private hitUntilMs = 0;
   private attackAnimMs = 0;
-  /** Scale gốc của node (ACTOR_SCALE) — squash luôn nhân từ số này, không trôi. */
+  /** Node base scale (ACTOR_SCALE) — squash always multiplies from this, so it never drifts. */
   private baseScale = 1;
-  /** Mốc bắt đầu squash và tham số của nó; hết thời gian là về đúng `baseScale`. */
+  /** Squash start time and its parameters; when time is up it returns exactly to `baseScale`. */
   private squashStartMs = Number.NEGATIVE_INFINITY;
   private squashDurationMs = 0;
   private squashAmount = 0;
-  /** Cú đẩy đang chạy sau đòn trúng; `null` = không bị đẩy. */
+  /** Knockback running after a hit; `null` = not being pushed. */
   private knockback: KnockbackState | null = null;
 
-  /** Đạn player đang bay — `bullet-view` đọc pool này mỗi frame. */
+  /** Player bullets in flight — `bullet-view` reads this pool every frame. */
   get bullets(): BulletPool {
     return this.bulletPool;
   }
 
-  /** Vị trí trong hệ tile của `LevelData` (y hướng xuống), dùng chung với enemy/đạn. */
+  /** Position in `LevelData` tile space (y down), shared with enemies/bullets. */
   get position(): Vec2 {
     return this.tilePosition;
   }
@@ -137,7 +137,7 @@ export class PlayerController extends Component {
     return this.health.isDead;
   }
 
-  /** Chỉ số sau skill — CombatLoop đọc để áp crit/pierce/nổ/lifesteal/thorns. */
+  /** Stats after skills — CombatLoop reads them to apply crit/pierce/explosion/lifesteal/thorns. */
   get derivedStats(): DerivedStats {
     return this.stats;
   }
@@ -150,16 +150,16 @@ export class PlayerController extends Component {
     return this.shield.maxCharges;
   }
 
-  /** Hồi máu (lifesteal, Second Wind, Vitality lúc nhặt). Trả số tim sau khi hồi. */
+  /** Heal (lifesteal, Second Wind, Vitality on pickup). Returns hearts after healing. */
   heal(amount: number): number {
     return this.health.heal(amount);
   }
 
   /**
-   * Áp loadout mới (nhặt skill hoặc debug `grantSkill`).
+   * Apply a new loadout (skill pickup or debug `grantSkill`).
    *
-   * `healNow` là hiệu ứng một lần của Vitality. Khiên được tạo lại đầy charge khi
-   * số stack đổi; giữa các lần nhặt, `ShieldCharger` tự hồi theo 20 s.
+   * `healNow` is Vitality's one-shot effect. The shield is recreated at full charge when the
+   * stack count changes; between pickups, `ShieldCharger` regenerates on its own every 20 s.
    */
   applyStats(stats: DerivedStats, healNow = 0): void {
     this.stats = stats;
@@ -178,7 +178,7 @@ export class PlayerController extends Component {
     }
   }
 
-  /** Gọi một lần sau khi `addComponent`, trước frame đầu tiên. */
+  /** Call once after `addComponent`, before the first frame. */
   init(args: PlayerInitArgs): void {
     this.animator = this.getComponent(SpriteAnimator);
     this.sprite = this.getComponent(CocosSprite);
@@ -195,18 +195,18 @@ export class PlayerController extends Component {
     this.playAnimation(`player.idle.${START_FACING}`, START_FACING);
   }
 
-  /** Đặt lại vị trí khi sang phòng mới; không đụng máu (máu theo cả run). */
+  /** Reset the position when entering a new room; health is untouched (it lasts the whole run). */
   teleport(at: Vec2): void {
     this.tilePosition = { x: at.x, y: at.y };
-    // Sang phòng khác thì cú đẩy của phòng cũ không được dính theo.
+    // On a room change, the old room's knockback must not carry over.
     this.knockback = null;
     this.syncNodePosition();
   }
 
   /**
-   * Một frame của player. `targets` do bootstrap gom từ các `EnemyView` còn sống.
-   * `nowMs` là đồng hồ của run (không phải `Date.now`) để i-frame và animation
-   * cùng một dòng thời gian, và để test/tái hiện được.
+   * One player frame. `targets` is collected by bootstrap from living `EnemyView`s.
+   * `nowMs` is the run clock (not `Date.now`) so i-frames and animation share one
+   * timeline, and so tests can reproduce it.
    */
   step(
     nowMs: number,
@@ -219,15 +219,15 @@ export class PlayerController extends Component {
     this.shield.update(nowMs);
 
     const input2D = normalizeMoveInput(this.keyboard.keys);
-    // `normalizeMoveInput` dùng quy ước màn hình: up = +y. Dữ liệu tile có y hướng
-    // **xuống**, nên lật dấu y đúng một lần, ở đây.
+    // `normalizeMoveInput` uses screen convention: up = +y. Tile data has y pointing
+    // **down**, so flip the y sign exactly once, here.
     const moveIntent: Vec2 = { x: input2D.x, y: -input2D.y };
     const moving = moveIntent.x !== 0 || moveIntent.y !== 0;
 
     if (moving) {
       const previousFacing = this.facing;
       this.facing = directionFromVector(moveIntent, this.facing);
-      // Đổi hướng = một cái "nảy" nhỏ, để chuyển động có trọng lượng.
+      // A turn gets a small "pop" so movement carries weight.
       if (this.facing !== previousFacing) {
         this.startSquash(
           nowMs,
@@ -260,11 +260,11 @@ export class PlayerController extends Component {
   }
 
   /**
-   * Ăn sát thương; i-frame và trần máu do `HealthState` quyết. Trả về `true` khi
-   * đòn thật sự vào (dùng cho log/FX sau này).
+   * Take damage; `HealthState` decides i-frames and the heart cap. Returns `true` when the
+   * hit really lands (for later logs/FX).
    */
   applyDamage(nowMs: number, amount: number, source: Vec2 | null = null): boolean {
-    // Khiên chặn trước i-frame: đòn bị chặn không tiêu i-frame và không knockback.
+    // The shield blocks before i-frames: a blocked hit costs no i-frame and no knockback.
     if (this.shield.tryBlock(nowMs)) {
       this.tintUntilMs = nowMs + PLAYER_TINT_MS;
       this.tint = PLAYER_SHIELD_TINT;
@@ -283,7 +283,7 @@ export class PlayerController extends Component {
     playSfx('player-hurt');
 
     if (result.dead) {
-      // Chết thì `step()` thôi chạy: squash dở sẽ đứng hình, nên trả scale gốc.
+      // On death `step()` stops running: a half-finished squash would freeze, so reset the base scale.
       this.node.setScale(this.baseScale, this.baseScale, 1);
       this.playAnimation('player.dead');
       playSfx('game-over');
@@ -305,7 +305,7 @@ export class PlayerController extends Component {
     return true;
   }
 
-  /** Cú đẩy đi sau input, nên không ai "giữ phím" mà đứng yên được khi trúng đòn. */
+  /** Knockback is applied after input, so holding a key cannot pin you in place when hit. */
   private applyKnockback(deltaMs: number, level: LevelData): void {
     const state = this.knockback;
     if (state === null) return;
@@ -352,7 +352,7 @@ export class PlayerController extends Component {
 
     this.attackUntilMs = nowMs + this.attackAnimMs;
 
-    // Muzzle flash nhỏ ở đầu nòng: cùng pool FX, không node mới mỗi phát.
+    // Small muzzle flash at the barrel tip: same FX pool, no new node per shot.
     this.fx?.spawn(
       'fx.impact',
       {
@@ -369,9 +369,9 @@ export class PlayerController extends Component {
   }
 
   /**
-   * Bắt đầu một lần squash/stretch (nhân từ `baseScale`, không cộng dồn). Đòn
-   * mới trong lúc cái cũ đang chạy thì cái mới thắng — node không bao giờ lệch
-   * scale gốc quá một lần biến dạng.
+   * Start one squash/stretch (multiplied from `baseScale`, never accumulated). A new hit
+   * while the old one runs wins — the node never drifts more than one deformation away
+   * from its base scale.
    */
   private startSquash(nowMs: number, durationMs: number, amount: number): void {
     if (!(durationMs > 0) || amount === 0) return;
@@ -390,8 +390,8 @@ export class PlayerController extends Component {
   }
 
   /**
-   * Tint trạng thái: đỏ khi vừa trúng đòn, xanh khi còn charge khiên. Đây là
-   * "shield icon/tint" của M4 — nhìn nhân vật biết khiên còn hay đã vỡ.
+   * State tint: red after a hit, blue while shield charges remain. This is the M4
+   * "shield icon/tint" — looking at the character tells you whether the shield still holds.
    */
   private applyStateTint(nowMs: number): void {
     const sprite = this.sprite;
@@ -424,7 +424,7 @@ export class PlayerController extends Component {
     this.playAnimation(`player.${clip}.${this.facing}`, this.facing);
   }
 
-  /** Chỉ `play` khi clip hoặc hướng đổi — `play` reset thời gian nên gọi mỗi frame là đứng hình. */
+  /** Only `play` when the clip or direction changes — `play` resets time, so calling it every frame freezes. */
   private playAnimation(key: string, direction?: Direction): void {
     const sameDirection = direction === undefined || this.animDirection === direction;
     if (this.animKey === key && sameDirection) return;

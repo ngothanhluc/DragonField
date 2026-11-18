@@ -1,11 +1,11 @@
 /**
- * Thu thập các `Label` đang hiển thị cho debug hook `uiText()` (M5 acceptance).
+ * Collect the visible `Label`s for the `uiText()` debug hook (M5 acceptance).
  *
- * Mục tiêu: chứng minh headless rằng **không text nào bị cắt** ở mọi tỉ lệ
- * canvas, và text trong card/button không tràn khỏi **rect của cha** (M5 round 3).
- * Rect trả về là pixel canvas (gốc dưới-trái) để test so trực tiếp với kích
- * thước canvas; `insideCanvas` so với band UI nhìn thấy, `insideParent` so với
- * UITransform gần nhất (button/card).
+ * Goal: prove headlessly that **no text is clipped** at any canvas ratio, and that text in a
+ * card/button does not overflow its **parent rect** (M5 round 3).
+ * Rects are canvas pixels (bottom-left origin) so tests can compare directly against the canvas
+ * size; `insideCanvas` compares with the visible UI band, `insideParent` with the nearest
+ * UITransform (button/card).
  */
 import {
   Canvas as CocosCanvas,
@@ -20,7 +20,7 @@ type Label = InstanceType<typeof CocosLabel>;
 type Node = InstanceType<typeof CocosNode>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 
-/** Hệ số ước lượng bề rộng glyph của font hệ thống (dự phòng khi contentSize = 0). */
+/** Estimated glyph width ratio of the system font (fallback when contentSize = 0). */
 const GLYPH_WIDTH_RATIO = 0.62;
 const EPSILON = 0.5;
 
@@ -62,8 +62,8 @@ function measure(label: Label): DebugUiText {
   const estimateWidth = longest * label.fontSize * GLYPH_WIDTH_RATIO;
   const estimateHeight = lines.length * Math.max(label.lineHeight, label.fontSize);
 
-  // Label wrap (RESIZE_HEIGHT/CLAMP/SHRINK) giữ bề rộng theo contentSize; nếu lấy
-  // ước lượng theo độ dài chuỗi thì text đã wrap vẫn bị báo tràn sai.
+  // Wrapping labels (RESIZE_HEIGHT/CLAMP/SHRINK) keep their width from contentSize; estimating
+  // from string length would wrongly report already-wrapped text as overflowing.
   const wrapped =
     label.enableWrapText === true && label.overflow !== CocosLabel.Overflow.NONE;
   const width = wrapped
@@ -123,8 +123,8 @@ function measure(label: Label): DebugUiText {
 function nearestParentTransform(node: Node): UITransform | null {
   let current: Node | null = node.parent;
   while (current !== null) {
-    // Canvas phủ cả màn: so label với nó không có nghĩa. Chỉ card/button/panel
-    // mới là "rect cha" cần kiểm text tràn.
+    // The Canvas covers the whole screen, so comparing a label with it is meaningless. Only
+    // cards/buttons/panels are "parent rects" worth overflow-checking.
     if (current.getComponent(CocosCanvas) !== null) return null;
     const transform = current.getComponent(CocosUITransform);
     if (transform !== null) return transform;

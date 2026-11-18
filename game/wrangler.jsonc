@@ -2,12 +2,12 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "yokai-field",
   "compatibility_date": "2026-11-18",
-  // Chỉ phục vụ file tĩnh: bản build Cocos đã qua `bun run deploy:prepare`, không có Worker script.
+  // Static files only: the Cocos build has been through `bun run deploy:prepare`, there is no Worker script.
   "assets": {
     "directory": "./deploy",
     "not_found_handling": "none"
   },
   "routes": [{ "pattern": "yokai.lukeinc.tech", "custom_domain": true }],
-  // Không cần URL *.workers.dev riêng: domain thật là yokai.lukeinc.tech.
+  // No separate *.workers.dev URL: the real domain is yokai.lukeinc.tech.
   "workers_dev": false
 }

@@ -1,23 +1,23 @@
 /**
- * Vòng chiến đấu của một phòng: enemy + đạn + va chạm + hitstop.
+ * Combat loop of one room: enemies + bullets + collisions + hitstop.
  *
- * Tách khỏi `bootstrap.ts` khi M3 thêm đạn caster, cú lao của brute, stagger và
- * hitstop: bootstrap lo run flow (chapter → phòng → wave → clear/loss), còn file
- * này lo **một frame chiến đấu**. Thứ tự frame giữ đúng như trước và như
- * `core/sim/run-simulation.ts`: player → enemy → đạn → va chạm → sạm thương chạm.
+ * Split from `bootstrap.ts` when M3 added caster bullets, brute charges, stagger and
+ * hitstop: bootstrap owns run flow (chapter → room → wave → clear/loss), while this file
+ * owns **one combat frame**. The frame order is unchanged and matches
+ * `core/sim/run-simulation.ts`: player → enemy → bullets → collisions → contact damage.
  *
- * Ba thứ thuộc về core, file này chỉ áp:
+ * Three things belong to core; this file only applies them:
  *
- * - **Thời gian**: `HitstopClock` ăn thời gian thật và trả thời gian mô phỏng;
- *   `nowMs` chỉ tăng theo phần mô phỏng, nên telegraph/i-frame/cooldown/TTL đạn
- *   cùng đứng yên trong 70 ms hitstop (không desync).
- * - **Quyết định của enemy**: `EnemyView.step` gọi `decideAction`; ở đây chỉ đọc
- *   kết quả (`released`, `chargeSweep`).
- * - **Hình học**: `segmentHitsCircle` cho cú lao, `hitsCircle` cho đạn, `firstHit`
- *   cho vật cản.
+ * - **Time**: `HitstopClock` consumes real time and returns simulated time;
+ *   `nowMs` only advances by the simulated part, so telegraph/i-frames/cooldowns/bullet TTL
+ *   all stand still during the 70 ms hitstop (no desync).
+ * - **Enemy decisions**: `EnemyView.step` calls `decideAction`; here we only read the
+ *   result (`released`, `chargeSweep`).
+ * - **Geometry**: `segmentHitsCircle` for dashes, `hitsCircle` for bullets, `firstHit`
+ *   for obstacles.
  *
- * Debug (`?debug=1`) dùng các method `spawnDebug` / `startStress` / `godMode`;
- * bình thường không code nào gọi chúng.
+ * Debug (`?debug=1`) uses the `spawnDebug` / `startStress` / `godMode` methods;
+ * nothing calls them in normal play.
  */
 import { Color as CocosColor, Node as CocosNodeValue, Sprite as CocosSprite } from 'cc';
 import type { AnimationManifest } from '../core/art/manifest';
@@ -55,26 +55,26 @@ import { ACTOR_SCALE } from './level-view';
 import type { PlayerController } from './player-controller';
 import { playSfx } from './audio/sfx';
 
-/** `cc` là module any: tên import chỉ dùng được ở vị trí value. */
+/** `cc` is an any module: import names only work in value position. */
 type Node = InstanceType<typeof CocosNodeValue>;
 
-/** Bán kính player khi xét đạn enemy / cú lao, tile — cùng quy ước sim. */
+/** Player radius for enemy bullets / dashes, tiles — same convention as the sim. */
 export const PLAYER_RADIUS_TILES = 0.25;
 
-/** Số enemy và số đạn enemy mà `stress()` duy trì. */
+/** Number of enemies and enemy bullets `stress()` keeps alive. */
 export const STRESS_ENEMY_COUNT = 8;
-/** Id của boss trong collision/auto-aim — trùng `boss-run.ts` để debug đọc được. */
+/** Boss id in collision/auto-aim — matches `boss-run.ts` so debug can read it. */
 export const BOSS_TARGET_ID = 'boss';
 /**
- * Mốc của milestone là "8 enemy + 40 đạn". Giữ 44 để sau khi vài viên trúng
- * player/bị vật cản ăn trong frame, con số đo được vẫn **>= 40**.
+ * The milestone target is "8 enemies + 40 bullets". Keep 44 so that after a few bullets hit
+ * the player/obstacles within the frame, the measured number is still **>= 40**.
  */
 export const STRESS_ENEMY_BULLETS = 44;
-/** Máu giả của enemy stress để chúng không chết trong lúc đo fps. */
+/** Fake HP for stress enemies so they do not die while fps is measured. */
 const STRESS_ENEMY_HEALTH = 999_999;
 const STRESS_BULLET_SPEED = 3;
 const STRESS_BULLET_TTL_MS = 6000;
-/** Bán kính vòng spawn của stress (quanh tâm phòng), tile. */
+/** Spawn ring radius for stress (around the room centre), tiles. */
 const STRESS_RING_RADIUS = 7;
 
 export interface CombatLoopOptions {
@@ -83,32 +83,32 @@ export interface CombatLoopOptions {
   readonly manifest: AnimationManifest;
   readonly actorLayer: Node;
   readonly level: LevelData;
-  /** Tên actor trong manifest theo vai trò của chapter hiện tại. */
+  /** Manifest actor name for a role in the current chapter. */
   readonly monsterFor: (role: EnemyRole) => string;
-  /** RNG của run: boss pattern + summon + trí crit đạn đã nằm ở PlayerController. */
+  /** Run RNG: boss pattern + summons + bullet crit already live in PlayerController. */
   readonly rng: SeededRng;
-  /** Callback khi boss đổi phase (bootstrap hiện banner). */
+  /** Callback when the boss changes phase (bootstrap shows the banner). */
   readonly onBossPhase?: (phase: BossPhase) => void;
   /**
-   * Một enemy vừa chết — bootstrap cộng vàng + cho coin bay (M5/#2). Gọi đúng
-   * **một lần** cho mỗi enemy, kể cả khi `killAll()`/debug giết hàng loạt.
-   * `position` là chỗ chết (tile) để coin bay từ đó về HUD.
+   * One enemy just died — bootstrap credits gold + flies a coin (M5/#2). Called exactly
+   * **once** per enemy, including when `killAll()`/debug kills in bulk.
+   * `position` is the death spot (tiles) so the coin can fly to the HUD from there.
    */
   readonly onKill?: (role: EnemyRole, elite: boolean, position: Vec2) => void;
-  /** Boss vừa chết (thưởng phòng boss do bootstrap quyết ở `awardRoomClear`). */
+  /** The boss just died (the boss-room reward is decided by bootstrap in `awardRoomClear`). */
   readonly onBossKilled?: () => void;
-  /** Pool flash vụ nổ; vắng mặt thì vẫn chạy, chỉ không có hình. */
+  /** Explosion flash pool; when absent the game still runs, just without visuals. */
   readonly fx?: FxPool;
-  /** Rung camera world (ticket #2); vắng mặt thì game vẫn chạy, chỉ không rung. */
+  /** World camera shake (ticket #2); when absent the game still runs, just without shake. */
   readonly shake?: ScreenShake;
   /**
-   * Một lần trúng đòn lên enemy/boss — bootstrap vẽ số damage nếu setting bật.
-   * `crit` suy ra từ damage viên đạn so với damage cơ bản (crit đã nhân lúc bắn).
+   * One hit on an enemy/boss — bootstrap draws the damage number if the setting is on.
+   * `crit` is derived from the bullet's damage versus base damage (crit is multiplied at fire time).
    */
   readonly onDamage?: (info: DamagePopupInfo) => void;
 }
 
-/** Một lần enemy/boss ăn damage, đủ để hiện số bay lên. */
+/** One enemy/boss hit, enough to show a floating number. */
 export interface DamagePopupInfo {
   readonly amount: number;
   readonly position: Vec2;
@@ -116,10 +116,10 @@ export interface DamagePopupInfo {
 }
 
 export interface CombatUpdateResult {
-  /** Frame bị hitstop ăn hết — mô phỏng không chạy frame này. */
+  /** The frame was fully eaten by hitstop — the sim did not run this frame. */
   readonly frozen: boolean;
   readonly playerDied: boolean;
-  /** Mọi enemy của phòng đã chết (bootstrap quyết sang wave/phòng kế). */
+  /** Every enemy in the room is dead (bootstrap decides the next wave/room). */
   readonly cleared: boolean;
 }
 
@@ -150,7 +150,7 @@ export class CombatLoop {
   private readonly hitstop = new HitstopClock(DEFAULT_COMBAT.enemyHitstopMs);
   private readonly enemies: EnemyView[] = [];
   private boss: BossView | null = null;
-  /** Enemy/boss đã trả thưởng — chặn cộng vàng hai lần khi update quét lại. */
+  /** Enemy/boss already rewarded — stops double gold when update scans again. */
   private readonly rewarded = new Set<string>();
   private bossRewarded = false;
   private readonly bossStatus = new StatusEffects();
@@ -161,7 +161,7 @@ export class CombatLoop {
   private awaitingAdvance = false;
   private god = false;
 
-  /** Debug stress: giữ 8 enemy + 44 đạn enemy trên màn để đo fps. */
+  /** Debug stress: keep 8 enemies + 44 enemy bullets on screen to measure fps. */
   private stress = false;
   private stressIndex = 0;
   private debugSeq = 0;
@@ -202,7 +202,7 @@ export class CombatLoop {
     return this.god;
   }
 
-  /** Số enemy còn sống — bootstrap dùng cho debug. */
+  /** Number of living enemies — bootstrap uses it for debug. */
   get aliveCount(): number {
     return this.enemies.filter((enemy) => !enemy.isDead).length;
   }
@@ -211,7 +211,7 @@ export class CombatLoop {
     return this.boss !== null && !this.boss.isDefeated;
   }
 
-  /** Snapshot boss cho debug `boss()`; `null` khi phòng thường. */
+  /** Boss snapshot for the debug `boss()`; `null` in a normal room. */
   bossSnapshot(): {
     readonly id: string;
     readonly name: string;
@@ -230,7 +230,7 @@ export class CombatLoop {
     };
   }
 
-  /** Debug `setBossHp`: trừ máu qua đúng đường `takeDamage` để phase đổi tự nhiên. */
+  /** Debug `setBossHp`: subtract HP through the real `takeDamage` path so phases change naturally. */
   setBossHealthFraction(fraction: number): boolean {
     const boss = this.boss;
     if (boss === null || boss.isDefeated) return false;
@@ -246,7 +246,7 @@ export class CombatLoop {
     this.god = on;
   }
 
-  /** Đổi phòng: dọn enemy/đạn, nhận level mới. Đồng hồ mô phỏng chạy tiếp (i-frame xuyên phòng). */
+  /** Room change: clear enemies/bullets, take the new level. The sim clock keeps running (i-frames carry across rooms). */
   enterRoom(level: LevelData): void {
     this.clear();
     this.level = level;
@@ -259,8 +259,8 @@ export class CombatLoop {
   }
 
   /**
-   * Sinh boss thật của phòng. Gọi trước `startWave` để telegraph/đạn boss có
-   * ngay trong frame đầu phòng (bootstrap gọi khi `enterRoom`).
+   * Spawn the room's real boss. Call before `startWave` so boss telegraphs/bullets exist
+   * from the room's first frame (bootstrap calls it from `enterRoom`).
    */
   spawnBoss(def: BossDef, start: Vec2): BossView {
     this.boss?.destroy();
@@ -280,7 +280,7 @@ export class CombatLoop {
     return boss;
   }
 
-  /** Gọi quái theo vòng quanh boss; vị trí do core/summon quyết (tất định). */
+  /** Summon adds in a ring around the boss; positions are decided by core/summon (deterministic). */
   private summon(role: EnemyRole, count: number): void {
     const boss = this.boss;
     if (boss === null) return;
@@ -301,7 +301,7 @@ export class CombatLoop {
     }
   }
 
-  /** Sinh wave `index` của phòng hiện tại. Gọi sau `enterRoom` (và sau khi đã spawn boss). */
+  /** Spawn wave `index` of the current room. Call after `enterRoom` (and after the boss is spawned). */
   startWave(index: number): void {
     this.waveIndex = index;
     this.awaitingAdvance = false;
@@ -310,7 +310,7 @@ export class CombatLoop {
     }
   }
 
-  /** Một frame chiến đấu. `realDeltaMs` đã được bootstrap kẹp trần. */
+  /** One combat frame. `realDeltaMs` has already been capped by bootstrap. */
   update(realDeltaMs: number): CombatUpdateResult {
     const player = this.player;
     const level = this.level;
@@ -356,7 +356,7 @@ export class CombatLoop {
     return { frozen: false, playerDied: this.playerDied, cleared };
   }
 
-  /** Đi một frame pattern boss + poison DoT (Freeze không áp lên boss — xem report M4). */
+  /** Advance the boss pattern one frame + poison DoT (Freeze does not apply to bosses — see the M4 report). */
   private stepBoss(deltaMs: number, playerPosition: Vec2): void {
     const boss = this.boss;
     if (boss === null || boss.isDefeated) return;
@@ -365,8 +365,8 @@ export class CombatLoop {
     const poison = this.bossStatus.poisonDamage(this.nowMs, deltaMs);
     if (poison > 0) boss.takeDamage(poison, this.nowMs);
 
-    // Thân boss lúc lao cũng gây sát thương — nếu không, Samurai charge xuyên
-    // qua người chơi mà không có gì xảy ra. i-frame chặn trúng nhiều frame.
+    // The boss body also deals damage while dashing — otherwise a Samurai charge would
+    // pass through the player with nothing happening. i-frames stop multi-frame hits.
     if (
       boss.isCharging &&
       distance(boss.position, playerPosition) <= boss.hitboxRadiusTiles + PLAYER_RADIUS_TILES
@@ -385,8 +385,8 @@ export class CombatLoop {
   }
 
   /**
-   * Bắn đạn enemy khi enemy vừa thả đòn. Caster elite bắn loạt 3 viên toả quạt
-   * (`eliteVolleyAngles`); caster thường một viên đi thẳng.
+   * Fire enemy bullets when an enemy releases an attack. Elite casters fire a 3-shot fan
+   * (`eliteVolleyAngles`); a normal caster fires one straight shot.
    */
   private stepEnemies(deltaMs: number): void {
     const player = this.player;
@@ -409,7 +409,7 @@ export class CombatLoop {
         }
       }
 
-      // Cú lao trúng player: quét cả đoạn đường, mỗi cú chỉ trừ máu một lần.
+      // Dash hits the player: sweep the whole path, each dash costs HP only once.
       const sweep = step.chargeSweep;
       if (
         sweep !== null &&
@@ -423,16 +423,16 @@ export class CombatLoop {
   }
 
   /**
-   * Đạn bay + va chạm. Đạn enemy trừ máu player (i-frame của `HealthState` chặn
-   * hai viên trong 0.8 s); đạn player áp toàn bộ skill (crit/execute/pierce/
-   * ricochet/homing/nổ/freeze/poison/lifesteal) và **xin hitstop** khi trúng.
+   * Bullet travel + collisions. Enemy bullets cost the player HP (the `HealthState`
+   * i-frame blocks two hits within 0.8 s); player bullets apply every skill (crit/execute/pierce/
+   * ricochet/homing/explosion/freeze/poison/lifesteal) and **request hitstop** on hit.
    */
   private stepBullets(deltaMs: number, level: LevelData): void {
     const player = this.player;
     const stats = player.derivedStats;
     const pool = player.bullets;
 
-    // Homing xoay trước khi bay, dùng vị trí đầu frame.
+    // Homing steers before moving, using the start-of-frame position.
     for (const bullet of pool.active()) {
       if (!bullet.homing || bullet.owner !== 'player') continue;
       const aim = this.nearestTarget(bullet.position);
@@ -450,7 +450,7 @@ export class CombatLoop {
     const spent = new Set<number>();
 
     for (const bullet of pool.active()) {
-      // Vật cản chặn đạn — quét theo đường đi để viên nhanh không xuyên cột 1 tile.
+      // Obstacles block bullets — sweep along the path so a fast bullet cannot tunnel a 1-tile pillar.
       const from = {
         x: bullet.position.x - bullet.velocity.x * seconds,
         y: bullet.position.y - bullet.velocity.y * seconds,
@@ -473,7 +473,7 @@ export class CombatLoop {
 
       let consumed = false;
 
-      // Boss trước (mục tiêu chính của phòng boss), rồi mới tới quái.
+      // Boss first (the main target in a boss room), then the mobs.
       const boss = this.boss;
       if (
         boss !== null &&
@@ -536,7 +536,7 @@ export class CombatLoop {
     }
   }
 
-  /** Nổ AoE quanh điểm trúng: damage phụ lên mọi mục tiêu khác trong bán kính. */
+  /** AoE explosion around the hit point: extra damage to every other target in range. */
   private explode(
     bullet: { readonly explosiveRadiusTiles: number; readonly explosiveDamage: number; readonly hitIds: readonly string[] },
     center: Vec2,
@@ -569,8 +569,8 @@ export class CombatLoop {
   }
 
   /**
-   * Sau một lần trúng: Piercing giữ đạn, Ricochet đổi hướng, còn lại thu hồi.
-   * Trả `true` khi viên đạn phải bị bỏ.
+   * After a hit: Piercing keeps the bullet, Ricochet redirects it, everything else is
+   * recalled. Returns `true` when the bullet must be dropped.
    */
   private resolveBullet(bullet: {
     pierceRemaining: number;
@@ -609,7 +609,7 @@ export class CombatLoop {
     return true;
   }
 
-  /** Mục tiêu gần nhất cho Homing: boss hoặc enemy còn sống. */
+  /** Nearest target for Homing: the boss or a living enemy. */
   private nearestTarget(from: Vec2): Vec2 | null {
     let best: Vec2 | null = null;
     let bestGap = Number.POSITIVE_INFINITY;
@@ -630,7 +630,7 @@ export class CombatLoop {
     return best;
   }
 
-  /** Sát thương khi chạm của chaser/tank (i-frame lo phần "không mất 2 tim liên tiếp"). */
+  /** Chaser/tank contact damage (i-frames handle "no two hearts lost in a row"). */
   private applyContactDamage(): void {
     const player = this.player;
     const thorns = player.derivedStats.thorns;
@@ -641,7 +641,7 @@ export class CombatLoop {
 
       const heartsBefore = player.hearts;
       this.damagePlayer(enemy.contactDamage, enemy.position);
-      // Thorns chỉ nổ khi đòn **thật sự** vào tim, không phải khi khiên chặn/i-frame.
+      // Thorns only fires when the blow **actually** reaches a heart, not when a shield/i-frame blocks it.
       if (thorns !== undefined && player.hearts < heartsBefore) {
         enemy.takeDamage(thorns.damage, player.position, this.nowMs);
       }
@@ -649,8 +649,8 @@ export class CombatLoop {
   }
 
   /**
-   * Trả `true` khi tim thật sự giảm (để Thorns không kích hoạt lúc khiên/i-frame).
-   * Đòn thật vào tim cộng trauma rung camera (đòn boss lao truyền số lớn hơn).
+   * Returns `true` when hearts actually drop (so Thorns does not trigger on shield/i-frame).
+   * A real hit adds camera-shake trauma (a boss charge passes a larger number).
    */
   private damagePlayer(
     amount: number,
@@ -666,13 +666,13 @@ export class CombatLoop {
     return true;
   }
 
-  /** Số damage bay lên tại chỗ trúng (adapter HUD quyết định có vẽ không). */
+  /** Floating damage number at the hit point (the HUD adapter decides whether to draw it). */
   private reportDamage(amount: number, position: Vec2, crit: boolean): void {
     if (!(amount > 0)) return;
     this.onDamage({ amount, position, crit });
   }
 
-  /** Sinh một enemy và gắn node. Boss/debug dùng chung đường này. */
+  /** Spawn one enemy and attach its node. Boss/debug share this path. */
   addEnemy(
     state: EnemyState,
     options: {
@@ -691,7 +691,7 @@ export class CombatLoop {
     sprite.sizeMode = CocosSprite.SizeMode.TRIMMED;
     sprite.trim = false;
 
-    // 1 texture px = 1/16 unit (xem `ACTOR_SCALE` trong level-view).
+    // 1 texture px = 1/16 unit (see `ACTOR_SCALE` in level-view).
     const scale = ACTOR_SCALE;
     node.setScale(scale, scale, 1);
 
@@ -712,7 +712,7 @@ export class CombatLoop {
     return enemyView;
   }
 
-  /** Giết mọi enemy còn sống qua đường damage chuẩn (wave/room clear chạy như chơi thật). */
+  /** Kill every living enemy through the normal damage path (wave/room clear runs like real play). */
   killAll(): number {
     let killed = 0;
     for (const enemy of this.enemies) {
@@ -725,14 +725,14 @@ export class CombatLoop {
       boss.takeDamage(boss.health, this.nowMs);
       killed += 1;
     }
-    // Debug giết hàng loạt vẫn phải trả vàng đúng như chơi thật (M5).
+    // Bulk debug kills must still pay gold exactly like real play (M5).
     this.reportDeaths();
     return killed;
   }
 
   /**
-   * Báo chết đúng một lần cho mỗi enemy/boss. Gọi sau mọi đường damage (update,
-   * `killAll`, `setBossHealthFraction`) để bootstrap cộng vàng ngay frame đó.
+   * Report each enemy/boss death exactly once. Called after every damage path (update,
+   * `killAll`, `setBossHealthFraction`) so bootstrap credits gold in that same frame.
    */
   private reportDeaths(): void {
     for (const enemy of this.enemies) {
@@ -740,7 +740,7 @@ export class CombatLoop {
       this.rewarded.add(enemy.id);
       const role = enemy.role;
       if (role !== null) this.onKill(role, enemy.isElite, enemy.position);
-      // Gold sparkle tại chỗ chết (không có đồ nhặt riêng trong run).
+      // Gold sparkle at the death spot (there are no pickups in a run).
       this.fx?.spawn('fx.impact', enemy.position, {
         tint: new CocosColor(255, 214, 90, 255),
         drawUnits: 0.9,
@@ -756,7 +756,7 @@ export class CombatLoop {
     }
   }
 
-  /** Debug: spawn một enemy ở vị trí chỉ định (mặc định quanh tâm phòng). */
+  /** Debug: spawn one enemy at a given position (defaults to near the room centre). */
   spawnDebug(role: EnemyRole, elite: boolean, at?: Vec2): string {
     const maxHealth = maxHealthFor(role, elite, undefined, this.level.chapter);
     const position = at ?? this.defaultSpawnPoint(role);
@@ -776,8 +776,8 @@ export class CombatLoop {
   }
 
   /**
-   * Debug: 8 enemy máu vô hạn + giữ >= 40 đạn enemy trên màn. Player vẫn bị coi
-   * là trúng đạn nhưng `godMode` chặn sát thương, để đo fps trong điều kiện xấu nhất.
+   * Debug: 8 enemies with unlimited HP + keep >= 40 enemy bullets on screen. The player still
+   * counts as hit but `godMode` blocks damage, so fps is measured under the worst case.
    */
   startStress(): void {
     this.stress = true;
@@ -789,7 +789,7 @@ export class CombatLoop {
     this.stress = false;
   }
 
-  /** Snapshot enemy cho debug hook (không expose object nội bộ). */
+  /** Enemy snapshot for the debug hook (never exposes internal objects). */
   snapshotEnemies(): EnemySnapshot[] {
     return this.enemies.map((enemy) => ({
       id: enemy.id,
@@ -803,12 +803,12 @@ export class CombatLoop {
     }));
   }
 
-  /** Số đạn enemy đang sống — debug/acceptance dùng để kiểm "stress giữ 40 viên". */
+  /** Number of live enemy bullets — debug/acceptance uses it to check "stress holds 40". */
   enemyBulletCount(): number {
     return this.player.bullets.active().filter((bullet) => bullet.owner === 'enemy').length;
   }
 
-  /** Dọn toàn bộ enemy khỏi scene + xoá đạn. */
+  /** Remove every enemy from the scene + clear bullets. */
   clear(): void {
     for (const enemy of this.enemies) {
       if (enemy.node.isValid) enemy.node.destroy();
@@ -822,7 +822,7 @@ export class CombatLoop {
     this.player.bullets.clear();
   }
 
-  /** Dọn node + trạng thái; gọi khi rời run. */
+  /** Clean nodes + state; called when leaving a run. */
   destroy(): void {
     this.clear();
     this.fx?.destroy();
@@ -834,9 +834,9 @@ export class CombatLoop {
   private topUpStress(): void {
     const player = this.player;
 
-    // Đủ 8 enemy, mỗi con máu vô hạn để không chết vì auto-fire trong lúc đo.
-    // Gọi cả đầu và cuối frame: enemy của wave chết giữa frame thì slot được lấp
-    // ngay, nên số đo giữa hai frame luôn là 8.
+    // Keep 8 enemies, each with unlimited HP so auto-fire cannot kill them mid-measurement.
+    // Called at both the start and the end of a frame: a wave enemy that dies mid-frame is
+    // replaced immediately, so the count between frames is always 8.
     let alive = this.aliveCount;
     while (alive < STRESS_ENEMY_COUNT) {
       const role = STRESS_ROLES[this.stressIndex % STRESS_ROLES.length] ?? 'chaser';
@@ -860,7 +860,7 @@ export class CombatLoop {
       alive += 1;
     }
 
-    // Giữ >= 40 đạn enemy: bắn từ vòng ngoài vào player, TTL dài để màn luôn đầy.
+    // Keep >= 40 enemy bullets: fire from an outer ring at the player, long TTL so the screen stays full.
     const pool = player.bullets;
     let live = this.enemyBulletCount();
     const angleStep = (Math.PI * 2) / STRESS_ENEMY_BULLETS;

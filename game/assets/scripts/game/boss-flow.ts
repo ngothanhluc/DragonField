@@ -1,8 +1,9 @@
 /**
- * Nối boss core vào scene: tạo `BossView` từ `LevelData` và hiện banner đổi phase.
+ * Wires the core boss into the scene: builds a `BossView` from `LevelData` and shows
+ * the phase-change banner.
  *
- * Tách khỏi `bootstrap.ts` để file run-flow chỉ còn một dòng gọi boss. Không có
- * pattern/AI ở đây — mọi thứ nằm trong `core/boss/` và `boss-view.ts`.
+ * Split from `bootstrap.ts` so the run-flow file needs one line to call the boss. There are
+ * no patterns/AI here — everything lives in `core/boss/` and `boss-view.ts`.
  */
 import { bossForSpriteName, type BossDef } from '../core/boss/boss-defs';
 import type { LevelData } from '../core/level/level-data';
@@ -10,7 +11,7 @@ import type { Vec2 } from '../core/math/vec2';
 import { playSfx } from './audio/sfx';
 import type { CombatLoop } from './combat-loop';
 
-/** Màu RGBA tối thiểu của Cocos `Color` — không import value chỉ dùng ở type. */
+/** Minimal Cocos `Color` RGBA shape — no value import, type use only. */
 export interface PhaseColor {
   readonly r: number;
   readonly g: number;
@@ -18,58 +19,58 @@ export interface PhaseColor {
   readonly a: number;
 }
 
-/** Node tối thiểu mà banner cần; tránh type `cc` trong file không dựng node. */
+/** The minimal node a banner needs; avoids the `cc` type in a file that builds no nodes. */
 export interface DestroyableNode {
   destroy(): void;
 }
 
-/** Chỗ boss đứng khi TMX không có object `bossStart` (tile unit, y hướng xuống). */
+/** Where the boss stands when the TMX has no `bossStart` object (tile units, y down). */
 export const BOSS_START_FALLBACK: Vec2 = { x: 16, y: 5 };
 
 /**
- * Sinh boss thật cho phòng. Trả def để caller log; ném lỗi nếu TMX thiếu
- * `boss` hoặc tên sprite không có trong `BOSSES` (dữ liệu sai phải nổi ngay).
+ * Spawn the room's real boss. Returns the def so the caller can log; throws if the TMX lacks
+ * `boss` or the sprite name is not in `BOSSES` (bad data must surface immediately).
  */
 export function spawnBossForRoom(combat: CombatLoop, level: LevelData): BossDef {
   const bossName = level.boss?.name;
   if (bossName === undefined) {
-    throw new Error(`Phòng ${level.room} là boss room nhưng thiếu map property "boss"`);
+    throw new Error(`Room ${level.room} is a boss room but is missing the map property "boss"`);
   }
 
   const def = bossForSpriteName(bossName);
   if (def === undefined) {
     throw new Error(
-      `Không có boss "${bossName}" trong BOSSES (TMX room-${level.room}); ` +
-        'map property "boss" phải là spriteName, ví dụ TenguBlue.',
+      `No boss "${bossName}" in BOSSES (TMX room-${level.room}); ` +
+        'the "boss" map property must be a spriteName, e.g. TenguBlue.',
     );
   }
 
   const start = level.bossStart ?? BOSS_START_FALLBACK;
   combat.spawnBoss(def, start);
   console.log(
-    `[YokaiField] Boss ${def.displayName} (${def.maxHealth} HP, 3 phase) tại ` +
+    `[YokaiField] Boss ${def.displayName} (${def.maxHealth} HP, 3 phases) at ` +
       `${start.x},${start.y} — pattern ${def.id}.`,
   );
   return def;
 }
 
 export interface PhaseBannerUi {
-  /** Node UI đã có Canvas; banner tạo dưới node này. */
+  /** UI node that already has a Canvas; the banner is created under it. */
   readonly showBanner: (
     name: string,
     text: string,
     color: PhaseColor,
     fontSize: number,
   ) => DestroyableNode;
-  /** Hẹn giờ của Cocos (bootstrap truyền `scheduleOnce`). */
+  /** Cocos scheduler (bootstrap passes `scheduleOnce`). */
   readonly schedule: (callback: () => void, delaySeconds: number) => void;
   readonly winColor: PhaseColor;
   readonly lossColor: PhaseColor;
 }
 
 /**
- * Banner `PHASE 2` / `ENRAGE`. Mỗi phase đổi phase lại thay banner cũ; tự tắt
- * sau 1.2 s. Không giữ state ngoài node banner.
+ * The `PHASE 2` / `ENRAGE` banner. Each phase change replaces the old banner; it turns
+ * itself off after 1.2 s. No state is kept outside the banner node.
  */
 export class BossPhaseBanner {
   private banner: DestroyableNode | null = null;
@@ -84,7 +85,7 @@ export class BossPhaseBanner {
     const banner = this.ui.showBanner(`boss-phase-${phase}`, text, color, 22);
     this.banner = banner;
     this.ui.schedule(() => {
-      // Chỉ tắt banner mình vừa tạo; phase kế có thể đã thay nó trong 1.2 s.
+      // Only turn off the banner this call created; the next phase may have replaced it within 1.2 s.
       if (this.banner === banner) {
         banner.destroy();
         this.banner = null;

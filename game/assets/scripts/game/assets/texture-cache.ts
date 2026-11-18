@@ -1,26 +1,26 @@
 /**
- * Cache `Texture2D` theo sheet.
+ * `Texture2D` cache keyed by sheet.
  *
- * Mỗi PNG trong `assets/resources/art/**` import thành 1 texture (sub-asset `<path>/texture`).
- * Nhiều animation key dùng chung một sheet (`player.idle.down/up/left/right`), nên load phải
- * de-dup cả lúc đang bay lẫn sau khi xong: 94 file PNG, không được load lại mỗi lần đổi animation.
+ * Each PNG under `assets/resources/art/**` imports as one texture (sub-asset `<path>/texture`).
+ * Many animation keys share one sheet (`player.idle.down/up/left/right`), so loading must
+ * de-duplicate both in flight and after completion: 94 PNG files, never reload per animation change.
  */
 import { resources, Texture2D as CocosTexture2D } from 'cc';
 import { toResourcesPath } from '../../core/art/runtime';
 /**
- * `types/cc.d.ts` stub khai báo `cc` rỗng nên tên import từ `cc` là namespace, không dùng được ở
- * vị trí type. `InstanceType` giữ nguyên nghĩa (khi có type thật của engine thì đây chính là
- * `Texture2D`) mà vẫn qua được `tsc` trong repo.
+ * The `types/cc.d.ts` stub declares `cc` as empty, so names imported from `cc` are namespaces
+ * and cannot be used in type position. `InstanceType` keeps the meaning (with the engine's real
+ * types this is exactly `Texture2D`) while still passing `tsc` in this repo.
  */
 type Texture2D = InstanceType<typeof CocosTexture2D>;
 
-/** Promise thay vì texture: caller thứ hai trong lúc load nhận đúng promise đang bay. */
+/** Promises instead of textures: a second caller during loading gets the in-flight promise. */
 const textures = new Map<string, Promise<Texture2D>>();
 
 /**
- * Load texture của một sheet (đường dẫn y nguyên trong manifest).
- * Ném `Error` nêu cả tên sheet lẫn path resources — đây là thứ đầu tiên người ta đọc khi art
- * import sai (Type = `texture` thay vì `sprite-frame`, thiếu file, sai tên thư mục).
+ * Load the texture of one sheet (path exactly as written in the manifest).
+ * Throws an `Error` naming both the sheet and the resources path — the first thing to read when
+ * art imports wrong (Type = `texture` instead of `sprite-frame`, missing file, wrong folder name).
  */
 export function loadTexture(sheet: string): Promise<Texture2D> {
   const cached = textures.get(sheet);
@@ -35,11 +35,11 @@ export function loadTexture(sheet: string): Promise<Texture2D> {
       CocosTexture2D,
       (err: Error | null, texture: Texture2D | null) => {
         if (err || !texture) {
-          const cause = err ? err.message : 'không trả về texture';
+          const cause = err ? err.message : 'no texture returned';
           reject(
             new Error(
-              `Không load được texture cho sheet "${sheet}" (resources: "${path}/texture"). ` +
-                `Kiểm tra PNG đã import với Type = sprite-frame và đúng đường dẫn chưa. Nguyên nhân: ${cause}`,
+              `Could not load the texture for sheet "${sheet}" (resources: "${path}/texture"). ` +
+                `Check that the PNG is imported with Type = sprite-frame and at the right path. Cause: ${cause}`,
             ),
           );
           return;
@@ -50,14 +50,14 @@ export function loadTexture(sheet: string): Promise<Texture2D> {
   });
 
   textures.set(sheet, task);
-  // Pixel art: mọi texture world/UI load qua đây đều NEAREST. Trước M6 chỉ UI dùng;
-  // world art vẫn bilinear nên 16 px phóng lên bị nhoè.
+  // Pixel art: every world/UI texture loaded here is NEAREST. Before M6 only UI used this;
+  // world art was bilinear, so 16 px scaled up looked blurry.
   task
     .then((texture) => {
       texture.setFilters(CocosTexture2D.Filter.NEAREST, CocosTexture2D.Filter.NEAREST);
     })
     .catch(() => undefined);
-  // Load hỏng thì bỏ khỏi cache để lần sau còn thử lại (cache chỉ vĩnh viễn khi thành công).
+  // On failure, drop it from the cache so a later attempt can retry (only successful loads are permanent).
   task.catch(() => {
     if (textures.get(sheet) === task) {
       textures.delete(sheet);
@@ -66,17 +66,17 @@ export function loadTexture(sheet: string): Promise<Texture2D> {
   return task;
 }
 
-/** Load trước nhiều sheet (dùng ở màn load đầu chapter). Sheet trùng chỉ load một lần. */
+/** Preload several sheets (used by the chapter start loading screen). Duplicate sheets load once. */
 export function preloadSheets(sheets: readonly string[]): Promise<void> {
   return Promise.all(Array.from(new Set(sheets), (sheet) => loadTexture(sheet))).then(() => undefined);
 }
 
 /**
- * Như `loadTexture` nhưng ép lọc **NEAREST** cho pixel-art UI.
+ * Like `loadTexture` but forces **NEAREST** filtering for pixel-art UI.
  *
- * Mặc định asset import là bilinear, nên nút gỗ 16×8 phóng lên 300×38 và thẻ
- * skill bị nhoè. UI frame/thẻ/chapter button dùng hàm này; world art giữ đường
- * `loadTexture` để M6 quyết riêng.
+ * Imported assets default to bilinear, so a 16×8 wooden button scaled to 300×38 and skill
+ * cards come out blurry. UI frames/cards/chapter buttons use this; world art keeps
+ * `loadTexture` for M6 to decide separately.
  */
 export function loadPixelTexture(sheet: string): Promise<Texture2D> {
   return loadTexture(sheet).then((texture) => {
@@ -85,7 +85,7 @@ export function loadPixelTexture(sheet: string): Promise<Texture2D> {
   });
 }
 
-/** Xoá cache — chỉ dùng cho test/dev; không destroy texture vì sprite đang dùng có thể còn sống. */
+/** Clear the cache — test/dev only; textures are not destroyed because live sprites may still use them. */
 export function clearTextureCache(): void {
   textures.clear();
 }

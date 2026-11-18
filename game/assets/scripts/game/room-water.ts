@@ -1,13 +1,13 @@
 /**
- * Nước động của chapter 2: sông (ripple) + thác 3 phần, dùng sheet animated của
- * pack (`Backgrounds/Animated/Waterfall`, `Water Ripples`).
+ * Chapter 2's animated water: river (ripple) + 3-part waterfall, using the pack's animated
+ * sheets (`Backgrounds/Animated/Waterfall`, `Water Ripples`).
  *
- * Nước là lớp trang trí **dưới actor** và **trên tile map**: node được chèn ở
- * sibling index 1 của room root (sau map, trước obstacle). Không có va chạm —
- * sông nông, player/enemy đi qua.
+ * Water is a decorative layer **below actors** and **above the tile map**: the node is inserted
+ * at sibling index 1 of the room root (after the map, before obstacles). There is no collision —
+ * the river is shallow, so player/enemies walk through it.
  *
- * Animation dùng một clock chung cho cả phòng: 60 sprite nước không cần 60
- * component `update` riêng.
+ * Animation shares one clock for the whole room: 60 water sprites need no 60 separate
+ * `update` components.
  */
 import {
   _decorator,
@@ -56,7 +56,7 @@ export class WaterView extends Component {
 
   init(areas: readonly WaterArea[]): void {
     void this.build(areas).catch((error: unknown) => {
-      warn(`[YokaiField] Không dựng được nước: ${String(error)}`);
+      warn(`[YokaiField] Could not build water: ${String(error)}`);
     });
   }
 
@@ -92,7 +92,7 @@ export class WaterView extends Component {
     const ripple = framesOf(rippleTex, 4);
 
     for (const area of areas) {
-      // Nền xanh đặc: sheet ripple/waterfall là lớp phủ trong suốt, không phải nước đục.
+      // Solid blue base: the ripple/waterfall sheets are transparent overlays, not opaque water.
       this.addBase(area);
 
       if (area.kind === 'river') {
@@ -115,7 +115,7 @@ export class WaterView extends Component {
     }
   }
 
-  /** Nền nước phẳng dưới sprite ripple/waterfall (Graphics, không cần texture). */
+  /** Flat water base under the ripple/waterfall sprites (Graphics, no texture needed). */
   private addBase(area: WaterArea): void {
     const node = new CocosNode('water-base');
     node.parent = this.node;
@@ -159,8 +159,8 @@ export class WaterView extends Component {
 }
 
 /**
- * Gắn nước vào room root. Node nước nằm sau tile map (`siblingIndex = 1`) để
- * obstacle/actor vẽ đè lên; room bị destroy là nước đi theo.
+ * Attach water to the room root. The water node sits after the tile map (`siblingIndex = 1`)
+ * so obstacles/actors draw on top; destroying the room takes the water with it.
  */
 export function attachRoomWater(roomRoot: Node, areas: readonly WaterArea[]): void {
   if (areas.length === 0) return;

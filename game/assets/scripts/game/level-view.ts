@@ -1,21 +1,21 @@
 /**
- * Dựng một phòng: `TiledMap` cho tile layer + sprite cho vật cản.
+ * Build one room: `TiledMap` for the tile layer + sprites for obstacles.
  *
- * Hệ toạ độ:
- * - `LevelData` là **tile unit, gốc trên-trái, y hướng xuống** (đúng hệ Tiled).
- * - World của Cocos là **gốc dưới-trái, y hướng lên**, 1 tile = 1 unit, camera
- *   `orthoHeight = 9` tại `(16, 9)`.
+ * Coordinate systems:
+ * - `LevelData` is **tile units, top-left origin, y down** (the Tiled system).
+ * - The Cocos world is **bottom-left origin, y up**, 1 tile = 1 unit, camera
+ *   `orthoHeight = 9` at `(16, 9)`.
  *
- * Nên mọi chỗ chuyển toạ độ đi qua `tileToWorld` / `tileCenterToWorld` ở dưới. Các
- * file khác (`player-controller`, `enemy-view`, `bullet-view`) dùng lại đúng mấy hàm
- * này để cả phòng chỉ có **một** quy ước lật trục.
+ * So every coordinate conversion goes through `tileToWorld` / `tileCenterToWorld` below.
+ * Other files (`player-controller`, `enemy-view`, `bullet-view`) reuse these exact
+ * functions so the room has **one** axis-flip convention.
  *
- * Tile layer do `TiledMap` vẽ trong **pixel** (map 512×288 px, gốc dưới-trái, hàng 0
- * ở trên). Node map được scale `1/16` và đặt ở tâm phòng nên khớp tuyệt đối với world
- * unit: ô `(col,row)` phủ đúng `[col, col+1) × [rows-row-1, rows-row)`.
+ * `TiledMap` draws the tile layer in **pixels** (512×288 px map, bottom-left origin, row 0
+ * at the top). The map node is scaled `1/16` and placed at the room centre, so it matches
+ * world units exactly: cell `(col,row)` covers exactly `[col, col+1) × [rows-row-1, rows-row)`.
  *
- * Vật cản **không** được suy ra từ tile: `LevelData.obstacles` (parse từ object layer
- * của `.tmx`, xem `core/level/tmx.ts`) là nguồn duy nhất cho cả va chạm lẫn hình.
+ * Obstacles are **not** derived from tiles: `LevelData.obstacles` (parsed from the `.tmx`
+ * object layer, see `core/level/tmx.ts`) is the only source for both collision and visuals.
  */
 import {
   Node as CocosNode,
@@ -34,8 +34,9 @@ import type { Vec2 } from '../core/math/vec2';
 import { loadTexture } from './assets/texture-cache';
 
 /**
- * `cc` trong repo là module any (xem `types/cc.d.ts`), nên tên import chỉ dùng được ở vị
- * trí value. `InstanceType` giữ đúng nghĩa khi mở project trong editor có type thật.
+ * `cc` is an any module in this repo (see `types/cc.d.ts`), so import names only work in
+ * value position. `InstanceType` keeps the meaning once the project is opened in the editor
+ * with real types.
  */
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
@@ -45,13 +46,13 @@ type TiledMap = InstanceType<typeof CocosTiledMap>;
 type TiledMapAsset = InstanceType<typeof CocosTiledMapAsset>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 
-/** 1 tile = 1 world unit (world convention của milestone). */
+/** 1 tile = 1 world unit (the milestone's world convention). */
 export const TILE_WORLD_UNITS = 1;
 
 interface ObstacleVisual {
   readonly sheet: string;
   readonly rect: TileRect;
-  /** `true` = lặp tile theo rect; `false` = kéo frame (boulder 32×32) đúng 1:1 ở 2×2. */
+  /** `true` = repeat the tile across the rect; `false` = stretch the frame (32×32 boulder) 1:1 over 2×2. */
   readonly tile: boolean;
 }
 
@@ -89,7 +90,7 @@ const OBSTACLE_VISUALS: Readonly<
 };
 
 
-/** Ô pixel của gid (1-based) trong sheet có `columns` cột. */
+/** Pixel cell of a gid (1-based) in a sheet with `columns` columns. */
 export function tileRectFromGid(columns: number, gid: number): TileRect {
   const index = Math.max(0, gid - 1);
   return {
@@ -100,14 +101,14 @@ export function tileRectFromGid(columns: number, gid: number): TileRect {
   };
 }
 
-/** Mọi sheet vật cản cần preload cho một chapter. */
+/** Every obstacle sheet that must be preloaded for a chapter. */
 export function obstacleSheets(chapter: number): string[] {
   const visuals = OBSTACLE_VISUALS[chapter] ?? OBSTACLE_VISUALS[1]!;
   return Array.from(new Set(Object.values(visuals).map((visual) => visual.sheet)));
 }
 
 
-/** Một ô pixel trong sheet, gốc **trên-trái** (cùng quy ước với `manifest.frameRect`). */
+/** A pixel cell in a sheet, **top-left** origin (same convention as `manifest.frameRect`). */
 export interface TileRect {
   readonly x: number;
   readonly y: number;
@@ -118,18 +119,18 @@ export interface TileRect {
 const OBSTACLE_KEYS = ['pillar', 'pillarSmall', 'wall', 'pit'] as const;
 
 // ---------------------------------------------------------------------------
-// Hệ toạ độ
+// Coordinate systems
 // ---------------------------------------------------------------------------
 
 /**
- * Điểm trong `LevelData` (tile, gốc trên-trái, y xuống) → world (unit, gốc dưới-trái, y lên).
- * `worldX = x`, `worldY = 18 - y` — đúng công thức của world convention.
+ * Point in `LevelData` (tiles, top-left origin, y down) → world (units, bottom-left origin, y up).
+ * `worldX = x`, `worldY = 18 - y` — exactly the world convention formula.
  */
 export function tileToWorld(point: Vec2): Vec2 {
   return { x: point.x, y: ROOM_ROWS - point.y };
 }
 
-/** Hình chữ nhật world của một vật cản: góc dưới-trái + kích thước, cả hai theo unit. */
+/** World rectangle of an obstacle: bottom-left corner + size, both in units. */
 function obstacleWorldRect(obstacle: Obstacle): {
   readonly x: number;
   readonly y: number;
@@ -145,38 +146,38 @@ function obstacleWorldRect(obstacle: Obstacle): {
 }
 
 /**
- * Scale node cho một actor: **1 texture pixel = 1/16 world unit**, tức frame
- * 16 px (monster) = 1 tile, frame 32 px (player, nhưng nhân vật chỉ chiếm ~15 px
- * giữa khung) = 2 tile, frame 96 px (samurai) = 6 tile.
+ * Node scale for an actor: **1 texture pixel = 1/16 world unit**, i.e. a 16 px frame
+ * (monster) = 1 tile, a 32 px frame (player, though the character only fills ~15 px
+ * of the frame) = 2 tiles, a 96 px frame (samurai) = 6 tiles.
  *
- * Đây là hằng số, không phụ thuộc frame: một texture pixel luôn rộng 1/16 unit.
- * Tham số `entry` giữ lại để nơi gọi không phải đổi nếu sau này có asset scale riêng.
+ * This is a constant, independent of the frame: one texture pixel is always 1/16 unit wide.
+ * The `entry` parameter is kept so callers do not change if per-asset scaling appears later.
  *
- * Không lật `node.scale.x`: cả 4 sheet actor của pack đều có đủ 4 cột D/U/L/R (manifest
- * khai `directions`), nên hướng đã nằm trong art. Quy ước lật scale chỉ cần khi một sheet
- * thiếu cột — hiện chỉ có `Jump.png` (3 hướng) và nó chưa được dùng.
+ * No `node.scale.x` flipping: all 4 actor sheets in the pack have the full D/U/L/R columns
+ * (the manifest declares `directions`), so direction is baked into the art. Scale flipping is
+ * only needed for a sheet lacking a column — today only `Jump.png` (3 directions), and it is unused.
  */
 export const ACTOR_SCALE = 1 / TILE_SIZE_PX;
 
 /**
- * Offset world (unit) từ tâm hitbox xuống chân sprite. Anchor mới đặt **chân**
- * frame vào node; offset này giữ vị trí hình gần như cũ (trước đây anchor giữa
- * frame khiến chân nằm dưới tâm ~0.5 tile).
+ * World offset (units) from the hitbox centre down to the sprite's feet. The new anchor puts
+ * the frame's **feet** on the node; this offset keeps the visuals roughly where they were
+ * (a centre anchor used to place the feet ~0.5 tile below the centre).
  */
 export const ACTOR_FEET_OFFSET_TILES = 0.5;
-/** Boss to hơn nên chân hơi thấp hơn tâm để silhouette không che player (core giữ số này). */
+/** Bosses are larger, so their feet sit a bit lower than the centre so the silhouette does not cover the player (core owns this number). */
 export { BOSS_FEET_OFFSET_TILES } from '../core/boss/boss-defs';
 
 /**
- * Cắt một ô pixel thành `SpriteFrame` độc lập trỏ vào `texture`.
+ * Slice one pixel cell into a standalone `SpriteFrame` pointing at `texture`.
  *
- * `SpriteFrame.rect` đếm `y` **từ trên xuống** (engine: `_initVertices` lật bằng
- * `texh - rect.y - height`; `TiledMap.rectForGID` cũng xếp hàng từ trên), nên
- * truyền thẳng rect đọc từ ảnh, không cộng trừ gì thêm.
+ * `SpriteFrame.rect` counts `y` **from the top** (engine: `_initVertices` flips with
+ * `texh - rect.y - height`; `TiledMap.rectForGID` also lays rows out from the top), so
+ * pass the rect read from the image as-is, with no extra arithmetic.
  */
 export function sliceFrame(texture: Texture2D, rect: TileRect): SpriteFrame {
   const frame = new CocosSpriteFrame();
-  // Gán texture trước để rect/originalSize được tính lại đúng.
+  // Assign the texture first so rect/originalSize are recomputed correctly.
   frame.texture = texture;
   frame.rect = new Rect(rect.x, rect.y, rect.width, rect.height);
   frame.originalSize = new Size(rect.width, rect.height);
@@ -186,22 +187,22 @@ export function sliceFrame(texture: Texture2D, rect: TileRect): SpriteFrame {
 }
 
 // ---------------------------------------------------------------------------
-// Dựng phòng
+// Building the room
 // ---------------------------------------------------------------------------
 
 /**
- * Dựng phòng từ `LevelData` + `TiledMapAsset` và trả về **root node** (huỷ phòng =
- * `root.destroy()`, engine tự dọn hết node con, kể cả layer của TiledMap).
+ * Build a room from `LevelData` + `TiledMapAsset` and return the **root node** (destroying
+ * the room = `root.destroy()`; the engine cleans every child, including TiledMap layers).
  *
- * Root giữ hệ **world unit** (1 tile = 1 unit) như mọi actor/đạn; node `tile-map` con
- * mới là node bị scale `1/16` (`ACTOR_SCALE`) để TMX pixel khớp world unit. Nhờ vậy
- * vật cản dùng lại đúng toạ độ unit của milestone, không phải đổi sang pixel.
+ * The root stays in **world units** (1 tile = 1 unit) like every actor/bullet; only the child
+ * `tile-map` node is scaled `1/16` (`ACTOR_SCALE`) so TMX pixels match world units. Obstacles
+ * therefore reuse the milestone's unit coordinates instead of switching to pixels.
  *
- * Tắt culling vì phòng chỉ 576 tile và camera world bị letterbox (`Camera.rect`), một
- * trường hợp dễ làm culling cắt nhầm.
+ * Culling is off because a room is only 576 tiles and the world camera is letterboxed
+ * (`Camera.rect`), a case where culling easily clips the wrong things.
  *
- * Vật cản: sprite 1×1 unit như trước, hình chữ nhật lấy từ object layer (đã parse
- * thành `LevelData.obstacles`) — không có pipeline thứ hai.
+ * Obstacles: 1×1 unit sprites as before, with rectangles from the object layer (already parsed
+ * into `LevelData.obstacles`) — there is no second pipeline.
  */
 export function buildRoom(
   parent: Node,
@@ -214,7 +215,7 @@ export function buildRoom(
   const mapNode = new CocosNode('tile-map');
   mapNode.parent = root;
 
-  // `@requireComponent(UITransform)` của TiledMap thêm UITransform ngay khi addComponent.
+  // TiledMap's `@requireComponent(UITransform)` adds UITransform as soon as addComponent runs.
   const map: TiledMap = mapNode.addComponent(CocosTiledMap);
 
   const transform: UITransform | null = mapNode.getComponent(CocosUITransform);
@@ -222,22 +223,22 @@ export function buildRoom(
 
   const scale = TILE_WORLD_UNITS / TILE_SIZE_PX;
   mapNode.setScale(scale, scale, 1);
-  // Tâm map = tâm phòng: map 512×288 px × 1/16 = 32×18 unit.
+  // Map centre = room centre: 512×288 px map × 1/16 = 32×18 units.
   mapNode.setPosition(ROOM_COLS / 2, ROOM_ROWS / 2, 0);
 
-  // Gán asset SAU khi node đã có anchor/scale/parent: `_buildLayerAndGroup` tạo layer
-  // dưới node này và đọc anchor của map một lần.
+  // Assign the asset AFTER the node has its anchor/scale/parent: `_buildLayerAndGroup`
+  // creates the layers under this node and reads the map anchor once.
   map.tmxAsset = tmxAsset;
   map.enableCulling = false;
 
   void buildObstacles(root, level).catch((error: unknown) => {
-    reportLoadFailure('vật cản', `chapter ${level.chapter}`, error);
+    reportLoadFailure('obstacles', `chapter ${level.chapter}`, error);
   });
 
   return root;
 }
 
-/** Vật cản: một sprite lặp tile cho mỗi `Obstacle`, đúng kích thước tile của nó. */
+/** Obstacles: one tiled sprite per `Obstacle`, exactly its tile size. */
 async function buildObstacles(root: Node, level: LevelData): Promise<void> {
   const visuals = OBSTACLE_VISUALS[level.chapter] ?? OBSTACLE_VISUALS[1]!;
   const sheets = Array.from(new Set(Object.values(visuals).map((visual) => visual.sheet)));
@@ -283,8 +284,8 @@ async function buildObstacles(root: Node, level: LevelData): Promise<void> {
 }
 
 /**
- * Node vật cản: `TILED` lặp tile cho tường/hố; `SIMPLE` + contentSize cho boulder
- * 32×32 (2×2 tile) — không kéo giãn một ô 16×16 thành 4 blob rời.
+ * Obstacle node: `TILED` repeats the tile for walls/pits; `SIMPLE` + contentSize for a
+ * 32×32 boulder (2×2 tiles) — it does not stretch one 16×16 cell into 4 detached blobs.
  */
 function makeObstacleNode(
   name: string,
@@ -314,5 +315,5 @@ function makeObstacleNode(
 
 function reportLoadFailure(what: string, sheet: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`[YokaiField] Không dựng được ${what}: sheet "${sheet}". ${message}`);
+  console.error(`[YokaiField] Could not build ${what}: sheet "${sheet}". ${message}`);
 }

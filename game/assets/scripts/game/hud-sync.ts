@@ -1,6 +1,6 @@
 /**
- * Đồng bộ HUD từ state sống mỗi frame: tim (Vitality), thanh máu boss, hàng skill.
- * Tách khỏi bootstrap để file run-flow không phải biết `bossSnapshot` shape.
+ * Sync the HUD from live state every frame: hearts (Vitality), boss health bar, skill row.
+ * Split from bootstrap so the run-flow file does not need to know the `bossSnapshot` shape.
  */
 import type { Hud } from './hud';
 import type { PlayerController } from './player-controller';

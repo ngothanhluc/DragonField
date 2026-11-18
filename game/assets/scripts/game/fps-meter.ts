@@ -1,8 +1,8 @@
 /**
- * Đo fps/frame time thật của vòng lặp game cho debug `?debug=1`.
+ * Measure real fps/frame time of the game loop for the `?debug=1` debug hook.
  *
- * Tách khỏi bootstrap: chỉ là ring buffer N frame và một phép chia. Dùng frame
- * thật (trước khi kẹp `MAX_STEP_MS`) để số đo không bị "đẹp hoá" khi tab bị ẩn.
+ * Split from bootstrap: just a ring buffer of N frames and one division. Uses real frame times
+ * (before the `MAX_STEP_MS` cap) so the numbers are not prettified while the tab is hidden.
  */
 const SAMPLE_COUNT = 120;
 

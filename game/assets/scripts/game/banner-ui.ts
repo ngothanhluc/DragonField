@@ -1,9 +1,9 @@
 /**
- * Banner chữ giữa màn hình (room clear, game over, chapter clear, load error).
+ * Centre-screen text banner (room clear, game over, chapter clear, load error).
  *
- * Tách khỏi bootstrap: nền tối + label + kích thước theo số dòng là một khối UI
- * hoàn chỉnh, không liên quan run flow. Nền dùng `Graphics` nên đọc được trên
- * mọi loại sàn (chapter 3 từng làm banner vàng chìm vào sàn vàng).
+ * Split from bootstrap: dark backdrop + label + line-based sizing is a complete UI block
+ * unrelated to run flow. The backdrop uses `Graphics`, so it reads on any floor type
+ * (chapter 3 once made a gold banner sink into a gold floor).
  */
 import {
   Label as CocosLabel,
@@ -13,7 +13,7 @@ import {
 } from 'cc';
 import { createBackdropPanel, createLabel } from './hud';
 
-/** Màu RGBA tối thiểu của Cocos `Color`; tránh import value chỉ dùng ở vị trí type. */
+/** Minimal Cocos `Color` RGBA shape; avoids a value import used only in type position. */
 export interface BannerColor {
   readonly r: number;
   readonly g: number;
@@ -24,8 +24,8 @@ export interface BannerColor {
 type Node = ReturnType<typeof createBackdropPanel>;
 
 /**
- * Dựng banner dưới `parent` (Canvas) và trả **container** để caller chỉ destroy
- * một node. `maxWidth` là bề rộng design của màn hình.
+ * Build a banner under `parent` (the Canvas) and return the **container** so the caller only
+ * destroys one node. `maxWidth` is the screen's design width.
  */
 export function createBanner(
   parent: Node,
@@ -52,7 +52,7 @@ export function createBanner(
   label.lineHeight = fontSize + 4;
   label.color = color;
   label.enableWrapText = true;
-  // RESIZE_HEIGHT + bề rộng cố định = xuống dòng theo màn hình thay vì tràn ra ngoài.
+  // RESIZE_HEIGHT + a fixed width = wrap to the screen instead of overflowing.
   label.overflow = CocosLabel.Overflow.RESIZE_HEIGHT;
 
   const transform = label.node.getComponent(CocosUITransform);
