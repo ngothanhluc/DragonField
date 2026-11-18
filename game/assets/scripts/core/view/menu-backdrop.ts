@@ -5,7 +5,8 @@
  * Coordinates are `LevelData` tiles (top-left origin, y down), the same space as
  * `LevelData.playerStart` and `Obstacle`. The adapter converts with `tileToWorld`.
  */
-import type { Vec2 } from '../math/vec2';
+import { ROOM_COLS, ROOM_ROWS } from '../level/level-data';
+import { distanceSquared, type Vec2 } from '../math/vec2';
 
 /** The room of a chapter drawn behind the menus. */
 export const MENU_BACKDROP_ROOM = 1;
@@ -36,13 +37,61 @@ export interface MenuRoom {
   readonly obstacles: readonly TileRect[];
 }
 
-export function menuBackdropChapter(input: MenuBackdropChapterInput): number {
-  void input;
-  throw new Error('not implemented');
+/** A point is clear of a rectangle when it is at least `margin` tiles away on some side. */
+function isClearOf(point: Vec2, rect: TileRect, margin: number): boolean {
+  return (
+    point.x <= rect.x - margin ||
+    point.x >= rect.x + rect.width + margin ||
+    point.y <= rect.y - margin ||
+    point.y >= rect.y + rect.height + margin
+  );
 }
 
+export function menuBackdropChapter(input: MenuBackdropChapterInput): number {
+  if (input.screen === 'title') return MENU_BACKDROP_ROOM;
+
+  const focused = input.focusedChapter;
+  if (focused !== null && input.hasData(focused)) return focused;
+
+  const current = input.current;
+  if (current !== null && input.hasData(current)) return current;
+
+  return MENU_BACKDROP_ROOM;
+}
+
+/** Whole tiles the ninja's feet may occupy: room for the sprite inside the 32×18 room. */
+const MIN_FEET_X = 1;
+const MAX_FEET_X = ROOM_COLS - 1;
+const MIN_FEET_Y = 2;
+const MAX_FEET_Y = ROOM_ROWS - 1;
+
+/**
+ * Where the idle ninja stands so the panel does not hide it. Keeps `playerStart` when that spot
+ * is already 1 tile clear of the panel; otherwise the closest whole tile that is 1 tile clear of
+ * the panel and of every obstacle (ties broken by smaller y, then smaller x → deterministic).
+ * Falls back to `playerStart` when the room has no free tile at all.
+ */
 export function menuPlayerSpot(room: MenuRoom, keepOut: TileRect): Vec2 {
-  void room;
-  void keepOut;
-  throw new Error('not implemented');
+  const start = room.playerStart;
+  if (isClearOf(start, keepOut, 1)) return start;
+
+  let best: Vec2 | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let y = MIN_FEET_Y; y <= MAX_FEET_Y; y += 1) {
+    for (let x = MIN_FEET_X; x <= MAX_FEET_X; x += 1) {
+      const spot: Vec2 = { x, y };
+      if (!isClearOf(spot, keepOut, 1)) continue;
+      if (!room.obstacles.every((obstacle) => isClearOf(spot, obstacle, 1))) continue;
+
+      const distance = distanceSquared(spot, start);
+      // Iteration order is y then x, so a strict comparison keeps the first on a tie.
+      if (distance < bestDistance) {
+        best = spot;
+        bestDistance = distance;
+      }
+    }
+  }
+
+  return best ?? start;
 }
