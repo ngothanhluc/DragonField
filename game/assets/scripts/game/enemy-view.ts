@@ -1,27 +1,27 @@
 /**
- * Một node cho một `EnemyState`.
+ * One node per `EnemyState`.
  *
- * Chia việc đúng như `core/enemies/behaviours.ts` yêu cầu: core là **hàm thuần**
- * (`decideAction` không sửa state), file này là **adapter** — ghi action trở lại
- * state, áp chuyển động, chọn animation, đổi tint, vẽ telegraph.
+ * The split follows `core/enemies/behaviours.ts`: core is a **pure function**
+ * (`decideAction` does not mutate state), this file is the **adapter** — it writes the action
+ * back into state, applies movement, picks the animation, changes tint and draws the telegraph.
  *
- * Monster của pack chỉ có **một sheet walk 4 hướng**, không có attack/hurt/death
- * (GDD §4) nên biểu đạt đòn đánh nằm ở **silhouette (art/scale) + vòng telegraph
+ * Pack monsters have only **one 4-direction walk sheet** and no attack/hurt/death
+ * (GDD §4), so an attack is expressed through **silhouette (art/scale) + telegraph ring
  * + tint**:
  *
- * | Vai trò | Silhouette | Telegraph | Elite thêm |
+ * | Role | Silhouette | Telegraph | Elite extra |
  * |---|---|---|---|
- * | chaser | dơi nhỏ, bay sát | vòng **vàng** (chỉ elite mới có) | lao ngắn |
- * | caster | mắt bay lơ lửng | vòng **cyan**, nhỏ | loạt 3 viên |
- * | tank | gấu to, chậm | vòng **cam**, to | lao 2 lần |
+ * | chaser | small bat, flies close | **yellow** ring (elite only) | short dash |
+ * | caster | floating eye | **cyan** ring, small | 3-shot volley |
+ * | tank | big slow bear | **orange** ring, large | dashes twice |
  *
- * Vòng telegraph dùng `resources/art/fx/telegraph-ring` (32×32 × 4 frame). Mỗi
- * enemy có **một** node vòng tạo lúc init và bật/tắt theo action — không tạo node
- * mỗi lần ra đòn.
+ * The telegraph ring uses `resources/art/fx/telegraph-ring` (32×32 × 4 frames). Each
+ * enemy has **one** ring node created at init and toggled by action — no node is created
+ * per attack.
  *
- * `step()` trả về `EnemyStepResult`: adapter chiến đấu cần biết đòn vừa ra
- * (`shot`/`charge`) và **đoạn đường đi khi lao** để xét hitbox bằng quét, thay vì
- * đoán qua vị trí cuối frame.
+ * `step()` returns `EnemyStepResult`: the combat adapter needs to know the attack just released
+ * (`shot`/`charge`) and **the path travelled while dashing** so it can sweep-test the hitbox
+ * instead of guessing from the end-of-frame position.
  */
 import {
   _decorator,
@@ -66,32 +66,32 @@ import type { TileRect } from './level-view';
 
 const { ccclass } = _decorator;
 
-/** `cc` là module any trong repo: type phải suy ra từ import value (xem `texture-cache.ts`). */
+/** `cc` is an any module in this repo: types must be derived from the import value (see `texture-cache.ts`). */
 type Color = InstanceType<typeof CocosColor>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = ReturnType<typeof sliceFrame>;
 
-/** Vai trò nào có telegraph — `telegraphProgress` cần union hẹp. */
+/** Roles that have a telegraph — `telegraphProgress` needs a narrow union. */
 type RoleTelegraphKind = Exclude<TelegraphKind, 'boss'>;
 
-/** Bán kính hitbox mặc định, tile — cùng quy ước với `run-simulation.ts`. */
+/** Default hitbox radius, in tiles — same convention as `run-simulation.ts`. */
 export const DEFAULT_ENEMY_RADIUS_TILES = 0.4;
 
 /**
- * Vòng telegraph: sheet 128×32 px = 4 frame 32×32 (import-checklist §6.2).
+ * Telegraph ring: 128×32 px sheet = 4 frames of 32×32 (import-checklist §6.2).
  *
- * Không đi qua `animations.json`: manifest chỉ chứa animation actor, chưa có
- * schema cho FX (cùng lý do `bullet-view.ts` khai báo sheet trực tiếp).
- * TODO(fx): thêm key FX vào manifest rồi bỏ hằng sheet này.
+ * Deliberately not routed through `animations.json`: the manifest only holds actor
+ * animations and has no FX schema (same reason `bullet-view.ts` declares its sheet directly).
+ * TODO(fx): add FX keys to the manifest, then drop this sheet constant.
  */
 export const TELEGRAPH_RING_SHEET = 'resources/art/fx/telegraph-ring/SpriteSheetWhite.png';
 const RING_RECT: TileRect = { x: 0, y: 0, width: 32, height: 32 };
 const RING_FRAMES = 4;
 
-/** Frame cắt một lần cho cả scene — mỗi enemy chỉ tham chiếu, không tự cắt lại. */
+/** Frames sliced once per scene — each enemy only references them, never re-slices. */
 let ringFramesPromise: Promise<SpriteFrame[]> | null = null;
 
-/** Load 4 frame vòng telegraph, dùng chung với boss (`boss-view.ts`). */
+/** Load the 4 telegraph ring frames, shared with the boss (`boss-view.ts`). */
 export function loadTelegraphFrames(): Promise<SpriteFrame[]> {
   if (ringFramesPromise !== null) return ringFramesPromise;
 
@@ -107,7 +107,7 @@ export function loadTelegraphFrames(): Promise<SpriteFrame[]> {
   return task;
 }
 
-/** Màu gốc (không tint) và màu theo vai trò/thể loại. */
+/** Base colour (no tint) plus role/kind colours. */
 const NO_TINT = new CocosColor(255, 255, 255, 255);
 const HIT_TINT = new CocosColor(255, 250, 225, 255);
 const ELITE_TINT = new CocosColor(206, 174, 255, 255);
@@ -119,55 +119,55 @@ const TELEGRAPH_TINT: Readonly<Record<RoleTelegraphKind, Color>> = {
   tank: new CocosColor(255, 150, 80, 255),
 };
 
-/** Đường kính vòng telegraph theo vai trò, tile (nhìn là phân biệt được). */
+/** Telegraph ring diameter by role, in tiles (distinguishable at a glance). */
 const RING_DIAMETER_TILES: Readonly<Record<RoleTelegraphKind, number>> = {
   chaser: 2.4,
   caster: 2.8,
   tank: 4,
 };
 
-/** Ring nằm dưới chân: lệch xuống theo texture px của parent (parent scale 1/16). */
+/** The ring sits under the feet: offset down in the parent's texture px (parent scale 1/16). */
 const RING_OFFSET_Y_PX = -7;
 
-/** Biên độ pulse lúc telegraph (tỉ lệ so với scale gốc). */
+/** Pulse amplitude during telegraph (ratio of the base scale). */
 const TELEGRAPH_PULSE = 0.12;
-/** Tốc độ pulse, radian/giây. */
+/** Pulse speed, radians/second. */
 const TELEGRAPH_PULSE_SPEED = 14;
-/** Độ đậm vòng telegraph khi đã chạy hết. */
+/** Ring opacity at full progress. */
 const RING_MAX_OPACITY = 220;
-/** Độ đậm tối thiểu để telegraph thấy được ngay từ frame đầu. */
+/** Minimum opacity so the telegraph is visible from the first frame. */
 const RING_MIN_OPACITY = 90;
 
-/** Thời gian flash tint sau khi trúng đạn, ms (GDD §4: flash 80 ms). */
+/** Tint flash duration after being hit, ms (GDD §4: 80 ms flash). */
 const HIT_FLASH_MS = 80;
-/** Bump scale nhỏ lúc trúng để đọc được đòn kể cả khi sprite sáng màu. */
+/** Small scale bump on hit so the blow reads even on bright sprites. */
 const HIT_FLASH_SCALE = 1.06;
 
 export interface EnemyViewInitArgs {
   readonly state: EnemyState;
-  /** Tên actor trong manifest, không có gạch nối: `bluebat`, `spiderred`, `eye`… */
+  /** Actor name in the manifest, no hyphen: `bluebat`, `spiderred`, `eye`… */
   readonly monster: string;
   readonly level: LevelData;
-  /** Scale node đã tính từ frame (xem `actorScale` trong `level-view.ts`). */
+  /** Node scale already derived from the frame (see `actorScale` in `level-view.ts`). */
   readonly baseScale: number;
-  /** Pool FX của chapter — chết/status phát hiệu ứng, không cần node mới. */
+  /** Chapter FX pool — death/status effects spawn here, no new node needed. */
   readonly fx?: FxPool;
-  /** Bán kính hitbox, tile. Mặc định bằng `DEFAULT_ENEMY_RADIUS_TILES` × silhouette của vai trò. */
+  /** Hitbox radius, tiles. Defaults to `DEFAULT_ENEMY_RADIUS_TILES` × the role's silhouette. */
   readonly radiusTiles?: number;
-  /** Tầm gây sát thương khi chạm, tile. Mặc định bằng tầm của chaser × silhouette. */
+  /** Contact damage range, tiles. Defaults to the chaser range × silhouette. */
   readonly contactRangeTiles?: number;
   /**
-   * Hệ số silhouette của vai trò (xem `visualScaleFor`). Boss truyền `1` vì
-   * art boss đã to sẵn và hitbox do `boss-defs.ts` quyết.
+   * Silhouette factor of the role (see `visualScaleFor`). The boss passes `1` because
+   * boss art is already large and `boss-defs.ts` owns its hitbox.
    */
   readonly roleScale?: number;
 }
 
-/** Kết quả một frame của enemy — adapter chiến đấu dùng để sinh đạn/xét lao. */
+/** One enemy frame result — the combat adapter uses it to spawn bullets and sweep charges. */
 export interface EnemyStepResult {
-  /** Đòn vừa được thả trong frame này. `null` khi không có gì mới. */
+  /** Attack released in this frame. `null` when nothing new happened. */
   readonly released: 'shot' | 'charge' | null;
-  /** Đoạn đường đã đi trong frame này **khi đang lao**, để xét hitbox bằng quét. */
+  /** Path travelled this frame **while dashing**, for sweep-tested hitboxes. */
   readonly chargeSweep: { readonly from: Vec2; readonly to: Vec2 } | null;
 }
 
@@ -183,37 +183,37 @@ export class EnemyView extends Component {
   private animKey = '';
   private animDirection: Direction = 'down';
   private animMoving = true;
-  /** Pool FX (chết/status). */
+  /** FX pool (death/status). */
   private fx: FxPool | null = null;
   private hitRadius = DEFAULT_ENEMY_RADIUS_TILES;
   private contactRange = CHASER_CONTACT_RANGE_TILES;
-  /** Cú đẩy nhỏ sau khi trúng đạn; `null` = không bị đẩy. */
+  /** Small knockback after a bullet hit; `null` = not being pushed. */
   private knockback: KnockbackState | null = null;
-  /** Thời điểm hết flash trúng đòn (ms của run). */
+  /** When the hit flash ends (run ms). */
   private hitFlashUntilMs = 0;
-  /** Mốc bắt đầu squash khi trúng đạn; hết `feel.squash.enemyHitMs` là về scale gốc. */
+  /** Squash start time on a bullet hit; after `feel.squash.enemyHitMs` it returns to base scale. */
   private squashStartMs = Number.NEGATIVE_INFINITY;
-  /** Vòng telegraph dưới chân — tạo một lần, bật/tắt theo action. */
+  /** Telegraph ring under the feet — created once, toggled by action. */
   private ring: Sprite | null = null;
   private ringFrames: SpriteFrame[] = [];
   private ringRole = '';
   private ringVisible = false;
-  /** Bù scale vai trò để vòng telegraph giữ đường kính tuyệt đối (không phình theo brute). */
+  /** Role-scale compensation so the ring keeps an absolute diameter (no inflation on brutes). */
   private ringScaleCompensation = 1;
-  /** Màu tạm cho vòng (ghi lại mỗi frame, không cấp phát). */
+  /** Scratch colour for the ring (rewritten each frame, no allocation). */
   private readonly ringTint = new CocosColor(255, 255, 255, 0);
-  /** Cú lao hiện tại đã gây sát thương chưa (mỗi cú chỉ một lần). */
+  /** Whether the current dash has dealt damage (once per dash). */
   private chargeHitDone = false;
-  /** `untilMs` của cú lao đang chạy — đổi giá trị = cú mới (elite lao liên tiếp). */
+  /** `untilMs` of the running dash — a new value means a new dash (elites dash repeatedly). */
   private chargeUntilMs = -1;
-  /** Freeze/Poison do skill player; core quyết thời gian, view chỉ giữ state. */
+  /** Freeze/Poison from player skills; core decides timing, the view only holds state. */
   private readonly statuses = new StatusEffects();
 
   get id(): string {
     return this.state?.id ?? '';
   }
 
-  /** Vị trí hệ tile của `LevelData` (y hướng xuống) — cùng hệ với player và đạn. */
+  /** Position in `LevelData`'s tile space (y down) — same space as player and bullets. */
   get position(): Vec2 {
     return this.state?.position ?? { x: 0, y: 0 };
   }
@@ -234,7 +234,7 @@ export class EnemyView extends Component {
     return this.state?.action.kind ?? 'none';
   }
 
-  /** Máu còn lại — `killAll()` debug dùng để trừ đúng một lần qua đường damage chuẩn. */
+  /** Remaining HP — the debug `killAll()` uses it to subtract exactly once through the normal damage path. */
   get health(): number {
     return this.state?.health ?? 0;
   }
@@ -243,12 +243,12 @@ export class EnemyView extends Component {
     return this.state?.maxHealth ?? 0;
   }
 
-  /** Bán kính hitbox, tile (đạn player dùng để xét trúng). */
+  /** Hitbox radius, tiles (player bullets use it for hit tests). */
   get radiusTiles(): number {
     return this.hitRadius;
   }
 
-  /** Chaser/tank gây sát thương khi chạm; caster bắn đạn nên không tính contact. */
+  /** Chaser/tank deal contact damage; the caster shoots, so it has no contact damage. */
   get melee(): boolean {
     const state = this.state;
     return state !== null && (state.role === 'chaser' || state.role === 'tank');
@@ -267,7 +267,7 @@ export class EnemyView extends Component {
     this.state = args.state;
     this.monster = args.monster;
     this.level = args.level;
-    // Silhouette: hệ số vai trò (brute 1.75) × frame scale; elite nhân thêm lúc applyScale.
+    // Silhouette: role factor (brute 1.75) × frame scale; elite multiplies again in applyScale.
     const roleScale = args.roleScale ?? visualScaleFor(args.state.role);
     this.baseScale = args.baseScale * roleScale;
     this.ringScaleCompensation = roleScale > 0 ? 1 / roleScale : 1;
@@ -283,13 +283,13 @@ export class EnemyView extends Component {
     this.playMotion(false, 'down', true);
     this.applyTint(this.idleTint());
 
-    // Vòng telegraph load sau (texture đã preload ở đầu chapter nên gần như tức thì).
+    // The telegraph ring loads afterwards (its texture is preloaded at chapter start, so it is near-instant).
     void this.createRing().catch((error: unknown) => {
-      warn(`[YokaiField] Không dựng được vòng telegraph: ${String(error)}`);
+      warn(`[YokaiField] Could not build the telegraph ring: ${String(error)}`);
     });
   }
 
-  /** Một frame: hỏi core action kế tiếp, ghi lại, rồi áp chuyển động + hình. */
+  /** One frame: ask core for the next action, write it back, then apply movement + visuals. */
   step(nowMs: number, deltaMs: number, player: Vec2): EnemyStepResult {
     const state = this.state;
     const level = this.level;
@@ -299,7 +299,7 @@ export class EnemyView extends Component {
     const previous = state.action;
     const next = decideAction({ state, player, nowMs, level });
 
-    // Poison chảy trước khi quyết action: enemy có thể chết trong frame này.
+    // Poison ticks before the action is decided: the enemy may die this frame.
     const poison = this.statuses.poisonDamage(nowMs, deltaMs);
     if (poison > 0) {
       state.health = Math.max(0, state.health - poison);
@@ -311,9 +311,9 @@ export class EnemyView extends Component {
 
     const released = attackReleased(previous, next);
 
-    // `actionStartedMs` là mốc của **chu kỳ đòn** — xem `core/enemies/attack-cycle.ts`.
-    // Stagger (bị bắn liên tục) không được restart cooldown, nếu không enemy không
-    // bao giờ ra đòn.
+    // `actionStartedMs` is the **attack cycle** anchor — see `core/enemies/attack-cycle.ts`.
+    // Stagger (from constant fire) must not restart the cooldown, or the enemy would
+    // never attack.
     state.actionStartedMs = nextActionStartedMs(
       previous,
       next,
@@ -321,7 +321,7 @@ export class EnemyView extends Component {
       state.actionStartedMs,
     );
     if (next.kind === 'charge' && next.untilMs !== this.chargeUntilMs) {
-      // Cú lao mới (kể cả cú thứ hai của elite tank, kind vẫn là 'charge').
+      // New dash (including the elite tank's second one, whose kind is still 'charge').
       this.chargeUntilMs = next.untilMs;
       this.chargeHitDone = false;
     }
@@ -348,11 +348,11 @@ export class EnemyView extends Component {
   }
 
   /**
-   * Trừ máu; hết máu thì biến mất (TODO(fx): explosion + fade, xem GDD §4).
+   * Subtract HP; at zero the enemy disappears (TODO(fx): explosion + fade, see GDD §4).
    *
-   * Trúng đòn đặt luôn action `stagger` (`nowMs + enemyStaggerMs`) — core quyết
-   * thời gian choáng, adapter chỉ áp. Caster đang telegraph mà bị trúng thì đòn
-   * bị ngắt, đúng ý nghĩa "stagger".
+   * A hit always sets the `stagger` action (`nowMs + enemyStaggerMs`) — core decides
+   * the stun duration, the adapter only applies it. A caster hit mid-telegraph has its
+   * attack interrupted, which is exactly what "stagger" means.
    */
   takeDamage(amount: number, source: Vec2 | null = null, nowMs = 0): void {
     const state = this.state;
@@ -368,8 +368,8 @@ export class EnemyView extends Component {
     }
 
     state.action = staggerAction(nowMs, DEFAULT_COMBAT.enemyStaggerMs);
-    // Không reset `actionStartedMs`: cooldown phải chạy tiếp qua cú choáng, nếu không
-    // enemy bị bắn liên tục sẽ không bao giờ tới nhịp ra đòn.
+    // Do not reset `actionStartedMs`: the cooldown must keep running through the stun, or an
+    // enemy under constant fire would never reach its attack beat.
 
     if (source !== null) {
       this.knockback = startKnockback(state.position, source, {
@@ -379,7 +379,7 @@ export class EnemyView extends Component {
     }
   }
 
-  /** Freeze/Poison khi đạn player trúng. Core quyết hiệu ứng, view giữ state + báo FX. */
+  /** Freeze/Poison when a player bullet lands. Core decides the effect; the view holds state + reports FX. */
   applyStatus(stats: DerivedStats, nowMs: number): void {
     const wasSlowed = this.statuses.isSlowed(nowMs);
     const wasPoisoned = this.statuses.isPoisoned(nowMs);
@@ -395,7 +395,7 @@ export class EnemyView extends Component {
     }
   }
 
-  /** Cú lao hiện tại đã gây sát thương chưa — battle loop gọi để tránh trừ máu 2 lần. */
+  /** Whether the current dash already dealt damage — the battle loop asks to avoid double-hitting. */
   get chargeHitApplied(): boolean {
     return this.chargeHitDone;
   }
@@ -413,7 +413,7 @@ export class EnemyView extends Component {
     this.dead = true;
     this.animator?.stop();
     this.hideRing();
-    // GDD §12.3: monster không có frame chết — chết là FX của pack, không phải sprite.
+    // GDD §12.3: monsters have no death frame — death is pack FX, not a sprite.
     this.fx?.spawn('fx.smoke', this.position);
     this.fx?.spawn('fx.impact', this.position, {
       tint: new CocosColor(255, 220, 160, 255),
@@ -443,7 +443,7 @@ export class EnemyView extends Component {
       const dy = action.target.y - state.position.y;
       const length = Math.hypot(dx, dy);
       if (length > 0) {
-        // Không vượt quá target trong một frame (frame dài ≠ teleport).
+        // Never overshoot the target in one frame (a long frame ≠ a teleport).
         const factor = Math.min(1, (speedFor(state.role, state.elite) * seconds) / length);
         next = {
           x: state.position.x + dx * factor,
@@ -458,7 +458,7 @@ export class EnemyView extends Component {
     };
   }
 
-  /** Cú đẩy nhỏ sau đòn đạn; cùng bộ dựng với player nhưng quãng ngắn hơn. */
+  /** Small knockback after a bullet hit; same rig as the player but a shorter distance. */
   private applyKnockback(deltaMs: number): void {
     const state = this.state;
     const level = this.level;
@@ -499,22 +499,22 @@ export class EnemyView extends Component {
     this.hideRing();
   }
 
-  /** Tint trạng thái ngoài telegraph: frozen > poisoned > elite. */
+  /** Status tint outside telegraph: frozen > poisoned > elite. */
   private stateTint(nowMs: number): Color {
     if (this.statuses.isSlowed(nowMs)) return FROZEN_TINT;
     if (this.statuses.isPoisoned(nowMs)) return POISONED_TINT;
     return this.idleTint();
   }
 
-  /** Elite giữ tint tím nhạt cả lúc đứng yên — cách đọc "con này mạnh hơn" không cần chữ. */
+  /** Elites keep a pale purple tint even at rest — an unlabelled "this one is stronger" cue. */
   private idleTint(): Color {
     return this.isElite ? ELITE_TINT : NO_TINT;
   }
 
   /**
-   * Hướng nhìn: lúc đi/lao thì theo hướng di chuyển, lúc đứng/telegraph thì nhìn
-   * về player. Đứng yên và trùng vị trí player ⇒ `directionFromVector` trả fallback,
-   * nên sprite không nhảy hướng.
+   * Facing: while walking/dashing it follows movement, while idle/telegraphing it looks
+   * at the player. Standing still on the player's exact spot ⇒ `directionFromVector` returns
+   * the fallback, so the sprite does not flip direction.
    */
   private facingVector(action: EnemyAction, player: Vec2): Vec2 {
     const position = this.position;
@@ -530,9 +530,9 @@ export class EnemyView extends Component {
   }
 
   /**
-   * Idle vs walk: pack chỉ có một sheet walk, nên idle là cùng sheet phát chậm
-   * (`<actor>.idle.*`, fps 4 trong manifest). Đứng telegraph mà vẫn chạy animation
-   * đi bộ 10 fps trông như đang lướt — đổi sang idle là dấu hiệu đọc được.
+   * Idle vs walk: the pack has only one walk sheet, so idle plays the same sheet slowly
+   * (`<actor>.idle.*`, fps 4 in the manifest). Telegraphing while still running the 10 fps
+   * walk animation looks like sliding — switching to idle is a readable cue.
    */
   private playMotion(moving: boolean, direction: Direction, force = false): void {
     const clip = moving ? 'walk' : 'idle';
@@ -549,8 +549,8 @@ export class EnemyView extends Component {
   }
 
   /**
-   * Scale = gốc × elite × pulse telegraph × squash khi trúng đạn. Squash nhân
-   * trên trục x/y riêng nên elite ×1.15 và tank ×1.75 vẫn là scale gốc đúng.
+   * Scale = base × elite × telegraph pulse × squash on hit. Squash multiplies on the
+   * x/y axes separately, so elite ×1.15 and tank ×1.75 still sit on the correct base scale.
    */
   private applyScale(pulse: number, nowMs: number): void {
     const state = this.state;
@@ -567,13 +567,13 @@ export class EnemyView extends Component {
   private applyTint(color: Color): void {
     const sprite = this.sprite;
     if (sprite === null) return;
-    // `Sprite.color` là màu nhân vào texture; pack dùng 53 màu palette nên tint nhẹ
-    // tay là đủ đọc, không phá silhouette.
+    // `Sprite.color` multiplies the texture; the pack's 53-colour palette means a light
+    // tint reads clearly without breaking the silhouette.
     sprite.color = color;
   }
 
   // -------------------------------------------------------------------------
-  // Vòng telegraph (pool một node / enemy)
+  // Telegraph ring (one pooled node per enemy)
   // -------------------------------------------------------------------------
 
   private async createRing(): Promise<void> {
@@ -588,8 +588,8 @@ export class EnemyView extends Component {
     const sprite: Sprite = node.addComponent(CocosSprite);
     sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     sprite.trim = false;
-    // `sizeMode = CUSTOM` lấy kích thước từ UITransform; thiếu dòng này node giữ
-    // 100×100 mặc định và vòng telegraph to gấp ~3 lần (lộ ở ảnh nghiệm thu M3).
+    // `sizeMode = CUSTOM` takes its size from UITransform; without this line the node keeps
+    // the default 100×100 and the ring is ~3× too big (caught in the M3 acceptance shots).
     const transform = node.getComponent(CocosUITransform);
     if (transform !== null) transform.setContentSize(RING_RECT.width, RING_RECT.height);
     node.active = false;
@@ -604,8 +604,8 @@ export class EnemyView extends Component {
     if (this.ringRole !== kind) {
       this.ringRole = kind;
       const diameter = RING_DIAMETER_TILES[kind];
-      // Frame 32 px, parent scale 1/16 ⇒ 32/16 = 2 tile; chia cho đường kính mong muốn,
-      // nhân bù scale vai trò để vòng của brute vẫn đúng 4 tile chứ không phình 1.75×.
+      // 32 px frame at parent scale 1/16 ⇒ 32/16 = 2 tiles; divide by the target diameter and
+      // multiply by the role-scale compensation so the brute's ring stays 4 tiles instead of inflating 1.75×.
       const scale = (diameter / 2) * this.ringScaleCompensation;
       ring.node.setScale(scale, scale, 1);
     }
