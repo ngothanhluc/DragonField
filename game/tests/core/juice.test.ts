@@ -209,7 +209,7 @@ describe('Settings — screenShake / damageNumbers', () => {
     const old = { version: 1, gold: 5, settings: { volume: 0.4, fullscreen: true } };
     const migrated = migrate(old);
     expect(migrated.version).toBe(1);
-    expect(migrated.settings).toEqual({ volume: 0.4, fullscreen: true, screenShake: true, damageNumbers: false });
+    expect(migrated.settings).toEqual({ volume: 0.4, fullscreen: true, screenShake: true, damageNumbers: false, effects: 'full' });
   });
 
   it('parse reports a mistyped field', () => {
