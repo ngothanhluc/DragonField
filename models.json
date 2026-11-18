@@ -1,10 +1,10 @@
 {
-  "$comment": "Vai trò → dòng model. scripts/resolve-models chọn bản mới nhất trong dòng có trong gói. Không ghi ID cụ thể ở đây. `effort` là thang variant của opencode, bậc đầu là mặc định; xem .claude/skills/effort.",
+  "$comment": "Role → model line. scripts/resolve-models picks the newest release in the line available in the package. Do not write specific IDs here. `effort` is the opencode variant ladder, first rung is the default; see .claude/skills/effort.",
   "provider": "opencode-go",
   "roles": {
     "executor": {
       "match": "^deepseek-v[0-9.]+-flash$",
-      "note": "implement mọi ticket",
+      "note": "implements every ticket",
       "effort": [
         "low",
         "high",
@@ -13,7 +13,7 @@
     },
     "executor-pro": {
       "match": "^deepseek-v[0-9.]+-pro$",
-      "note": "nâng cấp khi executor thua ở bậc effort cao nhất",
+      "note": "upgrade when the executor loses at the highest effort rung",
       "effort": [
         "high",
         "max"
@@ -21,7 +21,7 @@
     },
     "adversary": {
       "match": "^gpt-[0-9.]+-luna$",
-      "note": "kẻ phá trong review-loop cho ticket rủi ro",
+      "note": "adversary in review-loop for risky tickets",
       "effort": [
         "medium"
       ]
@@ -30,6 +30,6 @@
   "orchestrator": {
     "models_dev_provider": "anthropic",
     "match": "^claude-opus-[0-9-]+$",
-    "note": "model của session Claude Code; script chỉ nhắc khi có bản mới hơn"
+    "note": "the Claude Code session's model; the script only warns when a newer release exists"
   }
 }

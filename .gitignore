@@ -32,8 +32,8 @@ art-source/
 # accidental duplicate Cocos project (nested repo, no commits)
 NewProject/
 .shots/
-# bản deploy commit sẵn cho Cloudflare: native/ ở đây là texture/audio, không phải build native
+# committed deploy build for Cloudflare: native/ here is texture/audio, not a native build
 !game/deploy/**/native/
 
-# Brief, báo cáo, ledger của vòng tự động trong mỗi worktree ticket
+# Brief, report and ledger of the automation loop in each ticket worktree
 .kol-auto/

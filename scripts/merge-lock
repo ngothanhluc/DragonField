@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""merge-lock: khoá merge dùng chung giữa các owner chạy song song (full-send-spec).
+"""merge-lock: a merge lock shared by owners running in parallel (full-send-spec).
 
-  scripts/merge-lock acquire   # chặn tới khi lấy được khoá (tối đa 2 giờ), exit 0
-  scripts/merge-lock release   # nhả khoá nếu mình đang giữ
-  scripts/merge-lock status    # in ai đang giữ
+  scripts/merge-lock acquire   # block until the lock is taken (max 2 hours), exit 0
+  scripts/merge-lock release   # release the lock if you hold it
+  scripts/merge-lock status    # print who holds it
 
-Khoá là thư mục <git-common-dir>/kol-auto/merge.lock, chứa file `holder` ghi $HC_TERMINAL_ID.
-Terminal giữ khoá không còn sống (hc get báo not_found hoặc đã exit) thì khoá bị coi là
-bỏ quên và được lấy lại, để một owner chết giữa chừng không chặn cả hàng đợi.
+The lock is the directory <git-common-dir>/kol-auto/merge.lock, holding a `holder` file with $HC_TERMINAL_ID.
+If the holding terminal is no longer alive (hc get reports not_found or it already exited), the lock is
+treated as abandoned and is taken over, so an owner that dies midway does not block the whole queue.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def lock_dir() -> Path:
 def me() -> str:
     t = os.environ.get("HC_TERMINAL_ID")
     if not t:
-        sys.exit("merge-lock: thiếu $HC_TERMINAL_ID (phải chạy trong herdr-core)")
+        sys.exit("merge-lock: missing $HC_TERMINAL_ID (must run inside herdr-core)")
     return t
 
 
@@ -52,7 +52,7 @@ def alive(term: str) -> bool:
     try:
         return json.loads(r.stdout).get("exit_code") is None
     except json.JSONDecodeError:
-        return True  # không đọc được thì coi như còn sống, tránh cướp khoá nhầm
+        return True  # unreadable output means treat it as alive, to avoid stealing the lock by mistake
 
 
 def acquire(lock: Path, who: str) -> int:
@@ -61,19 +61,19 @@ def acquire(lock: Path, who: str) -> int:
         try:
             lock.mkdir()
             (lock / "holder").write_text(who)
-            print(f"merge-lock: {who} giữ khoá")
+            print(f"merge-lock: {who} holds the lock")
             return 0
         except FileExistsError:
             h = holder(lock)
             if h == who:
-                print(f"merge-lock: {who} đã giữ khoá")
+                print(f"merge-lock: {who} already holds the lock")
                 return 0
             if h and not alive(h):
-                print(f"merge-lock: {h} không còn sống, lấy lại khoá", file=sys.stderr)
+                print(f"merge-lock: {h} is no longer alive, taking over the lock", file=sys.stderr)
                 shutil.rmtree(lock, ignore_errors=True)
                 continue
             if time.time() - start > TIMEOUT:
-                print(f"merge-lock: chờ quá 2 giờ, {h} vẫn giữ khoá", file=sys.stderr)
+                print(f"merge-lock: waited over 2 hours, {h} still holds the lock", file=sys.stderr)
                 return 1
             time.sleep(POLL)
 
@@ -85,17 +85,17 @@ def main() -> int:
     lock = lock_dir()
     cmd = sys.argv[1]
     if cmd == "status":
-        print(holder(lock) or "trống")
+        print(holder(lock) or "empty")
         return 0
     who = me()
     if cmd == "acquire":
         return acquire(lock, who)
     h = holder(lock)
     if h and h != who:
-        print(f"merge-lock: khoá đang thuộc {h}, không nhả", file=sys.stderr)
+        print(f"merge-lock: the lock belongs to {h}, not releasing", file=sys.stderr)
         return 1
     shutil.rmtree(lock, ignore_errors=True)
-    print(f"merge-lock: {who} nhả khoá")
+    print(f"merge-lock: {who} released the lock")
     return 0
 
 
