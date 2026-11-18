@@ -23,10 +23,20 @@ import {
   UITransform as CocosUITransform,
   warn,
 } from 'cc';
-import type { AtmosphereLayer, AtmosphereLayerKind, VisibleAtmosphere } from '../core/atmosphere/atmosphere';
+import type {
+  AtmosphereConfig,
+  AtmosphereLayer,
+  AtmosphereLayerKind,
+  VisibleAtmosphere,
+} from '../core/atmosphere/atmosphere';
+import { chapterAtmosphere, visibleAtmosphere } from '../core/atmosphere/atmosphere';
 import { resolve, type AnimationManifest } from '../core/art/manifest';
+import type { LevelData } from '../core/level/level-data';
 import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
+import type { Vec2 } from '../core/math/vec2';
 import { SeededRng } from '../core/rng';
+import type { EffectsMode } from '../core/vfx/weapon-vfx';
+import { attachLivingDecor, type DecorHandle } from './living-decor-view';
 import { getFrame } from './assets/sprite-frame-cache';
 
 type Color = InstanceType<typeof CocosColor>;
@@ -454,6 +464,92 @@ export function attachAtmosphere(
         if (node.isValid) node.destroy();
       }
       nodes.length = 0;
+    },
+  };
+}
+
+/** Live counts of what a room's atmosphere/decor really drew (read by the debug snapshots). */
+export interface RoomAtmosphereSnapshot {
+  chapter: number;
+  /** Layer kinds created, already filtered by the Effects mode. */
+  layers: readonly string[];
+  /** Animals / animated props really created (0 under Effects Reduced). */
+  animals: number;
+  props: number;
+}
+
+export interface RoomAtmosphereOptions {
+  /** The room root; the under-actors layers and the living decor live under it. */
+  readonly roomRoot: Node;
+  /** World node for over-actors layers (must be destroyed separately — see `destroy`). */
+  readonly overLayer: Node | null;
+  readonly level: LevelData;
+  readonly config: AtmosphereConfig;
+  readonly manifest: AnimationManifest;
+  readonly effects: EffectsMode;
+  /** Run seed mixed with chapter/room, or a fixed per-chapter seed in the menus. */
+  readonly seed: number;
+  /** Water rectangles of this room (ch2), so ripples land on water instead of the floor. */
+  readonly rippleAreas?: readonly RippleArea[];
+  /** Player position in tile units (animals flee it); `null` when there is no player. */
+  readonly playerOf: () => Vec2 | null;
+}
+
+export interface RoomAtmosphereParts {
+  readonly atmosphere: AtmosphereHandle;
+  readonly decor: DecorHandle;
+  /** Planned counts immediately, real counts once the decor textures load. */
+  readonly snapshot: RoomAtmosphereSnapshot;
+  /** Destroy both handles (the over-actors node is not under the room root). */
+  destroy(): void;
+}
+
+/**
+ * Build the atmosphere layers + living decor of one room (#6) for the current Effects mode.
+ *
+ * Shared by the run (`bootstrap.rebuildRoomAtmosphere`) and the living menu backdrop (#8), so the
+ * menu shows exactly what a run would. Returns `null` when the chapter has no atmosphere config.
+ */
+export function attachRoomAtmosphere(options: RoomAtmosphereOptions): RoomAtmosphereParts | null {
+  const atmosphere = chapterAtmosphere(options.config, options.level.chapter);
+  if (atmosphere === null) return null;
+
+  const visible = visibleAtmosphere(atmosphere, options.effects);
+  const handle = attachAtmosphere(options.roomRoot, options.overLayer, {
+    visible,
+    manifest: options.manifest,
+    seed: options.seed,
+    ...(options.rippleAreas !== undefined ? { rippleAreas: options.rippleAreas } : {}),
+  });
+
+  const decor = attachLivingDecor(options.roomRoot, {
+    level: options.level,
+    tuning: options.config.animal,
+    manifest: options.manifest,
+    seed: (options.seed + 1) >>> 0,
+    playerOf: options.playerOf,
+    visible,
+    spec: atmosphere.decor,
+  });
+
+  const snapshot: RoomAtmosphereSnapshot = {
+    chapter: options.level.chapter,
+    layers: handle.kinds,
+    animals: visible.animals ? atmosphere.decor.animalsPerRoom : 0,
+    props: visible.animatedProps ? atmosphere.decor.propsPerRoom : 0,
+  };
+  void decor.ready.then((counts) => {
+    snapshot.animals = counts.animals;
+    snapshot.props = counts.props;
+  });
+
+  return {
+    atmosphere: handle,
+    decor,
+    snapshot,
+    destroy(): void {
+      handle.destroy();
+      decor.destroy();
     },
   };
 }
