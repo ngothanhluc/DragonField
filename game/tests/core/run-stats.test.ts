@@ -5,7 +5,7 @@ import { createDefaultUpgrades } from '../../assets/scripts/core/meta/upgrades';
 import { computeDerivedStats } from '../../assets/scripts/core/skills/derived-stats';
 
 describe('applyUpgradesToBaseline', () => {
-  it('cấp 0 giữ nguyên baseline', () => {
+  it('level 0 keeps the baseline', () => {
     expect(
       applyUpgradesToBaseline(DEFAULT_COMBAT, {
         maxHeartsBonus: 0,
@@ -15,7 +15,7 @@ describe('applyUpgradesToBaseline', () => {
     ).toEqual(DEFAULT_COMBAT);
   });
 
-  it('cộng tim, nhân damage và nhịp bắn trên chỉ số gốc', () => {
+  it('adds hearts, multiplies damage and fire rate on the base stats', () => {
     const base = applyUpgradesToBaseline(DEFAULT_COMBAT, {
       maxHeartsBonus: 3,
       damageMultiplier: 1.2,
@@ -27,7 +27,7 @@ describe('applyUpgradesToBaseline', () => {
     expect(base.fireRatePerSecond).toBeCloseTo(DEFAULT_COMBAT.fireRatePerSecond * 1.15, 10);
   });
 
-  it('không sửa baseline truyền vào', () => {
+  it('does not modify the passed baseline', () => {
     const before = { ...DEFAULT_COMBAT };
     applyUpgradesToBaseline(DEFAULT_COMBAT, {
       maxHeartsBonus: 2,
@@ -37,7 +37,7 @@ describe('applyUpgradesToBaseline', () => {
     expect(DEFAULT_COMBAT).toEqual(before);
   });
 
-  it('save max track cho bonus max: +5 tim, +50% damage, +30% nhịp bắn', () => {
+  it('a maxed save gives max bonus: +5 hearts, +50% damage, +30% fire rate', () => {
     const state = {
       upgrades: { hearts: 5, damage: 10, fireRate: 10 },
     };
@@ -48,7 +48,7 @@ describe('applyUpgradesToBaseline', () => {
     expect(base.fireRatePerSecond).toBeCloseTo(2.6, 10);
   });
 
-  it('skill layer cộng trên baseline của meta, không thay thế nó', () => {
+  it('the skill layer adds on top of the meta baseline, never replacing it', () => {
     const base = metaBaseline(DEFAULT_COMBAT, {
       upgrades: { hearts: 1, damage: 2, fireRate: 0 },
     });
@@ -59,7 +59,7 @@ describe('applyUpgradesToBaseline', () => {
     expect(stats.fireRatePerSecond).toBeCloseTo(2, 10);
   });
 
-  it('dữ liệu hỏng không tạo chỉ số âm/NaN', () => {
+  it('broken data does not produce negative/NaN stats', () => {
     const base = applyUpgradesToBaseline(DEFAULT_COMBAT, {
       maxHeartsBonus: Number.NaN,
       damageMultiplier: Number.NaN,
@@ -71,7 +71,7 @@ describe('applyUpgradesToBaseline', () => {
     expect(base.fireRatePerSecond).toBe(0);
   });
 
-  it('save mới không có upgrade vẫn chạy', () => {
+  it('a new save without upgrades still runs', () => {
     const base = metaBaseline(DEFAULT_COMBAT, { upgrades: createDefaultUpgrades() });
     expect(base.damage).toBe(DEFAULT_COMBAT.damage);
     expect(base.fireRatePerSecond).toBe(DEFAULT_COMBAT.fireRatePerSecond);

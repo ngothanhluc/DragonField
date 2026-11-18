@@ -1,11 +1,11 @@
 /**
- * Màn chọn chapter (GDD §2, §9) — dựng 100% bằng code, không sửa `.scene`.
+ * Chapter select screen (GDD §2, §9) — built 100% in code, no `.scene` edits.
  *
- * Ba nút chapter (khoá/mở + best) và Back về title. Nút khoá **không** bấm được,
- * và bootstrap còn gọi `core/save/chapter-gate.ts` trước khi load `.tmx` — nút
- * disabled không phải lớp bảo vệ duy nhất.
+ * Three chapter buttons (locked/unlocked + best) and Back to title. Locked buttons **cannot**
+ * be clicked, and bootstrap also calls `core/save/chapter-gate.ts` before loading `.tmx` — the
+ * disabled button is not the only protection.
  *
- * Dùng chung `screens/menu.ts` cho frame nút, focus nhìn thấy được và phím
+ * Shares `screens/menu.ts` for button frames, visible focus and keys
  * ↑/↓/←/→ + Enter/Space + Esc.
  */
 import { Layers, Node as CocosNode } from 'cc';
@@ -28,18 +28,18 @@ type Node = InstanceType<typeof CocosNode>;
 
 export interface ChapterButton {
   readonly chapter: number;
-  /** Mở được (đã unlock **và** có dữ liệu `.tmx`). */
+  /** Playable (unlocked **and** has `.tmx` data). */
   readonly playable: boolean;
-  /** Chapter có dữ liệu level trong build này. Không có thì luôn khoá. */
+  /** Whether the chapter has level data in this build. Without it, always locked. */
   readonly hasData: boolean;
 }
 
 export interface ChapterSelectOptions {
-  /** 1-based, tối đa `CHAPTERS_PER_RUN`; thứ tự hiển thị giữ nguyên. */
+  /** 1-based, up to `CHAPTERS_PER_RUN`; the display order is kept as given. */
   readonly chapters: readonly ChapterButton[];
   readonly best: BestProgress;
   readonly onSelect: (chapter: number) => void;
-  /** Esc / nút Back. */
+  /** Esc / the Back button. */
   readonly onBack: () => void;
 }
 
@@ -49,13 +49,13 @@ export interface ChapterSelectScreen {
   destroy(): void;
 }
 
-/** Kỷ lục dạng chữ: "Best: chapter 2 · room 4" hoặc "Best: —". */
+/** Record as text: "Best: chapter 2 · room 4" or "Best: —". */
 export function formatBest(best: BestProgress): string {
   if (best.chapter <= 0 || best.room <= 0) return 'Best: —';
   return `Best: chapter ${best.chapter} · room ${best.room}`;
 }
 
-/** Nhãn nút. Khoá thì nói rõ vì sao (chưa mở hay chưa có dữ liệu). */
+/** Button label. When locked, say why (not unlocked or no data). */
 export function chapterCaption(button: ChapterButton): string {
   if (button.playable) return `Chapter ${button.chapter}`;
   return button.hasData ? `Chapter ${button.chapter}\nlocked` : `Chapter ${button.chapter}\nno data`;
@@ -132,7 +132,7 @@ export async function buildChapterSelect(
   const panel = createMenuPanel(root, 'chapter-panel', frames.panel, Math.min(460, size.width - 24), size.height - 28);
   panel.setSiblingIndex(1);
 
-  // Chapter 1 luôn ở index 0; nếu build không có dữ liệu thì vẫn focus nút đầu.
+  // Chapter 1 is always index 0; if this build has no data, still focus the first button.
   const focus = new FocusList({ handles, onBack: options.onBack });
 
   return {

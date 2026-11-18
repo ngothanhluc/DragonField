@@ -1,8 +1,9 @@
 /**
- * Dựng camera world + camera nền letterbox và giữ band 16:9 đúng khi canvas đổi.
+ * Builds the world camera + letterbox backdrop camera and keeps the 16:9 band correct when the
+ * canvas changes.
  *
- * Trước M6 code này nằm trong `bootstrap.ts`; tách ra để run-flow không phình và
- * để quy ước camera chỉ có một chỗ.
+ * Before M6 this code lived in `bootstrap.ts`; it was split out so run-flow does not grow and
+ * the camera convention lives in one place.
  */
 import {
   Camera as CocosCamera,
@@ -33,13 +34,13 @@ export class WorldCamera {
   private readonly designWidth: number;
   private readonly designHeight: number;
   /**
-   * Trauma shake của **camera world** (không phải HUD): offset cộng vào vị trí
-   * camera mỗi frame, không cộng dồn nên không trôi. `bootstrap` tắt theo setting.
+   * Trauma shake of the **world camera** (not the HUD): the offset is added to the camera
+   * position each frame and never accumulated, so it cannot drift. `bootstrap` switches it off per setting.
    */
   readonly shake = new ScreenShake(FEEL_TUNING.shake, Math.random);
-  /** Tỉ lệ band world / band UI hiện tại (≤ 1); HUD nhân node theo số này. */
+  /** Current world band / UI band ratio (≤ 1); the HUD multiplies its node by it. */
   hudScale = 1;
-  /** Gọi mỗi lần band world đổi (resize, fullscreen). */
+  /** Called whenever the world band changes (resize, fullscreen). */
   onViewportChange: ((hudScale: number) => void) | null = null;
 
   constructor(parent: Node, designWidth: number, designHeight: number) {
@@ -71,8 +72,8 @@ export class WorldCamera {
   }
 
   /**
-   * Một frame: trauma tàn theo thời gian **thật** rồi áp offset nguyên texel vào
-   * vị trí camera world. Gọi cả trong hitstop để camera không đứng lệch tâm.
+   * One frame: trauma decays over **real** time, then the whole-texel offset is applied to the
+   * world camera position. Called even during hitstop so the camera does not freeze off-centre.
    */
   update(deltaMs: number): void {
     this.shake.update(deltaMs);
@@ -99,9 +100,9 @@ export class WorldCamera {
   };
 
   /**
-   * Camera nền cho bar letterbox: camera thường chỉ clear trong viewport của nó,
-   * nên phần ngoài band 16:9 là backbuffer (màu không đảm bảo); camera này phủ
-   * cả canvas nhưng `visibility = 0` (không vẽ layer nào).
+   * Backdrop camera for the letterbox bars: a normal camera only clears inside its viewport,
+   * so the area outside the 16:9 band is backbuffer (no guaranteed colour); this camera covers
+   * the whole canvas with `visibility = 0` (drawing no layers).
    */
   private createBackdropCamera(parent: Node): void {
     const node = new CocosNode('letterbox-camera');
@@ -120,8 +121,8 @@ export class WorldCamera {
   }
 
   /**
-   * Scene 2D mặc định có `Canvas > Camera` và camera đó chỉ thấy UI_2D. Ưu tiên
-   * camera **không** nằm dưới Canvas; nếu không có thì tự tạo camera world.
+   * A default 2D scene has `Canvas > Camera` and that camera only sees UI_2D. Prefer a camera
+   * that is **not** under a Canvas; if there is none, create the world camera.
    */
   private pickWorldCamera(parent: Node): Camera {
     const scene = director.getScene();

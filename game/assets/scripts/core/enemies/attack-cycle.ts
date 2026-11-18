@@ -1,21 +1,21 @@
 /**
- * Mốc thời gian của **chu kỳ đòn** (`EnemyState.actionStartedMs`) sau khi action
- * đổi. Tách thành hàm thuần vì đây là chỗ từng gây bug khó thấy: nếu adapter đặt
- * lại mốc này ở **mọi** lần đổi action thì cú stagger (150 ms sau mỗi viên đạn,
- * player bắn 2 phát/giây) sẽ restart cooldown liên tục và enemy **không bao giờ
- * ra đòn** — chỉ lộ ra khi chơi thật.
+ * Timing of the **attack cycle** (`EnemyState.actionStartedMs`) after an action
+ * changes. Split out as a pure function because this is where an invisible bug came from: if the
+ * adapter reset this timestamp on **every** action change, the stagger (150 ms after each projectile,
+ * while the player fires 2 shots/second) would restart the cooldown constantly and the enemy
+ * would **never attack** — only visible when actually playing.
  *
- * Luật:
+ * Rules:
  *
- * - Bắt đầu telegraph ⇒ mốc mới (telegraph là khởi đầu một chu kỳ đòn).
- * - **Thả** đòn (telegraph → idle/charge) ⇒ mốc mới. Telegraph bị stagger cắt
- *   ngang **không** phải thả đòn (xem `attackReleased`).
- * - Mọi chuyển đổi khác (walk ↔ idle, charge → idle, → stagger, stagger → …)
- *   **giữ nguyên** mốc, nên cooldown chạy tiếp qua cú choáng.
+ * - Starting a telegraph ⇒ new timestamp (a telegraph begins an attack cycle).
+ * - **Releasing** the attack (telegraph → idle/charge) ⇒ new timestamp. A telegraph cut short
+ *   by a stagger does **not** count as releasing the attack (see `attackReleased`).
+ * - Every other transition (walk ↔ idle, charge → idle, → stagger, stagger → …)
+ *   **keeps** the timestamp, so the cooldown keeps running through the stun.
  */
 import type { EnemyAction } from './behaviours';
 
-/** `actionStartedMs` nên là gì khi action đổi từ `previous` sang `next` tại `nowMs`. */
+/** What `actionStartedMs` should be when the action changes from `previous` to `next` at `nowMs`. */
 export function nextActionStartedMs(
   previous: EnemyAction,
   next: EnemyAction,

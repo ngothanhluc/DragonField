@@ -1,79 +1,79 @@
 /**
- * Gom các phòng đã parse từ `.tmx` thành một chapter, **không cần code biết
- * chapter có bao nhiêu phòng**: sắp theo property `room`, rồi validate quan hệ
- * giữa các phòng (trùng số, door trỏ tới phòng không tồn tại) bằng
+ * Group the rooms parsed from `.tmx` into one chapter, **without any code knowing
+ * how many rooms a chapter has**: sort by the `room` property, then validate the
+ * relationships between rooms (duplicate numbers, doors pointing at missing rooms) with
  * `parseChapterData`.
  *
- * Nhờ vậy thả thêm `room-10.tmx` vào thư mục chapter là run tự có 10 phòng,
- * HUD hiện `x/10` — không có hằng số nào phải sửa.
+ * So dropping a `room-10.tmx` into a chapter folder gives a run with 10 rooms and
+ * the HUD shows `x/10` — no constant needs changing.
  */
 import { parseChapterData } from './level-data';
 import type { ChapterData, LevelData } from './level-data';
 
-/** Sắp bản sao theo `room`; không sửa mảng đầu vào (bootstrap giữ map room → asset). */
+/** Sort a copy by `room`; never mutates the input array (bootstrap keeps the room → asset map). */
 export function sortLevelsByRoom(levels: readonly LevelData[]): LevelData[] {
   return levels.slice().sort((a, b) => a.room - b.room);
 }
 
 /**
- * `LevelData[]` (mỗi file `.tmx` một phần tử, thứ tự load tuỳ engine) → `ChapterData`.
+ * `LevelData[]` (one element per `.tmx` file, in engine load order) → `ChapterData`.
  *
- * Ném lỗi nếu rỗng, nếu các phòng thuộc chapter khác nhau, nếu
- * `parseChapterData` phát hiện trùng số phòng / door hỏng, nếu dãy phòng đứt
- * quãng, hoặc nếu phòng boss không phải phòng cuối / có hơn một phòng boss.
+ * Throws if empty, if rooms belong to different chapters, if
+ * `parseChapterData` finds duplicate room numbers / broken doors, if the room sequence
+ * has a gap, or if the boss room is not the last room / there is more than one boss room.
  */
 export function chapterFromLevels(levels: readonly LevelData[]): ChapterData {
   if (levels.length === 0) {
-    throw new Error('chapterFromLevels: không có phòng nào — kiểm tra thư mục .tmx đã import chưa');
+    throw new Error('chapterFromLevels: no rooms — check that the .tmx folder has been imported');
   }
 
   const first = levels[0];
   if (first === undefined) {
-    throw new Error('chapterFromLevels: không có phòng nào');
+    throw new Error('chapterFromLevels: no rooms');
   }
 
   for (const level of levels) {
     if (level.chapter !== first.chapter) {
       throw new Error(
-        `chapterFromLevels: phòng ${level.id} thuộc chapter ${level.chapter}, ` +
-          `nhưng ${first.id} thuộc chapter ${first.chapter}. Mỗi thư mục chỉ chứa một chapter.`,
+        `chapterFromLevels: room ${level.id} belongs to chapter ${level.chapter}, ` +
+          `but ${first.id} belongs to chapter ${first.chapter}. A folder must hold one chapter only.`,
       );
     }
   }
 
   const sorted = sortLevelsByRoom(levels);
-  // parseChapterData validate lại từng phòng (dữ liệu do parser sinh nên chắc chắn
-  // đúng) và quan hệ giữa các phòng — trùng số phòng / door hỏng nổi ở đây trước.
+  // parseChapterData re-validates each room (the parser produced it, so it is certainly
+  // valid) and the relationships between rooms — duplicate room numbers / broken doors surface here first.
   const chapter = parseChapterData({ chapter: first.chapter, rooms: sorted });
 
-  // `RunState` đi tuần tự 1..N, nên dãy phòng phải liền mạch: thiếu `room-3.tmx` là
-  // run kẹt ở phòng 3 với `levelFor(3) === null`. Báo ngay lúc load, kèm số phòng thiếu.
+  // `RunState` walks 1..N sequentially, so the room sequence must be contiguous: a missing
+  // `room-3.tmx` leaves the run stuck at room 3 with `levelFor(3) === null`. Report at load time, naming the missing room.
   sorted.forEach((level, index) => {
     if (level.room !== index + 1) {
       throw new Error(
-        `chapterFromLevels: phòng phải liền mạch từ 1; vị trí ${index + 1} là phòng ` +
-          `${level.room} (${level.id}). Thiếu room-${index + 1}.tmx?`,
+        `chapterFromLevels: rooms must be contiguous from 1; position ${index + 1} is room ` +
+          `${level.room} (${level.id}). Missing room-${index + 1}.tmx?`,
       );
     }
   });
 
-  // Boss phải là phòng cuối, và chỉ một phòng boss. `RunState`/bootstrap coi phòng cuối
-  // của chapter là hết run; boss nằm giữa sẽ khiến người chơi gặp boss rồi vẫn còn
-  // phòng thường phía sau, còn hai boss room là dữ liệu author nhầm (copy .tmx).
-  // Không bắt buộc **phải có** boss: chapter đang author dở vẫn load được.
+  // The boss must be the last room, and there must be exactly one boss room. `RunState`/bootstrap treat the last
+  // room of a chapter as the end of the run; a mid-chapter boss would make the player fight the boss and then
+  // still face regular rooms, while two boss rooms means the author copied a `.tmx` by mistake.
+  // A boss is not **required**: a chapter still being authored must load.
   const bossRooms = sorted.filter((level) => level.isBossRoom);
   if (bossRooms.length > 1) {
     throw new Error(
-      `chapterFromLevels: chapter ${first.chapter} có ${bossRooms.length} phòng boss ` +
-        `(${bossRooms.map((level) => level.id).join(', ')}), chỉ được có một.`,
+      `chapterFromLevels: chapter ${first.chapter} has ${bossRooms.length} boss rooms ` +
+        `(${bossRooms.map((level) => level.id).join(', ')}), there can only be one.`,
     );
   }
   const onlyBoss = bossRooms[0];
   const last = sorted[sorted.length - 1];
   if (onlyBoss !== undefined && last !== undefined && onlyBoss.room !== last.room) {
     throw new Error(
-      `chapterFromLevels: phòng boss ${onlyBoss.id} phải là phòng cuối, nhưng chapter ` +
-        `${first.chapter} còn phòng ${last.room} (${last.id}) sau nó.`,
+      `chapterFromLevels: boss room ${onlyBoss.id} must be the last room, but chapter ` +
+        `${first.chapter} still has room ${last.room} (${last.id}) after it.`,
     );
   }
 

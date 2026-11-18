@@ -1,11 +1,11 @@
 /**
- * Canvas/DOM của bản build web: cho canvas phủ đúng cửa sổ trình duyệt và
- * letterbox camera world theo design 512×288.
+ * Canvas/DOM for the web build: make the canvas fill the browser window and letterbox the
+ * world camera to the 512×288 design.
  *
- * Tách khỏi bootstrap vì đây là adapter DOM/engine thuần, không liên quan run
- * flow. Build web-desktop ghim `#GameDiv` 1280×960 + border 5px và có
- * header/footer trong template; chỉ `screen.windowSize` mới đổi được canvas
- * (xem bẫy AGENTS.md).
+ * Split from bootstrap because this is a pure DOM/engine adapter, unrelated to run flow.
+ * The web-desktop build pins `#GameDiv` at 1280×960 with a 5 px border and ships a
+ * header/footer in the template; only `screen.windowSize` can resize the canvas
+ * (see the AGENTS.md pitfalls).
  */
 import { Rect, screen, Size } from 'cc';
 import type { Camera as CocosCamera } from 'cc';
@@ -13,7 +13,7 @@ import { pixelPerfectRect, worldToUiScale } from '../core/view/letterbox';
 
 type Camera = InstanceType<typeof CocosCamera>;
 
-/** Gán canvas = innerWidth × innerHeight và bỏ khung/trang trí của template build. */
+/** Set the canvas to innerWidth × innerHeight and strip the build template's frame/decorations. */
 export function fillBrowserViewport(): void {
   if (typeof window === 'undefined') return;
 
@@ -42,8 +42,9 @@ export function fillBrowserViewport(): void {
 }
 
 /**
- * Camera world vẽ phòng ở bội số nguyên của design (512×288 × 2/3/4…) để pixel art
- * không bị nhoè/lệch texel (M7). Trả tỉ lệ world/UI để HUD thu theo, bám mép phòng.
+ * The world camera draws the room at integer multiples of the design (512×288 × 2/3/4…) so pixel
+ * art stays sharp and texel-aligned (M7). Returns the world/UI ratio so the HUD shrinks to hug
+ * the room edges.
  */
 export function applyWorldLetterbox(
   camera: Camera | null,

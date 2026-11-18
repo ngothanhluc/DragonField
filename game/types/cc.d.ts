@@ -1,14 +1,14 @@
 /**
- * Stub cho module `cc` của Cocos Creator.
+ * Stub for the Cocos Creator `cc` module.
  *
- * Repo KHÔNG commit type thật của engine: `temp/tsconfig.cocos.json` (do editor sinh)
- * trỏ vào `library/`, cả hai đều gitignored, nên CI không thể resolve `cc`.
+ * The repo does NOT commit the engine's real types: `temp/tsconfig.cocos.json` (editor-generated)
+ * points into `library/`, both gitignored, so CI cannot resolve `cc`.
  *
- * Vì vậy `tsc --noEmit` coi `cc` là module any:
- *  - vẫn bắt được lỗi kiểu/logic trong code của mình
- *  - KHÔNG kiểm tra được API của Cocos → editor là nguồn đúng cho phần đó
+ * Therefore `tsc --noEmit` treats `cc` as an any module:
+ *  - still catches type/logic errors in our own code
+ *  - does NOT check the Cocos API → the editor is the source of truth for that part
  *
- * Đừng thêm nội dung vào file này để "fix" lỗi. Nếu cần type của engine,
- * mở project trong editor rồi dùng `npm run typecheck:all`.
+ * Do not add content to this file to "fix" errors. If you need engine types,
+ * open the project in the editor then use `npm run typecheck:all`.
  */
 declare module 'cc';

@@ -1,6 +1,6 @@
 /**
- * Phần debug hook M6 tách khỏi bootstrap: `placeholders()` và `anim()` chỉ duyệt
- * scene, không giữ state riêng.
+ * M6 debug hooks split from bootstrap: `placeholders()` and `anim()` only walk the
+ * scene and keep no state of their own.
  */
 import { Sprite as CocosSprite } from 'cc';
 import type { Node as CocosNode } from 'cc';
@@ -11,11 +11,11 @@ type Node = InstanceType<typeof CocosNode>;
 const PLACEHOLDER_NAME = /placeholder|fallback|missing/i;
 
 /**
- * Art tạm còn hiển thị:
- * - node có tên `placeholder`/`fallback`/`missing`;
- * - Sprite đang bật nhưng chưa có `spriteFrame`;
- * - key animation hỏng/không resolve được (log từ `SpriteAnimator`);
- * - FX đang bật mà animator chưa có key.
+ * Placeholder art still on screen:
+ * - nodes named `placeholder`/`fallback`/`missing`;
+ * - an active Sprite with no `spriteFrame`;
+ * - broken/unresolvable animation keys (logged by `SpriteAnimator`);
+ * - an active FX whose animator has no key.
  */
 export function collectPlaceholders(roots: readonly (Node | null)[]): readonly string[] {
   const issues = new Set<string>(animationProblemSnapshot());
@@ -43,7 +43,7 @@ function visit(node: Node, issues: Set<string>): void {
   for (const child of node.children) visit(child, issues);
 }
 
-/** Snapshot animation actor cho `anim()`. */
+/** Actor animation snapshot for `anim()`. */
 export function collectAnimations(root: Node | null): DebugAnimationSnapshot {
   const enemies: Record<string, string> = {};
   let player: string | null = null;
@@ -65,7 +65,7 @@ export function collectAnimations(root: Node | null): DebugAnimationSnapshot {
   return { player, enemies, boss };
 }
 
-/** Animation của một node theo tên; `null` nếu không thấy/không có animator. */
+/** Animation of a node by name; `null` if it is missing or has no animator. */
 export function animationOfNode(root: Node | null, name: string): string | null {
   if (root === null || !root.isValid) return null;
 

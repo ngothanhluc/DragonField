@@ -1,29 +1,29 @@
 /**
- * Mô phỏng **một phòng boss** headless (GDD §5) — không engine, không DOM.
+ * Simulate **one boss room** headless (GDD §5) — no engine, no DOM.
  *
- * Driver nối `core/boss/*` (`boss-defs`, `patterns.stepBoss`, `summon`) với
- * đúng những module combat mà game dùng (`AutoFire`, `HealthState`,
- * `BulletPool`), để test tích hợp chứng minh được: boss chạy đủ pattern, đổi
- * phase đúng ngưỡng, summon sinh quái trong phòng, và cùng seed cho cùng kết
- * quả. Cân bằng **phòng thường** vẫn do `run-simulation.ts` đo; file này chỉ
- * lo arena boss nên hai bên không phải sửa chung một file.
+ * The driver wires `core/boss/*` (`boss-defs`, `patterns.stepBoss`, `summon`) to
+ * exactly the combat modules the game uses (`AutoFire`, `HealthState`,
+ * `BulletPool`), so integration tests can prove: the boss runs its patterns, changes
+ * phase at the right thresholds, summons enemies inside the room, and the same seed gives the same
+ * result. **Regular room** balance is still measured by `run-simulation.ts`; this file only
+ * handles the boss arena so the two do not have to share one file.
  *
- * Hợp đồng mô phỏng:
+ * Simulation contract:
  *
- * - **Boss là nguồn sát thương duy nhất.** Quái do boss gọi đứng yên tại chỗ
- *   (vẫn là mục tiêu của auto-aim, vẫn chết khi trúng đạn): AI của chúng là
- *   `core/enemies/behaviours.ts` + adapter, chưa nối vào driver này — ở đây chỉ
- *   cần chứng minh đường `summon` chạy và vị trí hợp lệ.
- * - **Không có vật cản hay tường.** Arena coi như sân trống; đạn ra khỏi phòng
- *   bị thu hồi ngay. Pillar của arena là chuyện của scene, không phải của test
- *   cân bằng boss.
- * - **Không state module-level, không `Math.random`, không `Date.now`.** Ngẫu
- *   nhiên chỉ qua `SeededRng` dựng từ `seed`; `stepBoss` và `summonedEnemies`
- *   dùng chung instance đó nên chuỗi RNG là một dòng duy nhất.
- * - **Boss event nào cũng có chỗ trong log**: `shoot` sinh đạn thật, `summon`
- *   sinh quái thật, còn `move` / `telegraph` / `play-animation` chỉ được ghi
- *   lại (adapter Cocos mới là bên chạy animation và FX).
- * - `godMode` là hook test: player không nhận sát thương.
+ * - **The boss is the only damage source.** Summoned enemies stand still
+ *   (still auto-aim targets, still die when hit): their AI is
+ *   `core/enemies/behaviours.ts` + the adapter, not wired into this driver yet — here we only
+ *   need to prove the `summon` path runs and positions are valid.
+ * - **No obstacles or walls.** The arena is an open field; bullets leaving the room
+ *   are retired immediately. Arena pillars are a scene concern, not a boss balance
+ *   test concern.
+ * - **No module-level state, no `Math.random`, no `Date.now`.** Randomness only
+ *   through `SeededRng` built from `seed`; `stepBoss` and `summonedEnemies`
+ *   share that instance so the RNG stream is a single line.
+ * - **Every boss event has a place in the log**: `shoot` spawns real bullets, `summon`
+ *   spawns real enemies, while `move` / `telegraph` / `play-animation` are only recorded
+ *   (the Cocos adapter is what plays animations and FX).
+ * - `godMode` is a test hook: the player takes no damage.
  */
 import { BOSSES, phaseFor, type BossId, type BossPhase } from '../boss/boss-defs';
 import {
@@ -56,51 +56,51 @@ import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../moveme
 import { SeededRng } from '../rng';
 import { computeDerivedStats, type DerivedStats } from '../skills/derived-stats';
 
-/** Bước mô phỏng, ms. Trùng nhịp `SIM_STEP_MS` của run simulation để so số đo. */
+/** Simulation step, ms. Matches `SIM_STEP_MS` of the run simulation so measurements compare. */
 export const BOSS_RUN_STEP_MS = 16;
 
-/** 3 phút — dài hơn nhiều so với một pha boss thật, chỉ để chặn treo. */
+/** 3 minutes — far longer than a real boss fight, only to catch hangs. */
 export const BOSS_RUN_DEFAULT_MAX_DURATION_MS = 180_000;
 
-/** Id của boss trong mắt auto-aim; quái được gọi dùng id riêng của `summon.ts`. */
+/** Id of the boss as auto-aim sees it; summoned enemies use their own ids from `summon.ts`. */
 export const BOSS_TARGET_ID = 'boss';
 
-/** Bán kính va chạm player, tile — cùng quy ước với `run-simulation.ts`. */
+/** Player collision radius, tiles — same convention as `run-simulation.ts`. */
 const PLAYER_RADIUS_TILES = 0.25;
-/** Bán kính đạn player, tile. */
+/** Player bullet radius, tiles. */
 const PLAYER_BULLET_RADIUS_TILES = 0.15;
 /**
- * Đạn player sống 1.2 s = 14.4 tile, dài hơn tầm auto-aim
- * (`DEFAULT_COMBAT.targetingRangeTiles`) nên viên bắn ra không hết hạn giữa đường.
+ * Player bullets live 1.2 s = 14.4 tiles, longer than the auto-aim range
+ * (`DEFAULT_COMBAT.targetingRangeTiles`) so a fired bullet does not expire mid-flight.
  */
 const PLAYER_BULLET_TTL_MS = 1200;
 /**
- * Đạn boss sống 10 s: đủ bay hết đường chéo arena (≈37 tile) ở tốc độ chậm
- * nhất trong pattern (4 tile/s). Hết hạn thì pool thu hồi, không cần tường.
+ * Boss bullets live 10 s: enough to cross the arena diagonal (≈37 tiles) at the slowest
+ * pattern speed (4 tiles/s). Expiry retires them from the pool, no walls needed.
  */
 const BOSS_BULLET_TTL_MS = 10_000;
-/** Bán kính quái được gọi, tile — cùng quy ước với `run-simulation.ts`. */
+/** Radius of a summoned enemy, tiles — same convention as `run-simulation.ts`. */
 const SUMMONED_RADIUS_TILES = 0.4;
-/** Chừa nửa tile sát tường, giống enemy, để player không dính mép phòng. */
+/** Keep half a tile off the wall, like enemies, so the player never sticks to the room edge. */
 const PLAYER_EDGE_MARGIN_TILES = 0.5;
 /**
- * Khoảng cách player cố giữ với boss trong policy mặc định, tile: trong tầm
- * auto-aim 2 tile để boss không rơi khỏi tầm khi vừa lùi vừa bắn.
+ * Distance the player tries to keep from the boss in the default policy, tiles: inside the 2-tile
+ * auto-aim range so the boss does not fall out of range while retreating and firing.
  */
 export const BOSS_COMFORT_RANGE_TILES = Math.max(1, DEFAULT_COMBAT.targetingRangeTiles - 2);
 
-/** Player đứng giữa sân dưới; boss ở giữa sân. */
+/** Player stands at bottom centre; the boss at mid-arena. */
 export const DEFAULT_PLAYER_START: Vec2 = { x: ROOM_COLS / 2, y: ROOM_ROWS - 2 };
 export const DEFAULT_BOSS_START: Vec2 = { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 };
 
 /**
- * Bán kính **hitbox** của boss lấy từ `BossDef.hitboxRadiusTiles` (nguồn duy
- * nhất, kèm bảng suy ra từ kích thước sprite). Chỉ đọc một lần mỗi run.
+ * Boss **hitbox** radius from `BossDef.hitboxRadiusTiles` (single source,
+ * with a table derived from sprite size). Read once per run.
  */
 
 export type BossRunOutcome = 'won' | 'lost' | 'timeout';
 
-/** Quái do boss gọi, ở dạng policy nhìn thấy (chỉ đọc). */
+/** Enemies summoned by the boss, in the form the policy sees (read only). */
 export interface BossSummonView {
   readonly id: string;
   readonly role: EnemyRole;
@@ -109,7 +109,7 @@ export interface BossSummonView {
   readonly maxHealth: number;
 }
 
-/** Thế giới mà policy đọc. Chỉ đọc, không được sửa. */
+/** The world a policy reads. Read only, never modified. */
 export interface BossRunWorld {
   readonly nowMs: number;
   readonly player: Vec2;
@@ -120,13 +120,13 @@ export interface BossRunWorld {
   readonly summoned: readonly BossSummonView[];
 }
 
-/** Input kịch bản: hàm thuần của world, trả phím WASD của frame này. */
+/** Scripted input: a pure function of the world returning this frame's WASD keys. */
 export type BossRunPolicy = (world: BossRunWorld) => MoveInput;
 
 /**
- * Log sự kiện của một phòng boss. Mọi `BossEvent` của `stepBoss` đều xuất hiện
- * ở đây; `shoot`/`summon` kèm thêm kết quả thật (số đạn, quái đã sinh) để test
- * đối chiếu được mà không phải tự chạy lại pattern.
+ * Event log of one boss room. Every `BossEvent` from `stepBoss` appears
+ * here; `shoot`/`summon` add the real result (bullet count, enemies spawned) so tests
+ * can cross-check without re-running the pattern themselves.
  */
 export type BossRunEvent =
   | { readonly kind: 'boss-shoot'; readonly nowMs: number; readonly bullets: number }
@@ -167,24 +167,24 @@ export type BossRunEvent =
 export interface BossRunOptions {
   readonly bossId: BossId;
   readonly seed: number;
-  /** Mặc định `BOSS_RUN_DEFAULT_MAX_DURATION_MS`; hết giờ thì trả `timeout`. */
+  /** Defaults to `BOSS_RUN_DEFAULT_MAX_DURATION_MS`; when time runs out it returns `timeout`. */
   readonly maxDurationMs?: number;
-  /** Test hook: player không nhận sát thương. */
+  /** Test hook: the player takes no damage. */
   readonly godMode?: boolean;
   /**
-   * Sát thương mỗi viên đạn player. `0` = zero-DPS (dùng để đo áp lực boss mà
-   * không giết nó). Mặc định `DEFAULT_COMBAT.damage`.
+   * Damage per player bullet. `0` = zero-DPS (used to measure boss pressure without
+   * killing it). Defaults to `DEFAULT_COMBAT.damage`.
    */
   readonly playerDamagePerShot?: number;
-  /** Skill của run (`Map<id, stacks>`) — sim phải mô phỏng đúng như game. */
+  /** Run skills (`Map<id, stacks>`) — the sim must mirror the game. */
   readonly skills?: ReadonlyMap<string, number>;
-  /** Bắt đầu ở một phase (test "mỗi phase buộc phải di chuyển"). 1 = đầy máu. */
+  /** Start in a phase (the "every phase forces movement" test). 1 = full health. */
   readonly bossHealthFraction?: number;
-  /** Test hook: máu player lớn hơn 6 để đo nhiều phase trong một lần chạy. */
+  /** Test hook: player health above 6 to measure several phases in one run. */
   readonly playerMaxHearts?: number;
-  /** Máu đầu vào (sim chapter nối phòng boss); mặc định đầy máu. */
+  /** Incoming health (the chapter sim chains the boss room); defaults to full health. */
   readonly playerHearts?: number;
-  /** Mặc định `approachBoss`: bám boss để giữ tầm auto-aim. */
+  /** Defaults to `approachBoss`: stay on the boss to keep auto-aim range. */
   readonly policy?: BossRunPolicy;
   readonly playerStart?: Vec2;
   readonly bossStart?: Vec2;
@@ -194,7 +194,7 @@ export interface BossRunResult {
   readonly outcome: BossRunOutcome;
   readonly bossHealth: number;
   readonly playerHearts: number;
-  /** Các phase đã bước vào, theo thứ tự — `[2, 3]` là đi đủ 3 phase. */
+  /** Phases entered, in order — `[2, 3]` means all 3 phases were seen. */
   readonly phaseChanges: readonly BossPhase[];
   readonly events: readonly BossRunEvent[];
   readonly durationMs: number;
@@ -202,13 +202,13 @@ export interface BossRunResult {
 
 const NO_INPUT: MoveInput = { up: false, down: false, left: false, right: false };
 
-/** Policy "đứng yên": dùng khi test cần player ăn đòn thay vì né. */
+/** "Stand still" policy: used when a test needs the player to get hit instead of dodging. */
 export const holdPosition: BossRunPolicy = () => NO_INPUT;
 
 /**
- * Policy mặc định: đi về phía boss khi xa hơn `BOSS_COMFORT_RANGE_TILES`, đủ
- * gần thì đứng yên. Nhờ vậy boss luôn nằm trong tầm auto-aim kể cả sau cú
- * teleport, mà không cần biết né đạn — né là việc của policy do test truyền.
+ * Default policy: walk toward the boss when farther than `BOSS_COMFORT_RANGE_TILES`,
+ * stay still when close enough. That keeps the boss inside auto-aim range even after a
+ * teleport, without needing to know how to dodge — dodging is for a policy passed by the test.
  */
 export const approachBoss: BossRunPolicy = (world) => {
   if (distance(world.player, world.boss) <= BOSS_COMFORT_RANGE_TILES) return NO_INPUT;
@@ -219,17 +219,17 @@ export const approachBoss: BossRunPolicy = (world) => {
 };
 
 /**
- * Đổi vector hướng (tile unit) thành phím WASD.
+ * Turn a direction vector (tile units) into WASD keys.
  *
- * Quy ước dấu lấy đúng `normalizeMoveInput`: `right` = +x, **`up` = +y** — tức
- * ngược với trục y hướng xuống của dữ liệu tile, và adapter Cocos lo phần lật
- * trục. Vì vậy muốn đi "lên" trong dữ liệu tile (y giảm) phải bấm `down`.
+ * Sign convention taken from `normalizeMoveInput`: `right` = +x, **`up` = +y** — i.e.
+ * inverted from the tile data's y-pointing-down axis, and the Cocos adapter handles the
+ * flip. So to go "up" in tile data (decreasing y) you must press `down`.
  */
 function moveInputToward(dx: number, dy: number): MoveInput {
   return { up: dy > 0, down: dy < 0, left: dx < 0, right: dx > 0 };
 }
 
-/** State nội bộ của quái được gọi: chỉ vị trí + máu, không AI. */
+/** Internal state of a summoned enemy: position + health only, no AI. */
 interface SummonedState {
   readonly id: string;
   readonly role: EnemyRole;
@@ -238,18 +238,18 @@ interface SummonedState {
   readonly maxHealth: number;
 }
 
-/** Chạy một phòng boss headless. Pure: không đọc/ghi state ngoài tham số. */
+/** Run one boss room headless. Pure: no state read/written outside the parameters. */
 export function simulateBossRun(options: BossRunOptions): BossRunResult {
   const maxDurationMs = options.maxDurationMs ?? BOSS_RUN_DEFAULT_MAX_DURATION_MS;
   if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) {
-    throw new Error(`simulateBossRun cần maxDurationMs hữu hạn > 0, nhận ${maxDurationMs}`);
+    throw new Error(`simulateBossRun needs a finite maxDurationMs > 0, got ${maxDurationMs}`);
   }
 
   const baseStats = computeDerivedStats(options.skills ?? new Map<string, number>());
   const damagePerShot = options.playerDamagePerShot ?? baseStats.damage;
   if (!Number.isFinite(damagePerShot) || damagePerShot < 0) {
     throw new Error(
-      `simulateBossRun cần playerDamagePerShot hữu hạn >= 0, nhận ${damagePerShot}`,
+      `simulateBossRun needs a finite playerDamagePerShot >= 0, got ${damagePerShot}`,
     );
   }
   const stats: DerivedStats = { ...baseStats, damage: damagePerShot };
@@ -268,7 +268,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
   const bossStatus = new StatusEffects();
   const events: BossRunEvent[] = [];
   const phaseChanges: BossPhase[] = [];
-  /** Id đạn trúng trong frame hiện tại; tái dùng để không cấp phát mỗi frame. */
+  /** Ids of bullets hit this frame; reused so each frame allocates nothing. */
   const spent = new Set<number>();
   let hitstopMs = 0;
 
@@ -292,7 +292,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
 
   const damageBoss = (amount: number): void => {
     if (amount <= 0 || boss.health <= 0) return;
-    // Máu boss nguyên: poison/crit/execute lẻ được cộng dồn qua `carry`.
+    // Boss health stays integral: fractional poison/crit/execute accumulates through `carry`.
     const step = accumulateDamage(bossDamageCarry, amount);
     bossDamageCarry = step.carry;
     if (step.whole <= 0) return;
@@ -320,13 +320,13 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
   while (durationMs < maxDurationMs && outcome === null) {
     durationMs += BOSS_RUN_STEP_MS;
 
-    // Hitstop: thời gian trôi nhưng mô phỏng đứng yên, đúng `HitstopClock` của game.
+    // Hitstop: real time passes but the simulation stands still, exactly like the game's `HitstopClock`.
     if (hitstopMs > 0) {
       hitstopMs -= BOSS_RUN_STEP_MS;
       continue;
     }
 
-    // --- Player: di chuyển theo policy, rồi bắn tự động -------------------
+    // --- Player: move by policy, then auto-fire -------------------------
     player = movePlayer(
       player,
       policy({
@@ -379,7 +379,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     });
     boss = stepped.state;
 
-    // Thân boss lúc charge gây sát thương (xem `combat-loop.ts`).
+    // The boss body deals contact damage while charging (see `combat-loop.ts`).
     if (
       boss.chargeDirection !== null &&
       boss.health > 0 &&
@@ -396,8 +396,8 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
           break;
 
         case 'summon': {
-          // `summonedEnemies` là nguồn tất định duy nhất cho vị trí quái: cùng
-          // seed + cùng state cho đúng cùng danh sách.
+          // `summonedEnemies` is the only deterministic source of enemy positions: same
+          // seed + same state gives exactly the same list.
           for (const enemy of summonedEnemies(boss, event.role, event.count, rng)) {
             const enemyMaxHealth = maxHealthFor(enemy.role, false, undefined, BOSSES[options.bossId].chapter);
             summoned.push({
@@ -448,11 +448,11 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
       }
     }
 
-    // --- Poison trên boss (skill Poison) ---------------------------------
+    // --- Poison on the boss (Poison skill) ------------------------------
     const poison = bossStatus.poisonDamage(durationMs, BOSS_RUN_STEP_MS);
     if (poison > 0 && boss.health > 0) damageBoss(poison);
 
-    // --- Homing: xoay vận tốc về mục tiêu gần nhất ------------------------
+    // --- Homing: rotate velocity toward the nearest target ---------------
     for (const bullet of bullets.active()) {
       if (!bullet.homing || bullet.owner !== 'player') continue;
       const aim = nearestTarget(bullet.position, boss, summoned);
@@ -463,7 +463,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
       bullet.velocity.y = next.y;
     }
 
-    // --- Đạn: bay, dọn viên ra khỏi phòng, rồi giải va chạm --------------
+    // --- Bullets: fly, drop those leaving the room, then resolve collisions
     bullets.update(BOSS_RUN_STEP_MS);
     bullets.consumeWhere((bullet) => !isInsideArena(bullet.position));
 
@@ -481,7 +481,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
 
       let consumed = false;
 
-      // Boss là mục tiêu chính; hitbox là proxy bán kính đã ghi ở đầu file.
+      // The boss is the main target; the hitbox is the radius proxy documented at the top of the file.
       if (
         boss.health > 0 &&
         !bullet.hitIds.includes(BOSS_TARGET_ID) &&
@@ -534,7 +534,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     }
     if (spent.size > 0) bullets.consumeWhere((bullet) => spent.has(bullet.id));
 
-    // --- Kết thúc --------------------------------------------------------
+    // --- End -----------------------------------------------------------
     if (boss.health <= 0) {
       outcome = 'won';
       events.push({ kind: 'boss-defeated', nowMs: durationMs });
@@ -557,7 +557,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
   };
 }
 
-/** Mục tiêu gần nhất cho Homing: boss nếu còn sống, sau đó tới quái được gọi. */
+/** Nearest target for Homing: the boss when alive, then summoned enemies. */
 function nearestTarget(
   from: Vec2,
   boss: BossState,
@@ -581,7 +581,7 @@ function nearestTarget(
   return best;
 }
 
-/** Nổ AoE quanh điểm trúng: mọi mục tiêu khác trong bán kính nhận damage phụ. */
+/** AoE explosion around the hit point: every other target in radius takes extra damage. */
 function splashDamage(
   stats: DerivedStats,
   bullet: Bullet,
@@ -598,8 +598,8 @@ function splashDamage(
 }
 
 /**
- * Sau khi trúng một mục tiêu: giữ đạn nếu còn xuyên, nảy sang mục tiêu khác
- * nếu còn lượt, ngược lại thu hồi. Trả `true` khi đạn phải bị bỏ.
+ * After hitting a target: keep the bullet if it has pierce left, bounce to another target
+ * if bounces remain, otherwise retire. Returns `true` when the bullet must be dropped.
  */
 function resolveBulletAfterHit(
   bullet: Bullet,
@@ -632,7 +632,7 @@ function resolveBulletAfterHit(
   return true;
 }
 
-/** Di chuyển player theo phím của frame, kẹp trong phòng. */
+/** Move the player by this frame's keys, clamped inside the room. */
 function movePlayer(player: Vec2, input: MoveInput, speedTilesPerSecond: number): Vec2 {
   const velocity = velocityFromInput(normalizeMoveInput(input), speedTilesPerSecond);
   const seconds = BOSS_RUN_STEP_MS / 1000;
@@ -646,11 +646,11 @@ function movePlayer(player: Vec2, input: MoveInput, speedTilesPerSecond: number)
 }
 
 /**
- * Đổi `BulletVerb` thành một viên đạn thật.
+ * Turn a `BulletVerb` into a real bullet.
  *
- * Hợp đồng góc lấy nguyên từ `patterns.BulletVerb`: `toward !== null` thì bay
- * về `toward` rồi xoay thêm `angleOffset`; `toward === null` thì `angleOffset`
- * là góc tuyệt đối, 0 = +x, `Math.PI / 2` = +y (xuống).
+ * Angle contract taken verbatim from `patterns.BulletVerb`: with `toward !== null` it flies
+ * toward `toward` then adds `angleOffset`; with `toward === null`, `angleOffset`
+ * is the absolute angle, 0 = +x, `Math.PI / 2` = +y (down).
  */
 function spawnBossBullet(bullets: BulletPool, verb: BulletVerb): void {
   const velocity = bulletVelocity(verb);
@@ -664,7 +664,7 @@ function spawnBossBullet(bullets: BulletPool, verb: BulletVerb): void {
   });
 }
 
-/** Hình chữ nhật đóng — điểm đúng trên biên vẫn tính là trong phòng. */
+/** Closed rectangle — a point exactly on the boundary still counts as inside the room. */
 function isInsideArena(point: Vec2): boolean {
   return point.x >= 0 && point.x <= ROOM_COLS && point.y >= 0 && point.y <= ROOM_ROWS;
 }

@@ -1,12 +1,12 @@
 /**
- * Lớp "juice" phía UI: coin bay về ô vàng HUD và số damage bay lên.
+ * The UI-side "juice" layer: coins flying to the HUD gold cell and floating damage numbers.
  *
- * Cả hai sống dưới Canvas (UI camera) vì HUD không được rung/trôi theo camera
- * world; toạ độ tile của world được đổi sang pixel design ở đây (1 tile =
- * 16 × `hudScale` px — band world có thể nhỏ hơn band UI, xem `world-camera`).
+ * Both live under the Canvas (UI camera), because the HUD must not shake/drift with the world
+ * camera; world tile coordinates are converted to design pixels here (1 tile =
+ * 16 × `hudScale` px — the world band can be smaller than the UI band, see `world-camera`).
  *
- * Không `new` node mỗi hit: coin và label dựng sẵn theo pool size trong
- * `feel.*` của `config/tuning.json`.
+ * No node `new` per hit: coins and labels are pre-built to the pool size in
+ * `feel.*` of `config/tuning.json`.
  */
 import {
   Color as CocosColor,
@@ -34,18 +34,18 @@ type UITransform = InstanceType<typeof CocosUITransform>;
 type SpriteFrame = Awaited<ReturnType<typeof getFrame>>;
 
 /**
- * Cỡ coin trước khi biết frame thật (init set lại theo `SpriteFrame.rect`).
- * Cảnh báo: `SpriteFrame.width/height` là cỡ **cả texture** (40×10 của sheet
- * Coin2), không phải cỡ frame đã cắt — dùng nhầm là coin bị kéo dài 4×.
+ * Coin size before the real frame is known (init resets it from `SpriteFrame.rect`).
+ * Warning: `SpriteFrame.width/height` is the **whole texture** size (40×10 for the
+ * Coin2 sheet), not the sliced frame size — using it stretches coins 4×.
  */
 const COIN_FALLBACK_PX = 10;
 const DAMAGE_COLOR = new CocosColor(255, 255, 255, 255);
 const CRIT_COLOR = new CocosColor(255, 214, 90, 255);
 
 export interface FeelViewOptions {
-  /** Ô vàng HUD trong pixel design của canvas — coin bay về đây. */
+  /** HUD gold cell in canvas design pixels — coins fly here. */
   readonly goldAnchor: () => Vec2;
-  /** Một coin vừa tới HUD; cộng đúng số tiền coin mang. */
+  /** A coin just reached the HUD; credit exactly the amount it carried. */
   readonly onCoinArrive: (amount: number) => void;
 }
 
@@ -74,7 +74,7 @@ interface PopupSlot {
 }
 
 export class FeelView {
-  /** Setting "Damage numbers" — tắt thì không spawn label nào. */
+  /** The "Damage numbers" setting — when off, no label is spawned. */
   damageNumbersEnabled = false;
 
   private readonly coinSlots: CoinSlot[] = [];
@@ -82,7 +82,7 @@ export class FeelView {
   private coinFrames: readonly SpriteFrame[] = [];
   private coinFps = 10;
   private options: FeelViewOptions | null = null;
-  /** Tỉ lệ world/UI hiện tại (camera báo mỗi lần viewport đổi). */
+  /** Current world/UI ratio (the camera reports it on every viewport change). */
   private hudScale = 1;
 
   async init(parent: Node, options: FeelViewOptions): Promise<void> {
@@ -98,9 +98,9 @@ export class FeelView {
     const firstFrame = this.coinFrames[0];
     for (let index = 0; index < FEEL_TUNING.coin.poolSize; index += 1) {
       const slot = this.createCoinSlot(coinLayer, index);
-      // `sizeMode = CUSTOM` lấy kích thước từ UITransform: phải set đúng cỡ **frame
-      // đã cắt** (`frame.rect` 10×10), không phải `frame.width/height` (cỡ cả sheet
-      // 40×10) và cũng không để default 100×100 — cả hai đều làm coin méo (AGENTS.md).
+      // `sizeMode = CUSTOM` takes its size from UITransform: set the exact **sliced frame**
+      // size (`frame.rect` 10×10), not `frame.width/height` (the whole 40×10 sheet) and not the
+      // default 100×100 — either one distorts coins (AGENTS.md).
       const transform: UITransform | null = slot.node.getComponent(CocosUITransform);
       if (transform !== null && firstFrame !== undefined) {
         transform.setContentSize(firstFrame.rect.width, firstFrame.rect.height);
@@ -114,14 +114,15 @@ export class FeelView {
     }
   }
 
-  /** Camera đổi band → đổi tỉ lệ tile → pixel design. */
+  /** The camera changed band → the tile → design pixel ratio changes too. */
   setHudScale(scale: number): void {
     if (Number.isFinite(scale) && scale > 0) this.hudScale = scale;
   }
 
   /**
-   * Vàng vừa nhận từ `fromTile`: vài coin bay theo vòng cung về ô vàng HUD.
-   * Số vàng HUD chỉ cộng khi từng coin tới (tổng chia hết, coin cuối nhận lẻ).
+   * Gold just earned at `fromTile`: a few coins arc to the HUD gold cell.
+   * The HUD total is only credited as each coin lands (the total is split evenly, the last coin
+   * takes the remainder).
    */
   flyGold(fromTile: Vec2, amount: number): void {
     const options = this.options;
@@ -139,7 +140,7 @@ export class FeelView {
 
       const slot = this.takeCoinSlot();
       if (slot === null) {
-        // Hết slot: cộng luôn để tổng vàng không bị mất (không có coin để bay).
+        // Out of slots: credit immediately so no gold is lost (there is no coin to fly).
         options.onCoinArrive(share);
         continue;
       }
@@ -159,7 +160,7 @@ export class FeelView {
     }
   }
 
-  /** Số damage bay lên tại `tile` — crit to hơn và vàng hơn. */
+  /** Floating damage number at `tile` — crits are bigger and more gold. */
   spawnDamage(tile: Vec2, amount: number, crit: boolean): void {
     if (!this.damageNumbersEnabled) return;
     const slot = this.popupSlots.find((candidate) => !candidate.active);
@@ -219,7 +220,7 @@ export class FeelView {
         FEEL_TUNING.coin.arcHeightTiles * TILE_SIZE_PX * this.hudScale,
       );
       slot.node.setPosition(position.x, position.y, 0);
-      // Cung nhô lên nên coin "sáng" dần rồi tắt đúng lúc vào ô vàng.
+      // The arc rises, so the coin brightens and then disappears right as it enters the gold cell.
       slot.node.setScale(1, 1, 1);
 
       if (slot.frames.length > 0) {
@@ -321,7 +322,7 @@ export class FeelView {
     };
   }
 
-  /** Tile của `LevelData` (y hướng xuống) → pixel design của canvas UI. */
+  /** `LevelData` tile (y down) → UI canvas design pixels. */
   private toCanvas(tile: Vec2): Vec2 {
     const tilePx = TILE_SIZE_PX * this.hudScale;
     return {

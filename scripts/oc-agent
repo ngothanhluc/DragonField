@@ -1,16 +1,16 @@
 #!/bin/sh
-# Khởi động opencode tương tác với model và effort của một vai trò.
-# Được gọi bởi template hc (oc-impl, oc-impl-pro, oc-adversary), cwd là worktree.
+# Start interactive opencode with a role's model and effort.
+# Called by the hc templates (oc-impl, oc-impl-pro, oc-adversary), with cwd set to the worktree.
 #   scripts/oc-agent executor|executor-pro|adversary
-# Model: bản mới nhất trong dòng (resolve-models). Effort: nội dung .kol-auto/effort.<vai trò>
-# trong worktree nếu có (orchestrator ghi trước khi khởi động), không thì bậc đầu trong
-# thang `effort` của vai trò ở models.json.
+# Model: the newest in the line (resolve-models). Effort: the contents of .kol-auto/effort.<role>
+# in the worktree if present (the orchestrator writes it before starting), otherwise the first rung
+# of the role's `effort` ladder in models.json.
 set -eu
-role=${1:?thiếu vai trò}
+role=${1:?missing role}
 here=$(cd "$(dirname "$0")" && pwd)
 model=$("$here/resolve-models" --get "$role")
 if [ ! -f .opencode/opencode.json ]; then
-  echo "oc-agent: worktree thiếu .opencode/opencode.json — commit bộ tự động hoá vào nhánh mặc định trước" >&2
+  echo "oc-agent: worktree is missing .opencode/opencode.json — commit the automation to the default branch first" >&2
   exit 2
 fi
 ladder=$(python3 -I -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["roles"][sys.argv[2]].get("effort", [])))' \
@@ -22,11 +22,11 @@ target=$model
 if [ -n "$effort" ]; then
   case " $ladder " in
     *" $effort "*) target="$model#$effort" ;;
-    *) echo "oc-agent: effort '$effort' không nằm trong thang của $role: $ladder" >&2; exit 2 ;;
+    *) echo "oc-agent: effort '$effort' is not on the ladder for $role: $ladder" >&2; exit 2 ;;
   esac
 fi
 echo "oc-agent: $role → $target" >&2
-# .opencode/opencode.json: agent mặc định `kol` đọc model từ biến này. Variant (#effort) chỉ được
-# giữ ở model cấp agent, model cấp gốc bỏ mất nó (docs opencode, đã kiểm bằng `opencode debug agents`).
-# --standalone bắt buộc: server nền dùng chung của opencode không thấy env của tiến trình này.
+# .opencode/opencode.json: the default `kol` agent reads its model from this variable. The variant (#effort)
+# only survives on the agent-level model; the root-level model drops it (opencode docs, verified with `opencode debug agents`).
+# --standalone is required: opencode's shared background server does not see this process's env.
 KB_OC_MODEL=$target KB_OC_ROLE=$role exec opencode --standalone --auto

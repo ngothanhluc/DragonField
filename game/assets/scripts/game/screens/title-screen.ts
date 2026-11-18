@@ -1,8 +1,8 @@
 /**
- * Màn title (GDD §9): Play, Shop, Settings, Credits.
+ * Title screen (GDD §9): Play, Shop, Settings, Credits.
  *
- * Dựng bằng code, không sửa `.scene`. Toàn bộ layout/điều hướng nằm ở
- * `screens/menu.ts`; file này chỉ quyết định nội dung và thứ tự hành động.
+ * Built in code, no `.scene` edits. All layout/navigation lives in `screens/menu.ts`;
+ * this file only decides the content and action order.
  */
 import { formatBest } from '../chapter-select';
 import type { BestProgress } from '../../core/save/save-data';

@@ -1,180 +1,180 @@
 # GDD — Yokai Field v2 (roguelite)
 
-Trạng thái: bản nháp 1, chốt các quyết định từ phiên thiết kế 2026-11-15. Chưa có phần nào được implement.
+Status: draft 1, locking in the decisions from the 2026-11-15 design session. Nothing implemented yet.
 
 ---
 
 ## 1. Pitch
 
-Roguelite né đạn một màn hình, top-down 16px. Người chơi **luôn tự động bắn** vào kẻ địch gần nhất, nên kỹ năng duy nhất là **di chuyển**. Mỗi phòng dọn sạch → chọn 1 trong 3 kỹ năng ngẫu nhiên. Chết là hết run, giữ vàng để mua upgrade vĩnh viễn.
+Single-screen bullet-dodging roguelite, top-down, 16px. The player **always auto-fires** at the nearest enemy, so the only skill is **movement**. Clear each room → pick 1 of 3 random skills. Dying ends the run; keep your gold to buy permanent upgrades.
 
-3 chapter, mỗi chapter 8 phòng + 1 boss. Bối cảnh lấy từ tileset có thật trong pack: **đồng cỏ/rừng → sông/thác → làng hoang**. Không có rồng, không có dungeon. Boss: **Tengu → Squid → Samurai**. Nhân vật: **NinjaGreen** (nhân vật duy nhất của pack có bộ animation 4 hướng đầy đủ).
+3 chapters, each with 8 rooms + 1 boss. Settings come from tilesets that actually exist in the pack: **grassland/forest → river/waterfall → abandoned village**. No dragons, no dungeon. Bosses: **Tengu → Squid → Samurai**. Character: **NinjaGreen** (the only character in the pack with a full 4-direction animation set).
 
-Tham chiếu: Archero (loop), nhưng **bắn liên tục kể cả khi đang chạy** — khác Archero ở chỗ không có "đứng lại mới bắn".
+Reference: Archero (loop), but **firing is continuous even while running** — unlike Archero there is no "stand still to shoot".
 
 ---
 
 ## 2. Core loop
 
 ```text
-Title → chọn chapter → RUN
-  phòng 1 → dọn sạch → chọn 1/3 skill
-  phòng 2 → ...
-  ... 8 phòng
-  phòng 9 = BOSS
-→ màn hình kết quả (số phòng, vàng, thời gian)
-→ meta shop (mua upgrade vĩnh viễn)
+Title → pick chapter → RUN
+  room 1 → clear → pick 1 of 3 skills
+  room 2 → ...
+  ... 8 rooms
+  room 9 = BOSS
+→ results screen (rooms, gold, time)
+→ meta shop (buy permanent upgrades)
 → Title
 ```
 
-- 1 run = 8 phòng thường + 1 boss.
-- 1 run dài 8–12 phút.
-- 3 chapter; chapter sau mở khi thắng chapter trước.
+- 1 run = 8 normal rooms + 1 boss.
+- 1 run lasts 8–12 minutes.
+- 3 chapters; the next chapter unlocks when you beat the previous one.
 
 ---
 
 ## 3. Combat model
 
-| Tham số | Giá trị |
+| Parameter | Value |
 |---|---|
-| Di chuyển | WASD, 8 hướng, không dash |
-| Tốc chạy cơ bản | 4 tile/s |
-| Bắn | **tự động, liên tục, kể cả khi đang chạy** |
-| Aim | tự nhắm enemy gần nhất trong tầm 8 tile |
-| Nhịp bắn cơ bản | 2 phát/giây |
-| Đạn cơ bản | 1 viên, damage 1, tốc độ 12 tile/s |
-| Máu người chơi | 6 tim |
-| Nhận damage | 1, i-frame **0.8 s**, knockback 3 px |
-| Chết | hết run ngay, không hồi sinh trong run |
+| Movement | WASD, 8 directions, no dash |
+| Base run speed | 4 tiles/s |
+| Firing | **automatic, continuous, even while running** |
+| Aim | auto-targets the nearest enemy within 8 tiles |
+| Base fire rate | 2 shots/s |
+| Base bullet | 1 projectile, damage 1, speed 12 tiles/s |
+| Player health | 6 hearts |
+| Taking damage | 1, i-frame **0.8 s**, knockback 3 px |
+| Death | run ends immediately, no revival within a run |
 
-Không có nút đánh, không có nút bắn. Input duy nhất: **WASD + Esc (pause)**.
+No attack button, no fire button. The only input: **WASD + Esc (pause)**.
 
 ---
 
-## 4. Kẻ địch
+## 4. Enemies
 
-Ràng buộc từ pack: **mọi monster chỉ có 1 sheet 4 hướng × 4 frame walk**, không có attack/hurt/death. Nên toàn bộ biểu đạt của enemy là **AI + FX + tint**:
-- Telegraph = vòng `Magic/Circle` dưới chân (300–700 ms) + flash trắng 80 ms.
-- Chết = `FX/Elemental/Explosion` + fade out.
-- Elite = **palette remap** trên 53 màu của `Palette.png` (không nhân màu), scale 1.15.
+Constraint from the pack: **every monster has only 1 sheet of 4 directions × 4 walk frames**, no attack/hurt/death. So all enemy expression is **AI + FX + tint**:
+- Telegraph = a `Magic/Circle` ring under the feet (300–700 ms) + 80 ms white flash.
+- Death = `FX/Elemental/Explosion` + fade out.
+- Elite = **palette remap** over the 53 colours of `Palette.png` (no multiplicative tint), scale 1.15.
 
-| Vai trò | Máu | Tốc độ | Hành vi | Đòn | Chapter 1 / 2 / 3 |
+| Role | Health | Speed | Behaviour | Attack | Chapter 1 / 2 / 3 |
 |---|---|---|---|---|---|
-| **Chaser** | 6 | 3.2 tile/s | lao thẳng vào player | chạm người gây 1 | BlueBat / SpiderRed / Snake3 |
-| **Caster** | 4 | 1.6 tile/s | giữ khoảng cách 4–6 tile, lùi khi bị áp sát, cooldown 900 ms | đạn chậm, telegraph 500 ms | Eye / GreenOctopus / LanternRed |
-| **Brute** | 10 | 1.2 tile/s | chậm, đi thẳng, cooldown 900 ms | charge 7 tile/s trong 450 ms, telegraph 700 ms, chạm gây 2 | Bear / TRex / Cyclope |
+| **Chaser** | 6 | 3.2 tiles/s | charges straight at the player | contact deals 1 | BlueBat / SpiderRed / Snake3 |
+| **Caster** | 4 | 1.6 tiles/s | keeps 4–6 tiles away, backs off when crowded, 900 ms cooldown | slow projectile, 500 ms telegraph | Eye / GreenOctopus / LanternRed |
+| **Brute** | 10 | 1.2 tiles/s | slow, walks straight, 900 ms cooldown | charges at 7 tiles/s for 450 ms, 700 ms telegraph, contact deals 2 | Bear / TRex / Cyclope |
 
-Số này đã được kiểm chứng bằng simulation headless, không phải chọn theo cảm giác: với 2 DPS, chaser 6 máu sống 3 s — đủ để chạy 9.6 tile và chạm người, nên **đứng yên sẽ thua**. Tầm bắn 8 tile (thay vì 10) là con số quyết định: ở 10 tile, chaser chết khi còn cách ~6.4 tile và người chơi không bao giờ bị chạm.
+These numbers were verified by headless simulation, not picked by feel: at 2 DPS a 6-health chaser lives 3 s — enough to cover 9.6 tiles and reach the player, so **standing still loses**. The 8-tile range (instead of 10) is the deciding number: at 10 tiles the chaser dies while still ~6.4 tiles away and the player is never touched.
 
-Toàn bộ số nằm trong `game/config/tuning.json`; sửa ở đó rồi chạy `bun run gen`.
+All numbers live in `game/config/tuning.json`; edit there and run `bun run gen`.
 
-Độ khó tăng theo chapter:
+Difficulty scales per chapter:
 
-| Chapter | Số enemy/phòng | Thành phần |
+| Chapter | Enemies per room | Composition |
 |---|---|---|
-| 1 | 3–4 | chaser, 1 caster từ phòng 4 |
-| 2 | 5–6 | chaser + caster + 1 brute từ phòng 3 |
-| 3 | 7–8 | cả 3 loại + elite |
+| 1 | 3–4 | chaser, 1 caster from room 4 |
+| 2 | 5–6 | chaser + caster + 1 brute from room 3 |
+| 3 | 7–8 | all 3 types + elite |
 
-Dự phòng nếu silhouette trùng nhau: YellowsBat, MouseBlack, LanternGreen, RedOctopus, Panda, Reptile2, Skull, GreyTrex.
+Backups if silhouettes clash: YellowsBat, MouseBlack, LanternGreen, RedOctopus, Panda, Reptile2, Skull, GreyTrex.
 
 ---
 
-## 5. Boss
+## 5. Bosses
 
-Mỗi chapter một boss, lấy từ `Actor/Boss`. Arena 32×18 tile với 4 cột đá phá được. Máu: 60 / 80 / 100.
+One boss per chapter, taken from `Actor/Boss`. Arena 32×18 tiles with 4 destructible stone pillars. Health: 60 / 80 / 100.
 
-| Chapter | Boss | Animation có sẵn | Pattern |
+| Chapter | Boss | Available animations | Pattern |
 |---|---|---|---|
-| 1 | **TenguBlue** (frame 68×68 – 82×82) | idle 6, walk 10, **attack 15**, hit 8, **Trans 11** | (1) đi bộ đuổi + đòn attack bắn chùm 5 viên; (2) thêm `Trans` dịch chuyển ngẫu nhiên rồi bắn vòng 8 viên; (3) enrage: dịch chuyển 3 lần liên tiếp, chùm 5 viên ×3 đợt |
-| 2 | **SquidGreen** (76×79) | idle 4, walk 4, attack 6, **AttackLoop 4**, **Shoot 5**, hit 4 | (1) bơi ngang + `Shoot` 5 viên toả; (2) `AttackLoop` phun đạn liên tục theo hình xoắn; (3) gọi 2 GreenOctopus, xoắn nhanh hơn |
-| 3 | **GiantBlueSamurai** (frame 96×48 – 96×96) | idle 6, walk 6, **attack L/R 4**, **charge L/R 3**, hit 4 | (1) charge ngang arena rồi slash bắn sóng đạn thẳng; (2) charge 2 lần liên tiếp, đổi hướng; (3) charge để lại vệt lửa + slash 2 sóng |
+| 1 | **TenguBlue** (frames 68×68 – 82×82) | idle 6, walk 10, **attack 15**, hit 8, **Trans 11** | (1) walk-chase + attack that fires a 5-shot spread; (2) adds `Trans` to teleport randomly, then fires an 8-shot ring; (3) enrage: 3 teleports in a row, 5-shot spread ×3 volleys |
+| 2 | **SquidGreen** (76×79) | idle 4, walk 4, attack 6, **AttackLoop 4**, **Shoot 5**, hit 4 | (1) swims sideways + `Shoot` 5-shot spread; (2) `AttackLoop` sprays a continuous spiral; (3) summons 2 GreenOctopus, faster spiral |
+| 3 | **GiantBlueSamurai** (frames 96×48 – 96×96) | idle 6, walk 6, **attack L/R 4**, **charge L/R 3**, hit 4 | (1) charges across the arena then slashes a straight bullet wave; (2) 2 charges in a row, changing direction; (3) charge leaves a fire trail + slash sends 2 waves |
 
-Nguyên tắc đọc đòn: mỗi phase phải có **một dấu hiệu khác nhau** — Ch1 đọc hướng chùm đạn, Ch2 đọc nhịp xoắn, Ch3 đọc hướng charge (animation L/R là dấu hiệu).
+Readability rule: each phase must have **a distinct tell** — Ch1 reads the spread direction, Ch2 reads the spiral rhythm, Ch3 reads the charge direction (the L/R animation is the tell).
 
-Loại: DemonCyclop, GiantFlam, GiantSpirit (không có frame đòn), Dragon* (0 animation).
+Rejected: DemonCyclop, GiantFlam, GiantSpirit (no attack frames), Dragon* (0 animations).
 
 ---
 
-## 6. Kỹ năng (pool 20, đóng băng ở v1)
+## 6. Skills (pool of 20, frozen at v1)
 
-Sau mỗi phòng (trừ phòng boss): chọn **1 trong 3** thẻ. Cùng kỹ năng lấy lại thì **cộng dồn** (tối đa 5 stack). Rarity ảnh hưởng trọng số xuất hiện.
+After every room (except boss rooms): pick **1 of 3** cards. Taking the same skill again **stacks** it (max 5 stacks). Rarity affects the draw weight.
 
-| # | Tên | Rarity | Hiệu ứng | Stack |
+| # | Name | Rarity | Effect | Stack |
 |---|---|---|---|---|
 | 1 | Sharpen | common | +1 damage | 5 |
-| 2 | Rapid Fire | common | +25% nhịp bắn | 5 |
-| 3 | Twin Shot | rare | +1 viên đạn (bắn chéo ±12°) | 3 |
-| 4 | Piercing | rare | đạn xuyên 1 enemy | 3 |
-| 5 | Ricochet | epic | đạn nảy sang enemy khác 1 lần | 2 |
-| 6 | Homing | epic | đạn tự bám mục tiêu | 1 |
-| 7 | Explosive | rare | đạn nổ AoE 1.5 tile, 50% damage | 3 |
-| 8 | Crit Eye | rare | 15% chí mạng ×2 | 3 |
-| 9 | Vitality | common | +1 tim tối đa (hồi 1 tim ngay) | 5 |
-| 10 | Second Wind | epic | hồi 2 tim mỗi khi dọn phòng | 2 |
-| 11 | Shield | rare | chặn 1 đòn, hồi sau 20 s | 3 |
-| 12 | Thorns | rare | chạm vào enemy gây 2 damage cho nó | 3 |
-| 13 | Swift | common | +10% tốc chạy | 5 |
+| 2 | Rapid Fire | common | +25% fire rate | 5 |
+| 3 | Twin Shot | rare | +1 projectile (fires at ±12°) | 3 |
+| 4 | Piercing | rare | bullets pierce 1 enemy | 3 |
+| 5 | Ricochet | epic | bullet bounces to another enemy 1 time | 2 |
+| 6 | Homing | epic | bullets home in on the target | 1 |
+| 7 | Explosive | rare | bullet explodes for 1.5-tile AoE, 50% damage | 3 |
+| 8 | Crit Eye | rare | 15% crit ×2 | 3 |
+| 9 | Vitality | common | +1 max heart (heals 1 heart immediately) | 5 |
+| 10 | Second Wind | epic | heals 2 hearts whenever you clear a room | 2 |
+| 11 | Shield | rare | blocks 1 hit, recharges after 20 s | 3 |
+| 12 | Thorns | rare | touching an enemy deals 2 damage to it | 3 |
+| 13 | Swift | common | +10% run speed | 5 |
 | 14 | Long i-frame | rare | i-frame 0.8 → 1.1 s | 2 |
-| 15 | Freeze | rare | trúng địch làm chậm 40% trong 1 s | 2 |
-| 16 | Poison | rare | 1 damage/giây trong 3 s | 2 |
-| 17 | Lifesteal | epic | 5% damage hồi máu (làm tròn xuống) | 2 |
-| 18 | Greed | common | +25% vàng nhặt | 4 |
-| 19 | Luck | rare | +1% trọng số rarity cao | 3 |
-| 20 | Executioner | epic | +50% damage lên enemy dưới 30% máu | 2 |
+| 15 | Freeze | rare | hits slow the enemy 40% for 1 s | 2 |
+| 16 | Poison | rare | 1 damage/second for 3 s | 2 |
+| 17 | Lifesteal | epic | 5% of damage heals (rounded down) | 2 |
+| 18 | Greed | common | +25% gold picked up | 4 |
+| 19 | Luck | rare | +1% weight for high rarities | 3 |
+| 20 | Executioner | epic | +50% damage against enemies below 30% health | 2 |
 
 ---
 
 ## 7. Meta progression
 
-Vàng nhặt trong run được giữ sau khi chết. 3 track vĩnh viễn, mỗi track 10 cấp, giá tăng dần:
+Gold picked up during a run is kept after death. 3 permanent tracks, 10 levels each, with rising prices:
 
-| Track | Mỗi cấp | Số cấp | Giá cấp 1 → 10 |
+| Track | Per level | Levels | Price level 1 → 10 |
 |---|---|---|---|
-| Máu | +1 tim | **5** | 50 → 180 |
+| Health | +1 heart | **5** | 50 → 180 |
 | Damage | +5% | 10 | 40 → 400 |
-| Nhịp bắn | +3% | 10 | 40 → 400 |
+| Fire rate | +3% | 10 | 40 → 400 |
 
-Máu cap ở 5 cấp (không phải 10) vì 6 tim cơ bản + 10 = 16 tim vượt chỗ HUD 512×288, và skill Vitality cũng chỉ cho +5. Bảng giá vẫn giữ đủ 10 mốc trong code để đổi cap mà không phải tune lại.
+Health caps at 5 levels (not 10) because 6 base hearts + 10 = 16 hearts overflows the 512×288 HUD, and the Vitality skill only grants +5. The price table still keeps all 10 steps in code so the cap can change without retuning.
 
-Không có equipment, không có nhân vật thứ hai, không unlock skill.
+No equipment, no second character, no skill unlocks.
 
 ---
 
-## 8. Phòng và level design
+## 8. Rooms and level design
 
-- **Mỗi phòng = đúng 1 màn hình.** Base resolution **512×288 px = 32×18 tile 16px**. Không scroll, **không cần camera follow**.
-- **Số wave là dữ liệu của từng phòng** (`assets/resources/data/levels/chapter-<n>/*.tmx`), không hardcode theo chapter. `RunState` chỉ theo dõi wave hiện tại, không quy định tổng số wave.
-- Vật cản: cột, hố, tường thấp — dùng để né đạn, không chặn tầm bắn hoàn toàn.
-- 3 chapter × 9 phòng = 27 phòng, thiết kế tay trong Tiled, thứ tự cố định (không random layout) — random nằm ở skill, không ở map.
+- **Each room = exactly 1 screen.** Base resolution **512×288 px = 32×18 tiles of 16px**. No scrolling, **no camera follow needed**.
+- **The wave count is per-room data** (`assets/resources/data/levels/chapter-<n>/*.tmx`), not hardcoded per chapter. `RunState` only tracks the current wave, it does not define the total.
+- Obstacles: pillars, pits, low walls — used to dodge bullets, they never fully block line of fire.
+- 3 chapters × 9 rooms = 27 rooms, hand-designed in Tiled, fixed order (no random layout) — randomness lives in skills, not maps.
 
-| Chapter | Theme | Tileset dùng |
+| Chapter | Theme | Tilesets used |
 |---|---|---|
-| 1 | Đồng cỏ / rừng | `TilesetNature` + `TilesetRelief` + `TilesetElement` + `TilesetField` |
-| 2 | Sông / thác | `TilesetWater` + waterfall + ripples + `TilesetNature` làm bờ |
-| 3 | Làng hoang | `TilesetVillageAbandoned` + `TilesetHouse` + `TilesetTowers` + `TilesetHole` |
-| Arena boss | Cùng theme chapter | + 4 cột đá (từ `TilesetElement`) |
-| Hub / shop | Trại | `tileset_camp` + `tileset_bed` + `Interior/*` |
+| 1 | Grassland / forest | `TilesetNature` + `TilesetRelief` + `TilesetElement` + `TilesetField` |
+| 2 | River / waterfall | `TilesetWater` + waterfall + ripples + `TilesetNature` for banks |
+| 3 | Abandoned village | `TilesetVillageAbandoned` + `TilesetHouse` + `TilesetTowers` + `TilesetHole` |
+| Boss arena | Same theme as the chapter | + 4 stone pillars (from `TilesetElement`) |
+| Hub / shop | Camp | `tileset_camp` + `tileset_bed` + `Interior/*` |
 
-Không có theme dungeon/crypt trong pack → không làm. `TilesetFloor.png` cao 417 px (không chia hết 16) → cắt 26 hàng, bỏ 1 px cuối.
+No dungeon/crypt theme in the pack → not doing it. `TilesetFloor.png` is 417 px tall (not divisible by 16) → keep 26 rows, drop the last 1 px.
 
 ---
 
 ## 9. UI
 
-| Màn hình | Nội dung |
+| Screen | Content |
 |---|---|
 | Title | Play, Shop, Settings, Credits |
-| Chapter select | 3 nút, khoá/mở, hiện best |
-| HUD | tim, vàng, icon skill (tối đa 8), số phòng `3/9` |
-| Skill pick | 3 thẻ, hover hiện mô tả, click chọn |
+| Chapter select | 3 buttons, locked/unlocked, shows best |
+| HUD | hearts, gold, skill icons (max 8), room counter `3/9` |
+| Skill pick | 3 cards, hover shows description, click to pick |
 | Pause | Resume, Restart run, Quit to title, volume |
-| Kết quả | phòng đạt, vàng nhặt, thời gian, nút về meta shop |
-| Meta shop | 3 track + giá, hiện vàng hiện có |
-| Settings | volume, fullscreen, hiện keybind (không rebind ở v1) |
-| Credits | tác giả pack (không bắt buộc với CC0, nhưng nên) |
+| Results | rooms reached, gold collected, time, button back to meta shop |
+| Meta shop | 3 tracks + prices, shows current gold |
+| Settings | volume, fullscreen, shows keybinds (no rebinding at v1) |
+| Credits | pack authors (not required for CC0, but appreciated) |
 
-Điều khiển: **chuột + bàn phím**. Không gamepad, không touch.
+Controls: **mouse + keyboard**. No gamepad, no touch.
 
 ---
 
@@ -193,55 +193,55 @@ Không có theme dungeon/crypt trong pack → không làm. `TilesetFloor.png` ca
 }
 ```
 
-Key `hearts`/`fireRate` là tên **trong code** (`UpgradeTrack`). Bản nháp cũ của tài
-liệu này ghi `hp`/`firerate`; `migrate()` vẫn đọc hai tên cũ khi load để save của
-người chơi cũ không mất cấp, nhưng save ghi ra luôn dùng tên mới.
+The keys `hearts`/`fireRate` are the **in-code** names (`UpgradeTrack`). An earlier draft of
+this document said `hp`/`firerate`; `migrate()` still reads the two old names on load so old
+players' saves keep their levels, but written saves always use the new names.
 
-**Không** lưu run đang chơi (user chọn: mất run khi tắt tab).
-
----
-
-## 11. Ngoài scope v1
-
-Inventory, equipment, NPC, dialog, hub, shop trong màn, nhiều nhân vật, gamepad, mobile, localization, leaderboard, daily run, dash.
-
-> Từ M9, **NPC** (chỉ hồi máu/bán hàng, không dialog) và **shop trong run** ra khỏi danh sách này — xem §13.
+**No** saving of the in-progress run (user's choice: the run is lost when the tab closes).
 
 ---
 
-## 12. Rủi ro đã biết
+## 11. Out of scope for v1
 
-1. **Bắn liên tục** làm mất tension "đứng lại mới bắn" của Archero. **Đã đo được** bằng simulation headless: người chơi đứng yên dọn sạch 9 phòng chapter 1 trong 60.8 s với **0 máu mất** — chaser chết trước khi chạm (2 DPS × 3 HP = 1.5 s, chỉ đủ 3.6 tile), caster chết trong cooldown 1.2 s. Đang retune qua `config/tuning.json` với điều kiện nghiệm thu: **đứng yên phải thua trong 3 phòng đầu**, người chơi có né phải sống lâu hơn ≥2×. Nếu vẫn không tạo được áp lực, phương án dự phòng là thêm lại luật đứng-yên-mới-bắn như một skill.
-2. **Chỉ có 1 nhân vật animated** (NinjaGreen) và nhân vật này **không có animation run**, chỉ có walk 4 frame → phải scale tốc độ phát animation theo vận tốc, nếu không nhân vật sẽ "trượt" khi chạy nhanh.
-3. **Không monster nào có attack/hurt/death** → telegraph, trúng đòn và chết đều là FX + tint. Rủi ro: người chơi không đọc được đòn. Test bắt buộc ở M3: 3 enemy phải phân biệt được trong 2 giây.
-4. **20 skill × 3 chapter** là khối balance lớn; giữ pool đóng băng, chỉ tune số.
-5. `TilesetFloor.png` lệch 1 px và không có atlas JSON → bảng frame/animation phải khai báo tay, sai một ô là lệch toàn bộ animation.
+Inventory, equipment, NPCs, dialog, hub, in-level shop, multiple characters, gamepad, mobile, localization, leaderboard, daily run, dash.
+
+> From M9, **NPCs** (heal/sell only, no dialog) and the **in-run shop** leave this list — see §13.
 
 ---
 
-## 13. Mở rộng sau v1 (M8–M9)
+## 12. Known risks
 
-Chốt 2026-11-18. Việc và nghiệm thu chi tiết: `docs/milestones.md` M8/M9.
+1. **Continuous fire** removes Archero's "stand still to shoot" tension. **Measured** with headless simulation: a player standing still cleared the 9 chapter 1 rooms in 60.8 s with **0 health lost** — the chaser dies before contact (2 DPS × 3 HP = 1.5 s, only enough for 3.6 tiles), the caster dies within its 1.2 s cooldown. Retuning via `config/tuning.json` with acceptance criteria: **standing still must lose within the first 3 rooms**, and a dodging player must survive ≥2× longer. If pressure still can't be created, the fallback is to bring back the stand-still-to-shoot rule as a skill.
+2. **Only 1 animated character** (NinjaGreen), and it **has no run animation**, only a 4-frame walk → animation playback speed must scale with velocity, otherwise the character "slides" when moving fast.
+3. **No monster has attack/hurt/death** → telegraph, getting hit and dying are all FX + tint. Risk: the player can't read the attacks. Required test at M3: 3 enemies must be distinguishable within 2 seconds.
+4. **20 skills × 3 chapters** is a large balance surface; keep the pool frozen and only tune numbers.
+5. `TilesetFloor.png` is off by 1 px and has no atlas JSON → the frame/animation table must be declared by hand; one wrong cell throws off the whole animation.
 
-### 13.1 Hình ảnh (M8 — không đổi balance)
+---
 
-- **Juice:** shake theo bội số texel, squash/stretch, muzzle flash, coin bay về HUD, số damage (mặc định tắt).
-- **Đạn kể build:** sprite đạn player đổi theo nguyên tố mạnh nhất trong loadout (Explosive > Freeze > Poison > Homing > Piercing > mặc định), to hơn khi Sharpen ≥ 3, trail màu theo nguyên tố; mỗi hiệu ứng skill có impact riêng; aura khi build mạnh.
-- **Ngôn ngữ hình dạng:** đạn player **nhọn**, đạn địch **tròn + viền tối**. Đây là luật đọc màn hình, không chỉ là style — màu đạn player giờ đổi theo build nên không còn dùng màu để phân biệt ta/địch.
-- **Không khí chapter** + decor sống (thú, cờ, cây) không collider, không che đạn/telegraph.
+## 13. Post-v1 expansion (M8–M9)
+
+Agreed 2026-11-18. Tasks and detailed acceptance criteria: `docs/milestones.md` M8/M9.
+
+### 13.1 Visuals (M8 — no balance changes)
+
+- **Juice:** shake in whole-texel steps, squash/stretch, muzzle flash, coins flying to the HUD, damage numbers (off by default).
+- **Bullets tell the build:** the player bullet sprite follows the strongest element in the loadout (Explosive > Freeze > Poison > Homing > Piercing > default), grows when Sharpen ≥ 3, with an element-coloured trail; every skill effect gets its own impact; aura when the build is strong.
+- **Shape language:** player bullets are **pointed**, enemy bullets are **round + dark outline**. This is a screen-readability rule, not just style — player bullet colour now follows the build, so colour can no longer separate friend from foe.
+- **Chapter atmosphere** + living decor (animals, flags, plants) with no colliders, never covering bullets/telegraphs.
 - **Accessibility:** Screen shake on/off, Damage numbers on/off, Effects Full/Reduced.
 
-### 13.2 Nội dung (M9)
+### 13.2 Content (M9)
 
 | | v1 | M9 |
 |---|---|---|
-| Chapter | 3 | **4** (thêm sa mạc sau ch3) |
-| Phòng mỗi chapter | 9 cố định | pool 15–18, run bốc 9 theo seed |
-| Đường đi | thẳng | sau mỗi phòng chọn 1/2 cửa, mỗi cửa có icon thưởng |
-| Phòng đặc biệt | – | hồi máu, shop giữa run, rương |
-| Vai trò enemy | chaser / caster / tank | + **sniper**, **splitter** |
-| Boss | 1 / chapter | pool 2 / chapter, nhạc riêng |
+| Chapter | 3 | **4** (desert added after ch3) |
+| Rooms per chapter | 9 fixed | pool of 15–18, run draws 9 by seed |
+| Path | straight | after each room pick 1 of 2 doors, each door shows a reward icon |
+| Special rooms | – | heal, mid-run shop, chest |
+| Enemy roles | chaser / caster / tank | + **sniper**, **splitter** |
+| Boss | 1 / chapter | pool of 2 / chapter, own music |
 
-Boss pool: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / GiantBamboo · ch4 GiantRacoon / Tengu biến thể màu.
+Boss pool: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / GiantBamboo · ch4 GiantRacoon / recoloured Tengu variant.
 
-**Shop giữa run dùng chung vàng meta** (§7): tiêu trong run thì về ít vàng hơn — đánh đổi “mạnh bây giờ hay mạnh vĩnh viễn”. Save (§10) bump `version` khi thêm chapter 4.
+**The mid-run shop shares meta gold** (§7): spending during a run means coming home with less gold — the trade-off of “strong now versus strong forever”. Save (§10) bumps `version` when chapter 4 lands.

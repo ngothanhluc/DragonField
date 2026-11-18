@@ -1,8 +1,8 @@
 /**
- * Đọc các file `.tmx` thật trong `assets/resources/data/levels/` cho test.
+ * Read the real `.tmx` files under `assets/resources/data/levels/` for tests.
  *
- * Cùng một parser với runtime (`core/level/tmx.ts`): test không thể xanh nếu file
- * trên đĩa hỏng, và file mới thả vào thư mục sẽ tự được test bắt.
+ * The same parser as the runtime (`core/level/tmx.ts`): the tests cannot pass if a file
+ * on disk is broken, and a new file dropped into the folder is picked up automatically.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -15,18 +15,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 /** `game/assets/resources/data/levels`. */
 export const LEVELS_ROOT = join(here, '../../assets/resources/data/levels');
-/** Thư mục chapter 1 (9 phòng M2). */
+/** Chapter 1 folder (9 rooms, M2). */
 export const CHAPTER_ONE_DIR = join(LEVELS_ROOT, 'chapter-1');
 
 export interface TmxFile {
-  /** Đường dẫn tuyệt đối. */
+  /** Absolute path. */
   readonly path: string;
-  /** Đường dẫn tương đối so với `LEVELS_ROOT`, dùng trong message lỗi. */
+  /** Path relative to `LEVELS_ROOT`, used in error messages. */
   readonly name: string;
   readonly xml: string;
 }
 
-/** Mọi file `.tmx` dưới `root` (đệ quy), sắp theo đường dẫn để test tất định. */
+/** Every `.tmx` file under `root` (recursive), sorted by path so tests are deterministic. */
 export function findTmxFiles(root: string = LEVELS_ROOT): TmxFile[] {
   const files: TmxFile[] = [];
 
@@ -50,21 +50,21 @@ export function findTmxFiles(root: string = LEVELS_ROOT): TmxFile[] {
   return files.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Parse mọi `.tmx` trong một thư mục chapter (chưa sắp theo `room`). */
+/** Parse every `.tmx` in one chapter folder (not yet sorted by `room`). */
 export function loadTmxLevels(directory: string = CHAPTER_ONE_DIR): LevelData[] {
   return findTmxFiles(directory).map((file) =>
     parseTmxLevel(file.xml, { source: file.name }),
   );
 }
 
-/** Chapter 1 đã parse — thay cho `chapter-1.json` cũ. */
+/** Chapter 1, parsed — replaces the old `chapter-1.json`. */
 export function loadChapterOne(): ChapterData {
   return chapterFromLevels(loadTmxLevels(CHAPTER_ONE_DIR));
 }
 
-/** Tìm phòng theo số; ném nếu thiếu (test fail rõ hơn `undefined`). */
+/** Find a room by number; throws when missing (clearer failure than `undefined`). */
 export function roomOf(chapter: ChapterData, room: number): LevelData {
   const found = chapter.rooms.find((candidate) => candidate.room === room);
-  if (found === undefined) throw new Error(`Chapter ${chapter.chapter} thiếu phòng ${room}`);
+  if (found === undefined) throw new Error(`Chapter ${chapter.chapter} is missing room ${room}`);
   return found;
 }

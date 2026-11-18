@@ -1,16 +1,16 @@
 /**
- * Sinh `assets/resources/data/animations.json` từ nguồn sự thật:
+ * Emit `assets/resources/data/animations.json` from the source of truth:
  *
- * - Toàn bộ sheet actor/monster/boss đã stage (giữ nguyên entry cũ).
- * - Thêm **idle** cho 9 monster: pack chỉ có một sheet walk 4 hướng, nên idle là
- *   chính sheet đó phát chậm (GDD §12.3: không có frame idle riêng).
- * - Thêm FX có thật trong `FX/`: shuriken, energy-ball, impact, explosion, smoke,
- *   shield, ice, poison. Frame cắt theo grid chia hết pixel của sheet.
- * - `footPx` = số pixel trong suốt từ đáy frame tới pixel đặc thấp nhất, đọc trực
- *   tiếp từ PNG. Nhờ vậy frame khác kích thước (samurai 96×48 ↔ 96×96) vẫn đặt
- *   chân lên cùng một đường, không giật khi đổi anim.
+ * - Every staged actor/monster/boss sheet (keeping existing entries).
+ * - Adds **idle** for the 9 monsters: the pack has only one 4-direction walk sheet, so idle is
+ *   that same sheet played slowly (GDD §12.3: there are no separate idle frames).
+ * - Adds the FX that really exist in `FX/`: shuriken, energy-ball, impact, explosion, smoke,
+ *   shield, ice, poison. Frames are sliced on a grid dividing the sheet pixels exactly.
+ * - `footPx` = transparent pixels from the frame bottom to the lowest solid pixel, read straight
+ *   from the PNG. That way frames of different sizes (samurai 96×48 ↔ 96×96) still put their
+ *   feet on the same line, without jitter when the animation changes.
  *
- * Chạy: `bun run scripts/gen-animations.ts`
+ * Run: `bun run scripts/gen-animations.ts`
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -133,11 +133,11 @@ const FX: Readonly<Record<string, Omit<RawEntry, 'anchor' | 'footPx'>>> = {
 
 function readRaw(): { version: number; sprites: Record<string, RawEntry> } {
   const parsed: unknown = JSON.parse(readFileSync(MANIFEST, 'utf8'));
-  if (typeof parsed !== 'object' || parsed === null) throw new Error('manifest phải là object');
+  if (typeof parsed !== 'object' || parsed === null) throw new Error('manifest must be an object');
   const record = parsed as { version?: unknown; sprites?: unknown };
-  if (record.version !== 1) throw new Error('manifest version phải là 1');
+  if (record.version !== 1) throw new Error('manifest version must be 1');
   if (typeof record.sprites !== 'object' || record.sprites === null) {
-    throw new Error('manifest.sprites phải là object');
+    throw new Error('manifest.sprites must be an object');
   }
   return { version: 1, sprites: record.sprites as Record<string, RawEntry> };
 }
@@ -160,7 +160,7 @@ function idleOf(walk: RawEntry): RawEntry {
     layout: 'grid',
     directions: Array.from(DIRS),
     frames: walk.frames,
-    // Cùng frame walk nhưng phát chậm: pack không có sheet idle cho monster.
+    // Same walk frames played slowly: the pack has no idle sheet for monsters.
     fps: 4,
     loop: true,
     anchor: 'feet',
@@ -179,14 +179,14 @@ for (const key of playerKeys) {
 for (const monster of MONSTERS) {
   const walkKey = `${monster}.walk.down`;
   const walk = source.sprites[walkKey];
-  if (walk === undefined) throw new Error(`thiếu ${walkKey} trong manifest cũ`);
+  if (walk === undefined) throw new Error(`missing ${walkKey} in the old manifest`);
   const idle = idleOf(walk);
   for (const direction of DIRS) {
     sprites[`${monster}.idle.${direction}`] = withFoot(idle);
   }
   for (const direction of DIRS) {
     const entry = source.sprites[`${monster}.walk.${direction}`];
-    if (entry === undefined) throw new Error(`thiếu ${monster}.walk.${direction}`);
+    if (entry === undefined) throw new Error(`missing ${monster}.walk.${direction}`);
     sprites[`${monster}.walk.${direction}`] = withFoot(entry);
   }
 }

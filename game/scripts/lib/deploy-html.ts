@@ -1,14 +1,14 @@
 /**
- * Sửa `index.html` mà Cocos sinh cho bản web-desktop thành trang ship được (M7):
- * tiêu đề/meta/OG thật, icon, nền tối (không chớp trắng lúc tải), bỏ header/footer
- * và khung 1280×960 + border 5px của template. Thuần chuỗi để test bằng vitest.
+ * Patch the `index.html` Cocos emits for web-desktop into a shippable page (M7):
+ * real title/meta/OG, icon, dark background (no white flash on load), drop the header/footer
+ * and the template's 1280×960 frame + 5px border. Pure string work so vitest can test it.
  */
 export interface SiteMeta {
   readonly title: string;
   readonly description: string;
-  /** URL gốc có `https://`, không có `/` cuối. */
+  /** Origin URL with `https://`, no trailing `/`. */
   readonly origin: string;
-  /** Đường dẫn ảnh OG tính từ gốc, ví dụ `/og.png`. */
+  /** OG image path from the root, e.g. `/og.png`. */
   readonly ogImagePath: string;
 }
 
@@ -24,7 +24,7 @@ function escapeHtml(value: string): string {
 
 function replaceOnce(html: string, pattern: RegExp, replacement: string, what: string): string {
   if (!pattern.test(html)) {
-    throw new Error(`index.html không có ${what} — template Cocos đổi? Sửa scripts/lib/deploy-html.ts.`);
+    throw new Error(`index.html has no ${what} — did the Cocos template change? Edit scripts/lib/deploy-html.ts.`);
   }
   return html.replace(pattern, replacement);
 }
@@ -61,7 +61,7 @@ export function patchIndexHtml(html: string, meta: SiteMeta): string {
   out = replaceOnce(out, /\s*<h1 class="header">[\s\S]*?<\/h1>/, '', 'h1.header');
   out = replaceOnce(out, /\s*<p class="footer">[\s\S]*?<\/p>/, '', 'p.footer');
   out = replaceOnce(out, /<html>/, '<html lang="en">', '<html>');
-  // Màn hình ngang: template ghi "portrait" là mặc định mobile, game này 16:9.
+  // Landscape: the template writes "portrait", the mobile default, but this game is 16:9.
   out = out.replace(/<meta name="screen-orientation" content="portrait"\/>/, '<meta name="screen-orientation" content="landscape"/>');
   return out;
 }

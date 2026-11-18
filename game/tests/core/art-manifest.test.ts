@@ -11,7 +11,7 @@ const MANIFEST_PATH = join(HERE, '..', '..', 'assets', 'resources', 'data', 'ani
 const DIRS = ['down', 'up', 'left', 'right'] as const;
 type Dir = (typeof DIRS)[number];
 
-/** Bản sao độc lập của quy tắc đặt key: test không được mượn regex của module. */
+/** Independent copy of the key rule: tests must not borrow the module's regex. */
 const KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/;
 
 const MONSTERS = [
@@ -29,7 +29,7 @@ const BOSSES = ['tengu', 'squid', 'samurai'] as const;
 const MONSTER_ACTORS: ReadonlySet<string> = new Set(MONSTERS);
 const BOSS_ACTORS: ReadonlySet<string> = new Set(BOSSES);
 
-/** Manifest thật, validate một lần cho cả file. Hỏng thì mọi test đỏ ngay. */
+/** The real manifest, validated once per file. If it breaks, every test goes red immediately. */
 const manifest: AnimationManifest = validateManifest(readJson());
 const entries: [string, SpriteEntry][] = Object.entries(manifest.sprites);
 
@@ -39,35 +39,35 @@ function readJson(): unknown {
 }
 
 describe('animations.json', () => {
-  it('validate được và đúng version', () => {
+  it('validates and has the right version', () => {
     expect(manifest.version).toBe(1);
     expect(entries.length).toBeGreaterThan(0);
   });
 
-  it('mọi key đúng định dạng <actor>.<animation>[.<direction>]', () => {
+  it('every key matches <actor>.<animation>[.<direction>]', () => {
     for (const [key] of entries) {
-      expect(KEY_PATTERN.test(key), `key sai định dạng: ${key}`).toBe(true);
+      expect(KEY_PATTERN.test(key), `malformed key: ${key}`).toBe(true);
     }
   });
 
-  it('chỉ dùng actor đã chốt trong GDD', () => {
+  it('only uses actors fixed in the GDD', () => {
     const actors: ReadonlySet<string> = new Set<string>(['player', ...MONSTERS, ...BOSSES, 'fx']);
     for (const [key] of entries) {
-      expect(actors.has(actorOf(key)), `actor lạ trong key ${key}`).toBe(true);
+      expect(actors.has(actorOf(key)), `unknown actor in key ${key}`).toBe(true);
     }
   });
 
-  it('mọi REQUIRED_KEYS đều resolve được', () => {
+  it('every REQUIRED_KEYS entry resolves', () => {
     for (const key of REQUIRED_KEYS) {
       const entry = resolve(manifest, key);
-      expect(entry.frames, `${key} phải có frame`).toBeGreaterThan(0);
+      expect(entry.frames, `${key} must have frames`).toBeGreaterThan(0);
     }
   });
 
-  it('mỗi vai trò có đủ bộ animation tối thiểu', () => {
+  it('every role has its minimum animation set', () => {
     for (const [actor, keys] of Object.entries(REQUIRED_ACTOR_ANIMATIONS)) {
       for (const key of keys) {
-        expect(() => resolve(manifest, key), `${actor} thiếu ${key}`).not.toThrow();
+        expect(() => resolve(manifest, key), `${actor} is missing ${key}`).not.toThrow();
       }
     }
 
@@ -79,24 +79,24 @@ describe('animations.json', () => {
     }
   });
 
-  it('key có direction thì directions khai báo đúng trục', () => {
+  it('a directional key declares the right axis in directions', () => {
     for (const [key, entry] of entries) {
       const direction = directionOf(key);
       if (direction === undefined) {
-        expect(entry.directions, `${key} không hướng nên directions phải rỗng`).toEqual([]);
+        expect(entry.directions, `${key} has no direction so directions must be empty`).toEqual([]);
         continue;
       }
 
-      expect(entry.directions, `${key} phải chứa direction của chính nó`).toContain(direction);
+      expect(entry.directions, `${key} must contain its own direction`).toContain(direction);
 
       const actor = actorOf(key);
       if (actor === 'player' || MONSTER_ACTORS.has(actor)) {
-        expect(entry.directions, `${key} phải là sheet 4 hướng`).toHaveLength(4);
+        expect(entry.directions, `${key} must be a 4-direction sheet`).toHaveLength(4);
       }
     }
   });
 
-  it('đòn trái/phải của samurai là sheet một hướng', () => {
+  it('samurai left/right attacks are single-direction sheets', () => {
     for (const key of [
       'samurai.attack.left',
       'samurai.attack.right',
@@ -107,88 +107,88 @@ describe('animations.json', () => {
     }
   });
 
-  it('frame size hợp lý theo actor', () => {
+  it('frame size is sensible per actor', () => {
     for (const [key, entry] of entries) {
       const actor = actorOf(key);
       if (actor === 'player') {
-        expect([entry.frameWidth, entry.frameHeight], `${key} phải là frame 32×32`).toEqual([32, 32]);
+        expect([entry.frameWidth, entry.frameHeight], `${key} must be a 32×32 frame`).toEqual([32, 32]);
       } else if (MONSTER_ACTORS.has(actor)) {
-        expect([entry.frameWidth, entry.frameHeight], `${key} phải là frame 16×16`).toEqual([16, 16]);
+        expect([entry.frameWidth, entry.frameHeight], `${key} must be a 16×16 frame`).toEqual([16, 16]);
       } else if (BOSS_ACTORS.has(actor)) {
-        expect(entry.frameWidth, `${key} là frame boss, phải ≥ 60px`).toBeGreaterThanOrEqual(60);
+        expect(entry.frameWidth, `${key} is a boss frame, must be ≥ 60px`).toBeGreaterThanOrEqual(60);
       }
     }
   });
 
-  it('walk có ít nhất 4 frame, idle/attack có frame thật', () => {
+  it('walk has at least 4 frames, idle/attack have real frames', () => {
     const walkKeys = entries.filter(([key]) => animationOf(key) === 'walk');
 
-    expect(walkKeys.length, 'phải có walk cho player, 9 monster và 3 boss').toBeGreaterThanOrEqual(
+    expect(walkKeys.length, 'must have walk for player, 9 monsters and 3 bosses').toBeGreaterThanOrEqual(
       1 + MONSTERS.length + BOSSES.length,
     );
 
     for (const [key, entry] of walkKeys) {
-      expect(entry.frames, `${key} cần ≥ 4 frame`).toBeGreaterThanOrEqual(4);
+      expect(entry.frames, `${key} needs ≥ 4 frames`).toBeGreaterThanOrEqual(4);
     }
 
     for (const [key, entry] of entries) {
       const anim = animationOf(key);
       if (anim === 'idle') {
-        expect(entry.frames, `${key} cần ≥ 2 frame`).toBeGreaterThanOrEqual(2);
+        expect(entry.frames, `${key} needs ≥ 2 frames`).toBeGreaterThanOrEqual(2);
       }
       if (anim === 'attack') {
-        expect(entry.frames, `${key} cần ≥ 3 frame`).toBeGreaterThanOrEqual(3);
+        expect(entry.frames, `${key} needs ≥ 3 frames`).toBeGreaterThanOrEqual(3);
       }
     }
   });
 
-  it('thời lượng mỗi animation nằm trong khoảng chơi được', () => {
+  it('each animation lasts a playable duration', () => {
     for (const [key, entry] of entries) {
       const seconds = entry.frames / entry.fps;
-      expect(seconds, `${key} quá ngắn`).toBeGreaterThanOrEqual(0.05);
-      expect(seconds, `${key} quá dài`).toBeLessThanOrEqual(3);
+      expect(seconds, `${key} is too short`).toBeGreaterThanOrEqual(0.05);
+      expect(seconds, `${key} is too long`).toBeLessThanOrEqual(3);
     }
   });
 
-  it('loop đúng chỗ: idle/walk lặp, attack một lần', () => {
+  it('loop in the right places: idle/walk loop, attack plays once', () => {
     for (const [key, entry] of entries) {
       const anim = animationOf(key);
       if (anim === 'idle' || anim === 'walk' || anim === 'attack-loop' || anim === 'charge') {
-        expect(entry.loop, `${key} phải loop`).toBe(true);
+        expect(entry.loop, `${key} must loop`).toBe(true);
       }
       if (key.startsWith('player.') && (anim === 'attack' || anim === 'hit' || anim === 'roll')) {
-        expect(entry.loop, `${key} không được loop`).toBe(false);
+        expect(entry.loop, `${key} must not loop`).toBe(false);
       }
     }
 
     expect(resolve(manifest, 'player.dead').loop).toBe(false);
   });
 
-  it('layout khớp loại sheet: player/monster là grid, boss là strip', () => {
+  it('layout matches sheet kind: player/monster are grid, bosses are strip', () => {
     for (const [key, entry] of entries) {
       const actor = actorOf(key);
       if (actor === 'fx') continue;
       const expected = BOSS_ACTORS.has(actor) ? 'strip' : 'grid';
-      expect(entry.layout, `${key} phải layout ${expected}`).toBe(expected);
+      expect(entry.layout, `${key} must use layout ${expected}`).toBe(expected);
     }
   });
 
-  it('tên file sheet khớp animation trong key', () => {
+  it('sheet file name matches the animation in the key', () => {
     for (const [key, entry] of entries) {
       const actor = actorOf(key);
-      // Sheet monster tên chung là SpriteSheet.png, không mang tên animation.
+      // Monster sheets share the generic name SpriteSheet.png and carry no animation name.
       if (MONSTER_ACTORS.has(actor) || actor === 'fx') continue;
 
       const file = entry.sheet.split('/').pop() ?? '';
       const fileStem = file.toLowerCase().replace(/\.png$/, '').replace(/[^a-z0-9]/g, '');
       expect(
         fileStem.startsWith(animationOf(key).replace(/[^a-z0-9]/g, '')),
-        `${key} trỏ tới ${file}`,
+        `${key} points at ${file}`,
       ).toBe(true);
     }
   });
 
-  it('số frame boss khớp file thật (đã đo pixel)', () => {
+  it('boss frame counts match the real files (measured in pixels)', () => {
     const expectedFrames: ReadonlyArray<readonly [string, number]> = [
       ['tengu.idle', 6],
       ['tengu.walk', 10],
@@ -217,11 +217,11 @@ describe('animations.json', () => {
 });
 
 describe('validateManifest', () => {
-  it('chấp nhận manifest thật', () => {
+  it('accepts the real manifest', () => {
     expect(() => validateManifest(readJson())).not.toThrow();
   });
 
-  it('báo lỗi khi thiếu field bắt buộc', () => {
+  it('reports a missing required field', () => {
     const error = captureError(() =>
       validateManifest(manifestWithoutField('player.walk.down', 'fps')),
     );
@@ -230,16 +230,16 @@ describe('validateManifest', () => {
     expect(error.message).toContain('fps');
   });
 
-  it('báo lỗi khi key sai định dạng', () => {
+  it('reports a malformed key', () => {
     const error = captureError(() =>
       validateManifest(renameKey('player.idle.down', 'Player.Idle.Down')),
     );
 
     expect(error.message).toContain('Player.Idle.Down');
-    expect(error.message).toContain('key phải dạng');
+    expect(error.message).toContain('key must look like');
   });
 
-  it('báo lỗi khi key trỏ direction mà directions không có', () => {
+  it('reports a key pointing at a direction the entry does not have', () => {
     const error = captureError(() =>
       validateManifest(
         manifestWithEntry('player.idle.down', (entry) => {
@@ -252,7 +252,7 @@ describe('validateManifest', () => {
     expect(error.message).toContain('"down"');
   });
 
-  it('báo lỗi khi key không hướng nhưng entry khai báo direction', () => {
+  it('reports a key without direction whose entry declares one', () => {
     const error = captureError(() =>
       validateManifest(
         manifestWithEntry('tengu.idle', (entry) => {
@@ -262,10 +262,10 @@ describe('validateManifest', () => {
     );
 
     expect(error.message).toContain('tengu.idle');
-    expect(error.message).toContain('directions phải rỗng');
+    expect(error.message).toContain('directions must be empty');
   });
 
-  it('báo lỗi direction lạ, trùng, hoặc sai thứ tự cột', () => {
+  it('reports an unknown, duplicated or wrongly ordered direction', () => {
     const unknown = captureError(() =>
       validateManifest(
         manifestWithEntry('player.idle.left', (entry) => {
@@ -282,7 +282,7 @@ describe('validateManifest', () => {
         }),
       ),
     );
-    expect(duplicated.message).toContain('trùng');
+    expect(duplicated.message).toContain('duplicates');
 
     const reordered = captureError(() =>
       validateManifest(
@@ -291,10 +291,10 @@ describe('validateManifest', () => {
         }),
       ),
     );
-    expect(reordered.message).toContain('thứ tự');
+    expect(reordered.message).toContain('order');
   });
 
-  it('báo lỗi sheet tuyệt đối, thoát pack, hoặc không phải png', () => {
+  it('reports an absolute sheet, an escaping pack path, or a non-png file', () => {
     const absolute = captureError(() =>
       validateManifest(
         manifestWithEntry('player.idle.up', (entry) => {
@@ -302,7 +302,7 @@ describe('validateManifest', () => {
         }),
       ),
     );
-    expect(absolute.message).toContain('tương đối');
+    expect(absolute.message).toContain('relative path');
 
     const escape = captureError(() =>
       validateManifest(
@@ -311,7 +311,7 @@ describe('validateManifest', () => {
         }),
       ),
     );
-    expect(escape.message).toContain('tương đối');
+    expect(escape.message).toContain('relative path');
 
     const notPng = captureError(() =>
       validateManifest(
@@ -323,7 +323,7 @@ describe('validateManifest', () => {
     expect(notPng.message).toContain('.png');
   });
 
-  it('báo lỗi kiểu sai cho frame size, fps, loop, layout', () => {
+  it('reports wrong types for frame size, fps, loop, layout', () => {
     const error = captureError(() =>
       validateManifest(
         manifestWithEntry('player.attack.up', (entry) => {
@@ -341,7 +341,7 @@ describe('validateManifest', () => {
     }
   });
 
-  it('báo lỗi layout strip có nhiều hơn một direction', () => {
+  it('reports a strip layout with more than one direction', () => {
     const error = captureError(() =>
       validateManifest(
         manifestWithEntry('samurai.attack.left', (entry) => {
@@ -353,22 +353,22 @@ describe('validateManifest', () => {
     expect(error.message).toContain('strip');
   });
 
-  it('báo lỗi khi version sai, root không phải object, sprites rỗng', () => {
+  it('reports a wrong version, a non-object root, and empty sprites', () => {
     expect(() => validateManifest({ version: 2, sprites: readRawSprites() })).toThrowError(
       /version/,
     );
     expect(() => validateManifest(null)).toThrowError(/root/);
     expect(() => validateManifest([])).toThrowError(/root/);
     expect(() => validateManifest({ version: 1, sprites: [] })).toThrowError(/sprites/);
-    expect(() => validateManifest({ version: 1, sprites: {} })).toThrowError(/rỗng/);
+    expect(() => validateManifest({ version: 1, sprites: {} })).toThrowError(/empty/);
   });
 
-  it('liệt kê mọi lỗi, không chỉ lỗi đầu tiên', () => {
+  it('lists every problem, not just the first', () => {
     const sprites = readRawSprites();
     const walk = sprites['player.walk.up'];
     const idle = sprites['player.idle.down'];
     if (walk === undefined || idle === undefined) {
-      throw new Error('fixture thiếu player.walk.up hoặc player.idle.down');
+      throw new Error('fixture is missing player.walk.up or player.idle.down');
     }
 
     const error = captureError(() =>
@@ -395,7 +395,7 @@ describe('validateManifest', () => {
 });
 
 describe('resolve', () => {
-  it('trả entry cho key có thật', () => {
+  it('returns the entry for a key that exists', () => {
     const entry = resolve(manifest, 'player.walk.left');
 
     expect(entry.sheet).toBe('resources/art/characters/ninja-green/Walk.png');
@@ -403,39 +403,39 @@ describe('resolve', () => {
     expect(entry.directions).toEqual(['down', 'up', 'left', 'right']);
   });
 
-  it('ưu tiên key chính hơn fallback', () => {
+  it('prefers the primary key over the fallback', () => {
     const entry = resolve(manifest, 'player.walk.right', 'player.idle.down');
 
     expect(entry.sheet).toContain('Walk.png');
   });
 
-  it('dùng fallback khi key chính thiếu', () => {
+  it('uses the fallback when the primary key is missing', () => {
     const fallback = resolve(manifest, 'player.walk.down');
 
     expect(resolve(manifest, 'player.dash.down', 'player.walk.down')).toBe(fallback);
   });
 
-  it('báo lỗi kèm cả hai key khi key chính lẫn fallback đều thiếu', () => {
+  it('reports both keys when neither the primary nor the fallback exists', () => {
     const error = captureError(() => resolve(manifest, 'player.dash.up', 'player.dash.down'));
 
     expect(error.message).toContain('player.dash.up');
     expect(error.message).toContain('player.dash.down');
   });
 
-  it('báo lỗi kèm gợi ý key cùng actor khi không có fallback', () => {
+  it('reports same-actor key suggestions when there is no fallback', () => {
     const error = captureError(() => resolve(manifest, 'player.dash.left'));
 
     expect(error.message).toContain('player.dash.left');
     expect(error.message).toContain('player.walk.down');
   });
 
-  it('báo lỗi khi key rỗng', () => {
-    expect(() => resolve(manifest, '')).toThrowError(/rỗng/);
+  it('reports an empty key', () => {
+    expect(() => resolve(manifest, '')).toThrowError(/empty/);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Helper: thao tác trên JSON thô để tạo fixture hỏng
+// Helper: raw JSON manipulation to build broken fixtures
 // ---------------------------------------------------------------------------
 
 type RawEntry = Record<string, unknown>;
@@ -444,17 +444,17 @@ type RawSprites = Record<string, RawEntry>;
 function readRawSprites(): RawSprites {
   const raw: unknown = readJson();
   if (!isRecord(raw)) {
-    throw new Error('fixture: animations.json phải là object');
+    throw new Error('fixture: animations.json must be an object');
   }
   const sprites = raw['sprites'];
   if (!isRecord(sprites)) {
-    throw new Error('fixture: "sprites" phải là object');
+    throw new Error('fixture: "sprites" must be an object');
   }
 
   const result: RawSprites = {};
   for (const [key, entry] of Object.entries(sprites)) {
     if (!isRecord(entry)) {
-      throw new Error(`fixture: entry "${key}" phải là object`);
+      throw new Error(`fixture: entry "${key}" must be an object`);
     }
     result[key] = { ...entry };
   }
@@ -465,7 +465,7 @@ function manifestWithEntry(key: string, mutate: (entry: RawEntry) => void): unkn
   const sprites = readRawSprites();
   const entry = sprites[key];
   if (entry === undefined) {
-    throw new Error(`fixture: không có key ${key}`);
+    throw new Error(`fixture: no key ${key}`);
   }
   mutate(entry);
   return { version: 1, sprites };
@@ -475,7 +475,7 @@ function manifestWithoutField(key: string, field: string): unknown {
   const sprites = readRawSprites();
   const entry = sprites[key];
   if (entry === undefined) {
-    throw new Error(`fixture: không có key ${key}`);
+    throw new Error(`fixture: no key ${key}`);
   }
   sprites[key] = omit(entry, field);
   return { version: 1, sprites };
@@ -484,7 +484,7 @@ function manifestWithoutField(key: string, field: string): unknown {
 function renameKey(key: string, newKey: string): unknown {
   const sprites = readRawSprites();
   if (sprites[key] === undefined) {
-    throw new Error(`fixture: không có key ${key}`);
+    throw new Error(`fixture: no key ${key}`);
   }
 
   const renamed: RawSprites = {};
@@ -530,7 +530,7 @@ function captureError(run: () => unknown): Error {
     if (error instanceof Error) {
       return error;
     }
-    throw new Error(`Mong đợi Error, nhận ${String(error)}`);
+    throw new Error(`Expected Error, got ${String(error)}`);
   }
-  throw new Error('Mong đợi ném lỗi nhưng không ném');
+  throw new Error('Expected a throw but nothing was thrown');
 }

@@ -11,12 +11,12 @@ function enemy(id: string, x: number, y: number, alive = true): Targetable {
 }
 
 describe('AutoFire', () => {
-  it('không có mục tiêu thì không bắn và không tiêu cooldown', () => {
+  it('with no target it does not fire and does not spend cooldown', () => {
     const autoFire = AutoFire.fromRate(2);
 
     expect(autoFire.update({ deltaMs: 5_000, origin: ORIGIN, targets: [], rangeTiles: 10 })).toBeNull();
 
-    // Nếu cooldown bị trừ trong lúc không có mục tiêu, phát này sẽ trượt.
+    // If the cooldown drained while there was no target, this shot would be missed.
     const shot = autoFire.update({
       deltaMs: 0,
       origin: ORIGIN,
@@ -28,7 +28,7 @@ describe('AutoFire', () => {
     expect(shot?.targetId).toBe('a');
   });
 
-  it('bắn mục tiêu trong tầm với hướng đơn vị và origin đúng', () => {
+  it('fires at a target in range with a unit direction and the right origin', () => {
     const autoFire = AutoFire.fromRate(2);
 
     const shot = autoFire.update({
@@ -46,7 +46,7 @@ describe('AutoFire', () => {
     expect(Math.hypot(shot?.direction.x ?? 0, shot?.direction.y ?? 0)).toBeCloseTo(1, 10);
   });
 
-  it('chọn enemy gần nhất trong tầm', () => {
+  it('picks the nearest enemy in range', () => {
     const autoFire = AutoFire.fromRate(2);
 
     const shot = autoFire.update({
@@ -60,7 +60,7 @@ describe('AutoFire', () => {
     expect(shot?.direction).toEqual({ x: 1, y: 0 });
   });
 
-  it('mục tiêu ngoài tầm thì không bắn', () => {
+  it('does not fire when the target is out of range', () => {
     const autoFire = AutoFire.fromRate(2);
 
     const outOfRange = autoFire.update({
@@ -71,7 +71,7 @@ describe('AutoFire', () => {
     });
     expect(outOfRange).toBeNull();
 
-    // Cooldown vẫn còn nguyên: vào tầm là bắn ngay.
+    // The cooldown is still full: it fires as soon as the target enters range.
     const inRange = autoFire.update({
       deltaMs: 0,
       origin: ORIGIN,
@@ -81,7 +81,7 @@ describe('AutoFire', () => {
     expect(inRange?.targetId).toBe('xa');
   });
 
-  it('giới hạn nhịp bắn theo FireControl', () => {
+  it('limits the fire rate through FireControl', () => {
     const autoFire = new AutoFire(FireControl.fromRate(2));
     const targets = [enemy('a', 1, 0)];
     const args = { origin: ORIGIN, targets, rangeTiles: 10 };
@@ -92,7 +92,7 @@ describe('AutoFire', () => {
     expect(autoFire.update({ ...args, deltaMs: 1 })).not.toBeNull();
   });
 
-  it('nhận nhịp bắn mỗi giây trực tiếp trong constructor', () => {
+  it('accepts the fire rate per second directly in the constructor', () => {
     const autoFire = new AutoFire(4); // 250 ms
     const args = { origin: ORIGIN, targets: [enemy('a', 1, 0)], rangeTiles: 10 };
 
@@ -101,7 +101,7 @@ describe('AutoFire', () => {
     expect(autoFire.update({ ...args, deltaMs: 50 })).not.toBeNull();
   });
 
-  it('mục tiêu chết giữa chuỗi tick thì không bắn', () => {
+  it('does not fire when the target dies mid-sequence', () => {
     const autoFire = AutoFire.fromRate(2);
 
     expect(
@@ -121,7 +121,7 @@ describe('AutoFire', () => {
       autoFire.update({ deltaMs: 600, origin: ORIGIN, targets: [dead], rangeTiles: 10 }),
     ).toBeNull();
 
-    // Không có mục tiêu sống nên cooldown không bị tiêu: bắn ngay khi có mục tiêu mới.
+    // No living target so the cooldown is not spent: it fires as soon as a new target appears.
     const fresh = autoFire.update({
       deltaMs: 600,
       origin: ORIGIN,
@@ -131,7 +131,7 @@ describe('AutoFire', () => {
     expect(fresh?.targetId).toBe('b');
   });
 
-  it('origin trùng vị trí mục tiêu thì dùng hướng mặc định', () => {
+  it('uses the default direction when the origin coincides with the target', () => {
     const autoFire = AutoFire.fromRate(2);
 
     const shot = autoFire.update({

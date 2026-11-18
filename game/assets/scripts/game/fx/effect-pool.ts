@@ -1,11 +1,11 @@
 /**
- * Pool FX dùng chung cho mọi hiệu ứng manifest `fx.*` (impact, explosion, smoke,
+ * Shared FX pool for every `fx.*` manifest effect (impact, explosion, smoke,
  * shield, ice, poison, gold sparkle).
  *
- * Mỗi slot là một node + `Sprite`, dựng **một lần** khi vào chapter. Frame được
- * slice sẵn từ `animations.json` lúc init, và cả pool chỉ có **một** clock chung —
- * không có một component `update`/một promise load frame cho mỗi sprite nữa (bản
- * đầu dùng `SpriteAnimator`, đo stress bị tụt fps).
+ * Each slot is a node + `Sprite`, built **once** on entering a chapter. Frames are
+ * sliced from `animations.json` at init, and the whole pool shares **one** clock —
+ * there is no `update` component or frame-loading promise per sprite any more (the first
+ * version used `SpriteAnimator` and the stress test lost fps).
  */
 import {
   Color as CocosColor,
@@ -25,7 +25,7 @@ type Sprite = InstanceType<typeof CocosSprite>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 type SpriteFrame = Awaited<ReturnType<typeof getFrame>>;
 
-/** Key FX có trong manifest (xem `REQUIRED_ACTOR_ANIMATIONS.fx`). */
+/** FX keys present in the manifest (see `REQUIRED_ACTOR_ANIMATIONS.fx`). */
 export type FxKey =
   | 'fx.impact'
   | 'fx.explosion'
@@ -35,11 +35,11 @@ export type FxKey =
   | 'fx.poison';
 
 interface FxStyle {
-  /** Bề rộng mong muốn trong world unit (1 tile = 1 unit) khi không truyền drawUnits. */
+  /** Target width in world units (1 tile = 1 unit) when drawUnits is not passed. */
   readonly drawUnits: number;
-  /** Tự tắt sau bao lâu; clip loop (shield) cần giá trị này. */
+  /** How long before it turns itself off; looping clips (shield) need this. */
   readonly lifetimeMs: number;
-  /** Frame gốc px (max cạnh) để tính scale từ drawUnits. */
+  /** Source frame px (longest side) used to derive scale from drawUnits. */
   readonly frameMaxPx: number;
 }
 
@@ -67,9 +67,9 @@ interface Slot {
 }
 
 export interface FxSpawnOptions {
-  /** Bề rộng world unit; mặc định theo loại FX. */
+  /** Width in world units; defaults per FX type. */
   readonly drawUnits?: number;
-  /** Màu nhân (gold sparkle, tint theo status…). */
+  /** Multiply colour (gold sparkle, status tint…). */
   readonly tint?: Color;
   readonly lifetimeMs?: number;
 }
@@ -79,7 +79,7 @@ export class FxPool {
   private readonly framesByKey = new Map<FxKey, { frames: readonly SpriteFrame[]; fps: number }>();
   private elapsedMs = 0;
 
-  /** Khởi tạo pool dưới `parent`; slice sẵn frame từ manifest. */
+  /** Initialise the pool under `parent`; slice frames from the manifest up front. */
   async init(parent: Node): Promise<void> {
     const manifest = await loadAnimationManifest();
     for (const key of Object.keys(STYLES) as FxKey[]) {
@@ -95,7 +95,7 @@ export class FxPool {
     }
   }
 
-  /** Phát FX tại `position` (tile unit, y hướng xuống). */
+  /** Play an FX at `position` (tile units, y down). */
   spawn(key: FxKey, position: Vec2, options: FxSpawnOptions = {}): void {
     const data = this.framesByKey.get(key);
     if (data === undefined || data.frames.length === 0) return;
@@ -162,7 +162,7 @@ export class FxPool {
     sprite.trim = false;
     const transform: UITransform | null = node.getComponent(CocosUITransform);
     if (transform !== null) {
-      // `sizeMode = CUSTOM` lấy kích thước từ UITransform; spawn ghi đè theo frame.
+      // `sizeMode = CUSTOM` takes its size from UITransform; spawn overrides it per frame.
       transform.setContentSize(32, 32);
     }
 
@@ -181,7 +181,7 @@ export class FxPool {
   }
 }
 
-/** Dựng pool dưới `parent` (nên là layer FX trên actor) — bootstrap await một lần. */
+/** Build the pool under `parent` (should be the FX layer above actors) — bootstrap awaits it once. */
 export async function createFxPool(parent: Node): Promise<FxPool> {
   const pool = new FxPool();
   await pool.init(parent);

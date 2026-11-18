@@ -2,11 +2,11 @@ import { DEFAULT_COMBAT } from '../config';
 import { resolveOwnedSkills } from './pool';
 
 /**
- * Chỉ số combat sau khi cộng dồn toàn bộ skill đang sở hữu.
+ * Combat stats after stacking every owned skill.
  *
- * Mọi trường là **số cuối cùng** engine dùng trực tiếp (damage mỗi phát, nhịp
- * bắn mỗi giây, …), không phải hệ số. Nhờ vậy component chỉ đọc một object,
- * không phải tự nhớ thứ tự nhân/cộng.
+ * Every field is the **final number** the engine uses directly (damage per shot,
+ * shots per second, …), not a factor. That way a component reads one object and
+ * does not have to remember the multiply/add order.
  */
 export interface DerivedStats {
   readonly damage: number;
@@ -20,26 +20,26 @@ export interface DerivedStats {
   readonly invulnerabilityMs: number;
   readonly lifestealPercent: number;
   readonly goldMultiplier: number;
-  /** 0 = không có Executioner. */
+  /** 0 = no Executioner. */
   readonly executeThreshold: number;
   readonly executeBonus: number;
 
-  /** Số lần đạn nảy sang enemy khác; vắng mặt = không nảy. */
+  /** Bounces to another enemy; absent = no bounce. */
   readonly ricochetBounces?: number;
-  /** Vắng mặt = đạn không nổ. */
+  /** Absent = the bullet does not explode. */
   readonly explosive?: ExplosiveStat;
-  /** Vắng mặt = đạn không bám mục tiêu. */
+  /** Absent = the bullet does not track. */
   readonly homing?: boolean;
   readonly slowOnHit?: SlowOnHit;
   readonly poisonOnHit?: PoisonOnHit;
   readonly shield?: ShieldStat;
   readonly thorns?: ThornsStat;
-  /** Số tim hồi sau mỗi phòng; vắng mặt = không hồi. */
+  /** Hearts healed after each room; absent = no heal. */
   readonly healPerRoom?: number;
 }
 
 export interface SlowOnHit {
-  /** Hệ số tốc độ còn lại, 0..1 (0.4 = chậm 60%). */
+  /** Remaining speed factor, 0..1 (0.4 = 60% slower). */
   readonly factor: number;
   readonly durationMs: number;
 }
@@ -50,7 +50,7 @@ export interface PoisonOnHit {
 }
 
 export interface ShieldStat {
-  /** Số đòn chặn được trước khi phải hồi. */
+  /** Number of hits blocked before recharging. */
   readonly charges: number;
   readonly cooldownMs: number;
 }
@@ -61,16 +61,16 @@ export interface ThornsStat {
 
 export interface ExplosiveStat {
   readonly radiusTiles: number;
-  /** Phần damage của đạn chính mà vụ nổ gây ra. */
+  /** Share of the main bullet damage dealt by the explosion. */
   readonly damageRatio: number;
 }
 
 /**
- * Đầu vào tĩnh của `computeDerivedStats`.
+ * Static input of `computeDerivedStats`.
  *
- * `DEFAULT_COMBAT` (assets/scripts/core/config.ts) đã có đủ cả 9 số combat, nên
- * mọi field ở đây **bắt buộc** — không còn fallback ngầm nào khi thiếu. Caller
- * muốn baseline khác (test, meta upgrade) thì truyền object đủ field.
+ * `DEFAULT_COMBAT` (assets/scripts/core/config.ts) already has all 9 combat numbers, so
+ * every field here is **required** — no implicit fallback when something is missing. A caller
+ * wanting another baseline (tests, meta upgrades) passes a full object.
  */
 export interface StatsBaseline {
   readonly fireRatePerSecond: number;
@@ -82,19 +82,19 @@ export interface StatsBaseline {
 }
 
 /**
- * Cộng dồn skill thành chỉ số cuối.
+ * Stack skills into the final stats.
  *
- * Thứ tự cố định:
- * 1. Chuẩn hoá stack: floor, kẹp [0, maxStacks], duyệt theo thứ tự `SKILLS`.
- * 2. Cộng dồn các hiệu ứng **cộng** (damage, số đạn, xuyên, tim, crit, vàng,
- *    luck, lifesteal, execute, thorns, hồi máu).
- * 3. Áp các hiệu ứng **nhân** đúng một lần trên giá trị base:
+ * Fixed order:
+ * 1. Normalise stacks: floor, clamp [0, maxStacks], iterate in `SKILLS` order.
+ * 2. Add the **additive** effects (damage, projectile count, pierce, hearts, crit, gold,
+ *    luck, lifesteal, execute, thorns, room heal).
+ * 3. Apply the **multiplicative** effects exactly once on the base value:
  *    `rate = base × (1 + Σ)`, `speed = base × (1 + Σ)`,
- *    `i-frame = base × 1.375^stack` (GDD ghi 0.8 → 1.1 s ở 1 stack).
- * 4. Kẹp và làm sạch: mọi số hữu hạn, không âm; critChance/lifesteal ≤ 1,
+ *    `i-frame = base × 1.375^stack` (the GDD says 0.8 → 1.1 s at 1 stack).
+ * 4. Clamp and sanitise: every number finite, non-negative; critChance/lifesteal ≤ 1,
  *    critMultiplier ≥ 1, projectiles ≥ 1, maxHearts ≥ 1.
  *
- * Nhờ bước 3 chỉ nhân một lần, thứ tự skill trong `owned` không đổi kết quả.
+ * Because step 3 multiplies only once, skill order in `owned` does not change the result.
  */
 export function computeDerivedStats(
   owned: ReadonlyMap<string, number>,
@@ -167,7 +167,7 @@ export function computeDerivedStats(
           iframeMultiplier *= Math.pow(tag.amount, stacks);
           break;
         case 'slow-on-hit':
-          // Nhiều nguồn làm chậm: lấy hệ số mạnh nhất, cộng dồn thời gian.
+          // Several slow sources: take the strongest factor, stack the durations.
           slowFactor = Math.min(slowFactor, tag.factor);
           slowDurationMs += tag.durationMs * stacks;
           break;
@@ -193,7 +193,7 @@ export function computeDerivedStats(
           break;
         case 'explosive':
           explosiveRadius = Math.max(explosiveRadius, tag.radiusTiles);
-          // 3 stack = 150% damage; kẹp 1 để vụ nổ không mạnh hơn đạn chính.
+          // 3 stacks = 150% damage; clamped to 1 so the explosion is never stronger than the main bullet.
           explosiveRatio = Math.min(1, explosiveRatio + tag.damageRatio * stacks);
           break;
       }
@@ -244,14 +244,14 @@ export function computeDerivedStats(
 }
 
 /**
- * DPS lý thuyết lên **một mục tiêu**, dùng cho test cân bằng và cho tooltip:
+ * Theoretical DPS against **one target**, used by balance tests and tooltips:
  *
  * ```text
  * dps = damage × projectiles × rate × (1 + critChance × (critMultiplier − 1))
  * ```
  *
- * Không tính pierce/ricochet/explosive/execute vì chúng phụ thuộc số enemy và
- * máu enemy — đó là việc của test combat, không phải của một con số ước lượng.
+ * Does not count pierce/ricochet/explosive/execute because they depend on enemy count and
+ * enemy health — that is the combat tests' job, not an estimate's.
  */
 export function estimateDps(stats: DerivedStats): number {
   const critExpectation = 1 + clamp01(stats.critChance) * (Math.max(1, stats.critMultiplier) - 1);
@@ -264,7 +264,7 @@ export function estimateDps(stats: DerivedStats): number {
   return sanitize(dps);
 }
 
-/** Số hữu hạn, không âm. NaN/Infinity/âm đều về 0 thay vì lan ra toàn bộ combat. */
+/** Finite, non-negative number. NaN/Infinity/negative all become 0 instead of leaking into combat. */
 function sanitize(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0;
 }

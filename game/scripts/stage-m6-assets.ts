@@ -1,13 +1,13 @@
 /**
- * Stage phần art/audio/font còn thiếu cho M6 từ `art-source/ninja-adventure/`.
+ * Stage the art/audio/font still missing for M6 from `art-source/ninja-adventure/`.
  *
- * Chạy: `bun run scripts/stage-m6-assets.ts`
+ * Run: `bun run scripts/stage-m6-assets.ts`
  *
- * - PNG copy byte-for-byte (không re-encode pixel art).
- * - Audio: ffmpeg nén lại (music 64 kbps, SFX 80 kbps mono) sang `.mp3` để build nhỏ;
- *   pack gốc vẫn là nguồn duy nhất, `art-source/` không commit.
+ * - PNGs are copied byte-for-byte (no re-encoding pixel art).
+ * - Audio: ffmpeg re-encodes (music 64 kbps, SFX 80 kbps mono) to `.mp3` to keep the build small;
+ *   the original pack stays the only source, `art-source/` is not committed.
  * - Font: copy `NormalFont.ttf`.
- * - Sinh `.meta` tối thiểu; lần build đầu tiên của editor sẽ hoàn thiện sub-meta.
+ * - Emits minimal `.meta` files; the editor's first build fills in sub-meta.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -31,7 +31,7 @@ function writeMeta(path: string, meta: object): void {
 
 function pngSize(path: string): { readonly width: number; readonly height: number } {
   const buffer = readFileSync(path);
-  if (buffer.toString('ascii', 1, 4) !== 'PNG') throw new Error(`không phải PNG: ${path}`);
+  if (buffer.toString('ascii', 1, 4) !== 'PNG') throw new Error(`not a PNG: ${path}`);
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
@@ -127,7 +127,7 @@ function imageMeta(path: string): object {
 function copyPng(sourceRel: string, targetRel: string): void {
   const source = join(PACK, sourceRel);
   const target = join(RES, targetRel);
-  if (!existsSync(source)) throw new Error(`thiếu asset nguồn: ${source}`);
+  if (!existsSync(source)) throw new Error(`missing source asset: ${source}`);
   ensureDir(dirname(target));
   writeFileSync(target, readFileSync(source));
   writeMeta(target, imageMeta(target));
@@ -153,7 +153,7 @@ function audioMeta(path: string, extension: string, durationSeconds: number, sam
 function convertAudio(sourceRel: string, targetRel: string, bitrate: string, channels: number): void {
   const source = join(PACK, sourceRel);
   const target = join(RES, targetRel);
-  if (!existsSync(source)) throw new Error(`thiếu audio nguồn: ${source}`);
+  if (!existsSync(source)) throw new Error(`missing source audio: ${source}`);
   ensureDir(dirname(target));
   execFileSync('ffmpeg', [
     '-v',
@@ -229,14 +229,14 @@ ensureDirMeta('audio/music');
 ensureDirMeta('audio/sfx');
 ensureDirMeta('art/ui/fonts');
 
-// FX còn thiếu
+// Missing FX
 copyPng('FX/Smoke/Smoke/SpriteSheet.png', 'art/fx/smoke/SpriteSheet.png');
 copyPng('FX/Magic/Shield/SpriteSheetBlue.png', 'art/fx/shield/SpriteSheetBlue.png');
 copyPng('FX/Elemental/Ice/SpriteSheet.png', 'art/fx/ice/SpriteSheet.png');
 copyPng('FX/Elemental/Plant/SpriteSheet.png', 'art/fx/poison/SpriteSheet.png');
-copyPng('Items/Treasure/Coin2.png', 'art/ui/coin/Coin2.png'); // #2 coin bay về HUD (4 frame 10×10)
+copyPng('Items/Treasure/Coin2.png', 'art/ui/coin/Coin2.png'); // #2 coin flying to the HUD (4 frames 10×10)
 
-// Nhạc — chọn 5 track, mỗi nhóm một bài
+// Music — 5 tracks chosen, one per group
 convertAudio('Audio/Musics/38 - Intro.ogg', 'audio/music/title.mp3', '64k', 2);
 convertAudio('Audio/Musics/11 - Clearing.ogg', 'audio/music/chapter-1.mp3', '64k', 2);
 convertAudio('Audio/Musics/18 - Aquatic.ogg', 'audio/music/chapter-2.mp3', '64k', 2);

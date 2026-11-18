@@ -1,14 +1,14 @@
 /**
- * Nghe WASD/mũi tên trực tiếp trên `document` (capture phase) theo `event.code`.
+ * Listen for WASD/arrow keys directly on `document` (capture phase) via `event.code`.
  *
- * Không dùng `input.on(KEY_DOWN)` của Cocos: engine chỉ chuyển `keyCode`, mà bộ
- * gõ tiếng Việt đang soạn chữ gửi `keyCode = 229` → WASD bị kẹt (bẫy trong
- * AGENTS.md). `code` là phím vật lý nên bộ gõ không đổi được. Mất focus thì nhả
- * hết phím, vì keyup rơi ra ngoài tab sẽ không bao giờ tới.
+ * Not Cocos `input.on(KEY_DOWN)`: the engine only forwards `keyCode`, and an IME while
+ * composing text sends `keyCode = 229` → WASD sticks (a pitfall listed in AGENTS.md).
+ * `code` is the physical key, which the IME cannot change. On losing focus, release
+ * every key, because a keyup that lands outside the tab will never arrive.
  */
 import { MoveKeyState } from '../core/movement/move-keys';
 
-/** Một dòng log phím cho `__yokai.keyLog()` khi `?debug=1`. */
+/** One key log line for `__yokai.keyLog()` when `?debug=1`. */
 export interface KeyLogEntry {
   readonly type: string;
   readonly key: string;
@@ -21,7 +21,7 @@ export interface KeyLogEntry {
 const KEY_LOG_LIMIT = 200;
 const keyLogEntries: KeyLogEntry[] = [];
 
-/** 200 event bàn phím gần nhất (mọi phím, không chỉ WASD) để chẩn đoán bộ gõ. */
+/** The last 200 keyboard events (every key, not just WASD) for IME diagnosis. */
 export function keyLog(): readonly KeyLogEntry[] {
   return keyLogEntries.slice();
 }

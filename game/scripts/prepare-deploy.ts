@@ -1,6 +1,6 @@
 /**
- * `bun run deploy:prepare` — chép `build/web-desktop` (build bằng editor) sang `deploy/`,
- * sửa `index.html`, thêm file trong `web/` (icon, OG, `_headers`) và kiểm giới hạn M7
+ * `bun run deploy:prepare` — copy `build/web-desktop` (built by the editor) into `deploy/`,
+ * patch `index.html`, add the files in `web/` (icon, OG, `_headers`) and check the M7 budget.
  * (< 15 MB) + Cloudflare static assets (≤ 25 MiB/file, ≤ 20 000 file).
  */
 import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -25,7 +25,7 @@ function walk(dir: string): string[] {
 }
 
 if (!existsSync(join(BUILD, 'index.html'))) {
-  console.error(`Chưa có ${relative(ROOT, BUILD)}/index.html — build web-desktop bằng Cocos Creator trước.`);
+  console.error(`No ${relative(ROOT, BUILD)}/index.html yet — build web-desktop with Cocos Creator first.`);
   process.exit(1);
 }
 
@@ -52,15 +52,15 @@ const total = sizes.reduce((sum, file) => sum + file.bytes, 0);
 const largest = sizes.reduce((max, file) => (file.bytes > max.bytes ? file : max));
 
 const problems: string[] = [];
-if (total > BUDGET_BYTES) problems.push(`tổng ${(total / 1048576).toFixed(1)} MB > 15 MB`);
+if (total > BUDGET_BYTES) problems.push(`total ${(total / 1048576).toFixed(1)} MB > 15 MB`);
 if (largest.bytes > CF_FILE_LIMIT_BYTES) problems.push(`${relative(OUT, largest.path)} > 25 MiB`);
 if (files.length > CF_FILE_COUNT_LIMIT) problems.push(`${files.length} file > 20 000`);
-if (!existsSync(join(OUT, 'og.png'))) problems.push('thiếu web/og.png');
+if (!existsSync(join(OUT, 'og.png'))) problems.push('missing web/og.png');
 
 console.log(
-  `deploy/: ${files.length} file, ${(total / 1048576).toFixed(2)} MB, lớn nhất ${relative(OUT, largest.path)} ${(largest.bytes / 1048576).toFixed(2)} MB`,
+  `deploy/: ${files.length} files, ${(total / 1048576).toFixed(2)} MB, largest ${relative(OUT, largest.path)} ${(largest.bytes / 1048576).toFixed(2)} MB`,
 );
 if (problems.length > 0) {
-  console.error(`Không deploy được: ${problems.join('; ')}`);
+  console.error(`Cannot deploy: ${problems.join('; ')}`);
   process.exit(1);
 }

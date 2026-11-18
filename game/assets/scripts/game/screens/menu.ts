@@ -1,16 +1,16 @@
 /**
- * Khung menu dùng chung cho mọi màn M5 (title, shop, settings, pause, result,
+ * Shared menu frame for every M5 screen (title, shop, settings, pause, result,
  * credits, chapter select).
  *
- * Ba thứ mọi màn phải có, nên nằm đúng một chỗ:
- * - nút gỗ của pack + nhãn/detail (giá, level, lý do disabled);
- * - **focus nhìn thấy được** (viền vàng + đổi frame hover) và điều hướng bằng
- *   phím: ↑/↓ (hoặc ←/→), Enter/Space để chọn, Esc để lùi;
- * - click chuột thật qua `Button` của engine, hover cập nhật focus.
+ * Three things every screen needs, so they live in exactly one place:
+ * - the pack's wooden button + label/detail (price, level, disabled reason);
+ * - **visible focus** (gold outline + hover frame swap) and keyboard
+ *   navigation: ↑/↓ (or ←/→), Enter/Space to confirm, Esc to go back;
+ * - real mouse clicks through the engine `Button`, with hover moving focus.
  *
- * `document.addEventListener('keydown', ..., true)` là bắt buộc: Cocos gắn
- * listener phím trên canvas và có thể chặn bubble (xem bẫy AGENTS.md), nên UI
- * nghe ở capture phase để không im lặng khi canvas đang focus.
+ * `document.addEventListener('keydown', ..., true)` is mandatory: Cocos attaches its
+ * key listener on the canvas and may stop bubbling (see the AGENTS.md pitfalls), so the UI
+ * listens in the capture phase to stay responsive while the canvas has focus.
  */
 import {
   Button as CocosButton,
@@ -28,7 +28,7 @@ import { playSfx } from '../audio/sfx';
 import { sliceFrame } from '../level-view';
 import type { TileRect } from '../level-view';
 
-/** `cc` là module any: tên import chỉ dùng được ở vị trí value. */
+/** `cc` is an any module: import names only work in value position. */
 type Button = InstanceType<typeof CocosButton>;
 type Color = InstanceType<typeof CocosColor>;
 type Graphics = InstanceType<typeof CocosGraphics>;
@@ -42,11 +42,11 @@ const BUTTON_NORMAL = 'resources/art/ui/theme-wood/button_normal.png';
 const BUTTON_HOVER = 'resources/art/ui/theme-wood/button_hover.png';
 const BUTTON_DISABLED = 'resources/art/ui/theme-wood/button_disabled.png';
 const BUTTON_RECT: TileRect = { x: 0, y: 0, width: 16, height: 8 };
-// `nine_path_panel*.png` có sẵn một ô vuông lệch tâm bên trong: kéo 9-slice ra hai khung chồng lệch.
-// `nine_path_panel_interior.png` có tâm đồng màu nên kéo giãn sạch.
+// `nine_path_panel*.png` contains an off-centre square that 9-slice stretching turns into two
+// offset frames. `nine_path_panel_interior.png` has a flat centre so it stretches cleanly.
 const PANEL_SHEET = 'resources/art/ui/theme-wood/nine_path_panel_interior.png';
 const PANEL_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
-/** Border 9-slice: nút 16×8 giữ 4 px góc; panel 16×16 giữ 4 px viền. */
+/** 9-slice borders: the 16×8 button keeps 4 px corners; the 16×16 panel keeps a 4 px edge. */
 const BUTTON_BORDERS = { left: 4, right: 4, top: 3, bottom: 3 } as const;
 const PANEL_BORDERS = { left: 4, right: 4, top: 4, bottom: 4 } as const;
 const PANEL_TINT = new CocosColor(150, 110, 90, 255);
@@ -57,7 +57,7 @@ export const MENU_TEXT_COLOR = new CocosColor(238, 238, 238, 255);
 export const MENU_MUTED_COLOR = new CocosColor(170, 170, 170, 255);
 export const MENU_DISABLED_COLOR = new CocosColor(205, 195, 185, 255);
 export const MENU_FOCUS_COLOR = new CocosColor(255, 222, 96, 255);
-/** Chữ trên nút gỗ: nền cam sáng, nên phải là màu tối (không phải trắng/vàng). */
+/** Text on wooden buttons: the background is bright orange, so it must be dark (not white/gold). */
 const BUTTON_TEXT_COLOR = new CocosColor(34, 18, 8, 255);
 const BUTTON_DETAIL_COLOR = new CocosColor(78, 40, 16, 255);
 const BUTTON_FOCUS_TEXT_COLOR = new CocosColor(88, 24, 6, 255);
@@ -75,7 +75,7 @@ export interface MenuFrames {
 
 let framesPromise: Promise<MenuFrames> | null = null;
 
-/** Load frame nút + panel một lần cho cả phiên (cache texture đã có sẵn). */
+/** Load the button + panel frames once per session (the texture cache already exists). */
 export function loadMenuFrames(): Promise<MenuFrames> {
   if (framesPromise !== null) return framesPromise;
 
@@ -99,8 +99,8 @@ export function loadMenuFrames(): Promise<MenuFrames> {
 }
 
 /**
- * Cắt một frame rồi khai border 9-slice. `Sprite.Type.SLICED` mới dùng border;
- * thiếu inset thì engine kéo giãn cả 4 góc và viền gỗ bị méo.
+ * Slice a frame, then declare its 9-slice borders. Only `Sprite.Type.SLICED` uses borders;
+ * without insets the engine stretches all 4 corners and the wooden edge distorts.
  */
 export function sliceSliced(
   texture: Parameters<typeof sliceFrame>[0],
@@ -116,8 +116,8 @@ export function sliceSliced(
 }
 
 /**
- * Panel gỗ 9-slice (nền menu / chapter select). Trả node để caller đặt kích
- * thước/vị trí; sprite đã `SLICED` nên góc không bị kéo giãn.
+ * 9-slice wooden panel (menu / chapter select background). Returns the node so the caller sets
+ * size/position; the sprite is already `SLICED`, so the corners do not stretch.
  */
 export function createMenuPanel(
   parent: Node,
@@ -144,12 +144,12 @@ export function createMenuPanel(
 }
 
 
-/** Một hành động trên màn. `detail` là dòng nhỏ thứ hai (giá, level, lý do khoá). */
+/** One screen action. `detail` is the smaller second line (price, level, lock reason). */
 export interface MenuItem {
   readonly label: string;
   readonly detail?: string;
   readonly disabled?: boolean;
-  /** Màu nhãn đặc biệt (vd. Quit đỏ); mặc định trắng. */
+  /** Special label colour (e.g. a red Quit); white by default. */
   readonly color?: Color;
   readonly activate: () => void;
 }
@@ -175,7 +175,7 @@ export interface MenuScreenOptions {
   readonly subtitle?: string;
   readonly info?: readonly string[];
   readonly items: readonly MenuItem[];
-  /** Esc. Không có = Esc không làm gì. */
+  /** Esc. Absent = Esc does nothing. */
   readonly onBack?: () => void;
   readonly hint?: string;
   readonly buttonWidth?: number;
@@ -183,25 +183,25 @@ export interface MenuScreenOptions {
   readonly buttonGap?: number;
   readonly buttonFontSize?: number;
   readonly initialFocus?: number;
-  /** ←/→ gọi hàm này thay vì đổi focus (hàng volume). */
+  /** ←/→ calls this instead of moving focus (volume row). */
   readonly onAdjust?: (index: number, delta: number) => void;
 }
 
-/** Kích thước vùng UI nhìn thấy (design px) — mọi màn dùng đúng nguồn này. */
+/** Visible UI size (design px) — every screen uses this exact source. */
 export function visibleUiSize(): { readonly width: number; readonly height: number } {
   const size = view.getVisibleSize();
   return { width: size.width, height: size.height };
 }
 
-/** Nền tối phủ toàn màn để chữ đọc được trên mọi nền phòng. */
+/** Dark backdrop over the whole screen so text reads on any room background. */
 export function createScreenBackdrop(parent: Node, alpha = 238): Node {
   const size = visibleUiSize();
   return createBackdropPanel(parent, 'screen-backdrop', size.width, size.height, alpha);
 }
 
 /**
- * Dựng một màn danh sách dọc. Trả sau khi có frame nút; caller phải kiểm tra
- * token để bỏ màn cũ nếu người dùng đã chuyển màn trong lúc load.
+ * Build one vertical list screen. Returns after the button frames are ready; the caller must
+ * check its token to drop the old screen if the user navigated away during loading.
  */
 export async function buildMenuScreen(options: MenuScreenOptions): Promise<MenuScreen> {
   const frames = await loadMenuFrames();
@@ -266,7 +266,7 @@ export async function buildMenuScreen(options: MenuScreenOptions): Promise<MenuS
   hint.color = MENU_MUTED_COLOR;
   hint.node.setPosition(0, -size.height / 2 + 12, 0);
 
-  // Panel 9-slice phía sau nội dung (đặt sau backdrop nhưng trước label).
+  // 9-slice panel behind the content (after the backdrop but before the labels).
   const panelHeight = Math.max(80, size.height / 2 - 8 - y + 20);
   const panel = createMenuPanel(root, `${options.name}-panel`, frames.panel, Math.min(480, size.width - 24), panelHeight);
   panel.setPosition(0, (size.height / 2 - 8 + y - 20) / 2, 0);
@@ -298,7 +298,7 @@ export interface MenuButtonStyle {
   readonly fontSize: number;
 }
 
-/** Một nút: sprite frame + nhãn + detail + viền focus. */
+/** One button: sprite frame + label + detail + focus outline. */
 export function createMenuButton(
   parent: Node,
   name: string,
@@ -395,8 +395,8 @@ export interface FocusListOptions {
 }
 
 /**
- * Điều hướng focus + phím cho một danh sách nút. Tự gỡ listener khi `destroy`.
- * Hover chuột cũng đặt focus, nên chuột và phím dùng chung một trạng thái.
+ * Focus + keyboard navigation for a list of buttons. Removes its listener on `destroy`.
+ * Mouse hover also sets focus, so mouse and keyboard share one state.
  */
 export class FocusList {
   private index = 0;
@@ -493,6 +493,6 @@ export class FocusList {
   }
 }
 
-/** Màu dùng lại cho nội dung đặc biệt. */
+/** Colours reused for special content. */
 export const MENU_DANGER = MENU_DANGER_COLOR;
 export const MENU_GOOD = MENU_GOOD_COLOR;

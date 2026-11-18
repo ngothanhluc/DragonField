@@ -1,10 +1,10 @@
 /**
- * Số liệu tune balance đã validate, dùng trong game.
+ * Validated balance tuning numbers, used by the game.
  *
- * Nguồn duy nhất là `game/config/tuning.json` — **ngoài `assets/`**, nên Cocos
- * không coi nó là asset và không đụng vào lúc bundle script. Từ JSON đó,
- * `scripts/gen-tuning.ts` sinh ra `tuning.generated.ts` (một module TS thường),
- * và file này chỉ import module đó:
+ * The single source is `game/config/tuning.json` — **outside `assets/`**, so Cocos
+ * does not treat it as an asset and never touches it while bundling scripts. From that JSON,
+ * `scripts/gen-tuning.ts` emits `tuning.generated.ts` (a plain TS module),
+ * and this file only imports that module:
  *
  * ```text
  * config/tuning.json  --bun run gen-->  core/enemies/tuning.generated.ts
@@ -13,21 +13,21 @@
  *                                        core/enemies/tuning.ts
  * ```
  *
- * Vì sao không import JSON trực tiếp: mọi thứ dưới `assets/` là nội dung của
- * asset DB, và ta không kiểm chứng được bằng CLI rằng import JSON có sống sót
- * qua bước bundle script của editor hay không. Module TS thì chắc chắn sống.
+ * Why not import the JSON directly: everything under `assets/` is content of the
+ * asset DB, and we cannot verify from the CLI that a JSON import survives
+ * the editor's script bundle step. A TS module certainly does.
  *
- * AGENTS rule 3 — "số liệu tune nằm ngoài code, không hardcode". Đổi balance =
- * sửa `config/tuning.json` rồi chạy `bun run gen`; `bun run check:config` chặn
- * file generated lệch khỏi JSON.
+ * AGENTS rule 3 — "tuning numbers live outside code, never hardcoded". Changing balance =
+ * edit `config/tuning.json` then run `bun run gen`; `bun run check:config` blocks a
+ * generated file that drifts from the JSON.
  *
- * `parseTuning()` vẫn chạy ở đây như lớp phòng thủ: generated hỏng thì ném lỗi
- * ngay lúc load, thay vì lặng lẽ `undefined` → `NaN` → enemy 0 máu. Luật validate
- * nằm ở `tuning-schema.ts`, dùng chung với script generate.
+ * `parseTuning()` still runs here as a defence layer: a broken generated file throws at
+ * load time instead of quietly `undefined` → `NaN` → 0-health enemies. The validation
+ * rules live in `tuning-schema.ts`, shared with the generate script.
  *
- * Không import `cc`, không đọc file, không dùng thời gian — `core/` thuần.
- * Test muốn thử một bộ số khác thì gọi `parseTuning(structuredClone(…))` với
- * bản copy, không sửa object đã export.
+ * No `cc` import, no file reads, no time — pure `core/`.
+ * A test wanting another number set calls `parseTuning(structuredClone(…))` on a
+ * copy, never mutating the exported object.
  */
 import { TUNING_DATA } from './tuning.generated';
 import {
@@ -41,22 +41,22 @@ import {
 export * from './tuning-schema';
 
 /**
- * Object thô sinh từ `config/tuning.json`, giữ lại để test đối chiếu
- * "số trong code = số trong JSON".
+ * Raw object emitted from `config/tuning.json`, kept so tests can check
+ * "number in code = number in JSON".
  */
 export const TUNING_SOURCE: unknown = TUNING_DATA;
 
-/** Toàn bộ số tune đã validate. */
+/** Every validated tuning number. */
 export const TUNING: TuningConfig = parseTuning(TUNING_SOURCE);
 
-/** Số liệu combat của player — `config.ts` suy ra `DEFAULT_COMBAT` từ đây. */
+/** Player combat numbers — `config.ts` derives `DEFAULT_COMBAT` from here. */
 export const COMBAT_TUNING: CombatTuning = TUNING.combat;
 
-/** Số liệu enemy — `behaviours.ts`, `waves.ts` và sim đọc từ đây. */
+/** Enemy numbers — `behaviours.ts`, `waves.ts` and the sim read from here. */
 export const ENEMY_TUNING: EnemiesTuning = TUNING.enemies;
 
-/** Hệ số scale theo chapter — `behaviours.ts` đọc khi tính máu/sát thương. */
+/** Per-chapter scale factors — `behaviours.ts` reads them when computing health/damage. */
 export const CHAPTER_TUNING = TUNING.chapters;
 
-/** Số liệu juice (ticket #2) — adapter `game/` đọc, `core/feel/` chỉ nhận số qua tham số. */
+/** Juice numbers (ticket #2) — the `game/` adapter reads them; `core/feel/` only takes numbers as parameters. */
 export const FEEL_TUNING: FeelTuning = TUNING.feel;

@@ -1,10 +1,10 @@
 /**
- * Meta shop (GDD §7, §9): 3 track vĩnh viễn, level hiện tại, giá cấp kế và
- * vàng đang có.
+ * Meta shop (GDD §7, §9): 3 permanent tracks, current level, next-level price and
+ * gold on hand.
  *
- * Nút bị **disable kèm lý do** khi thiếu vàng hoặc track đã max. Luật mua vẫn
- * nằm ở `core/meta/upgrades.ts`; UI chỉ đọc `canBuy`/`costFor` để vẽ, còn
- * bootstrap gọi `buy()` và bắt lỗi — click sai toạ độ không thể mua vượt luật.
+ * A button is **disabled with a reason** when gold is short or the track is maxed. Purchase
+ * rules still live in `core/meta/upgrades.ts`; the UI only reads `canBuy`/`costFor` to draw,
+ * while bootstrap calls `buy()` and catches errors — a mis-aimed click cannot break the rules.
  */
 import {
   UPGRADE_TRACKS,
@@ -32,7 +32,7 @@ const TRACK_NAMES: Readonly<Record<UpgradeTrack, string>> = {
   fireRate: 'Fire rate',
 };
 
-/** Nhãn + detail cho một track; `disabled` và lý do là thứ người chơi đọc được. */
+/** Label + detail for one track; `disabled` and the reason are what the player reads. */
 export function upgradeRow(
   save: SaveData,
   track: UpgradeTrack,

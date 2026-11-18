@@ -42,8 +42,8 @@ function tankAt(y: number): EnemyState {
   };
 }
 
-describe('segmentHitsCircle — hitbox của cú lao', () => {
-  it('trúng khi đường lao đi qua player, trượt khi player bước ngang', () => {
+describe('segmentHitsCircle — charge hitbox', () => {
+  it('hits when the charge path crosses the player, misses when the player steps aside', () => {
     const from = { x: 10, y: 14 };
     const to = { x: 10, y: 14 - TANK_CHARGE_SPEED_TILES_PER_SECOND * (TANK_CHARGE_DURATION_MS / 1000) };
 
@@ -51,7 +51,7 @@ describe('segmentHitsCircle — hitbox của cú lao', () => {
     expect(segmentHitsCircle(from, to, { x: 12, y: 11 }, PLAYER_RADIUS, ENEMY_RADIUS)).toBe(false);
   });
 
-  it('biên đóng: chạm đúng một điểm vẫn tính là trúng', () => {
+  it('closed boundary: touching at exactly one point still counts as a hit', () => {
     const reach = PLAYER_RADIUS + ENEMY_RADIUS;
     const from = { x: 0, y: 0 };
     const to = { x: 4, y: 0 };
@@ -62,26 +62,26 @@ describe('segmentHitsCircle — hitbox của cú lao', () => {
     ).toBe(false);
   });
 
-  it('đoạn dài 0 quy về so hai hình tròn tại một điểm', () => {
+  it('a zero-length segment reduces to comparing two circles at one point', () => {
     const point = { x: 4, y: 4 };
     expect(segmentHitsCircle(point, point, { x: 4.5, y: 4 }, 0.25, 0.25)).toBe(true);
     expect(segmentHitsCircle(point, point, { x: 5, y: 4 }, 0.25, 0.25)).toBe(false);
   });
 
-  it('khoảng cách tới đoạn là 0 khi điểm nằm trên đoạn, không phải tới đầu mút', () => {
+  it('distance to the segment is 0 when the point lies on it, not the endpoint distance', () => {
     expect(closestPointDistanceSquared({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 0 })).toBe(0);
     expect(closestPointDistanceSquared({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 2 })).toBe(4);
-    // Ngoài đoạn: gần đầu mút, không phải đường thẳng vô hạn.
+    // Outside the segment: closest to the endpoint, not the infinite line.
     expect(closestPointDistanceSquared({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 12, y: 0 })).toBe(4);
   });
 
-  it('cú lao thật của tank: quét từng frame 16 ms bắt được player trên đường', () => {
+  it('a real tank charge: frame-by-frame at 16 ms catches a player on the path', () => {
     const frameMs = 16;
     const seconds = frameMs / 1000;
     const step = TANK_CHARGE_SPEED_TILES_PER_SECOND * seconds;
 
     const state = tankAt(14);
-    // Đứng sẵn trong telegraph để frame đầu tiên core trả charge.
+    // Standing already inside the telegraph so the first frame returns charge from core.
     state.action = { kind: 'telegraph', sinceMs: 0 };
     state.actionStartedMs = 0;
     const player = { x: 10, y: 11 };
@@ -103,7 +103,7 @@ describe('segmentHitsCircle — hitbox của cú lao', () => {
     expect(hit).toBe(true);
   });
 
-  it('elite chaser lao chậm hơn tank nhưng đường đi vẫn dài hơn bán kính player', () => {
+  it('an elite chaser charges slower than the tank but its path is still longer than the player radius', () => {
     const distance =
       ELITE_POUNCE_SPEED_TILES_PER_SECOND * (ELITE_POUNCE_DURATION_MS / 1000);
     expect(distance).toBeGreaterThan(PLAYER_RADIUS + ENEMY_RADIUS);

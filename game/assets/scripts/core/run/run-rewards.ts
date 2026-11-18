@@ -1,20 +1,20 @@
 /**
- * Vàng kiếm được trong **một run** (GDD §2, §7, §9).
+ * Gold earned in **one run** (GDD §2, §7, §9).
  *
- * `core/run/rewards.ts` biết một enemy/phòng đáng bao nhiêu vàng; file này giữ
- * tổng của run, áp hệ số Greed (`DerivedStats.goldMultiplier`) và đếm số kill
- * cho màn hình kết quả. Không biết gì về engine hay localStorage.
+ * `core/run/rewards.ts` knows what an enemy/room is worth in gold; this file tracks the
+ * run's total, applies the Greed factor (`DerivedStats.goldMultiplier`) and counts kills
+ * for the result screen. Knows nothing about the engine or localStorage.
  *
- * Vàng chỉ được ghi vào save ở **cuối run** (chết, thắng, thoát, restart) —
- * xem `game/run-end.ts`. Nhờ vậy HUD có một con số sống trong run, còn
- * `SaveData.gold` không bị ghi localStorage mỗi lần giết quái.
+ * Gold is only written to the save at **end of run** (death, win, quit, restart) —
+ * see `game/run-end.ts`. That gives the HUD a live number during the run while
+ * `SaveData.gold` is not written to localStorage on every kill.
  */
 import type { EnemyRole } from '../level/level-data';
 import { MAX_GOLD, goldForKill, goldForRoomClear } from './rewards';
 
 /**
- * Nhân thưởng rồi làm tròn. Greed +20% trên tank (3 vàng) phải thành 4, không
- * phải 3 — làm tròn xuống sẽ làm skill vô dụng ở đúng enemy đáng tiền nhất.
+ * Multiply the reward then round. Greed +20% on a tank (3 gold) must give 4, not
+ * 3 — flooring would make the skill useless against the enemy worth the most.
  */
 function scaled(base: number, multiplier: number): number {
   if (!Number.isFinite(base) || base <= 0) return 0;
@@ -27,7 +27,7 @@ function clampGold(value: number): number {
   return Math.min(MAX_GOLD, Math.max(0, Math.trunc(value)));
 }
 
-/** Tổng vàng/kill của run hiện tại. Mọi method là pure-ish: chỉ sửa state nội bộ. */
+/** Total gold/kills of the current run. Every method is pure-ish: it only mutates internal state. */
 export class RunRewards {
   private earned = 0;
   private kills = 0;
@@ -40,7 +40,7 @@ export class RunRewards {
     return this.kills;
   }
 
-  /** Giết một enemy; trả số vàng vừa cộng. Elite đã được tính trong `goldForKill`. */
+  /** Kill one enemy; returns the gold just added. Elites are already included in `goldForKill`. */
   awardKill(role: EnemyRole, elite: boolean, goldMultiplier = 1): number {
     this.kills += 1;
     const amount = scaled(goldForKill(role, elite), goldMultiplier);
@@ -48,14 +48,14 @@ export class RunRewards {
     return amount;
   }
 
-  /** Dọn sạch phòng; boss thưởng `GOLD.boss`, phòng thường `GOLD.roomClear`. */
+  /** Clear the room; a boss pays `GOLD.boss`, a regular room `GOLD.roomClear`. */
   awardRoomClear(isBossRoom: boolean, goldMultiplier = 1): number {
     const amount = scaled(goldForRoomClear(isBossRoom), goldMultiplier);
     this.earned = clampGold(this.earned + amount);
     return amount;
   }
 
-  /** Chỉ đọc: tổng thưởng của một enemy theo luật, dùng cho tooltip/test. */
+  /** Read only: the rule-based reward for one enemy, used by tooltips/tests. */
   static killValue(role: EnemyRole, elite: boolean, goldMultiplier = 1): number {
     return scaled(goldForKill(role, elite), goldMultiplier);
   }

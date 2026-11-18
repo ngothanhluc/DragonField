@@ -7,10 +7,10 @@ export interface Targetable {
 }
 
 /**
- * Chọn mục tiêu cho auto-aim: enemy còn sống, gần nhất, trong tầm.
+ * Choose a target for auto-aim: the nearest living enemy within range.
  *
- * Hoà khoảng cách được phá bằng `id` tăng dần để kết quả tất định —
- * nếu không, thứ tự lặp của mảng sẽ quyết định mục tiêu và test sẽ flaky.
+ * Distance ties break on increasing `id` so the result is deterministic —
+ * otherwise array iteration order would decide the target and tests would be flaky.
  */
 export function findNearestTarget(
   from: Vec2,

@@ -1,9 +1,9 @@
 /**
- * Biến một phát auto-fire thành nhiều viên đạn thật trong `BulletPool`.
+ * Turn one auto-fire shot into several real bullets in the `BulletPool`.
  *
- * Dùng chung cho `game/player-controller.ts` và mọi simulation, nên số viên,
- * góc Twin Shot, crit, pierce/ricochet/homing/explosive không thể lệch giữa
- * "chơi thật" và "đo balance".
+ * Shared by `game/player-controller.ts` and every simulation, so bullet count,
+ * Twin Shot angles, crit, pierce/ricochet/homing/explosive cannot drift between
+"actually playing" and "measuring balance".
  */
 import type { SeededRng } from '../rng';
 import type { DerivedStats } from '../skills/derived-stats';
@@ -15,14 +15,14 @@ export interface PlayerFireArgs {
   readonly stats: DerivedStats;
   readonly rng: SeededRng;
   readonly origin: { readonly x: number; readonly y: number };
-  /** Hướng đơn vị tới mục tiêu. */
+  /** Unit direction toward the target. */
   readonly direction: { readonly x: number; readonly y: number };
   readonly speedTilesPerSecond: number;
   readonly radiusTiles: number;
   readonly ttlMs: number;
 }
 
-/** Sinh đạn cho một phát. Trả số viên vừa spawn (>= 1). */
+/** Spawn bullets for one shot. Returns the number spawned (>= 1). */
 export function firePlayerVolley(args: PlayerFireArgs): number {
   const plans = planVolley(args.stats, args.rng);
   const baseAngle = Math.atan2(args.direction.y, args.direction.x);

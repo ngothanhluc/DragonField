@@ -1,25 +1,24 @@
 /**
- * Điểm vào duy nhất của scene: gắn component này lên **một** node là game chạy.
+ * Single entry point of the scene: attach this component to **one** node and the game runs.
  *
- * Dựng toàn bộ bằng code (không prefab, không sửa `.scene` — quy tắc 5 trong AGENTS.md):
+ * Everything is built in code (no prefabs, no `.scene` edits — rule 5 in AGENTS.md):
  *
  * ```text
  * animations.json (validate) ─┐
  * save (localStorage)        ─┼─> title ─> chapter select ─> loadDir .tmx ─> parse TMX ─> room + player + HUD ─> wave 1
  * ```
  *
- * Phòng là **dữ liệu**: bootstrap load mọi `.tmx` trong `data/levels/chapter-<n>/`
- * (`resources.loadDir`), parse bằng đúng parser mà vitest dùng
- * (`core/level/tmx.ts`), sắp theo property `room` (`core/level/chapter.ts`) rồi tạo
- * `RunState` với **tổng số phòng lấy từ dữ liệu** — thêm `room-10.tmx` là HUD hiện
- * `x/10`, không sửa code.
+ * Rooms are **data**: bootstrap loads every `.tmx` in `data/levels/chapter-<n>/`
+ * (`resources.loadDir`), parses each one with the same parser vitest uses
+ * (`core/level/tmx.ts`), sorts by the `room` property (`core/level/chapter.ts`), then builds
+ * `RunState` with **the room total taken from data** — adding `room-10.tmx` makes the HUD show
+ * `x/10`, with no code change.
  *
- * Vòng chạy nằm trong `update()` và gọi tuần tự player → enemy → đạn → va chạm, đúng thứ
- * tự `core/sim/run-simulation.ts`, để hành vi trong engine khớp với thứ đã được đo
- * balance ở sim.
+ * The run loop lives in `update()` and steps player → enemy → bullet → collision in the same
+ * order as `core/sim/run-simulation.ts`, so engine behaviour matches what the sim balanced.
  *
- * Boss thật của GDD §5 (`core/boss/boss-defs.ts`): 3 phase, pattern đọc được.
- * Dọn sạch phòng boss ⇒ CHAPTER CLEAR ⇒ result (thắng) ⇒ chapter select.
+ * The real GDD §5 boss (`core/boss/boss-defs.ts`): 3 phases, readable patterns.
+ * Clearing the boss room ⇒ CHAPTER CLEAR ⇒ result (win) ⇒ chapter select.
  */
 import {
   _decorator,
@@ -89,7 +88,7 @@ import { collectUiText } from './ui-text';
 
 const { ccclass } = _decorator;
 
-/** `cc` là module any trong repo: type phải suy ra từ import value (xem `texture-cache.ts`). */
+/** `cc` is an any module in this repo: types must be derived from the import value (see `texture-cache.ts`). */
 type Camera = InstanceType<typeof CocosCamera>;
 type Canvas = InstanceType<typeof CocosCanvas>;
 type Color = InstanceType<typeof CocosColor>;
@@ -98,12 +97,12 @@ type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type TiledMapAsset = InstanceType<typeof CocosTiledMapAsset>;
 
-/** Đường dẫn resources (không có `resources/`, không có phần mở rộng). */
+/** Resources path (no `resources/` prefix, no file extension). */
 const MANIFEST_PATH = 'data/animations';
 
 /**
- * Thư mục TMX của từng chapter **có dữ liệu trong build này** (M4: cả 3).
- * Thêm chapter = thêm folder + một dòng ở đây; chapter select tự hiện.
+ * TMX folder of each chapter **that has data in this build** (M4: all 3).
+ * To add a chapter, add the folder + one line here; chapter select picks it up.
  */
 const CHAPTER_FOLDERS: Readonly<Record<number, string>> = {
   1: 'data/levels/chapter-1',
@@ -112,29 +111,29 @@ const CHAPTER_FOLDERS: Readonly<Record<number, string>> = {
 };
 
 /**
- * Trần thời gian một frame. Tab bị ẩn vài giây rồi quay lại sẽ có `dt` rất lớn; kẹp lại
- * để enemy không nhảy xuyên phòng và i-frame không bị "ăn" hết trong một frame.
+ * Per-frame time cap. A tab hidden for a few seconds comes back with a huge `dt`; clamp it
+ * so enemies do not jump across the room and i-frames are not eaten up in one frame.
  */
 const MAX_STEP_MS = 50;
 
 const END_LOSS_COLOR = new CocosColor(255, 96, 96, 255);
 const END_WIN_COLOR = new CocosColor(255, 230, 120, 255);
 
-/** Design resolution = đúng một phòng 32×18 tile 16 px (512×288). */
+/** Design resolution = exactly one room, 32×18 tiles of 16 px (512×288). */
 const DESIGN_WIDTH = ROOM_COLS * TILE_SIZE_PX;
 const DESIGN_HEIGHT = ROOM_ROWS * TILE_SIZE_PX;
 
-/** Thời gian giữ chữ "ROOM CLEAR" trước khi sang phòng kế, giây. */
+/** How long "ROOM CLEAR" stays up before the next room, in seconds. */
 const ROOM_CLEAR_BANNER_SECONDS = 1;
 
 /**
- * Monster theo vai trò của từng chapter (GDD §4). Key phải khớp manifest — không có
- * gạch nối (`bluebat`, không phải `blue-bat`).
+ * Monster by role for each chapter (GDD §4). Keys must match the manifest — no
+ * hyphen (`bluebat`, not `blue-bat`).
  *
- * Chapter 1 dùng `greenoctopus` cho caster thay `eye`: eye xanh cùng tông với
- * bluebat nên hai vai trò đọc như nhau trong 2 giây đầu (yêu cầu M3). Octopus
- * xanh lá + silhouette tua khác hẳn dơi; đạn của nó được tint cam (xem
- * `bullet-view.ts`) nên cũng không lẫn với thân enemy.
+ * Chapter 1 uses `greenoctopus` as its caster instead of `eye`: the blue eye shares
+ * bluebat's palette, so both roles read the same in the first 2 seconds (M3 requirement).
+ * The green octopus with its tentacled silhouette is clearly not a bat; its bullets are
+ * tinted orange (see `bullet-view.ts`), so they do not blend into the enemy body either.
  */
 const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, string>>>> = {
   1: { chaser: 'bluebat', caster: 'greenoctopus', tank: 'bear' },
@@ -142,7 +141,7 @@ const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, st
   3: { chaser: 'snake3', caster: 'lanternred', tank: 'cyclope' },
 };
 
-/** Animation player cần có sheet sẵn trước frame đầu (`roll` chưa dùng ở M1). */
+/** Player animations whose sheets must be ready before the first frame (`roll` unused in M1). */
 const PLAYER_KEYS = [
   'player.idle.down',
   'player.walk.down',
@@ -151,12 +150,12 @@ const PLAYER_KEYS = [
   'player.dead',
 ] as const;
 
-/** Trạng thái của bootstrap — không phải trạng thái của `RunState`. */
+/** Bootstrap state — not `RunState` state. */
 export type BootstrapStatus = DebugStatus;
 
 interface LoadedChapter {
   readonly chapter: ChapterData;
-  /** TiledMapAsset theo số phòng, dùng lại cho `buildRoom`. */
+  /** TiledMapAsset by room number, reused by `buildRoom`. */
   readonly assets: ReadonlyMap<number, TiledMapAsset>;
 }
 
@@ -171,9 +170,9 @@ export class Bootstrap extends Component {
   private saveRepo: SaveRepository | null = null;
 
   /**
-   * Ba lớp con của node `world`, tạo đúng một lần theo thứ tự vẽ: sàn → actor → đạn.
-   * Tách lớp thay vì nhét tất cả vào `worldRoot` để đổi phòng (huỷ + dựng lại room) không
-   * làm sàn mới bị vẽ đè lên player/enemy.
+   * Child layers of the `world` node, created exactly once in draw order: floor → actor → bullet.
+   * Separate layers instead of piling everything into `worldRoot`, so a room change
+   * (destroy + rebuild) does not paint the new floor over the player/enemies.
    */
   private roomLayer: Node | null = null;
   private actorLayer: Node | null = null;
@@ -187,20 +186,20 @@ export class Bootstrap extends Component {
   private bulletView: BulletView | null = null;
   private combat: CombatLoop | null = null;
   private hud: Hud | null = null;
-  /** Coin bay + số damage (UI, không rung theo camera world). */
+  /** Coin flight + damage numbers (UI, does not shake with the world camera). */
   private feel: FeelView | null = null;
-  /** Vàng HUD đang hiện; coin tới đâu cộng tới đó (sổ thật vẫn là `rewards`). */
+  /** Gold shown on the HUD; credited as coins land (the real ledger is still `rewards`). */
   private displayedGold = 0;
   private fx: FxPool | null = null;
   private audio: AudioManager | null = null;
   private roomClearBanner: Node | null = null;
-  /** Overlay debug: xem trước card skill mà không grant (M5 round 3). */
+  /** Debug overlay: preview a skill card without granting it (M5 round 3). */
   private readonly skillPreview = new SkillPreview(() => this.ensureUiRoot());
 
-  /** Vàng/kill của run hiện tại — ghi vào save ở cuối run (M5). */
+  /** Gold/kills of the current run — written to the save at the end of the run (M5). */
   private rewards = new RunRewards();
 
-  /** Skill của run hiện tại (loadout, RNG roll, màn chọn 1/3). */
+  /** Skills of the current run (loadout, RNG roll, the 1-of-3 screen). */
   private readonly skills = new SkillRun();
   private combatRng = SeededRng.fromSeed(1);
   private readonly bossPhases = new BossPhaseBanner({
@@ -211,11 +210,11 @@ export class Bootstrap extends Component {
   });
 
   private currentLevel: LevelData | null = null;
-  /** Frame time thật của N frame gần nhất — `fps()` debug đọc từ đây. */
+  /** Real frame time of the last N frames — the debug `fps()` reads from here. */
   private readonly fpsMeter = new FpsMeter();
   private status: BootstrapStatus = 'loading';
 
-  /** Toàn bộ routing/màn M5 nằm ở đây để bootstrap chỉ còn boot + run + render. */
+  /** All M5 routing/screens live here so bootstrap is only boot + run + render. */
   private readonly screens = new ScreenFlow({
     uiRoot: () => this.ensureUiRoot(),
     save: () => this.save,
@@ -251,13 +250,13 @@ export class Bootstrap extends Component {
 
   update(deltaTime: number): void {
     const rawDeltaMs = Math.min(Math.max(deltaTime, 0) * 1000, MAX_STEP_MS);
-    // Shake/coin/số damage chạy theo thời gian thật, trước mọi cổng status:
-    // đứng hình giữa hiệu ứng (hitstop/pause) trông như lag, và camera lệch tâm
-    // sẽ bị giữ nguyên.
+    // Shake/coin/damage numbers run on real time, before every status gate:
+    // freezing mid-effect (hitstop/pause) looks like lag, and an offset camera
+    // would stay offset.
     this.camera?.update(rawDeltaMs);
     this.feel?.update(rawDeltaMs);
 
-    // Chết: sim đứng yên nhưng FX chết vẫn chạy cho tới khi result mở.
+    // Death: the sim stands still but death FX keep running until result opens.
     if (this.status === 'dying') {
       this.fx?.update(rawDeltaMs);
       return;
@@ -268,8 +267,8 @@ export class Bootstrap extends Component {
     const combat = this.combat;
     if (player === null || combat === null) return;
 
-    // Đo frame thật (chưa kẹp trần): `fps()` phải phản ánh cả frame dài, không
-    // được "đẹp hoá" bằng `MAX_STEP_MS`.
+    // Measure the real frame (before the cap): `fps()` must reflect long frames too,
+    // not be prettified by `MAX_STEP_MS`.
     this.fpsMeter.record(Math.max(deltaTime, 0) * 1000);
     const deltaMs = rawDeltaMs;
 
@@ -287,7 +286,7 @@ export class Bootstrap extends Component {
     }
   }
 
-  /** Chết: FX tại chỗ + giữ player.dead ~1.4 s rồi mở result (GDD §9). */
+  /** Death: in-place FX + hold player.dead for ~1.4 s, then open result (GDD §9). */
   private beginDeath(): void {
     if (this.status !== 'playing') return;
     this.status = 'dying';
@@ -309,18 +308,18 @@ export class Bootstrap extends Component {
   // -------------------------------------------------------------------------
 
   private async boot(): Promise<void> {
-    // 512×288 = 32×18 tile 16 px. Đặt trong code để không phụ thuộc Project Settings.
+    // 512×288 = 32×18 tiles of 16 px. Set in code so it does not depend on Project Settings.
     view.setDesignResolutionSize(DESIGN_WIDTH, DESIGN_HEIGHT, ResolutionPolicy.SHOW_ALL);
-    // `SHOW_ALL` tính lại band mỗi lần canvas đổi kích thước, nên camera world phải bám
-    // theo đúng band đó; nếu không phòng bị cắt ở 4:3 và lệch ở 21:9 (xem applyViewport).
+    // `SHOW_ALL` recomputes the band whenever the canvas resizes, so the world camera must
+    // follow that exact band; otherwise the room is cropped at 4:3 and offset at 21:9 (see applyViewport).
     document.addEventListener('fullscreenchange', this.onFullscreenChange);
-    // Cocos chỉ nghe phím trên #GameCanvas: chưa focus thì WASD/R không ăn cho tới khi click.
+    // Cocos only listens for keys on #GameCanvas: until it is focused, WASD/R do nothing until a click.
     document.getElementById('GameCanvas')?.focus();
 
     this.saveRepo = createSaveRepository();
     this.save = this.saveRepo.load();
     if (this.saveRepo.lastLoadError !== null) {
-      console.warn(`[YokaiField] Save hỏng, dùng save mặc định: ${this.saveRepo.lastLoadError}`);
+      console.warn(`[YokaiField] Corrupt save, using the default save: ${this.saveRepo.lastLoadError}`);
     }
 
     this.audio = new AudioManager(this.node);
@@ -341,16 +340,16 @@ export class Bootstrap extends Component {
     await this.screens.showTitle();
   }
 
-  /** Load toàn bộ `.tmx` của chapter rồi bắt đầu run ở phòng 1. Chỉ từ menu. */
+  /** Load every `.tmx` of the chapter, then start the run at room 1. Menu entry only. */
   private async startChapter(chapterNumber: number): Promise<void> {
     const save = this.save;
     if (save === null) return;
     if (this.status !== 'menu') return;
 
-    // Cổng thật: nút disabled chỉ là hình, đây mới là chỗ chặn chapter chưa mở.
+    // The real gate: a disabled button is only visual; this is where locked chapters are blocked.
     const gate = chapterGate(save, chapterNumber, CHAPTER_FOLDERS[chapterNumber] !== undefined);
     if (!gate.allowed) {
-      console.warn(`[YokaiField] Không mở được chapter ${chapterNumber}: ${gate.reason}`);
+      console.warn(`[YokaiField] Cannot open chapter ${chapterNumber}: ${gate.reason}`);
       return;
     }
 
@@ -362,13 +361,13 @@ export class Bootstrap extends Component {
   }
 
   /**
-   * Bắt đầu run ở `chapterNumber`, bỏ qua guard menu (debug `startChapter`).
-   * Seed cho RNG của run; `undefined` = lấy từ đồng hồ (mỗi run khác nhau).
+   * Start a run at `chapterNumber`, bypassing the menu guard (debug `startChapter`).
+   * Seed for the run RNG; `undefined` = take it from the clock (different every run).
    */
   private async launchChapter(chapterNumber: number, seedArg?: number): Promise<void> {
     const folder = CHAPTER_FOLDERS[chapterNumber];
     if (folder === undefined) {
-      console.warn(`[YokaiField] Chapter ${chapterNumber} chưa có dữ liệu .tmx — không mở.`);
+      console.warn(`[YokaiField] Chapter ${chapterNumber} has no .tmx data — not opening.`);
       return;
     }
 
@@ -378,19 +377,19 @@ export class Bootstrap extends Component {
     this.skills.destroy();
 
     const save = this.save;
-    if (save === null) throw new Error('Bootstrap: chưa load save');
+    if (save === null) throw new Error('Bootstrap: save not loaded');
 
     const seed =
       seedArg ?? ((Date.now() ^ (chapterNumber * 0x9e3779b1)) >>> 0);
-    // Baseline của run = chỉ số gốc + meta đã mua (tim/damage/nhịp bắn).
+    // Run baseline = base stats + purchased meta (hearts/damage/fire rate).
     this.skills.reset(seed, metaBaseline(DEFAULT_COMBAT, save));
     this.rewards = new RunRewards();
-    // Dòng RNG chiến đấu tách khỏi roll skill: crit/boss pattern không đổi khi
-    // người chơi chọn thẻ khác.
+    // The combat RNG stream is separate from skill rolls: crit/boss patterns do not
+    // change with the card the player picks.
     this.combatRng = SeededRng.fromSeed((seed ^ 0x85ebca6b) >>> 0);
 
     const manifest = this.manifest;
-    if (manifest === null) throw new Error('Bootstrap: manifest chưa load xong');
+    if (manifest === null) throw new Error('Bootstrap: manifest not loaded yet');
 
     const loaded = await this.loadChapter(folder);
     this.chapter = loaded.chapter;
@@ -398,21 +397,21 @@ export class Bootstrap extends Component {
     const run = new RunState(loaded.chapter.chapter, loaded.chapter.rooms.length);
     this.run = run;
 
-    // Preload **trước** khi dựng gì: mọi lỗi art/JSON nổi ở một chỗ, với path đầy đủ.
+    // Preload **before** building anything: all art/JSON errors surface in one place, with full paths.
     await preloadSheets(this.collectSheets(manifest, loaded.chapter));
 
     const firstRoom = this.levelFor(1);
     if (firstRoom === null) {
-      throw new Error(`"resources/${folder}" không có phòng 1`);
+      throw new Error(`"resources/${folder}" has no room 1`);
     }
 
     const fxLayer = this.fxLayer;
-    if (fxLayer === null) throw new Error('Bootstrap: chưa có fx-layer');
+    if (fxLayer === null) throw new Error('Bootstrap: no fx-layer');
     this.fx = await createFxPool(fxLayer);
 
     const player = this.createPlayer(firstRoom.playerStart);
     player.applyStats(this.skills.stats());
-    // Trần máu meta cao hơn 6: vào run phải đầy tim, không phải 6/7.
+    // Meta max HP is above 6: a run starts with full hearts, not 6/7.
     player.heal(player.maxHearts);
     this.createRoom(firstRoom);
 
@@ -420,7 +419,7 @@ export class Bootstrap extends Component {
     await this.createHud();
     const actorLayer = this.actorLayer;
 
-    if (actorLayer === null) throw new Error('Bootstrap: chưa có actor-layer');
+    if (actorLayer === null) throw new Error('Bootstrap: no actor-layer');
 
     this.audio?.playMusic(chapterMusic(firstRoom.chapter));
 
@@ -448,9 +447,9 @@ export class Bootstrap extends Component {
     this.displayedGold = 0;
     this.hud?.setGold(0);
     console.log(
-      `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} phòng từ ` +
-        `resources/${folder}. Bắt đầu phòng ${run.roomLabel} ` +
-        `(${firstRoom.waves.length} wave). seed=${seed} player=${JSON.stringify(player.position)}`,
+      `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} rooms from ` +
+        `resources/${folder}. Starting room ${run.roomLabel} ` +
+        `(${firstRoom.waves.length} waves). seed=${seed} player=${JSON.stringify(player.position)}`,
     );
   }
 
@@ -459,25 +458,25 @@ export class Bootstrap extends Component {
       try {
         return validateManifest(json);
       } catch (error: unknown) {
-        throw new Error(`"resources/${MANIFEST_PATH}.json" không hợp lệ: ${errorMessage(error)}`);
+        throw new Error(`"resources/${MANIFEST_PATH}.json" is invalid: ${errorMessage(error)}`);
       }
     });
   }
 
-  /** Layout nước động (ch2); file do `scripts/dress-rooms.ts` sinh. */
+  /** Animated water layout (ch2); the file is generated by `scripts/dress-rooms.ts`. */
   private loadWaterLayout(): Promise<WaterLayout> {
     return this.loadJson('data/water-layout').then((json) => {
       try {
         return parseWaterLayout(json);
       } catch (error: unknown) {
-        throw new Error(`"resources/data/water-layout.json" không hợp lệ: ${errorMessage(error)}`);
+        throw new Error(`"resources/data/water-layout.json" is invalid: ${errorMessage(error)}`);
       }
     });
   }
 
   /**
-   * Load mọi `TiledMapAsset` trong thư mục chapter (thứ tự engine trả về không đảm bảo),
-   * parse từng file bằng parser của core, sắp theo `room` rồi validate cả chapter.
+   * Load every `TiledMapAsset` in the chapter folder (engine order is not guaranteed),
+   * parse each file with the core parser, sort by `room`, then validate the whole chapter.
    */
   private loadChapter(folder: string): Promise<LoadedChapter> {
     return new Promise<LoadedChapter>((onLoad, onFail) => {
@@ -485,13 +484,13 @@ export class Bootstrap extends Component {
         folder,
         CocosTiledMapAsset,
         (error: Error | null | undefined, assets: TiledMapAsset[] | null | undefined) => {
-          // Cocos gọi callback với `null` **hoặc `undefined`** khi thành công.
+          // Cocos calls the callback with `null` **or `undefined`** on success.
           if (error || !assets || assets.length === 0) {
-            const cause = error ? error.message : 'không có TiledMapAsset nào';
+            const cause = error ? error.message : 'no TiledMapAsset found';
             onFail(
               new Error(
-                `Không load được phòng nào trong "resources/${folder}". ` +
-                  `Kiểm tra .tmx đã import chưa (Type = tiled-map). Nguyên nhân: ${cause}`,
+                `Could not load any room in "resources/${folder}". ` +
+                  `Check that the .tmx files are imported (Type = tiled-map). Cause: ${cause}`,
               ),
             );
             return;
@@ -505,7 +504,7 @@ export class Bootstrap extends Component {
               const source = `resources/${folder}/${asset.name}.tmx`;
               const level = parseTmxLevel(asset.tmxXmlStr, { source });
               if (byRoom.has(level.room)) {
-                throw new Error(`${source}: phòng ${level.room} bị trùng với một .tmx khác`);
+                throw new Error(`${source}: room ${level.room} duplicates another .tmx`);
               }
               byRoom.set(level.room, asset);
               levels.push(level);
@@ -521,8 +520,8 @@ export class Bootstrap extends Component {
   }
 
   /**
-   * `resources.load` với type tường minh, gói thành Promise và **nêu path** trong lỗi —
-   * path là thứ duy nhất giúp phân biệt "quên import" với "sai schema".
+   * `resources.load` with an explicit type, wrapped in a Promise and **naming the path** in the
+   * error — the path is the only thing that tells "forgot to import" apart from "bad schema".
    */
   private loadJson(path: string): Promise<unknown> {
     return new Promise<unknown>((onLoad, onFail) => {
@@ -530,12 +529,12 @@ export class Bootstrap extends Component {
         path,
         CocosJsonAsset,
         (error: Error | null | undefined, asset: JsonAsset | null | undefined) => {
-          // Cocos gọi callback với `null` **hoặc `undefined`** khi thành công. So sánh
-          // `=== null` sẽ coi `undefined` là lỗi rồi đọc `.message` trên undefined —
-          // chính là lỗi runtime "Cannot read properties of undefined (reading 'message')".
+          // Cocos calls the callback with `null` **or `undefined`** on success. Comparing
+          // with `=== null` treats `undefined` as an error and then reads `.message` on
+          // undefined — exactly the runtime error "Cannot read properties of undefined (reading 'message')".
           if (error || !asset) {
-            const cause = error ? error.message : 'asset trả về rỗng';
-            onFail(new Error(`Không load được "resources/${path}.json". Nguyên nhân: ${cause}`));
+            const cause = error ? error.message : 'asset came back empty';
+            onFail(new Error(`Could not load "resources/${path}.json". Cause: ${cause}`));
             return;
           }
           onLoad(asset.json);
@@ -545,9 +544,9 @@ export class Bootstrap extends Component {
   }
 
   /**
-   * Gom sheet cần preload: animation player, walk của mọi monster chapter này dùng, mọi
-   * animation boss (nếu có phòng boss), cộng sheet vật cản/đạn/tim. Preload một lần để
-   * frame đầu không có sprite trắng.
+   * Collect the sheets to preload: player animations, walk of every monster this chapter uses,
+   * every boss animation (if there is a boss room), plus obstacle/bullet/heart sheets.
+   * Preload once so the first frame has no white sprites.
    */
   private collectSheets(manifest: AnimationManifest, chapter: ChapterData): string[] {
     const sheets = new Set<string>();
@@ -583,17 +582,17 @@ export class Bootstrap extends Component {
     return Array.from(sheets);
   }
 
-  /** world → room/actor/bullet, thứ tự này là thứ tự vẽ của Cocos 2D. */
+  /** world → room/actor/bullet; this order is the Cocos 2D draw order. */
   private createWorldLayers(): void {
     const worldRoot = new CocosNode('world');
-    // Cocos chỉ vẽ Sprite nằm dưới một RenderRoot2D (Canvas là một); world không nằm dưới Canvas.
+    // Cocos only draws a Sprite under a RenderRoot2D (Canvas is one); world is not under Canvas.
     worldRoot.addComponent(RenderRoot2D);
     worldRoot.parent = this.node;
 
     this.roomLayer = this.addLayer('room-layer', worldRoot);
     this.actorLayer = this.addLayer('actor-layer', worldRoot);
     this.bulletLayer = this.addLayer('bullet-layer', worldRoot);
-    // FX trên actor + đạn: nổ/impact không bị enemy vẽ đè.
+    // FX above actors + bullets: explosions/impacts are not painted over by enemies.
     this.fxLayer = this.addLayer('fx-layer', worldRoot);
   }
 
@@ -603,14 +602,14 @@ export class Bootstrap extends Component {
     return node;
   }
 
-  /** Dựng room mới và thay room cũ (node cũ `destroy()` là engine dọn hết con). */
+  /** Build the new room and replace the old one (old node `destroy()` lets the engine clean children). */
   private createRoom(level: LevelData): void {
     const roomLayer = this.roomLayer;
-    if (roomLayer === null) throw new Error('Bootstrap: chưa có room-layer');
+    if (roomLayer === null) throw new Error('Bootstrap: no room-layer');
 
     const asset = this.chapterAssets.get(level.room);
     if (asset === undefined) {
-      throw new Error(`Chưa load TiledMapAsset cho phòng ${level.room} (${level.id})`);
+      throw new Error(`TiledMapAsset not loaded for room ${level.room} (${level.id})`);
     }
 
     this.roomRoot?.destroy();
@@ -626,18 +625,18 @@ export class Bootstrap extends Component {
     const manifest = this.manifest;
     const actorLayer = this.actorLayer;
     if (manifest === null || actorLayer === null) {
-      throw new Error('Bootstrap: chưa có manifest/actor-layer — không dựng được player');
+      throw new Error('Bootstrap: no manifest/actor-layer — cannot build the player');
     }
 
     const node = new CocosNode('player');
     node.parent = actorLayer;
 
     const sprite: Sprite = node.addComponent(CocosSprite);
-    // CUSTOM: animator đặt contentSize/anchor theo frame (Idle 32×32, Dead 32×64).
+    // CUSTOM: the animator sets contentSize/anchor per frame (Idle 32×32, Dead 32×64).
     sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     sprite.trim = false;
 
-    // 1 texture px = 1/16 unit. Player frame 32 px → 2 unit, art thật ~1 tile.
+    // 1 texture px = 1/16 unit. Player frame 32 px → 2 units, the art itself is ~1 tile.
     const scale = ACTOR_SCALE;
     node.setScale(scale, scale, 1);
 
@@ -674,12 +673,12 @@ export class Bootstrap extends Component {
 
     const hud: Hud = node.addComponent(Hud);
     await hud.init(this.player?.maxHearts ?? DEFAULT_COMBAT.playerMaxHearts, run.roomLabel);
-    // World vẽ ở bội số nguyên nên có thể nhỏ hơn band UI; thu HUD để bám mép phòng.
+    // World draws at integer multiples so it can be smaller than the UI band; shrink the HUD to hug the room edges.
     const hudScale = this.camera?.hudScale ?? 1;
     node.setScale(hudScale, hudScale, 1);
     this.hud = hud;
 
-    // Coin/số damage dựng sau HUD để biết ô vàng nằm đâu.
+    // Coins/damage numbers are built after the HUD so they know where the gold cell is.
     const feel = new FeelView();
     await feel.init(canvas, {
       goldAnchor: () => this.hud?.goldAnchor() ?? { x: 0, y: 0 },
@@ -691,11 +690,11 @@ export class Bootstrap extends Component {
   }
 
   /**
-   * Canvas + camera UI riêng, tạo bằng code.
+   * Dedicated UI Canvas + camera, built in code.
    *
-   * Camera world mặc định **không thấy layer `UI_2D`** (`CAMERA_DEFAULT_MASK` loại nó ra),
-   * nên HUD cần camera riêng với `visibility = UI_2D`. Canvas neo camera đó vào tâm màn
-   * hình và tự set `orthoHeight` theo design resolution.
+   * The world camera does **not see the `UI_2D` layer** by default (`CAMERA_DEFAULT_MASK`
+   * excludes it), so the HUD needs its own camera with `visibility = UI_2D`. Canvas anchors
+   * that camera at the screen centre and sets `orthoHeight` from the design resolution.
    */
   private ensureUiRoot(): Node {
     const existing = this.uiRoot;
@@ -714,12 +713,12 @@ export class Bootstrap extends Component {
 
     const camera: Camera = cameraNode.addComponent(CocosCamera);
     camera.projection = CocosCamera.ProjectionType.ORTHO;
-    // World camera đã vẽ nền; UI camera chỉ vẽ chồng lên, không xoá màu.
+    // The world camera already paints the background; the UI camera only draws on top, without clearing colour.
     camera.clearFlags = CocosCamera.ClearFlag.DEPTH_ONLY;
     camera.visibility = Layers.Enum.UI_2D;
     camera.priority = 1;
     camera.near = 1;
-    // Canvas đặt camera ở z = 1000 nên `far` phải > 1000 mới không cắt mất HUD.
+    // Canvas puts its camera at z = 1000, so `far` must be > 1000 to avoid clipping the HUD.
     camera.far = 2000;
 
     canvas.cameraComponent = camera;
@@ -729,12 +728,12 @@ export class Bootstrap extends Component {
   }
 
   // -------------------------------------------------------------------------
-  // Vòng chạy
+  // Run loop
   // -------------------------------------------------------------------------
 
   /**
-   * Sát thương khi chạm, đạn enemy và hitstop đã chuyển sang `CombatLoop` (M3).
-   * Bootstrap chỉ còn lo run flow: wave → phòng → skill → chapter.
+   * Contact damage, enemy bullets and hitstop all moved to `CombatLoop` (M3).
+   * Bootstrap only handles run flow now: wave → room → skill → chapter.
    */
   private onWaveCleared(): void {
     const run = this.run;
@@ -752,25 +751,25 @@ export class Bootstrap extends Component {
     run.onRoomCleared();
     this.persistBest(level.room);
 
-    // Thưởng dọn phòng (GDD §7): boss 50, phòng thường 5, nhân Greed.
+    // Room-clear reward (GDD §7): boss 50, normal room 5, times Greed.
     const roomGold = this.rewards.awardRoomClear(
       level.isBossRoom,
       this.player?.derivedStats.goldMultiplier ?? 1,
     );
     this.flyGold(roomGold, this.player?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
 
-    // Second Wind: hồi tim mỗi khi dọn phòng (GDD §6).
+    // Second Wind: heal hearts on every room clear (GDD §6).
     const healPerRoom = this.player?.derivedStats.healPerRoom ?? 0;
     if (healPerRoom > 0) this.player?.heal(healPerRoom);
     if (this.hud !== null && this.player !== null) {
       syncCombatHud(this.hud, this.player, this.combat);
     }
     this.hud?.setSkills(this.skills.entries);
-    console.log(`[YokaiField] Phòng ${run.roomLabel} sạch (+${roomGold} vàng).`);
+    console.log(`[YokaiField] Room ${run.roomLabel} clear (+${roomGold} gold).`);
 
-    // Dừng sim (update() return khi status khác 'playing') và giữ chữ ~1 s để
-    // người chơi đọc được "phòng sạch" trước khi màn hình đổi. Hẹn giờ bằng
-    // scheduler của Cocos, không dùng setTimeout — callback tự bị huỷ khi scene reload.
+    // Stop the sim (update() returns when status is not 'playing') and hold the text for ~1 s so
+    // the player can read "room clear" before the screen changes. Timing uses Cocos'
+    // scheduler, not setTimeout — the callback is dropped automatically when the scene reloads.
     this.status = 'room-clear';
     this.roomClearBanner?.destroy();
     this.roomClearBanner = this.showBanner('room-clear', 'ROOM CLEAR', END_WIN_COLOR, 20);
@@ -782,8 +781,8 @@ export class Bootstrap extends Component {
       this.roomClearBanner?.destroy();
       this.roomClearBanner = null;
 
-      // Phòng cuối của chapter (số phòng lấy từ dữ liệu) = hết run của chapter này.
-      // Không dùng `RunState.isBossRoom`: chapter có thể có phòng thường sau boss.
+      // The last room of the chapter (count taken from data) = this chapter's run is over.
+      // Do not use `RunState.isBossRoom`: a chapter may have normal rooms after the boss.
       if (current.room >= current.roomsTotal) {
         this.finishWin();
         return;
@@ -793,12 +792,12 @@ export class Bootstrap extends Component {
     }, ROOM_CLEAR_BANNER_SECONDS);
   }
 
-  /** Quay 1/3 skill bằng RNG của run rồi mở màn chọn; pool cạn thì đi tiếp. */
+  /** Roll a 1-of-3 skill with the run RNG and open the picker; if the pool is empty, move on. */
   private openSkillPick(): void {
     const choices = this.skills.roll();
 
     if (choices.length === 0) {
-      console.log('[YokaiField] Skill pool đã cạn — không có thẻ, sang phòng kế.');
+      console.log('[YokaiField] Skill pool exhausted — no cards, moving to the next room.');
       this.advanceRoom();
       return;
     }
@@ -819,8 +818,8 @@ export class Bootstrap extends Component {
   }
 
   /**
-   * Chọn thẻ theo index hoặc id. Dùng chung cho click, phím 1/2/3 và debug.
-   * `false` khi không có màn chọn hoặc thẻ không hợp lệ.
+   * Pick a card by index or id. Shared by clicks, keys 1/2/3 and debug.
+   * `false` when there is no picker or the card is invalid.
    */
   private chooseSkill(indexOrId: number | string): boolean {
     if (this.status !== 'skill-pick') return false;
@@ -830,15 +829,15 @@ export class Bootstrap extends Component {
     const { def, result } = picked;
     this.applyLoadout(result.healNow);
     console.log(
-      `[YokaiField] Nhặt ${def.name} → stack ${result.stacks}/${def.maxStacks}` +
-        `${result.healNow > 0 ? `, hồi ${result.healNow} tim` : ''}.`,
+      `[YokaiField] Took ${def.name} → stack ${result.stacks}/${def.maxStacks}` +
+        `${result.healNow > 0 ? `, healed ${result.healNow} hearts` : ''}.`,
     );
 
     this.advanceRoom();
     return true;
   }
 
-  /** Áp loadout mới cho player + HUD. `healNow` là hồi máu một lần của Vitality. */
+  /** Apply the new loadout to player + HUD. `healNow` is Vitality's one-off heal. */
   private applyLoadout(healNow = 0): void {
     const player = this.player;
     const stats = this.skills.stats();
@@ -848,7 +847,7 @@ export class Bootstrap extends Component {
     this.hud?.setHearts(player?.hearts ?? 0);
   }
 
-  /** Sang phòng kế sau khi đã chọn skill (hoặc pool cạn). */
+  /** Move to the next room after a skill was picked (or the pool was empty). */
   private advanceRoom(): void {
     const run = this.run;
     if (run === null) return;
@@ -865,7 +864,7 @@ export class Bootstrap extends Component {
 
     const level = this.levelFor(roomNumber);
     if (level === null) {
-      this.fail(new Error(`Chapter ${run.chapter} thiếu phòng ${roomNumber} (RunState ${run.roomLabel})`));
+      this.fail(new Error(`Chapter ${run.chapter} is missing room ${roomNumber} (RunState ${run.roomLabel})`));
       return;
     }
 
@@ -878,7 +877,7 @@ export class Bootstrap extends Component {
 
     if (level.isBossRoom) {
       const combat = this.combat;
-      if (combat === null) throw new Error('Bootstrap: chưa có CombatLoop');
+      if (combat === null) throw new Error('Bootstrap: no CombatLoop');
       spawnBossForRoom(combat, level);
       this.audio?.playMusic('boss');
     } else {
@@ -891,7 +890,7 @@ export class Bootstrap extends Component {
     }
 
     console.log(
-      `[YokaiField] Vào phòng ${run.roomLabel} (${level.waves.length} wave` +
+      `[YokaiField] Entering room ${run.roomLabel} (${level.waves.length} waves` +
         `${level.isBossRoom ? ', boss' : ''}).`,
     );
   }
@@ -903,7 +902,7 @@ export class Bootstrap extends Component {
 
     run.markLost();
     this.audio?.stopMusic();
-    console.log(`[YokaiField] Thua ở phòng ${run.roomLabel} (0 tim).`);
+    console.log(`[YokaiField] Lost in room ${run.roomLabel} (0 hearts).`);
     this.screens.finishRun(false);
   }
 
@@ -912,22 +911,22 @@ export class Bootstrap extends Component {
     if (run === null) return;
     if (run.status === 'won' || run.status === 'lost') return;
 
-    // GDD §2: thắng chapter mở chapter kế; `commitRunEnd` ghi cả vàng lẫn unlock.
+    // GDD §2: winning a chapter unlocks the next; `commitRunEnd` writes both gold and unlocks.
     run.markWon();
     this.audio?.stopMusic();
     playSfx('chapter-clear');
-    console.log(`[YokaiField] CHAPTER CLEAR — chapter ${run.chapter}, phòng ${run.roomLabel}.`);
+    console.log(`[YokaiField] CHAPTER CLEAR — chapter ${run.chapter}, room ${run.roomLabel}.`);
     this.screens.finishRun(true);
   }
 
-  /** Cộng vàng cho một kill rồi cho coin bay từ chỗ chết về ô vàng HUD. */
+  /** Credit gold for one kill, then fly a coin from the death spot to the HUD gold cell. */
   private awardKill(role: EnemyRole, elite: boolean, position: Vec2): void {
     const multiplier = this.player?.derivedStats.goldMultiplier ?? 1;
     const amount = this.rewards.awardKill(role, elite, multiplier);
     this.flyGold(amount, position);
   }
 
-  /** Coin bay về ô vàng; số HUD cộng khi coin tới (`onCoinArrived`). */
+  /** A coin flies to the gold cell; the HUD total is credited when it lands (`onCoinArrived`). */
   private flyGold(amount: number, position: Vec2): void {
     if (!(amount > 0)) return;
     const feel = this.feel;
@@ -938,29 +937,29 @@ export class Bootstrap extends Component {
     feel.flyGold(position, amount);
   }
 
-  /** Tổng HUD luôn bằng `rewards.goldEarned` sau khi coin cuối tới. */
+  /** The HUD total always equals `rewards.goldEarned` once the last coin lands. */
   private onCoinArrived(amount: number): void {
     if (!(amount > 0)) return;
     this.displayedGold = Math.min(Number.MAX_SAFE_INTEGER, this.displayedGold + amount);
     this.hud?.setGold(this.displayedGold);
   }
 
-  /** Cờ accessibility (rung, số damage) áp ngay khi đổi trong Settings. */
+  /** Accessibility flags (shake, damage numbers) applied immediately when changed in Settings. */
   private setFeelSettings(settings: Settings): void {
     if (this.camera !== null) this.camera.shake.enabled = settings.screenShake;
     if (this.feel !== null) this.feel.damageNumbersEnabled = settings.damageNumbers;
   }
 
-  /** Chụp run cho result trước khi teardown (ScreenFlow không biết RunState/combat). */
+  /** Snapshot the run for the result screen before teardown (ScreenFlow knows no RunState/combat). */
   private runSnapshot(): RunSnapshot | null {
     const run = this.run;
     if (run === null) return null;
     return { chapter: run.chapter, room: run.room, roomsTotal: run.roomsTotal, durationMs: this.combat?.clockMs ?? 0, goldEarned: this.rewards.goldEarned, kills: this.rewards.killCount };
   }
   /**
-   * Dọn sạch một run khỏi scene. Huỷ từng nhóm node thay vì reload scene: reload sẽ
-   * huỷ các load ảnh đang bay và devtools ghi `net::ERR_CONNECTION_RESET` (vô hại
-   * nhưng làm bẩn cổng "không lỗi console"), còn teardown này chỉ bỏ đúng node của run.
+   * Remove a run from the scene. Destroys node groups instead of reloading the scene: a reload
+   * cancels in-flight image loads and devtools logs `net::ERR_CONNECTION_RESET` (harmless but
+   * pollutes the "no console errors" gate), while this teardown drops only the run's own nodes.
    */
   private teardownRun(): void {
     this.skills.destroy();
@@ -996,7 +995,7 @@ export class Bootstrap extends Component {
   // Save + debug hook
   // -------------------------------------------------------------------------
 
-  /** Ghi kỷ lục khi vào phòng mới; lỗi save không được làm chết run. */
+  /** Record the best room when entering a new room; a save error must not kill the run. */
   private persistBest(room: number): void {
     const run = this.run;
     const repo = this.saveRepo;
@@ -1009,14 +1008,14 @@ export class Bootstrap extends Component {
       this.save = next;
       repo.save(next);
       console.log(
-        `[YokaiField] Best cập nhật: chapter ${next.best.chapter} · room ${next.best.room}.`,
+        `[YokaiField] Best updated: chapter ${next.best.chapter} · room ${next.best.room}.`,
       );
     } catch (error: unknown) {
-      console.warn(`[YokaiField] Không ghi được best: ${errorMessage(error)}`);
+      console.warn(`[YokaiField] Could not write best: ${errorMessage(error)}`);
     }
   }
 
-  /** `?debug=1` → `window.__yokai` cho acceptance headless. Không có debug thì không có gì. */
+  /** `?debug=1` → `window.__yokai` for headless acceptance. Without debug, nothing is exposed. */
   private installDebugHook(): void {
     installDebugWiring({
       status: () => this.status,
@@ -1072,7 +1071,7 @@ export class Bootstrap extends Component {
   }
 
 
-  /** Debug: nhặt skill ngoài màn chọn; trả stack sau khi nhặt (0 nếu id lạ). */
+  /** Debug: take a skill outside the picker; returns the stack count after (0 for an unknown id). */
   private debugGrantSkill(id: string, stacks: number): number {
     const grant = this.skills.grant(id, stacks);
     if (grant.acquired) this.applyLoadout(grant.healNow);
@@ -1082,11 +1081,11 @@ export class Bootstrap extends Component {
     return grant.stacks;
   }
 
-  /** Spawn debug — chỉ có ý nghĩa khi đang ở trong phòng. */
+  /** Debug spawn — only meaningful while inside a room. */
   private debugSpawn(role: EnemyRole, elite = false, at?: Vec2): string {
     const combat = this.combat;
     if (combat === null || this.status !== 'playing') {
-      console.warn(`[YokaiField] debug spawn bỏ qua: chưa ở trong phòng (status ${this.status})`);
+      console.warn(`[YokaiField] debug spawn skipped: not in a room (status ${this.status})`);
       return '';
     }
     const id = combat.spawnDebug(role, elite, at);
@@ -1094,28 +1093,28 @@ export class Bootstrap extends Component {
     return id;
   }
 
-  /** Stress test M3: 8 enemy + >= 40 đạn, player bất tử, đo fps bằng `fps()`. */
+  /** M3 stress test: 8 enemies + >= 40 bullets, invincible player, measure fps with `fps()`. */
   private debugStress(): boolean {
     const combat = this.combat;
     if (combat === null || this.status !== 'playing') {
-      console.warn(`[YokaiField] debug stress bỏ qua: chưa ở trong phòng (status ${this.status})`);
+      console.warn(`[YokaiField] debug stress skipped: not in a room (status ${this.status})`);
       return false;
     }
     combat.startStress();
     console.log(
-      `[YokaiField] debug stress: 8 enemy + ${STRESS_ENEMY_BULLETS} đạn (>= 40 như mốc M3), godMode bật.`,
+      `[YokaiField] debug stress: 8 enemies + ${STRESS_ENEMY_BULLETS} bullets (>= 40 per the M3 milestone), godMode on.`,
     );
     return true;
   }
 
   /**
-   * Giết mọi enemy/boss còn sống **qua đường damage chuẩn** (`EnemyView.takeDamage`),
-   * nên wave/room clear chạy y như chơi thật. Trả về số mục tiêu đã giết.
+   * Kill every living enemy/boss **through the normal damage path** (`EnemyView.takeDamage`),
+   * so wave/room clear runs exactly like real play. Returns the number of targets killed.
    */
   private killAllEnemies(): number {
     const killed = this.combat?.killAll() ?? 0;
     console.log(
-      `[YokaiField] debug killAll: ${killed} enemy ở phòng ${this.run?.roomLabel ?? '?'}.`,
+      `[YokaiField] debug killAll: ${killed} enemies in room ${this.run?.roomLabel ?? '?'}.`,
     );
     return killed;
   }
@@ -1124,7 +1123,7 @@ export class Bootstrap extends Component {
     return collectUiText(this.uiRoot);
   }
 
-  /** Debug: art tạm/key animation hỏng còn hiển thị; rỗng là sạch. */
+  /** Debug: leftover placeholder art/broken animation keys still on screen; empty means clean. */
 
 
 
@@ -1140,10 +1139,10 @@ export class Bootstrap extends Component {
   }
 
   // -------------------------------------------------------------------------
-  // Lỗi
+  // Errors
   // -------------------------------------------------------------------------
 
-  /** Chữ to giữa màn hình (lỗi load, game over, thắng chapter, room clear). */
+  /** Big centred text (load error, game over, chapter win, room clear). */
   private showBanner(name: string, text: string, color: Color, fontSize = 13): Node {
     return createBanner(
       this.ensureUiRoot(),
@@ -1155,21 +1154,21 @@ export class Bootstrap extends Component {
     );
   }
 
-  /** Hiện lỗi lên màn hình **và** console, sau đó dừng vòng chạy. */
+  /** Show the error on screen **and** in the console, then stop the run loop. */
   private fail(error: unknown): void {
     this.status = 'error';
     const message = errorMessage(error);
-    console.error(`[YokaiField] Bootstrap thất bại: ${message}`);
+    console.error(`[YokaiField] Bootstrap failed: ${message}`);
 
     try {
       this.showBanner('load-error', `LOAD FAILED\n${message}`, END_LOSS_COLOR);
     } catch (nested: unknown) {
-      console.error(`[YokaiField] Không dựng được màn hình lỗi: ${errorMessage(nested)}`);
+      console.error(`[YokaiField] Could not build the error screen: ${errorMessage(nested)}`);
     }
   }
 
   // -------------------------------------------------------------------------
-  // Truy vấn dữ liệu
+  // Data queries
   // -------------------------------------------------------------------------
 
   private levelFor(roomNumber: number): LevelData | null {
@@ -1187,7 +1186,7 @@ export class Bootstrap extends Component {
     const monster = byRole?.[role];
     if (monster === undefined) {
       throw new Error(
-        `Chapter ${chapter} chưa map monster cho role "${role}" (xem MONSTERS_BY_CHAPTER)`,
+        `Chapter ${chapter} has no monster mapped for role "${role}" (see MONSTERS_BY_CHAPTER)`,
       );
     }
     return monster;

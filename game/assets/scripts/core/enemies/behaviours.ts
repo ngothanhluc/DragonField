@@ -1,30 +1,30 @@
 /**
- * Hành vi enemy (GDD §4). Mọi hàm ở đây là **hàm thuần** của
+ * Enemy behaviour (GDD §4). Every function here is a **pure function** of
  * `(state, player, nowMs, level)`:
  *
- * - Không `Math.random`, không `Date.now`, không đọc/ghi biến toàn cục.
- * - Không tự sửa `state`; chỉ trả về action kế tiếp. Adapter Cocos gán action
- *   vào node và tự di chuyển theo action đó.
- * - Gọi hai lần với cùng tham số ở cùng `nowMs` phải cho cùng kết quả.
+ * - No `Math.random`, no `Date.now`, no reading/writing globals.
+ * - Never mutates `state`; only returns the next action. The Cocos adapter assigns the action
+ *   to the node and moves according to it.
+ * - Calling twice with the same parameters at the same `nowMs` gives the same result.
  *
- * Số liệu (máu, tốc độ, cooldown, telegraph, dải khoảng cách, hệ số elite, đòn
- * thêm của elite) **không nằm ở file này** — tất cả đọc từ `enemies/tuning.ts`,
- * tức `game/config/tuning.json` (sinh sang `tuning.generated.ts` bằng `bun run gen`).
- * Các hàm nhận thêm tham số `tuning` tuỳ chọn để
- * test có thể bơm một bộ số khác và chứng minh không còn số nào bị hardcode;
- * mặc định luôn là `ENEMY_TUNING`.
+ * Numbers (health, speed, cooldown, telegraph, range band, elite multipliers, elite
+ * extra attacks) **do not live in this file** — all come from `enemies/tuning.ts`,
+ * i.e. `game/config/tuning.json` (emitted into `tuning.generated.ts` by `bun run gen`).
+ * Functions take an optional `tuning` parameter so
+ * tests can inject a different number set and prove nothing is hardcoded;
+ * the default is always `ENEMY_TUNING`.
  *
- * Hợp đồng thời gian: `state.actionStartedMs` là mốc **chu kỳ đòn** hiện tại (lúc
- * telegraph bắt đầu hoặc lúc đòn được thả), do **caller** cập nhật. Không cập nhật
- * nó khi action đổi vì stagger: cooldown phải chạy tiếp qua cú choáng, nếu không
- * enemy bị bắn liên tục sẽ không bao giờ ra đòn. Enemy vừa spawn đặt
- * `action = { kind: 'idle' }` và `actionStartedMs = 0`, nên nó chờ hết một
- * cooldown trước đòn đầu tiên — đúng ý đồ "cho người chơi thở" đầu phòng.
+ * Timing contract: `state.actionStartedMs` is the current **attack cycle** timestamp (when
+ * the telegraph started or the attack was released), updated by the **caller**. Do not reset
+ * it when the action changes because of a stagger: the cooldown must keep running through the stun,
+ * otherwise an enemy under constant fire would never attack. A freshly spawned enemy sets
+ * `action = { kind: 'idle' }` and `actionStartedMs = 0`, so it waits out one
+ * cooldown before its first attack — exactly the intended "let the player breathe" at room start.
  *
- * Elite đổi máu/sát thương (GDD §4) **và** có một đòn thêm theo vai trò (M3):
- * chaser elite lao (pounce), caster elite bắn loạt 3 viên, tank elite lao hai
- * lần. Đòn đạn của caster elite do `elite.ts` mô tả (loạt góc), hai đòn còn lại
- * là action nên nằm ở đây.
+ * Elites change health/damage (GDD §4) **and** gain one extra attack per role (M3):
+ * elite chaser pounces, elite caster fires a 3-projectile volley, elite tank charges twice.
+ * The caster's projectile attack is described by `elite.ts` (angular volley); the other two
+ * are actions, so they live here.
  */
 import { isTelegraphElapsed } from '../combat/telegraph';
 import type { EnemyRole, LevelData } from '../level/level-data';
@@ -48,12 +48,12 @@ export type EnemyAction =
   | { kind: 'walk'; target: Vec2 }
   | { kind: 'telegraph'; sinceMs: number }
   /**
-   * Lao một đường thẳng. `speedTilesPerSecond` đi kèm action (không đọc từ vai
-   * trò trong adapter) vì hai vai trò cùng lao với tốc độ khác nhau: tank 7
+   * Charge in a straight line. `speedTilesPerSecond` travels with the action (not read from the
+   * role inside the adapter) because two roles charge at different speeds: tank 7
    * tile/s, elite chaser 6 tile/s.
    *
-   * `followUps` = số cú lao **còn lại sau cú này**, dùng cho elite tank: mỗi cú
-   * sau chốt lại hướng theo player, nên né cú đầu là chưa đủ.
+   * `followUps` = number of charges **remaining after this one**, used by the elite tank: each
+   * following charge re-locks onto the player, so dodging the first is not enough.
    */
   | {
       kind: 'charge';
@@ -63,92 +63,92 @@ export type EnemyAction =
       followUps: number;
     }
   /**
-   * Trúng đạn: đứng yên tới `untilMs` rồi mới quyết lại. Có action riêng thay vì
-   * dùng `idle` để caster không "bắn nốt" telegraph bị ngắt (xem `attackReleased`).
+   * Hit by a projectile: stand still until `untilMs`, then decide again. A separate action instead of
+   * using `idle` so a caster does not "finish" an interrupted telegraph (see `attackReleased`).
    */
   | { kind: 'stagger'; untilMs: number }
   | { kind: 'dead' };
 
 /**
- * Action stagger bắt đầu tại `nowMs` và kéo dài `durationMs` (ADR-008: 150 ms).
- * Thuần: trả action, không sửa state.
+ * A stagger action starts at `nowMs` and lasts `durationMs` (ADR-008: 150 ms).
+ * Pure: returns an action, never mutates state.
  */
 export function staggerAction(nowMs: number, durationMs: number): EnemyAction {
   return { kind: 'stagger', untilMs: nowMs + durationMs };
 }
 
-/** Chaser gây sát thương khi chạm; trong bán kính này nó đứng yên thay vì run rẩy. */
+/** The chaser deals damage on contact; inside this radius it holds still instead of jittering. */
 export const CHASER_CONTACT_RANGE_TILES = ENEMY_TUNING.roles.chaser.preferredRangeMaxTiles;
 
-/** Caster giữ khoảng cách (GDD §4 nói 4–6; số thật nằm trong `config/tuning.json`). */
+/** Caster keeps its distance (GDD §4 says 4–6; the real numbers live in `config/tuning.json`). */
 export const CASTER_MIN_RANGE_TILES = ENEMY_TUNING.roles.caster.preferredRangeMinTiles;
 export const CASTER_MAX_RANGE_TILES = ENEMY_TUNING.roles.caster.preferredRangeMaxTiles;
 
-/** Tank chỉ ra đòn khi player trong tầm này; xa hơn thì đi bộ lại gần. */
+/** Tank only attacks when the player is within this range; farther, it walks closer. */
 export const TANK_CHARGE_RANGE_TILES = ENEMY_TUNING.roles.tank.preferredRangeMaxTiles;
-/** Thời gian lao một đường thẳng. */
+/** Time charging in a straight line. */
 export const TANK_CHARGE_DURATION_MS = ENEMY_TUNING.roles.tank.chargeDurationMs;
-/** Tốc độ lúc lao — nhanh hơn đi bộ nhiều để đọc được đòn. */
+/** Charge speed — much faster than walking so the attack can be read. */
 export const TANK_CHARGE_SPEED_TILES_PER_SECOND =
   ENEMY_TUNING.roles.tank.chargeSpeedTilesPerSecond;
 
-/** Elite chaser: telegraph trước cú lao ngắn. */
+/** Elite chaser: telegraph before the short pounce. */
 export const ELITE_POUNCE_TELEGRAPH_MS = ENEMY_TUNING.elite.chaser.pounceTelegraphMs;
-/** Elite chaser: tốc độ lúc lao, tile/giây. */
+/** Elite chaser: pounce speed, tiles/second. */
 export const ELITE_POUNCE_SPEED_TILES_PER_SECOND =
   ENEMY_TUNING.elite.chaser.pounceSpeedTilesPerSecond;
-/** Elite chaser: thời gian lao, ms. */
+/** Elite chaser: pounce duration, ms. */
 export const ELITE_POUNCE_DURATION_MS = ENEMY_TUNING.elite.chaser.pounceDurationMs;
-/** Elite chaser: cooldown giữa hai cú lao, ms. */
+/** Elite chaser: cooldown between two pounces, ms. */
 export const ELITE_POUNCE_COOLDOWN_MS = ENEMY_TUNING.elite.chaser.pounceCooldownMs;
-/** Elite chaser: chỉ lao khi player trong tầm này, tile. */
+/** Elite chaser: only pounce when the player is within this range, tiles. */
 export const ELITE_POUNCE_RANGE_TILES = ENEMY_TUNING.elite.chaser.pounceRangeTiles;
-/** Elite tank: số cú lao thêm sau cú đầu. */
+/** Elite tank: number of extra charges after the first. */
 export const ELITE_EXTRA_TANK_CHARGES = ENEMY_TUNING.elite.tank.extraCharges;
 
-/** Giữ enemy trong phòng, không cho tâm chạm đúng mép tường. */
+/** Keep an enemy inside the room, so its centre never touches the wall edge. */
 export const ROOM_EDGE_MARGIN_TILES = ENEMY_TUNING.roomEdgeMarginTiles;
 
-/** Elite: máu và sát thương nhân theo `config/tuning.json` (mặc định ×2). */
+/** Elite: health and damage multiplied per `config/tuning.json` (default ×2). */
 export const ELITE_HEALTH_MULTIPLIER = ENEMY_TUNING.eliteHealthMultiplier;
 export const ELITE_DAMAGE_MULTIPLIER = ENEMY_TUNING.eliteDamageMultiplier;
 
-/** Cooldown trước khi được bắt đầu telegraph tiếp theo. */
+/** Cooldown before the next telegraph may start. */
 export const ATTACK_COOLDOWN_MS: Readonly<Record<EnemyRole, number>> = {
   chaser: ENEMY_TUNING.roles.chaser.attackCooldownMs,
   caster: ENEMY_TUNING.roles.caster.attackCooldownMs,
   tank: ENEMY_TUNING.roles.tank.attackCooldownMs,
 };
 
-/** Hướng dự phòng khi hai điểm trùng nhau (không có hướng xác định). */
+/** Fallback direction when the two points coincide (no defined direction). */
 const FALLBACK_DIRECTION: Vec2 = { x: 1, y: 0 };
 
 /**
- * Dung sai khi so khoảng cách với dải mong muốn.
+ * Tolerance when comparing a distance with the preferred band.
  *
- * Caster dừng đúng tại `preferredRangeMaxTiles`, nên phép đo khoảng cách ngay
- * sau đó có thể ra `6.000000000000001` (khác nhau giữa các engine JS). Không có
- * dung sai thì enemy "đứng trong dải mà tưởng mình ngoài dải": nó đi bộ tới
- * chính chỗ mình đang đứng và **không bao giờ ra đòn** — bug im lặng, chỉ lộ ra
- * khi đổi engine. Dung sai này lớn hơn nhiễu số học nhiều bậc.
+ * The caster stops exactly at `preferredRangeMaxTiles`, so measuring the distance right
+ * after can yield `6.000000000000001` (differs between JS engines). Without
+ * tolerance the enemy "stands inside the band but thinks it is outside": it walks to
+ * the very spot it stands on and **never attacks** — a silent bug that only shows up
+ * when switching engines. This tolerance is many orders of magnitude above numeric noise.
  */
 const RANGE_TOLERANCE_TILES = 1e-6;
 
-/** Tốc độ đi bộ, tile/giây. */
+/** Walk speed, tiles/second. */
 export function speedFor(
   role: EnemyRole,
   elite: boolean,
   tuning: EnemiesTuning = ENEMY_TUNING,
 ): number {
-  // Elite chỉ đổi máu và sát thương, không đổi tốc độ — tham số giữ cho API đối xứng.
+  // Elites only change health and damage, not speed — the parameter keeps the API symmetric.
   void elite;
   return tuning.roles[role].speedTilesPerSecond;
 }
 
 /**
- * Hệ số silhouette của vai trò (1 = frame gốc). Cả 3 monster chapter 1 đều là
- * frame 16×16, nên đây là thứ duy nhất làm brute trông to hơn hẳn chaser/caster.
- * Số nằm trong `config/tuning.json` (`enemies.roles.<role>.scale`).
+ * Silhouette factor of the role (1 = source frame). All 3 chapter-1 monsters use a
+ * 16×16 frame, so this is the only thing that makes a brute look clearly bigger than chaser/caster.
+ * The number lives in `config/tuning.json` (`enemies.roles.<role>.scale`).
  */
 export function visualScaleFor(
   role: EnemyRole,
@@ -157,7 +157,7 @@ export function visualScaleFor(
   return tuning.roles[role].scale;
 }
 
-/** Sát thương khi chạm người (chaser/tank) hoặc khi đạn của caster trúng. */
+/** Damage on contact (chaser/tank) or when a caster projectile hits. */
 export function contactDamageFor(
   role: EnemyRole,
   elite: boolean,
@@ -166,11 +166,11 @@ export function contactDamageFor(
 ): number {
   const base = tuning.roles[role].contactDamage;
   const scaled = elite ? base * tuning.eliteDamageMultiplier : base;
-  // Tim là đơn vị nguyên: 2 × 1.25 = 2.5 phải thành 3 chứ không để HUD hiện 3.5.
+  // Hearts are whole units: 2 × 1.25 = 2.5 must become 3, not leave the HUD showing 3.5.
   return Math.max(1, Math.round(scaled * chapterMultiplier(CHAPTER_TUNING.enemyDamageMultipliers, chapter)));
 }
 
-/** Máu tối đa, đã tính scale elite và scale chapter. `waves.ts` dùng hàm này để spawn. */
+/** Max health, with elite and chapter scaling applied. `waves.ts` uses this to spawn. */
 export function maxHealthFor(
   role: EnemyRole,
   elite: boolean,
@@ -182,7 +182,7 @@ export function maxHealthFor(
   return Math.max(1, Math.round(scaled * chapterMultiplier(CHAPTER_TUNING.enemyHealthMultipliers, chapter)));
 }
 
-/** Hệ số của `chapter` (1-based); ngoài phạm vi thì kẹp về chapter đầu/cuối. */
+/** Factor for `chapter` (1-based); out of range clamps to the first/last chapter. */
 function chapterMultiplier(multipliers: readonly number[], chapter: number): number {
   if (!Number.isFinite(chapter)) return 1;
   const index = Math.min(Math.max(Math.floor(chapter), 1), multipliers.length) - 1;
@@ -190,9 +190,9 @@ function chapterMultiplier(multipliers: readonly number[], chapter: number): num
 }
 
 /**
- * Đòn đã ra chưa? Adapter gọi sau `decideAction` với action trước và sau:
- * telegraph -> idle = bắn đạn (caster), telegraph -> charge = lao (tank).
- * Nhờ vậy "telegraph rồi mới bắn" quan sát được mà không cần state ẩn.
+ * Has the attack been released? The adapter calls this after `decideAction` with the previous and next action:
+ * telegraph -> idle = fire a projectile (caster), telegraph -> charge = charge (tank).
+ * That makes "telegraph then fire" observable without hidden state.
  */
 export function attackReleased(
   previous: EnemyAction,
@@ -209,19 +209,19 @@ export interface DecideActionArgs {
   readonly player: Vec2;
   readonly nowMs: number;
   readonly level: LevelData;
-  /** Bộ số tune; mặc định `ENEMY_TUNING` (config/tuning.json). */
+  /** Tuning set; defaults to `ENEMY_TUNING` (config/tuning.json). */
   readonly tuning?: EnemiesTuning;
 }
 
-/** Action kế tiếp của enemy tại `nowMs`. Không sửa `state`. */
+/** Next action of the enemy at `nowMs`. Never mutates `state`. */
 export function decideAction(args: DecideActionArgs): EnemyAction {
   const { state, player, nowMs, level } = args;
   const tuning = args.tuning ?? ENEMY_TUNING;
 
   if (state.action.kind === 'dead' || state.health <= 0) return { kind: 'dead' };
 
-  // Đang choáng: giữ nguyên tới hết thời gian, không di chuyển, không ra đòn.
-  // Trả action mới (cùng `untilMs`) thay vì dùng lại object của state — hàm thuần.
+  // Staggered: hold until the time is up, no movement, no attack.
+  // Return a new action (same `untilMs`) instead of reusing the state object — pure function.
   if (state.action.kind === 'stagger' && nowMs < state.action.untilMs) {
     return { kind: 'stagger', untilMs: state.action.untilMs };
   }
@@ -240,12 +240,12 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
 }
 
 /**
- * Chaser: lao thẳng vào player, chạm là gây sát thương (phần sát thương do
- * adapter xử lý qua `contactDamageFor`). Trong tầm chạm thì đứng yên.
+ * Chaser: runs straight at the player and deals damage on contact (the damage part is
+ * handled by the adapter through `contactDamageFor`). Inside contact range it holds still.
  *
- * Bản **elite** có thêm cú lao (pounce) khi player trong tầm: telegraph rồi
- * lao ngắn, cooldown riêng. Chaser thường không bao giờ telegraph, nên nhìn
- * thấy vòng telegraph dưới chân một con dơi là biết nó là elite.
+ * The **elite** version gains a pounce when the player is in range: telegraph then a
+ * short charge, with its own cooldown. A regular chaser never telegraphs, so seeing a
+ * telegraph ring under a bat means it is an elite.
  */
 function decideChaser(
   state: EnemyState,
@@ -296,11 +296,11 @@ function decideChaser(
 }
 
 /**
- * Caster: giữ dải `preferredRange`. Gần hơn cận dưới thì lùi, xa hơn cận trên
- * thì tiến, trong dải thì đứng telegraph `telegraphMs` rồi bắn.
+ * Caster: keeps the `preferredRange` band. Closer than the lower bound it backs off, farther
+ * than the upper bound it steps in, inside the band it stands and telegraphs `telegraphMs` then fires.
  *
- * Đã vào telegraph thì **chạy hết**, kể cả khi player lùi ra khỏi tầm — đòn đã
- * "cam kết" nên người chơi né bằng cách di chuyển, không phải bằng cách huỷ nó.
+ * Once in a telegraph it **runs to completion**, even if the player backs out of range — the attack is
+ * "committed", so the player dodges by moving, not by cancelling it.
  */
 function decideCaster(
   state: EnemyState,
@@ -331,9 +331,9 @@ function decideCaster(
 }
 
 /**
- * Tank: đi bộ chậm tới gần, telegraph, rồi lao thẳng một đường trong
- * `chargeDurationMs`. Hướng lao chốt tại lúc telegraph xong, nên người chơi né
- * được bằng cách bước ra khỏi đường lao.
+ * Tank: walks slowly closer, telegraphs, then charges in a straight line for
+ * `chargeDurationMs`. The charge direction locks when the telegraph ends, so the player dodges
+ * by stepping off the charge line.
  */
 function decideTank(
   state: EnemyState,
@@ -356,8 +356,8 @@ function decideTank(
       };
     }
 
-    // Elite tank: cú lao kế tiếp chốt hướng **mới** theo player, không telegraph
-    // lại. Né cú đầu bằng cách bước ngang là chưa đủ.
+    // Elite tank: the next charge locks a **new** direction onto the player, without telegraphing
+    // again. Dodging the first by stepping sideways is not enough.
     if (current.followUps > 0) {
       return {
         kind: 'charge',
@@ -397,10 +397,10 @@ function isCoolingDown(state: EnemyState, nowMs: number, tuning: EnemyRoleTuning
 }
 
 /**
- * Điểm cách player `preferredRangeMaxTiles` theo hướng từ player tới enemy:
- * gần quá thì đó là điểm lùi, xa quá thì đó là điểm tiến.
+ * A point `preferredRangeMaxTiles` from the player along the direction from player to enemy:
+ * too close means that is the retreat point, too far means the approach point.
  *
- * Nếu điểm đó rơi vào vật cản, đứng yên tại chỗ thay vì lao vào tường.
+ * If that point falls inside an obstacle, stand still instead of charging into a wall.
  */
 function holdRangeTarget(
   state: EnemyState,

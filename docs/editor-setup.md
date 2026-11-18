@@ -1,170 +1,173 @@
-# Dựng scene chạy game — 5 bước trong editor
+# Building the game scene — 5 steps in the editor
 
-Toàn bộ world (room, player, enemy, đạn, HUD) được **tạo bằng code** trong
-`assets/scripts/game/bootstrap.ts`. Scene chỉ cần đúng một node có component `Bootstrap`;
-không có prefab, không phải kéo sprite vào Inspector, không phải sửa file `.scene` bằng tay.
+The entire world (room, player, enemies, bullets, HUD) is **built in code** in
+`assets/scripts/game/bootstrap.ts`. The scene only needs exactly one node with a `Bootstrap`
+component; there are no prefabs, no dragging sprites into the Inspector, and no hand-editing
+`.scene` files.
 
-Trước khi làm, chạy `cd game && bun run check` — phải xanh. Editor **bỏ qua type error** khi
-compile (ADR-004), nên `check` là gate duy nhất bắt lỗi kiểu; chỉ lỗi cú pháp mới làm
-`Bootstrap` biến mất khỏi danh sách component.
+Before you start, run `cd game && bun run check` — it must be green. The editor **ignores type
+errors** when compiling (ADR-004), so `check` is the only gate that catches type errors; only a
+syntax error makes `Bootstrap` disappear from the component list.
 
 ---
 
-## 5 bước
+## The 5 steps
 
-### 1. Tạo scene 2D rỗng
+### 1. Create an empty 2D scene
 
-`Assets` panel → chuột phải → **Create → Scene**, đặt tên `main` (nằm trong `assets/`).
-Mở scene. Xoá hết node mẫu nếu có (chỉ giữ lại **Main Camera** — bước 4 cần nó).
+`Assets` panel → right-click → **Create → Scene**, name it `main` (inside `assets/`).
+Open the scene. Delete any sample nodes (keep only **Main Camera** — step 4 needs it).
 
-### 2. Thêm đúng một node
+### 2. Add exactly one node
 
-Hierarchy → chuột phải → **Create → Empty Node**, đặt tên `Boot`. Node này không cần
-position/sprite gì cả; nó chỉ là chỗ gắn component.
+Hierarchy → right-click → **Create → Empty Node**, name it `Boot`. This node needs no
+position/sprite at all; it is just a place to attach the component.
 
-### 3. Gắn `Bootstrap`
+### 3. Attach `Bootstrap`
 
-Chọn node `Boot` → Inspector → **Add Component** → gõ `Bootstrap` → chọn component
-`Bootstrap` (script này ở `assets/scripts/game/bootstrap.ts`).
+Select the `Boot` node → Inspector → **Add Component** → type `Bootstrap` → pick the
+`Bootstrap` component (the script is at `assets/scripts/game/bootstrap.ts`).
 
-Không set property nào: mọi thứ đọc từ `assets/resources/data/animations.json` và
-các file `.tmx` trong `assets/resources/data/levels/chapter-1/` (quy ước ở ADR-005).
+Set no properties: everything is read from `assets/resources/data/animations.json` and the
+`.tmx` files in `assets/resources/data/levels/chapter-1/` (convention in ADR-005).
 
-### 4. Camera: `orthoHeight = 9` tại `(16, 9)`
+### 4. Camera: `orthoHeight = 9` at `(16, 9)`
 
-Chọn node **Main Camera** → Inspector:
+Select the **Main Camera** node → Inspector:
 
-| Thuộc tính   | Giá trị                              |
-| ------------ | ------------------------------------ |
-| Position     | `16`, `9`, `1000`                    |
-| Projection   | **ortho**                            |
-| Ortho Height | **9**                                |
-| Clear Flags  | SOLID_COLOR (màu nền tuỳ ý)          |
-| Visibility   | để mặc định (không cần tick `UI_2D`) |
+| Property     | Value                                      |
+| ------------ | ------------------------------------------ |
+| Position     | `16`, `9`, `1000`                          |
+| Projection   | **ortho**                                  |
+| Ortho Height | **9**                                      |
+| Clear Flags  | SOLID_COLOR (any background color)         |
+| Visibility   | leave default (no need to tick `UI_2D`)    |
 
-`orthoHeight = 9` ⇒ khung nhìn cao 18 unit = 18 tile; phòng là 32×18 unit nên vừa khít
-một màn hình, không scroll. `Bootstrap` cũng tự ép lại ba thông số này lúc boot (để scene
-dựng tay sai vẫn chạy), nhưng set trong editor thì thấy đúng ngay ở Scene view.
+`orthoHeight = 9` ⇒ the view is 18 units tall = 18 tiles; the room is 32×18 units so it fits
+exactly one screen, no scrolling. `Bootstrap` also forces these three values at boot (so a
+hand-built scene still runs), but setting them in the editor makes the Scene view correct
+immediately.
 
 ### 5. Design resolution 512×288
 
-**Project → Project Settings → tab Project Data → Design Resolution**: width `512`,
-height `288`, Fit Height (hoặc Fit Width — cả hai cho cùng tỉ lệ 16:9).
+**Project → Project Settings → Project Data tab → Design Resolution**: width `512`,
+height `288`, Fit Height (or Fit Width — both give the same 16:9 ratio).
 
-Đây là hệ quy chiếu của HUD: 1 px art = 1 px design (tim 16 px). Sai bước này game vẫn
-chạy — world luôn đúng 32×18 unit vì camera dùng `orthoHeight` tuyệt đối — nhưng HUD sẽ
-nhỏ/lệch và art không còn sắc nét 1:1.
+This is the HUD's frame of reference: 1 art px = 1 design px (a heart is 16 px). If this step
+is wrong the game still runs — the world is always 32×18 units because the camera uses an
+absolute `orthoHeight` — but the HUD will be small/offset and the art is no longer crisp 1:1.
 
-### Bấm Play
+### Press Play
 
-Scene view hoặc Preview. Kỳ vọng trong ~1 giây:
+Scene view or Preview. Expect within ~1 second:
 
-- nền cỏ 32×18 tile, 4 cột đá ở giữa phòng;
-- ninja ở gần đáy phòng, đứng yên (idle 4 frame);
-- WASD di chuyển 8 hướng, animation đổi theo hướng;
-- tự bắn shuriken về con gần nhất trong 8 tile, có animation attack;
-- 3 con (2 chaser + 1 caster) lao/giữ khoảng cách; chạm vào chaser mất 1 tim, hiện
-  animation trúng đòn (Hit) 150 ms;
-- HUD góc trên-trái: 6 tim + `Gold 0`; góc trên-phải: `1/9`;
-- dọn hết wave 1 → wave 2 → wave 3 → chữ `Phòng 1 sạch` trong console → phòng `2/9`.
+- a grass background of 32×18 tiles, 4 stone pillars in the middle of the room;
+- the ninja near the bottom of the room, standing still (4-frame idle);
+- WASD moves in 8 directions, the animation changes with direction;
+- auto-fires shuriken at the nearest one within 8 tiles, with an attack animation;
+- 3 enemies (2 chasers + 1 caster) charge/keep their distance; touching a chaser loses 1 heart
+  and shows a 150 ms hit animation (Hit);
+- top-left HUD: 6 hearts + `Gold 0`; top-right: `1/9`;
+- clear wave 1 → wave 2 → wave 3 → the text `Room 1 clear` in the console → room `2/9`.
 
-Console (tab **Console**, hoặc DevTools khi Preview) in tiến trình:
+The Console (**Console** tab, or DevTools in Preview) prints progress:
 
 ```text
-[YokaiField] Chapter 1: 9 phòng. Bắt đầu phòng 1/9 (3 wave).
-[YokaiField] Phòng 1 sạch.
-[YokaiField] Vào phòng 2/9 (1 wave).
+[YokaiField] Chapter 1: 9 rooms. Starting room 1/9 (3 waves).
+[YokaiField] Room 1 clear.
+[YokaiField] Entering room 2/9 (1 wave).
 ```
 
-Lưu file scene, rồi commit **cả** `assets/main.scene` và `assets/main.scene.meta` (meta do
-editor sinh, phải commit — xem `docs/art/import-checklist.md` §7).
+Save the scene file, then commit **both** `assets/main.scene` and `assets/main.scene.meta` (the
+meta is generated by the editor and must be committed — see `docs/art/import-checklist.md` §7).
 
 ---
 
-## Khi hỏng thì thấy gì
+## What you see when it breaks
 
-### a. Màn hình đỏ "LOAD FAILED"
+### a. Red "LOAD FAILED" screen
 
-`bootstrap.ts` bắt mọi lỗi load và in nguyên nhân lên giữa màn hình, chữ đỏ, kèm path
-resources. Xem đúng dòng đó trong Console trước, nó nói rõ file nào:
+`bootstrap.ts` catches every load error and prints the cause in the middle of the screen in red,
+with the resources path. Find that line in the Console first; it says exactly which file:
 
-| Thông báo                                                                          | Nghĩa                                                          | Sửa ở đâu                                                                       |
-| ---------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `Không load được "resources/data/animations.json"`                                 | Chưa import xong, hoặc file bị đổi tên/di chuyển               | `game/assets/resources/data/animations.json`                                    |
-| `"resources/data/animations.json" không hợp lệ: …`                                 | Schema sai (version, key, directions…)                         | Đọc danh sách lỗi — validator liệt kê **toàn bộ**                               |
-| `Không load được phòng nào trong "resources/data/levels/chapter-1"`                | Thiếu/thư mục rỗng, hoặc `.tmx` chưa import                    | `game/assets/resources/data/levels/chapter-1/room-<n>.tmx`                      |
-| `Không load được texture cho sheet "resources/art/…" (resources: "art/…/texture")` | PNG chưa import thành **sprite-frame**, hoặc `.meta` chưa sinh | Chọn PNG → Inspector → Type = `sprite-frame`, Filter = Nearest (checklist §2.1) |
-| `Scene không có Camera…`                                                           | Xoá mất Main Camera                                            | Bước 4                                                                          |
-| `Chapter 1 chưa map monster cho role "tank"`                                       | Level data có role chưa có trong bảng                          | `MONSTERS_BY_CHAPTER` trong `bootstrap.ts`                                      |
+| Message                                                                              | Meaning                                                          | Fix location                                                                    |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `Could not load "resources/data/animations.json"`                                    | Import not finished, or the file was renamed/moved               | `game/assets/resources/data/animations.json`                                    |
+| `"resources/data/animations.json" is invalid: …`                                     | Wrong schema (version, key, directions…)                         | Read the error list — the validator lists **all** of them                       |
+| `Could not load any room in "resources/data/levels/chapter-1"`                       | Missing/empty directory, or `.tmx` not imported                  | `game/assets/resources/data/levels/chapter-1/room-<n>.tmx`                      |
+| `Could not load texture for sheet "resources/art/…" (resources: "art/…/texture")`    | PNG not imported as a **sprite-frame**, or `.meta` not generated | Select the PNG → Inspector → Type = `sprite-frame`, Filter = Nearest (checklist §2.1) |
+| `Scene has no Camera…`                                                               | Main Camera was deleted                                          | Step 4                                                                          |
+| `Chapter 1 has no monster mapped for role "tank"`                                    | Level data uses a role missing from the table                    | `MONSTERS_BY_CHAPTER` in `bootstrap.ts`                                         |
 
-Màn hình đỏ **không** tự hồi phục: sửa nguyên nhân rồi bấm Play lại.
+The red screen does **not** recover by itself: fix the cause then press Play again.
 
-### b. Không có `Bootstrap` trong Add Component
+### b. No `Bootstrap` in Add Component
 
-Editor chưa compile xong, hoặc script có lỗi cú pháp. Xem **Console** (lọc `error`),
-hoặc chạy `bun run check`. Cocos **bỏ qua type error** khi compile, nên lỗi kiểu chỉ hiện
-ở đây nhờ `tsc` — không có gate này thì bug kiểu nổ lúc runtime.
+The editor has not finished compiling, or the script has a syntax error. Check the **Console**
+(filter `error`), or run `bun run check`. Cocos **ignores type errors** when compiling, so type
+errors only show up here thanks to `tsc` — without this gate, type bugs blow up at runtime.
 
-### c. Chạy nhưng màn hình trắng/đen, không có chữ LOAD FAILED
+### c. It runs but the screen is white/black, with no LOAD FAILED text
 
-Theo thứ tự:
+In order:
 
-1. **Main Camera** bị xoá hoặc `Visibility` không có `DEFAULT` ⇒ không thấy world.
-2. `Boot` node nằm ngoài scene đang mở (Hierarchy có 2 scene?).
-3. Component `Bootstrap` bị **disable** (checkbox đầu component).
-4. Design resolution sai ⇒ HUD ở ngoài khung (world vẫn thấy).
+1. **Main Camera** was deleted or `Visibility` lacks `DEFAULT` ⇒ the world is not visible.
+2. The `Boot` node is outside the open scene (does the Hierarchy have 2 scenes?).
+3. The `Bootstrap` component is **disabled** (checkbox at the top of the component).
+4. Wrong design resolution ⇒ the HUD is outside the frame (the world is still visible).
 
-### d. Có hình nhưng sprite trắng / nhấp nháy
+### d. There is an image but sprites are white / flickering
 
-- PNG đang import với Type = `texture` chứ không phải `sprite-frame`.
-- `Trim Type = Auto` trên SpriteFrame ⇒ mỗi frame một rect khác nhau, animation rung
-  (checklist §2.2 — phải là `None`).
-- `Filter Mode` khác `Nearest` ⇒ art nhoè.
+- The PNG is importing with Type = `texture` instead of `sprite-frame`.
+- `Trim Type = Auto` on the SpriteFrame ⇒ a different rect per frame, the animation jitters
+  (checklist §2.2 — must be `None`).
+- `Filter Mode` other than `Nearest` ⇒ blurry art.
 
-### e. Đạn không hiện
+### e. Bullets do not appear
 
-`resources/art/fx/shuriken/SpriteSheet.png` chưa có `.meta` sprite-frame. Đạn vẫn được
-bắn và vẫn gây sát thương (pool chạy độc lập với view) — chỉ không thấy hình. Sửa import
-là xong, không phải restart.
+`resources/art/fx/shuriken/SpriteSheet.png` has no sprite-frame `.meta` yet. Bullets are still
+fired and still deal damage (the pool runs independently of the view) — you just cannot see
+them. Fixing the import is enough; no restart needed.
 
-### f. Player đứng yên, không ăn phím
+### f. The player stands still and ignores keys
 
-Canvas/preview chưa có focus: bấm chuột vào khung game một lần. `input.on(...)` của Cocos
-chỉ nhận sự kiện khi trang/canvas được focus.
+Canvas/preview is not focused yet: click once inside the game frame. Cocos `input.on(...)` only
+receives events when the page/canvas is focused.
 
 ---
 
-## Phần chưa kiểm chứng được bằng CLI
+## What the CLI cannot verify
 
-`bun run check` chỉ chứng minh được phần **thuần TS** (`core/`) và phần biên dịch của
-adapter. Những thứ dưới đây chỉ đúng/sai khi mở editor, nên lần Play đầu tiên cần soi:
+`bun run check` only proves the **pure TS** part (`core/`) and that the adapter compiles. The
+things below are only right or wrong when you open the editor, so the first Play needs a look:
 
-1. **Canvas + camera UI tạo bằng code** (`Bootstrap.ensureUiRoot`): HUD có hiện không,
-   có đúng góc trên-trái không. Nếu HUD mất, nghi thứ tự `addComponent(Canvas)` /
-   `addComponent(Camera)` / `cameraComponent = camera` hoặc layer `UI_2D`.
-2. **`SpriteFrame.rect` cắt tile** (`level-view.sliceFrame`): sàn phải là **cỏ**, không
-   phải ô đất/nước. Nếu sàn ra màu khác ⇒ rect đang bị hiểu theo gốc dưới-trái; sửa
-   `y = chiềuCaoTexture - y - 16` trong `FLOOR_RECT`.
-3. **Tỉ lệ pixel**: mỗi texture pixel phải là 1/16 world unit, tức **frame** 16 px
-   (monster) = 1 tile, **frame** 32 px (player) = 2 tile, frame 96 px (samurai) = 6 tile.
-   Nhân vật bên trong khung player chỉ chiếm ~15 px giữa frame nên trông cao ~1 tile.
-   Sai tỉ lệ ⇒ xem `actorScale()` trong `level-view.ts`.
-4. **`SpriteAnimator`** tự load manifest (không cần `init`): nếu nhân vật đứng im một
-   frame, kiểm tra animator có tự resolve key không.
-5. **Thứ tự `start()`**: `Bootstrap.start()` chạy sau khi scene active; nếu log
-   `[YokaiField] Chapter 1` không xuất hiện thì component chưa chạy, không phải load lỗi.
+1. **Canvas + UI camera built in code** (`Bootstrap.ensureUiRoot`): does the HUD show, is it in
+   the right top-left corner? If the HUD is missing, suspect the order of `addComponent(Canvas)` /
+   `addComponent(Camera)` / `cameraComponent = camera`, or the `UI_2D` layer.
+2. **`SpriteFrame.rect` tile slicing** (`level-view.sliceFrame`): the floor must be **grass**, not
+   a dirt/water tile. If the floor is the wrong color ⇒ the rect is being read with a
+   bottom-left origin; fix `y = textureHeight - y - 16` in `FLOOR_RECT`.
+3. **Pixel ratio**: every texture pixel must be 1/16 world unit, i.e. a 16 px **frame**
+   (monster) = 1 tile, a 32 px **frame** (player) = 2 tiles, a 96 px frame (samurai) = 6 tiles.
+   The character inside the player frame only fills ~15 px in the middle so it looks ~1 tile
+   tall. Wrong ratio ⇒ see `actorScale()` in `level-view.ts`.
+4. **`SpriteAnimator`** loads the manifest itself (no `init` needed): if the character stands
+   frozen on one frame, check whether the animator resolves the key on its own.
+5. **`start()` order**: `Bootstrap.start()` runs after the scene is active; if the
+   `[YokaiField] Chapter 1` log does not appear, the component did not run — this is not a load
+   error.
 
-Biết trước các giới hạn có chủ ý (không phải bug):
+Known intentional limitations (not bugs):
 
-- **Boss chưa nối.** Tới phòng `9/9` game log `TODO(boss)` rồi dừng —
-  `core/sim/boss-run.ts` là bản mẫu để nối `stepBoss`.
-- **Caster chưa bắn đạn** (chỉ telegraph + đổi màu). Xem `TODO(enemy-bullets)` trong
+- **Boss not connected yet.** At room `9/9` the game logs `TODO(boss)` and stops —
+  `core/sim/boss-run.ts` is the sample for wiring up `stepBoss`.
+- **Caster does not fire bullets** (telegraph + color change only). See `TODO(enemy-bullets)` in
   `bootstrap.ts`.
-- **Chết là biến mất**, chưa có FX nổ (art đã stage ở `resources/art/fx/explosion`).
-- **Vật cản chặn đạn nhưng không chặn player** — đúng như
-  `core/sim/run-simulation.ts` ("vật cản chỉ chặn đạn"): player đi xuyên qua cột được,
-  nên có thể đứng trong cột và mọi viên đạn bắn ra đều chết ngay tại chỗ. Nếu playtest
-  thấy khó chịu thì thêm `obstacleAt()` vào bước di chuyển của `PlayerController`
-  (trượt theo từng trục để không bị kẹt góc).
-- **HUD không tự canh lại khi đổi cỡ cửa sổ** (vị trí tính một lần lúc `init`). Web build
-  resize sau khi load thì tim/nhãn giữ vị trí cũ.
+- **Death is disappearing**, no explosion FX yet (art is staged at `resources/art/fx/explosion`).
+- **Obstacles block bullets but not the player** — exactly as in
+  `core/sim/run-simulation.ts` ("obstacles only block bullets"): the player can walk through a
+  pillar, so you can stand inside one and every bullet you fire dies on the spot. If playtests
+  find this annoying, add `obstacleAt()` to the movement step of `PlayerController`
+  (slide along each axis so you do not get stuck on corners).
+- **The HUD does not re-align on window resize** (position computed once in `init`). If a web
+  build is resized after loading, hearts/labels keep their old positions.

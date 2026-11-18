@@ -1,15 +1,15 @@
 /**
- * Adapter `localStorage` cho `SaveRepository` (ADR-012: một slot, chỉ meta).
+ * `localStorage` adapter for `SaveRepository` (ADR-012: one slot, meta only).
  *
- * `core/save/storage.ts` không đụng DOM; file này là chỗ duy nhất biết
- * `window.localStorage`. Trình duyệt chặn storage (private mode, iframe sandbox)
- * thì lùi về `MemorySaveStorage` để game vẫn chơi được, chỉ mất tiến trình khi
- * reload — kèm cảnh báo console.
+ * `core/save/storage.ts` never touches the DOM; this file is the only place that knows about
+ * `window.localStorage`. If the browser blocks storage (private mode, iframe sandbox) it falls
+ * back to `MemorySaveStorage` so the game still plays, losing progress only on reload — with a
+ * console warning.
  */
 import { MemorySaveStorage, SaveRepository } from '../core/save/storage';
 import type { SaveStorage } from '../core/save/storage';
 
-/** Key duy nhất của slot (GDD §10). */
+/** The slot's single key (GDD §10). */
 export const SAVE_STORAGE_KEY = 'yokai-field-save';
 
 class LocalStorageSave implements SaveStorage {
@@ -26,10 +26,10 @@ class LocalStorageSave implements SaveStorage {
   }
 }
 
-/** Repository thật của game; fallback RAM nếu storage bị chặn. */
+/** The game's real repository; RAM fallback when storage is blocked. */
 export function createSaveRepository(): SaveRepository {
   try {
-    // Probe cả đọc lẫn ghi: có trình duyệt cho đọc nhưng ném khi ghi (quota/sandbox).
+    // Probe both read and write: some browsers allow reads but throw on writes (quota/sandbox).
     const probe = `${SAVE_STORAGE_KEY}:probe`;
     window.localStorage.setItem(probe, '1');
     window.localStorage.removeItem(probe);
@@ -37,7 +37,7 @@ export function createSaveRepository(): SaveRepository {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(
-      `[YokaiField] localStorage không dùng được (${message}); save chỉ sống trong RAM.`,
+      `[YokaiField] localStorage unavailable (${message}); the save lives in RAM only.`,
     );
     return new SaveRepository(new MemorySaveStorage());
   }

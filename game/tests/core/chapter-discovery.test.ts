@@ -4,22 +4,22 @@ import type { LevelData } from '../../assets/scripts/core/level/level-data';
 import { RunState } from '../../assets/scripts/core/run/run-state';
 import { loadChapterOne, loadTmxLevels } from '../helpers/tmx-levels';
 
-/** Bản sao phòng với số/id mới — mô phỏng "thả thêm .tmx vào thư mục". */
+/** A copy of a room with a new number/id — simulates "dropping another .tmx into the folder". */
 function renumber(level: LevelData, room: number, chapter = level.chapter): LevelData {
   return {
     ...level,
     id: `ch${chapter}-r${room}`,
     chapter,
     room,
-    // Door trỏ ra ngoài chapter sẽ làm chapterFromLevels báo lỗi; bỏ door khi test
-    // chỉ quan tâm số phòng.
+    // A door pointing outside the chapter would make chapterFromLevels fail; drop it when the test
+    // only cares about room numbers.
     doors: [],
     ...(level.boss !== undefined ? { boss: level.boss } : {}),
   };
 }
 
-describe('chapterFromLevels — khám phá phòng từ dữ liệu', () => {
-  it('sắp lại theo số phòng, không quan tâm thứ tự engine trả về', () => {
+describe('chapterFromLevels — discovers rooms from data', () => {
+  it('re-sorts by room number, regardless of the order the engine returns', () => {
     const levels = loadTmxLevels();
     const shuffled = [levels[4], levels[0], levels[8], levels[2], levels[6], levels[1], levels[7], levels[3], levels[5]]
       .filter((level): level is LevelData => level !== undefined);
@@ -30,14 +30,14 @@ describe('chapterFromLevels — khám phá phòng từ dữ liệu', () => {
     expect(chapter).toEqual(loadChapterOne());
   });
 
-  it('thêm room-10.tmx là chapter có 10 phòng, RunState hiện "x/10"', () => {
+  it('adding room-10.tmx gives a chapter with 10 rooms, RunState shows "x/10"', () => {
     const levels = loadTmxLevels();
     const bossRoom = levels[8];
-    if (bossRoom === undefined) throw new Error('thiếu phòng 9');
+    if (bossRoom === undefined) throw new Error('missing room 9');
 
-    // Boss phải là phòng cuối (rule mới của M3), nên thêm phòng 10 = dời boss
-    // xuống phòng 10 và trả phòng 9 về phòng thường. Đây đúng là việc author
-    // trong Tiled: sửa property `boss`/`isBossRoom` của hai file .tmx.
+    // The boss must be the last room (the M3 rule), so adding room 10 means moving the boss
+    // to room 10 and turning room 9 back into a regular room. This is exactly the authoring
+    // work in Tiled: edit the `boss`/`isBossRoom` property of the two .tmx files.
     const nonBossCopy: LevelData = {
       ...bossRoom,
       id: 'ch1-r9',
@@ -59,7 +59,7 @@ describe('chapterFromLevels — khám phá phòng từ dữ liệu', () => {
     expect(run.roomLabel).toBe('1/10');
     expect(run.roomsTotal).toBe(10);
 
-    // Phòng 9 không còn là phòng cuối: run phải đi tiếp tới 10.
+    // Room 9 is no longer the last room: the run must continue to 10.
     for (let room = 1; room < 10; room += 1) {
       expect(run.isBossRoom).toBe(room === 10);
       run.onRoomCleared();
@@ -70,22 +70,22 @@ describe('chapterFromLevels — khám phá phòng từ dữ liệu', () => {
     expect(run.roomLabel).toBe('10/10');
   });
 
-  it('từ chối boss room nằm giữa chapter', () => {
+  it('rejects a boss room in the middle of a chapter', () => {
     const levels = loadTmxLevels();
     const first = levels[0];
-    if (first === undefined) throw new Error('thiếu phòng 1');
+    if (first === undefined) throw new Error('missing room 1');
 
-    // Thả thêm phòng thường sau boss: run sẽ "thắng" ở phòng 9 nên phòng 10
-    // không bao giờ tới được — author nhầm chỗ đặt boss.
+    // Add a regular room after the boss: the run would "win" at room 9 so room 10
+    // is unreachable — the author put the boss in the wrong place.
     expect(() => chapterFromLevels([...levels, renumber(first, 10)])).toThrow(
-      /phòng boss .* phải là phòng cuối/,
+      /boss room .* must be the last room/,
     );
   });
 
-  it('từ chối hai phòng boss trong một chapter', () => {
+  it('rejects two boss rooms in one chapter', () => {
     const levels = loadTmxLevels();
     const bossRoom = levels[8];
-    if (bossRoom === undefined) throw new Error('thiếu phòng 9');
+    if (bossRoom === undefined) throw new Error('missing room 9');
 
     const secondBoss = renumber(levels[7] ?? bossRoom, 10);
     expect(() =>
@@ -93,39 +93,39 @@ describe('chapterFromLevels — khám phá phòng từ dữ liệu', () => {
         ...levels,
         { ...secondBoss, isBossRoom: true, boss: { name: 'TenguBlue' }, doors: [] },
       ]),
-    ).toThrow(/chỉ được có một/);
+    ).toThrow(/there can only be one/);
   });
 
-  it('từ chối thư mục rỗng', () => {
-    expect(() => chapterFromLevels([])).toThrow(/không có phòng nào/);
+  it('rejects an empty folder', () => {
+    expect(() => chapterFromLevels([])).toThrow(/no rooms/);
   });
 
-  it('từ chối trùng số phòng', () => {
+  it('rejects a duplicate room number', () => {
     const levels = loadTmxLevels();
     const first = levels[0];
-    if (first === undefined) throw new Error('thiếu phòng 1');
+    if (first === undefined) throw new Error('missing room 1');
 
-    expect(() => chapterFromLevels([...levels, renumber(first, 1)])).toThrow(/số phòng 1 bị trùng/);
+    expect(() => chapterFromLevels([...levels, renumber(first, 1)])).toThrow(/room number 1 is duplicated/);
   });
 
-  it('từ chối thiếu số phòng ở giữa (run sẽ kẹt)', () => {
-    // Bỏ door để lỗi nổi ở đúng chỗ cần test: dãy phòng đứt quãng, không phải door hỏng.
+  it('rejects a missing number in the middle (the run would get stuck)', () => {
+    // Drop the door so the error surfaces in the right place: a gap in the room sequence, not a broken door.
     const levels = loadTmxLevels()
       .filter((level) => level.room !== 3)
       .map((level) => ({ ...level, doors: [] }));
 
-    expect(() => chapterFromLevels(levels)).toThrow(/phải liền mạch từ 1.*Thiếu room-3/);
+    expect(() => chapterFromLevels(levels)).toThrow(/must be contiguous from 1.*Missing room-3/);
   });
 
-  it('từ chối trộn hai chapter trong một thư mục', () => {
+  it('rejects mixing two chapters in one folder', () => {
     const levels = loadTmxLevels();
     const first = levels[0];
-    if (first === undefined) throw new Error('thiếu phòng 1');
+    if (first === undefined) throw new Error('missing room 1');
 
     expect(() => chapterFromLevels([...levels, renumber(first, 10, 2)])).toThrow(/chapter/);
   });
 
-  it('sortLevelsByRoom không sửa mảng gốc', () => {
+  it('sortLevelsByRoom does not mutate the input array', () => {
     const levels = loadTmxLevels();
     const original = levels.map((level) => level.room);
 

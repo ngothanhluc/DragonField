@@ -1,7 +1,7 @@
 // AUTO-GENERATED from game/config/tuning.json — do not edit. Run: bun run gen
 //
-// Số liệu balance đã validate từ `config/tuning.json`. Sửa JSON rồi chạy `bun run gen`;
-// `bun run check:config` chặn file này lệch khỏi nguồn.
+// Validated balance numbers from `config/tuning.json`. Edit the JSON then run `bun run gen`;
+// `bun run check:config` blocks this file from drifting from the source.
 
 export const TUNING_DATA = {
   version: 1,

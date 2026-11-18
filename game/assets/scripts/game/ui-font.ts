@@ -1,10 +1,9 @@
 /**
- * Font pixel của pack (`NormalFont.ttf`) cho **mọi** label UI.
+ * The pack's pixel font (`NormalFont.ttf`) for **every** UI label.
  *
- * `createLabel` là sync, còn load font là async — nên label được tạo bằng font hệ
- * thống trước, rồi đổi sang font pixel ngay khi clip về (cùng một promise cho cả
- * scene). Font chỉ dùng pixel-perfect khi cỡ chữ là số nguyên, nên các màn M5
- * giữ cỡ 9–30.
+ * `createLabel` is sync while loading a font is async — so labels are created with the system
+ * font first, then switch to the pixel font as soon as the clip arrives (one promise per
+ * scene). The font is only pixel-perfect at integer sizes, so M5 screens keep sizes at 9–30.
  */
 import { Font as CocosFont, resources, warn } from 'cc';
 import type { Label as CocosLabel } from 'cc';
@@ -25,7 +24,7 @@ function ensureFont(): Promise<Font> {
   promise = new Promise<Font>((resolve, reject) => {
     resources.load(FONT_PATH, CocosFont, (err: Error | null, font: Font | null) => {
       if (err || !font) {
-        reject(new Error(`Không load được font "${FONT_PATH}": ${err?.message ?? 'font rỗng'}`));
+        reject(new Error(`Could not load font "${FONT_PATH}": ${err?.message ?? 'empty font'}`));
         return;
       }
       loaded = font;
@@ -35,13 +34,13 @@ function ensureFont(): Promise<Font> {
   promise.catch(() => {
     if (!warned) {
       warned = true;
-      warn(`[YokaiField] Font pixel lỗi — label giữ font hệ thống.`);
+      warn(`[YokaiField] Pixel font failed — labels keep the system font.`);
     }
   });
   return promise;
 }
 
-/** Gán font pixel cho label; an toàn khi label đã bị destroy. */
+/** Assign the pixel font to a label; safe when the label is already destroyed. */
 export function applyPixelFont(label: Label): void {
   if (loaded !== null) {
     setFont(label, loaded);
@@ -58,11 +57,11 @@ export function applyPixelFont(label: Label): void {
 function setFont(label: Label, font: Font): void {
   label.useSystemFont = false;
   label.font = font;
-  // Đổi font đổi metrics: label wrap/RESIZE_HEIGHT phải layout lại.
+  // A font change changes metrics: wrapping/RESIZE_HEIGHT labels must relayout.
   label.updateRenderData?.(true);
 }
 
-/** Chỉ dùng test/dev: biết font đã load chưa. */
+/** Test/dev only: whether the font has loaded. */
 export function pixelFontReady(): boolean {
   return loaded !== null;
 }

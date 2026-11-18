@@ -1,25 +1,25 @@
 /**
- * Mô phỏng run headless — không engine, không DOM, không `SaveStorage`.
+ * Headless run simulation — no engine, no DOM, no `SaveStorage`.
  *
- * Nối các module `core/` mà game dùng (`waves`, `behaviours`, `AutoFire`,
- * `BulletPool`, `HealthState`, `rewards`, `skills`, `boss`) thành tick loop 16 ms,
- * để test tích hợp bắt regression balance và luồng thắng/thua mà không mở Cocos.
+ * Wires the `core/` modules the game uses (`waves`, `behaviours`, `AutoFire`,
+ * `BulletPool`, `HealthState`, `rewards`, `skills`, `boss`) into a 16 ms tick loop,
+ * so integration tests catch balance regressions and win/lose flow without opening Cocos.
  *
- * Đây là bản mô phỏng **của đúng những luật game đang chạy** (M4):
+ * This simulates **exactly the rules the game runs** (M4):
  *
- * - Nhịp bắn/damage/số đạn/crit/pierce/ricochet/homing/nổ/freeze/poison/
- *   lifesteal/shield/thorns đều lấy từ `DerivedStats` và các helper core mà
- *   `game/` dùng.
- * - Hitstop và stagger được mô phỏng: trúng đạn làm mô phỏng đứng yên 70 ms và
- *   enemy choáng 150 ms, cooldown không reset.
- * - Elite caster bắn loạt 3 viên, chaser elite lao, tank elite lao 2 lần; hitbox
- *   và tầm chạm scale theo silhouette vai trò.
- * - Phòng boss **không** còn là tank placeholder: nó chạy `simulateBossRun`
- *   (`core/sim/boss-run.ts`), tức `stepBoss` + phase + summon + skill.
+ * - Fire rate/damage/projectile count/crit/pierce/ricochet/homing/explosion/freeze/poison/
+ *   lifesteal/shield/thorns all come from `DerivedStats` and the core helpers that
+ *   `game/` uses.
+ * - Hitstop and stagger are simulated: a bullet hit freezes the simulation for 70 ms and
+ *   staggers the enemy for 150 ms, without resetting cooldowns.
+ * - An elite caster fires a 3-bullet volley, an elite chaser pounces, an elite tank charges twice; hitbox
+ *   and contact range scale with the role silhouette.
+ * - The boss room is **no** longer a placeholder tank: it runs `simulateBossRun`
+ *   (`core/sim/boss-run.ts`), i.e. `stepBoss` + phases + summon + skills.
  *
- * - Ngẫu nhiên chỉ qua `SeededRng` tạo từ `seed`; không module-level state.
- * - Vật cản **chỉ chặn đạn** (mô phỏng cân bằng, không phải collision/nav thật).
- * - `godMode` là hook test: bỏ qua sát thương lên player để đo thời gian dọn phòng.
+ * - Randomness only through `SeededRng` built from `seed`; no module-level state.
+ * - Obstacles **only block bullets** (a balance simulation, not real collision/nav).
+ * - `godMode` is a test hook: skip damage to the player to measure room-clear time.
  */
 import { bossForSpriteName } from '../boss/boss-defs';
 import { AutoFire } from '../combat/auto-fire';
@@ -59,19 +59,19 @@ import { computeDerivedStats } from '../skills/derived-stats';
 import { simulateBossRun } from './boss-run';
 
 export const SIM_STEP_MS = 16;
-/** 10 phút — dài hơn run 8–12 phút của GDD §2. */
+/** 10 minutes — longer than the 8–12 minute run of GDD §2. */
 export const SIM_DEFAULT_MAX_DURATION_MS = 600_000;
 
-/** Bán kính va chạm, tile. */
+/** Collision radius, tiles. */
 const PLAYER_RADIUS_TILES = 0.25;
 const DEFAULT_ENEMY_RADIUS_TILES = 0.4;
 const BULLET_RADIUS_TILES = 0.15;
-/** Chaser đứng yên đúng tại ngưỡng này, nên vùng sát thương phải bằng nó. */
+/** The chaser holds exactly at this threshold, so the damage zone must equal it. */
 const CONTACT_RANGE_TILES = CHASER_CONTACT_RANGE_TILES;
 /**
- * Đạn player phải sống đủ lâu để bay hết tầm auto-aim, nếu không "tầm bắn"
- * trong `config/tuning.json` chỉ là số ảo. Lấy 1.2 s (đủ rộng cho 12 tile/s × 10 tile)
- * hoặc 1.5× thời gian bay hết tầm, cái nào lớn hơn.
+ * Player bullets must live long enough to cross the auto-aim range, otherwise the "range"
+ * in `config/tuning.json` is only a virtual number. Takes 1.2 s (wide enough for 12 tiles/s × 10 tiles)
+ * or 1.5× the time to fly the full range, whichever is larger.
  */
 const PLAYER_BULLET_TTL_MS = Math.max(
   1200,
@@ -81,13 +81,13 @@ const PLAYER_BULLET_TTL_MS = Math.max(
       1.5,
   ),
 );
-/** Đạn enemy chậm để né được (GDD §4). */
+/** Enemy bullets are slow enough to dodge (GDD §4). */
 const ENEMY_BULLET_SPEED_TILES_PER_SECOND = 4;
 const ENEMY_BULLET_TTL_MS = 3000;
-/** Lệch hướng đạn caster, radian — nguồn duy nhất cần seed. */
+/** Caster bullet angle offset, radians — the only source that needs a seed. */
 const ENEMY_SHOT_SPREAD_RADIANS = 0.15;
 
-/** Thế giới mà policy đọc. Chỉ đọc, không được sửa. */
+/** The world a policy reads. Read only, never modified. */
 export interface PolicyWorld {
   readonly nowMs: number;
   readonly room: number;
@@ -100,19 +100,19 @@ export interface PolicyWorld {
   readonly bullets: readonly Bullet[];
 }
 
-/** Input kịch bản: hàm thuần của world, trả phím WASD của frame này. */
+/** Scripted input: a pure function of the world returning this frame's WASD keys. */
 export type InputPolicy = (world: PolicyWorld) => MoveInput;
 
 export interface SimulationOptions {
   readonly seed: number;
-  /** Một chapter đầy đủ; phòng lấy theo thứ tự trong `level.rooms`. */
+  /** A full chapter; rooms are taken in `level.rooms` order. */
   readonly level: ChapterData;
   readonly policy: InputPolicy;
-  /** Mặc định `SIM_DEFAULT_MAX_DURATION_MS`; hết giờ thì trả `timeout`. */
+  /** Defaults to `SIM_DEFAULT_MAX_DURATION_MS`; when time runs out it returns `timeout`. */
   readonly maxDurationMs?: number;
-  /** Test hook: player không nhận sát thương. */
+  /** Test hook: the player takes no damage. */
   readonly godMode?: boolean;
-  /** Skill đang sở hữu, `Map<skillId, stacks>` như `RunState` của game. */
+  /** Owned skills, `Map<skillId, stacks>` like the game's `RunState`. */
   readonly skills?: ReadonlyMap<string, number>;
 }
 
@@ -140,14 +140,14 @@ export interface SimulationResult {
   readonly events: readonly SimulationEvent[];
 }
 
-/** Chạy trọn một chapter headless. Pure: không đọc/ghi state ngoài tham số. */
+/** Run a whole chapter headless. Pure: no state read/written outside the parameters. */
 export function simulateRun(options: SimulationOptions): SimulationResult {
   const maxDurationMs = options.maxDurationMs ?? SIM_DEFAULT_MAX_DURATION_MS;
   if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) {
-    throw new Error(`simulateRun cần maxDurationMs hữu hạn > 0, nhận ${maxDurationMs}`);
+    throw new Error(`simulateRun needs a finite maxDurationMs > 0, got ${maxDurationMs}`);
   }
   const firstRoom = options.level.rooms[0];
-  if (firstRoom === undefined) throw new Error('simulateRun cần chapter có ít nhất 1 phòng');
+  if (firstRoom === undefined) throw new Error('simulateRun needs a chapter with at least 1 room');
 
   const rng = new SeededRng(options.seed);
   const stats = computeDerivedStats(options.skills ?? new Map<string, number>());
@@ -161,10 +161,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   );
   const autoFire = AutoFire.fromRate(stats.fireRatePerSecond);
   const bullets = new BulletPool();
-  /** Status của từng enemy, key = id (không nhét vào `EnemyState` để không đổi schema chung). */
+  /** Status of each enemy, key = id (not stuffed into `EnemyState` to keep the shared schema). */
   const statuses = new Map<string, StatusEffects>();
   const events: SimulationEvent[] = [];
-  /** Id đạn trúng trong frame hiện tại; tái dùng để không cấp phát mỗi frame. */
+  /** Ids of bullets hit this frame; reused so each frame allocates nothing. */
   const spent = new Set<number>();
   let hitstopMs = 0;
 
@@ -210,9 +210,9 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   };
 
   /**
-   * Caster bắn một loạt. Elite dùng `eliteVolleyAngles` (3 viên toả); thường
-   * một viên với lệch ngẫu nhiên nhỏ để hai caster không bắn trùng một đường.
-   * Cùng luật với `game/combat-loop.ts`.
+   * The caster fires a volley. Elites use `eliteVolleyAngles` (3-bullet fan); regular ones
+   * fire one bullet with a small random offset so two casters do not fire the same line.
+   * Same rule as `game/combat-loop.ts`.
    */
   const fireCasterVolley = (enemy: EnemyState): void => {
     const dx = player.x - enemy.position.x;
@@ -268,7 +268,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     return dealt;
   };
 
-  /** Vào phòng boss: giao hẳn cho `simulateBossRun` và kết thúc run. */
+  /** Enter the boss room: hand over to `simulateBossRun` and end the run. */
   const runBossRoom = (
     bossRoom: LevelData,
     atRoomIndex: number,
@@ -276,7 +276,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     const bossDef =
       bossRoom.boss === undefined ? undefined : bossForSpriteName(bossRoom.boss.name);
     if (bossDef === undefined) {
-      throw new Error(`Phòng boss ${bossRoom.id} thiếu boss hợp lệ trong BOSSES`);
+      throw new Error(`Boss room ${bossRoom.id} is missing a valid boss in BOSSES`);
     }
 
     const result = simulateBossRun({
@@ -319,7 +319,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     return { bossDurationMs: result.durationMs, won: result.outcome === 'won' };
   };
 
-  // Chapter chỉ có phòng boss (author sai/edge): xử lý trước khi vào loop.
+  // Chapter with only a boss room (authoring mistake/edge case): handle before entering the loop.
   if (room.isBossRoom) {
     const bossRun = runBossRoom(room, 0);
     return {
@@ -336,7 +336,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     durationMs += SIM_STEP_MS;
     shield.update(durationMs);
 
-    // Hitstop: thời gian trôi nhưng mô phỏng đứng yên (đúng `HitstopClock`).
+    // Hitstop: real time passes but the simulation stands still (exactly `HitstopClock`).
     if (hitstopMs > 0) {
       hitstopMs -= SIM_STEP_MS;
       continue;
@@ -417,7 +417,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
                 hearts: result.hearts,
                 source: 'contact',
               });
-              // Thorns: chạm vào player thì enemy ăn đòn (chỉ khi đòn thật sự vào).
+              // Thorns: touching the player hurts the enemy (only when the blow really lands).
               if (stats.thorns !== undefined) {
                 damageEnemy(enemy, stats.thorns.damage);
               }
@@ -440,9 +440,9 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
     bullets.update(SIM_STEP_MS);
 
-    // Vật cản + va chạm. Viên trúng được gom id rồi `consumeWhere` **một lượt**
-    // sau vòng lặp: không thu hồi giữa lúc đang duyệt `active()`, và đạn trúng
-    // biến mất ngay trong frame này thay vì sống thêm một frame với `ttlMs = 0`.
+    // Obstacles + collision. Hit bullets collect ids then `consumeWhere` **once**
+    // after the loop: never retire while iterating `active()`, and a hit bullet
+    // disappears in this frame instead of living one more frame with `ttlMs = 0`.
     const seconds = SIM_STEP_MS / 1000;
     spent.clear();
     for (const bullet of bullets.active()) {
@@ -465,8 +465,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         continue;
       }
 
-      // Đạn player: quét mọi enemy còn sống trên đường (Piercing), nảy nếu có
-      // Ricochet, rồi mới quyết thu hồi.
+      // Player bullet: sweep every living enemy on the path (Piercing), bounce if
+      // Ricochet, then decide whether to retire.
       let consumed = false;
       for (const enemy of enemies) {
         if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
@@ -482,7 +482,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         statusOf(enemy).apply(stats, durationMs);
         hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
 
-        // Explosive: damage phụ lên enemy khác trong bán kính.
+        // Explosive: extra damage to other enemies in radius.
         if (bullet.explosiveRadiusTiles > 0 && bullet.explosiveDamage > 0) {
           for (const other of enemies) {
             if (other === enemy || other.health <= 0 || other.action.kind === 'dead') continue;
@@ -491,7 +491,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           }
         }
 
-        // Enemy chết vì đòn chính: event kill đã phát trong damageEnemy.
+        // Enemy died from the main hit: the kill event was already emitted in damageEnemy.
         if (bullet.pierceRemaining > 0) {
           bullet.pierceRemaining -= 1;
           continue;
@@ -567,7 +567,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   return { status: status ?? 'timeout', roomsCleared, kills, goldEarned, durationMs, events };
 }
 
-/** Wave của phòng. Boss room do `runBossRoom` xử lý nên ở đây chỉ phòng thường. */
+/** Waves of the room. Boss rooms are handled by `runBossRoom` so this covers regular rooms only. */
 function spawnRoomWave(room: LevelData, waveIndex: number): EnemyState[] {
   return spawnWave(room, waveIndex);
 }
@@ -601,7 +601,7 @@ function movePlayer(player: Vec2, input: MoveInput, speed: number, room: LevelDa
   };
 }
 
-/** Di chuyển enemy theo action vừa quyết; `slow` là hệ số Freeze hiện tại. */
+/** Move the enemy by the action just decided; `slow` is the current Freeze factor. */
 function advanceEnemy(enemy: EnemyState, action: EnemyAction, slow: number, level: LevelData): void {
   const seconds = SIM_STEP_MS / 1000;
   const factor = Math.max(0, Math.min(1, slow));

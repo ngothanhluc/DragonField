@@ -1,15 +1,15 @@
 /**
- * Nhịp bắn. `tick` được gọi mỗi frame với delta ms; trả về true nếu frame đó được bắn.
+ * Fire rate. `tick` is called each frame with delta ms; returns true when that frame fires.
  *
- * Phần dư được giữ lại (không reset cứng), nên nhịp bắn không trôi khi frame time
- * thay đổi — quan trọng vì game chạy trên web với frame time không ổn định.
+ * The remainder is kept (no hard reset), so the fire rate does not drift when frame time
+ * changes — important because the game runs on the web with unstable frame times.
  */
 export class FireControl {
   private remainingMs = 0;
 
   constructor(readonly intervalMs: number) {
     if (intervalMs <= 0) {
-      throw new Error(`FireControl cần intervalMs > 0, nhận ${intervalMs}`);
+      throw new Error(`FireControl needs intervalMs > 0, got ${intervalMs}`);
     }
   }
 
@@ -25,7 +25,7 @@ export class FireControl {
     return true;
   }
 
-  /** Đặt lại để phát tiếp theo xảy ra ngay lập tức. */
+  /** Reset so the next shot happens immediately. */
   reset(): void {
     this.remainingMs = 0;
   }

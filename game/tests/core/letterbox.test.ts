@@ -5,7 +5,7 @@ const DESIGN_WIDTH = 512;
 const DESIGN_HEIGHT = 288;
 const DESIGN_ASPECT = DESIGN_WIDTH / DESIGN_HEIGHT;
 
-/** px/unit của rect khi áp lên canvas — phải bằng nhau ở hai trục (pixel vuông). */
+/** px/unit of the rect applied to the canvas — must be equal on both axes (square pixels). */
 function pxPerUnit(rect: { width: number; height: number }, canvasWidth: number, canvasHeight: number) {
   return {
     x: (rect.width * canvasWidth) / DESIGN_WIDTH,
@@ -14,13 +14,13 @@ function pxPerUnit(rect: { width: number; height: number }, canvasWidth: number,
 }
 
 describe('letterboxRect', () => {
-  it('canvas đúng 16:9 thì band phủ kín canvas', () => {
+  it('a 16:9 canvas fills the whole canvas with the band', () => {
     const rect = letterboxRect(1280, 720, DESIGN_WIDTH, DESIGN_HEIGHT);
     expect(rect).toEqual({ x: 0, y: 0, width: 1, height: 1 });
   });
 
-  it('canvas 4:3 thì letterbox trên dưới, band phủ hết chiều rộng', () => {
-    // 1280×960: scale = 1280/512 = 2.5 (nhỏ hơn 960/288) → band 1280×720.
+  it('a 4:3 canvas letterboxes top and bottom, the band fills the full width', () => {
+    // 1280×960: scale = 1280/512 = 2.5 (smaller than 960/288) → band 1280×720.
     const rect = letterboxRect(1280, 960, DESIGN_WIDTH, DESIGN_HEIGHT);
     expect(rect.width).toBeCloseTo(1, 10);
     expect(rect.height).toBeCloseTo(0.75, 10);
@@ -28,7 +28,7 @@ describe('letterboxRect', () => {
     expect(rect.y).toBeCloseTo(0.125, 10);
   });
 
-  it('canvas 21:9 thì pillarbox hai bên, band phủ hết chiều cao', () => {
+  it('a 21:9 canvas pillarboxes the sides, the band fills the full height', () => {
     // 2520×1080: scale = 1080/288 = 3.75 → band 1920×1080.
     const rect = letterboxRect(2520, 1080, DESIGN_WIDTH, DESIGN_HEIGHT);
     expect(rect.width).toBeCloseTo(1920 / 2520, 10);
@@ -37,7 +37,7 @@ describe('letterboxRect', () => {
     expect(rect.y).toBeCloseTo(0, 10);
   });
 
-  it('canvas dọc (800×1000) vẫn giữ đúng tỉ lệ 16:9 và canh giữa', () => {
+  it('a portrait canvas (800×1000) still keeps the 16:9 ratio and stays centred', () => {
     const rect = letterboxRect(800, 1000, DESIGN_WIDTH, DESIGN_HEIGHT);
     expect(rect.width).toBeCloseTo(1, 10);
     expect(rect.height).toBeCloseTo((288 * (800 / 512)) / 1000, 10);
@@ -45,7 +45,7 @@ describe('letterboxRect', () => {
     expect(rect.y).toBeCloseTo((1 - rect.height) / 2, 10);
   });
 
-  it('mọi tỉ lệ: pixel vuông và rect nằm trong canvas', () => {
+  it('for any ratio: square pixels and the rect stays inside the canvas', () => {
     const canvases: ReadonlyArray<readonly [number, number]> = [
       [640, 480],
       [1280, 720],
@@ -65,14 +65,14 @@ describe('letterboxRect', () => {
       expect(rect.y).toBeGreaterThanOrEqual(0);
       expect(rect.x + rect.width).toBeLessThanOrEqual(1);
       expect(rect.y + rect.height).toBeLessThanOrEqual(1);
-      // Band luôn phủ hết một trục (không bao giờ nhỏ hơn design ở cả hai trục).
+      // The band always fills one axis (never smaller than the design on both axes).
       expect(Math.max(rect.width, rect.height)).toBeCloseTo(1, 10);
-      // Band có đúng tỉ lệ design.
+      // The band has exactly the design ratio.
       expect((rect.width * width) / (rect.height * height)).toBeCloseTo(DESIGN_ASPECT, 10);
     }
   });
 
-  it('kích thước không hợp lệ thì trả về cả canvas thay vì NaN', () => {
+  it('invalid sizes return the whole canvas instead of NaN', () => {
     expect(letterboxRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT)).toEqual({
       x: 0,
       y: 0,
@@ -88,7 +88,7 @@ describe('pixelPerfectRect', () => {
     return { x: rect.x * w, y: rect.y * h, width: rect.width * w, height: rect.height * h };
   }
 
-  it('1920×1080 → ×3 = 1536×864, canh giữa đúng pixel nguyên', () => {
+  it('1920×1080 → ×3 = 1536×864, centred on whole pixels', () => {
     const rect = px(pixelPerfectRect(1920, 1080, DESIGN_WIDTH, DESIGN_HEIGHT), 1920, 1080);
     expect(rect.width).toBeCloseTo(1536, 6);
     expect(rect.height).toBeCloseTo(864, 6);
@@ -102,14 +102,14 @@ describe('pixelPerfectRect', () => {
     expect(px(pixelPerfectRect(1024, 768, DESIGN_WIDTH, DESIGN_HEIGHT), 1024, 768).height).toBeCloseTo(576, 6);
   });
 
-  it('kích thước lẻ: lề làm tròn xuống pixel nguyên', () => {
+  it('odd sizes: margins round down to whole pixels', () => {
     const rect = px(pixelPerfectRect(1601, 901, DESIGN_WIDTH, DESIGN_HEIGHT), 1601, 901);
     expect(Number.isInteger(Math.round(rect.x * 1e6) / 1e6)).toBe(true);
     expect(rect.x).toBeCloseTo(32, 6); // (1601 − 1536) / 2 = 32.5 → 32
     expect(rect.y).toBeCloseTo(18, 6); // (901 − 864) / 2 = 18.5 → 18
   });
 
-  it('canvas nhỏ hơn design thì lùi về letterbox thường', () => {
+  it('a canvas smaller than the design falls back to regular letterboxing', () => {
     expect(pixelPerfectRect(400, 300, DESIGN_WIDTH, DESIGN_HEIGHT)).toEqual(
       letterboxRect(400, 300, DESIGN_WIDTH, DESIGN_HEIGHT),
     );
@@ -121,7 +121,7 @@ describe('worldToUiScale', () => {
     expect(worldToUiScale(1920, 1080, DESIGN_WIDTH, DESIGN_HEIGHT)).toBeCloseTo(0.8, 10);
   });
 
-  it('canvas đúng bội số nguyên → 1', () => {
+  it('a canvas that is an exact multiple → 1', () => {
     expect(worldToUiScale(1536, 864, DESIGN_WIDTH, DESIGN_HEIGHT)).toBeCloseTo(1, 10);
   });
 });

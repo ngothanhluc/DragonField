@@ -1,19 +1,19 @@
 import type { SeededRng } from '../rng';
 import { RARITIES, SKILLS, luckPoints, type Rarity, type SkillDef } from './pool';
 
-/** Trọng số rarity gốc của GDD §6: common 70 / rare 25 / epic 5 (tổng 100). */
+/** Base rarity weights from GDD §6: common 70 / rare 25 / epic 5 (sum 100). */
 export const BASE_RARITY_WEIGHTS: Readonly<Record<Rarity, number>> = {
   common: 70,
   rare: 25,
   epic: 5,
 };
 
-/** Số thẻ mỗi lần chọn (GDD §6: chọn 1 trong 3). */
+/** Cards offered each time (GDD §6: pick 1 of 3). */
 export const DEFAULT_CHOICE_COUNT = 3;
 
 /**
- * Công thức luck — mỗi điểm luck (1 stack Luck = 0.01 điểm, xem `luck-add`)
- * dịch trọng số từ common sang rarity cao, giữ tổng ≈ 100:
+ * Luck formula — each luck point (1 Luck stack = 0.01 points, see `luck-add`)
+ * shifts weight from common toward higher rarities, keeping the total ≈ 100:
  *
  * ```text
  * epic   = 5  + 100 × L
@@ -21,14 +21,14 @@ export const DEFAULT_CHOICE_COUNT = 3;
  * common = max(0, 100 − epic − rare)
  * ```
  *
- * Ví dụ: 3 stack Luck (L = 0.03) → common 65.5 / rare 26.5 / epic 8.
+ * Example: 3 Luck stacks (L = 0.03) → common 65.5 / rare 26.5 / epic 8.
  *
- * Khi một rarity đã hết thẻ hợp lệ (mọi skill của rarity đó đạt maxStacks),
- * trọng số của nó bị bỏ khỏi lần quay — `weightedIndex` tự chuẩn hoá lại theo
- * các rarity còn mặt, nên xác suất tương đối giữa chúng không đổi.
+ * When a rarity has no valid cards left (every skill of that rarity is at maxStacks),
+ * its weight is dropped from the roll — `weightedIndex` renormalises over
+ * the rarities still present, so their relative odds are unchanged.
  *
- * `L` bị kẹp vào [0, 0.5]: pool hiện tại chỉ cho tối đa 0.03, nhưng kẹp lại để
- * một save hỏng không thể làm trọng số âm hoặc lấn hết common.
+ * `L` is clamped to [0, 0.5]: the current pool only allows at most 0.03, but clamping stops
+ * a broken save from producing negative weights or swallowing all of common.
  */
 export function rarityWeights(luck: number): Record<Rarity, number> {
   const clampedLuck = Number.isFinite(luck) ? Math.min(Math.max(luck, 0), 0.5) : 0;
@@ -41,24 +41,24 @@ export function rarityWeights(luck: number): Record<Rarity, number> {
 
 export interface RollChoicesArgs {
   readonly rng: SeededRng;
-  /** id → số stack hiện có. Skill đạt `maxStacks` không còn xuất hiện. */
+  /** id → current stack count. Skills at `maxStacks` no longer appear. */
   readonly owned: ReadonlyMap<string, number>;
-  /** Số thẻ muốn quay, mặc định 3. */
+  /** How many cards to roll, 3 by default. */
   readonly count?: number;
 }
 
 /**
- * Quay `count` thẻ skill: không trùng trong cùng một lần, không trả skill đã đạt
- * `maxStacks`, và **không ném lỗi khi cạn pool** — trả về ít hơn `count` (kể cả
- * mảng rỗng). Người gọi phải chịu được 0–3 thẻ: UI chỉ vẽ số thẻ nhận được.
+ * Roll `count` skill cards: no duplicates in one roll, never a skill already at
+ * `maxStacks`, and **no throwing when the pool runs dry** — returns fewer than `count`
+ * (including an empty array). The caller must handle 0–3 cards: the UI just draws what it gets.
  *
- * Mỗi thẻ: chọn rarity theo trọng số luck, rồi chọn đều trong các skill còn lại
- * của rarity đó. Thẻ vừa chọn bị loại khỏi pool nên lần chọn sau không lặp lại.
+ * Per card: pick a rarity by luck-weighted odds, then pick uniformly among the remaining skills
+ * of that rarity. The chosen card leaves the pool so later picks cannot repeat it.
  */
 export function rollChoices(args: RollChoicesArgs): SkillDef[] {
   const count = args.count ?? DEFAULT_CHOICE_COUNT;
   if (!Number.isInteger(count) || count < 0) {
-    throw new Error(`rollChoices cần count là số nguyên >= 0, nhận ${count}`);
+    throw new Error(`rollChoices needs count to be an integer >= 0, got ${count}`);
   }
 
   const candidates = SKILLS.filter(
@@ -78,7 +78,7 @@ export function rollChoices(args: RollChoicesArgs): SkillDef[] {
     );
     const rarity = availableRarities[rarityIndex];
     if (rarity === undefined) {
-      throw new Error('rollChoices: không chọn được rarity dù pool còn thẻ');
+      throw new Error('rollChoices: no rarity could be picked although the pool has cards');
     }
 
     const skill = args.rng.pick(byRarity[rarity]);

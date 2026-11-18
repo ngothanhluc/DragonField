@@ -1,11 +1,11 @@
 /**
- * Schema save 1 slot (GDD §10, ADR-012). **Chỉ meta**: vàng, upgrade, chapter đã
- * mở, best, settings. Không lưu run đang chơi — tắt tab là mất run.
+ * 1-slot save schema (GDD §10, ADR-012). **Meta only**: gold, upgrades, unlocked
+ * chapters, best, settings. The current run is never saved — closing the tab loses the run.
  *
- * Ba cửa vào:
- * - `parseSaveData` — validate nghiêm ngặt, gom **mọi** lỗi vào một `Error`.
- * - `migrate` — nâng save cũ/thiếu `version` lên `SAVE_VERSION`.
- * - `serializeSave` — JSON canonical, thứ tự key cố định để diff được.
+ * Three entry points:
+ * - `parseSaveData` — strict validation, collecting **every** problem into one `Error`.
+ * - `migrate` — upgrades an old save / missing `version` to `SAVE_VERSION`.
+ * - `serializeSave` — canonical JSON, fixed key order so diffs are readable.
  */
 import { UPGRADE_TRACKS, createDefaultUpgrades, maxLevelFor } from '../meta/upgrades';
 import type { UpgradeTrack } from '../meta/upgrades';
@@ -15,7 +15,7 @@ import type { Settings } from './settings';
 
 export const SAVE_VERSION = 1;
 
-/** Kỷ lục xa nhất đã tới. `chapter`/`room` = 0 nghĩa là chưa chơi lần nào. */
+/** Furthest record reached. `chapter`/`room` = 0 means never played. */
 export interface BestProgress {
   readonly chapter: number;
   readonly room: number;
@@ -24,15 +24,15 @@ export interface BestProgress {
 export interface SaveData {
   readonly version: number;
   readonly gold: number;
-  /** Cấp meta hiện có của từng track, 0..`maxLevelFor(track)`. */
+  /** Current meta level of each track, 0..`maxLevelFor(track)`. */
   readonly upgrades: Record<UpgradeTrack, number>;
-  /** Số chapter đã mở, 1..`CHAPTERS_PER_RUN`. */
+  /** Number of unlocked chapters, 1..`CHAPTERS_PER_RUN`. */
   readonly chaptersUnlocked: number;
   readonly best: BestProgress;
   readonly settings: Settings;
 }
 
-/** Gom toàn bộ lỗi rồi ném một `Error` duy nhất, thay vì dừng ở lỗi đầu tiên. */
+/** Collect every problem then throw a single `Error`, instead of stopping at the first one. */
 class ProblemList {
   private readonly items: string[] = [];
 
@@ -44,7 +44,7 @@ class ProblemList {
     if (this.items.length === 0) return;
 
     const details = this.items.map((item) => `  - ${item}`).join('\n');
-    throw new Error(`${header} (${this.items.length} lỗi)\n${details}`);
+    throw new Error(`${header} (${this.items.length} problem(s))\n${details}`);
   }
 }
 
@@ -69,7 +69,7 @@ function describeValue(value: unknown): string {
   return typeof value;
 }
 
-/** Đọc một số nguyên trong khoảng đóng [min, max]; sai thì ghi lỗi và trả `fallback`. */
+/** Read an integer within the closed range [min, max]; on error record it and return `fallback`. */
 function readInteger(
   value: unknown,
   path: string,
@@ -79,19 +79,19 @@ function readInteger(
   problems: ProblemList,
 ): number {
   if (!isInteger(value)) {
-    problems.add(path, `phải là số nguyên, nhận ${describeValue(value)}`);
+    problems.add(path, `must be an integer, got ${describeValue(value)}`);
     return fallback;
   }
   if (value < min || value > max) {
-    problems.add(path, `phải nằm trong ${min}..${max}, nhận ${value}`);
+    problems.add(path, `must be within ${min}..${max}, got ${value}`);
     return fallback;
   }
   return value;
 }
 
 /**
- * Đọc cờ boolean tuỳ chọn của settings: thiếu → `undefined` (lấy mặc định ở
- * `applySettings`), sai kiểu → ghi lỗi `settings.<field>`.
+ * Read an optional settings boolean flag: absent → `undefined` (`applySettings` supplies
+ * the default), wrong type → record a `settings.<field>` error.
  */
 function readFlag(
   source: Record<string, unknown>,
@@ -101,7 +101,7 @@ function readFlag(
   const value = source[field];
   if (value === undefined) return undefined;
   if (typeof value !== 'boolean') {
-    problems.add(`settings.${field}`, `phải là boolean, nhận ${describeValue(value)}`);
+    problems.add(`settings.${field}`, `must be a boolean, got ${describeValue(value)}`);
     return undefined;
   }
   return value;
@@ -119,14 +119,14 @@ export function createDefaultSave(): SaveData {
 }
 
 /**
- * Validate một save **đã ở `SAVE_VERSION`**. Dùng `migrate` cho save cũ.
+ * Validate a save **already at `SAVE_VERSION`**. Use `migrate` for old saves.
  *
- * Mọi lỗi được gom lại: save hỏng thường hỏng nhiều chỗ cùng lúc, và người sửa
- * cần thấy hết trong một lần chạy thay vì sửa từng field một.
+ * Every problem is collected: a broken save usually breaks in several places at once, and whoever
+ * fixes it needs to see them all in one run instead of one field at a time.
  */
 export function parseSaveData(raw: unknown): SaveData {
   if (!isRecord(raw)) {
-    throw new Error(`SaveData không hợp lệ: phải là object, nhận ${describeValue(raw)}`);
+    throw new Error(`Invalid SaveData: must be an object, got ${describeValue(raw)}`);
   }
 
   const problems = new ProblemList();
@@ -134,7 +134,7 @@ export function parseSaveData(raw: unknown): SaveData {
   if (raw.version !== SAVE_VERSION) {
     problems.add(
       'version',
-      `phải bằng ${SAVE_VERSION}, nhận ${describeValue(raw.version)}; save cũ phải đi qua migrate()`,
+      `must equal ${SAVE_VERSION}, got ${describeValue(raw.version)}; an old save must go through migrate()`,
     );
   }
 
@@ -153,7 +153,7 @@ export function parseSaveData(raw: unknown): SaveData {
   if (!isRecord(rawUpgrades)) {
     problems.add(
       'upgrades',
-      `phải là object { ${UPGRADE_TRACKS.join(', ')} }, nhận ${describeValue(rawUpgrades)}`,
+      `must be an object { ${UPGRADE_TRACKS.join(', ')} }, got ${describeValue(rawUpgrades)}`,
     );
   } else {
     for (const track of UPGRADE_TRACKS) {
@@ -172,11 +172,11 @@ export function parseSaveData(raw: unknown): SaveData {
   let bestRoom = 0;
   const rawBest = raw.best;
   if (!isRecord(rawBest)) {
-    problems.add('best', `phải là object { chapter, room }, nhận ${describeValue(rawBest)}`);
+    problems.add('best', `must be an object { chapter, room }, got ${describeValue(rawBest)}`);
   } else {
     bestChapter = readInteger(rawBest.chapter, 'best.chapter', 0, CHAPTERS_PER_RUN, 0, problems);
-    // Số phòng của chapter là dữ liệu (`roomsInChapter` từ số file `.tmx`), nên
-    // không chặn trần theo hằng số cũ — save của chapter 10 phòng vẫn phải load được.
+    // The room count per chapter is data (`roomsInChapter` from the number of `.tmx` files), so
+    // no upper bound is enforced from an old constant — a save from a 10-room chapter must still load.
     bestRoom = readInteger(
       rawBest.room,
       'best.room',
@@ -192,29 +192,29 @@ export function parseSaveData(raw: unknown): SaveData {
   if (!isRecord(rawSettings)) {
     problems.add(
       'settings',
-      `phải là object { volume, fullscreen, screenShake, damageNumbers }, nhận ${describeValue(rawSettings)}`,
+      `must be an object { volume, fullscreen, screenShake, damageNumbers }, got ${describeValue(rawSettings)}`,
     );
   } else {
     const volume = rawSettings.volume;
     const volumeOk = isFiniteNumber(volume) && volume >= 0 && volume <= 1;
     if (!volumeOk) {
-      problems.add('settings.volume', `phải là số trong 0..1, nhận ${describeValue(volume)}`);
+      problems.add('settings.volume', `must be a number in 0..1, got ${describeValue(volume)}`);
     }
 
     const fullscreen = rawSettings.fullscreen;
     if (typeof fullscreen !== 'boolean') {
       problems.add(
         'settings.fullscreen',
-        `phải là boolean, nhận ${describeValue(fullscreen)}`,
+        `must be a boolean, got ${describeValue(fullscreen)}`,
       );
     }
 
-    // Cờ accessibility thêm ở ticket #2: save cũ (v1 trước ticket) thiếu field thì
-    // lấy mặc định — không bump SAVE_VERSION. Chỉ báo lỗi khi có mà sai kiểu.
+    // Accessibility flags added in ticket #2: a v1 save from before the ticket lacks the field, so
+    // take the default — no SAVE_VERSION bump. Only report when present with the wrong type.
     const screenShake = readFlag(rawSettings, 'screenShake', problems);
     const damageNumbers = readFlag(rawSettings, 'damageNumbers', problems);
 
-    // Chỉ dùng giá trị đọc được khi field hợp lệ; nếu không, giữ mặc định.
+    // Only use the read value when the field is valid; otherwise keep the default.
     settings = applySettings({
       ...(volumeOk ? { volume } : {}),
       ...(typeof fullscreen === 'boolean' ? { fullscreen } : {}),
@@ -223,7 +223,7 @@ export function parseSaveData(raw: unknown): SaveData {
     });
   }
 
-  problems.throwIfAny('SaveData không hợp lệ');
+  problems.throwIfAny('Invalid SaveData');
 
   return {
     version: SAVE_VERSION,
@@ -236,8 +236,8 @@ export function parseSaveData(raw: unknown): SaveData {
 }
 
 /**
- * JSON canonical: thứ tự key cố định theo GDD §10, chỉ chứa field đã validate.
- * Ném lỗi nếu `data` không hợp lệ — thà mất một lần save hơn ghi rác vào slot.
+ * Canonical JSON: fixed key order per GDD §10, containing only validated fields.
+ * Throws when `data` is invalid — better to lose one save than write garbage into the slot.
  */
 export function serializeSave(data: SaveData): string {
   const valid = parseSaveData(data);
@@ -261,26 +261,26 @@ export function serializeSave(data: SaveData): string {
   });
 }
 
-/** Đọc `migrated[key]` nếu khác `undefined`, ngược lại lấy mặc định. */
+/** Read `migrated[key]` when not `undefined`, otherwise take the default. */
 function pick(raw: Record<string, unknown>, key: string, fallback: unknown): unknown {
   const value = raw[key];
   return value === undefined ? fallback : value;
 }
 
 /**
- * Trả save mới với `best` = xa hơn giữa kỷ lục cũ và `(chapter, room)`.
+ * Return a new save with `best` = the further of the old record and `(chapter, room)`.
  *
- * So sánh theo chapter trước rồi tới room — "tới phòng 5 chapter 1" không thể
- * ghi đè "tới phòng 2 chapter 2". Dùng ở bootstrap mỗi lần vào phòng mới và ở
- * màn kết thúc run; save không hợp lệ sẽ ném (đừng ghi rác vào slot).
+ * Compares chapter first, then room — "room 5 of chapter 1" cannot override
+ * "room 2 of chapter 2". Used by bootstrap on every room entry and on the run
+ * result screen; an invalid save throws (never write garbage into the slot).
  */
 export function withBest(save: SaveData, chapter: number, room: number): SaveData {
   const valid = parseSaveData(save);
   if (!Number.isInteger(chapter) || chapter < 1 || chapter > CHAPTERS_PER_RUN) {
-    throw new Error(`withBest: chapter phải là số nguyên 1..${CHAPTERS_PER_RUN}, nhận ${chapter}`);
+    throw new Error(`withBest: chapter must be an integer 1..${CHAPTERS_PER_RUN}, got ${chapter}`);
   }
   if (!Number.isInteger(room) || room < 1) {
-    throw new Error(`withBest: room phải là số nguyên >= 1, nhận ${room}`);
+    throw new Error(`withBest: room must be an integer >= 1, got ${room}`);
   }
 
   const previous = valid.best;
@@ -292,16 +292,16 @@ export function withBest(save: SaveData, chapter: number, room: number): SaveDat
 }
 
 /**
- * Mở chapter kế sau khi dọn boss chapter `clearedChapter` (GDD §2: "chapter sau
- * mở khi thắng chapter trước"). Không bao giờ thu hẹp tiến trình đã mở.
+ * Unlock the next chapter after clearing the boss of `clearedChapter` (GDD §2: "the next
+ * chapter opens when the previous one is won"). Never shrinks progress already unlocked.
  *
- * Trả save **mới**; save đầu vào không bị sửa. Save hỏng ném lỗi như `withBest`.
+ * Returns a **new** save; the input save is not modified. A broken save throws like `withBest`.
  */
 export function unlockNextChapter(save: SaveData, clearedChapter: number): SaveData {
   const valid = parseSaveData(save);
   if (!Number.isInteger(clearedChapter) || clearedChapter < 1 || clearedChapter > CHAPTERS_PER_RUN) {
     throw new Error(
-      `unlockNextChapter: chapter phải là số nguyên 1..${CHAPTERS_PER_RUN}, nhận ${clearedChapter}`,
+      `unlockNextChapter: chapter must be an integer 1..${CHAPTERS_PER_RUN}, got ${clearedChapter}`,
     );
   }
 
@@ -311,8 +311,8 @@ export function unlockNextChapter(save: SaveData, clearedChapter: number): SaveD
 }
 
 /**
- * Track máu/nhịp bắn từng tên là `hp`/`firerate` trong bản nháp GDD §10; nay đổi
- * sang key của `UpgradeTrack`. Vẫn đọc tên cũ khi migrate để không mất tiến trình.
+ * The health/fire-rate track names were `hp`/`firerate` in the GDD §10 draft; they now use the
+ * `UpgradeTrack` keys. Old names are still read during migration so progress is not lost.
  */
 const LEGACY_UPGRADE_KEYS: Readonly<Partial<Record<UpgradeTrack, string>>> = {
   hearts: 'hp',
@@ -321,7 +321,7 @@ const LEGACY_UPGRADE_KEYS: Readonly<Partial<Record<UpgradeTrack, string>>> = {
 
 function migrateUpgrades(raw: unknown, fallback: Record<UpgradeTrack, number>): unknown {
   if (raw === undefined) return fallback;
-  // Trả nguyên value hỏng để `parseSaveData` báo lỗi thay vì im lặng bỏ qua.
+  // Return the broken value as-is so `parseSaveData` reports it instead of silently skipping.
   if (!isRecord(raw)) return raw;
 
   const levels: Record<UpgradeTrack, unknown> = {
@@ -364,34 +364,34 @@ function migrateSettings(raw: unknown, fallback: Settings): unknown {
 }
 
 /**
- * Nâng save cũ lên `SAVE_VERSION`.
+ * Upgrade an old save to `SAVE_VERSION`.
  *
- * - `version` thiếu → coi là 0 (save trước khi có version).
- * - Field thiếu → lấy mặc định; field sai kiểu → để `parseSaveData` báo.
- * - `version` mới hơn game → ném lỗi rõ ràng, **không** đoán mò rồi ghi đè save
- *   của bản game mới hơn (sẽ làm mất dữ liệu).
+ * - missing `version` → treated as 0 (a save from before versioning).
+ * - missing field → default; wrong type → left for `parseSaveData` to report.
+ * - `version` newer than the game → throw a clear error, **never** guess and overwrite the
+ *   save of a newer game version (that would lose data).
  */
 export function migrate(raw: unknown): SaveData {
   if (!isRecord(raw)) {
-    throw new Error(`Save không migrate được: phải là object, nhận ${describeValue(raw)}`);
+    throw new Error(`Save cannot be migrated: must be an object, got ${describeValue(raw)}`);
   }
 
   const version = raw.version === undefined ? 0 : raw.version;
   if (!isInteger(version) || version < 0) {
     throw new Error(
-      `Save không migrate được: version phải là số nguyên >= 0, nhận ${describeValue(raw.version)}`,
+      `Save cannot be migrated: version must be an integer >= 0, got ${describeValue(raw.version)}`,
     );
   }
   if (version > SAVE_VERSION) {
     throw new Error(
-      `Save version ${version} mới hơn bản game hỗ trợ (${SAVE_VERSION}); hãy cập nhật game`,
+      `Save version ${version} is newer than this game supports (${SAVE_VERSION}); update the game`,
     );
   }
 
   const defaults = createDefaultSave();
 
-  // Hiện chỉ có v1 nên "migrate" = vá field thiếu + đổi tên key cũ. Khi thêm
-  // SAVE_VERSION 2, thêm nhánh `if (version < 2)` ở đây thay vì sửa parseSaveData.
+  // Only v1 exists so far, so "migrate" = patch missing fields + rename old keys. When adding
+  // SAVE_VERSION 2, add an `if (version < 2)` branch here instead of editing parseSaveData.
   const migrated = {
     version: SAVE_VERSION,
     gold: pick(raw, 'gold', defaults.gold),

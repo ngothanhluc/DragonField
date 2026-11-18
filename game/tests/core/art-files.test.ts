@@ -31,14 +31,14 @@ function actorOf(key: string): string {
   return key.split('.')[0] ?? '';
 }
 
-describe('manifest trỏ tới file thật', () => {
-  it('mọi sheet tồn tại trên đĩa', () => {
+describe('the manifest points at real files', () => {
+  it('every sheet exists on disk', () => {
     for (const [key, entry] of entries) {
-      expect(existsSync(sheetPath(entry)), `${key} → ${entry.sheet} không tồn tại`).toBe(true);
+      expect(existsSync(sheetPath(entry)), `${key} → ${entry.sheet} does not exist`).toBe(true);
     }
   });
 
-  it('lưới frame chia hết kích thước sheet thật', () => {
+  it('the frame grid divides the real sheet size', () => {
     const sizes = new Map<string, { width: number; height: number }>();
     for (const [key, entry] of entries) {
       let size = sizes.get(entry.sheet);
@@ -48,16 +48,16 @@ describe('manifest trỏ tới file thật', () => {
         sizes.set(entry.sheet, size);
       }
 
-      expect(size.width, `${key}: sheet ${size.width}px không chia hết ${frameColumns(entry)} cột`).toBe(
+      expect(size.width, `${key}: sheet ${size.width}px is not divisible by ${frameColumns(entry)} column(s)`).toBe(
         entry.frameWidth * frameColumns(entry),
       );
-      expect(size.height, `${key}: sheet ${size.height}px không chia hết ${frameRows(entry)} hàng`).toBe(
+      expect(size.height, `${key}: sheet ${size.height}px is not divisible by ${frameRows(entry)} row(s)`).toBe(
         entry.frameHeight * frameRows(entry),
       );
     }
   });
 
-  it('ảnh có pixel đặc ít nhất ở frame đầu (không phải file rỗng)', () => {
+  it('the image has solid pixels in at least the first frame (not an empty file)', () => {
     const checked = new Set<string>();
     for (const entry of Object.values(manifest.sprites)) {
       if (checked.has(entry.sheet)) continue;
@@ -72,8 +72,8 @@ describe('manifest trỏ tới file thật', () => {
   });
 });
 
-describe('pivot theo chân', () => {
-  it('mọi entry actor neo feet và footPx đúng pixel đặc thấp nhất của sheet', () => {
+describe('feet pivot', () => {
+  it('every actor entry anchors at the feet with footPx equal to the lowest solid pixel of the sheet', () => {
     const padding = new Map<string, number>();
     for (const [key, entry] of entries) {
       const actor = actorOf(key);
@@ -85,9 +85,9 @@ describe('pivot theo chân', () => {
         padding.set(entry.sheet, computed);
       }
       if (entry.anchor === 'feet') {
-        expect(entry.footPx, `${key} footPx phải bằng đáy pixel đặc của ${entry.sheet}`).toBe(computed);
+        expect(entry.footPx, `${key} footPx must equal the bottom solid pixel of ${entry.sheet}`).toBe(computed);
       } else {
-        expect(entry.footPx, `${key} FX neo giữa`).toBe(Math.floor(entry.frameHeight / 2));
+        expect(entry.footPx, `${key} FX anchors at the centre`).toBe(Math.floor(entry.frameHeight / 2));
       }
 
       const ratio = entryAnchorY(entry);
@@ -96,20 +96,20 @@ describe('pivot theo chân', () => {
     }
   });
 
-  it('cùng actor, anchorY khác nhau nhưng chân luôn ở node (world foot = 0)', () => {
-    // footY trong frame = footPx; sau khi trừ anchorY*frameHeight phải bằng 0.
+  it('same actor, different anchorY, but the feet always stay on the node (world foot = 0)', () => {
+    // footY inside the frame = footPx; after subtracting anchorY*frameHeight it must be 0.
     for (const [key, entry] of entries) {
       if (entry.anchor !== 'feet') continue;
       const footInFrame = entry.footPx;
       const afterAnchor = footInFrame - entryAnchorY(entry) * entry.frameHeight;
-      expect(Math.abs(afterAnchor), `${key} lệch chân ${afterAnchor}px`).toBeLessThan(1e-9);
+      expect(Math.abs(afterAnchor), `${key} foot is off by ${afterAnchor}px`).toBeLessThan(1e-9);
     }
   });
 
-  it('frame boss đổi kích thước giữa anim (samurai) nhưng vẫn có pivot feet', () => {
+  it('boss frames change size within an animation (samurai) yet still pivot at the feet', () => {
     const idle = manifest.sprites['samurai.idle'];
     const attack = manifest.sprites['samurai.attack.left'];
-    if (idle === undefined || attack === undefined) throw new Error('thiếu samurai');
+    if (idle === undefined || attack === undefined) throw new Error('missing samurai');
 
     expect(idle.frameHeight).not.toBe(attack.frameHeight);
     expect(idle.anchor).toBe('feet');
@@ -118,17 +118,17 @@ describe('pivot theo chân', () => {
   });
 });
 
-describe('bộ animation bắt buộc theo vai trò', () => {
-  it('mọi key trong bảng yêu cầu resolve được', () => {
+describe('required animation set per role', () => {
+  it('every key in the required table resolves', () => {
     for (const [actor, keys] of Object.entries(REQUIRED_ACTOR_ANIMATIONS)) {
-      expect(keys.length, `${actor} phải có animation`).toBeGreaterThan(0);
+      expect(keys.length, `${actor} must have animations`).toBeGreaterThan(0);
       for (const key of keys) {
-        expect(manifest.sprites[key], `${actor} thiếu ${key}`).toBeDefined();
+        expect(manifest.sprites[key], `${actor} is missing ${key}`).toBeDefined();
       }
     }
   });
 
-  it('player có idle/walk/hit/dead; monster có idle/walk; boss có đòn/chết', () => {
+  it('player has idle/walk/hit/dead; monsters have idle/walk; bosses have attacks/death', () => {
     for (const anim of ['idle', 'walk', 'hit']) {
       for (const direction of ['down', 'up', 'left', 'right'] as const) {
         expect(manifest.sprites[`player.${anim}.${direction}`]).toBeDefined();
@@ -160,7 +160,7 @@ describe('bộ animation bắt buộc theo vai trò', () => {
     }
   });
 
-  it('FX dùng đúng kiểu loop: shield loop, impact/explosion một lần', () => {
+  it('FX use the right loop kind: shield loops, impact/explosion play once', () => {
     expect(manifest.sprites['fx.shield']?.loop).toBe(true);
     for (const key of ['fx.impact', 'fx.explosion', 'fx.smoke', 'fx.ice', 'fx.poison']) {
       expect(manifest.sprites[key]?.loop, key).toBe(false);
@@ -171,14 +171,14 @@ describe('bộ animation bắt buộc theo vai trò', () => {
   });
 });
 
-describe('kích thước sprite boss khai báo trong core', () => {
-  it('spriteExtentTiles phủ mọi pixel đặc của mọi frame boss (neo theo chân)', () => {
+describe('boss sprite size declared in core', () => {
+  it('spriteExtentTiles covers every solid pixel of every boss frame (feet anchor)', () => {
     for (const id of BOSS_IDS) {
       const declared = BOSSES[id].spriteExtentTiles;
       const measured = { left: 0, right: 0, up: 0 };
       for (const key of BOSSES[id].animations) {
         const entry = manifest.sprites[key];
-        expect(entry, `${id}: thiếu ${key} trong manifest`).toBeDefined();
+        expect(entry, `${id}: missing ${key} in the manifest`).toBeDefined();
         if (entry === undefined) continue;
         const png = readPng(sheetPath(entry));
         const feetRow = entry.frameHeight * (1 - entryAnchorY(entry));

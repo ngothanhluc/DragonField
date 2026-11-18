@@ -1,25 +1,25 @@
 /**
- * Cổng vào chapter (GDD §2: chapter sau chỉ mở khi thắng chapter trước).
+ * Chapter gate (GDD §2: the next chapter only opens when the previous one is won).
  *
- * Đây là **luật**, không phải trạng thái nút. Chapter select vẽ nút khoá bằng
- * `chapterGate`, và bootstrap gọi lại đúng hàm này trước khi load `.tmx` — nên
- * một debug hook hay click sai toạ độ cũng không thể bắt đầu chapter chưa mở.
+ * This is the **rule**, not button state. Chapter select draws locked buttons from
+ * `chapterGate`, and bootstrap calls this same function before loading a `.tmx` — so a
+ * debug hook or a mis-aimed click cannot start an unopened chapter.
  */
 import { CHAPTERS_PER_RUN } from '../run/run-state';
 import type { SaveData } from './save-data';
 
 export interface ChapterGate {
   readonly allowed: boolean;
-  /** Lý do bằng tiếng Việt để log; `null` khi được phép. */
+  /** Reason string for logs; `null` when allowed. */
   readonly reason: string | null;
 }
 
 const ALLOWED: ChapterGate = { allowed: true, reason: null };
 
 /**
- * `chapter` 1..`CHAPTERS_PER_RUN`, phải có dữ liệu level và không vượt
- * `chaptersUnlocked` của save. Save hỏng (unlocked không phải số) bị coi như 1
- * thay vì mở toàn bộ chapter.
+ * `chapter` 1..`CHAPTERS_PER_RUN`, must have level data, and must not exceed the save's
+ * `chaptersUnlocked`. A broken save (unlocked not a number) counts as 1
+ * instead of opening every chapter.
  */
 export function chapterGate(
   save: Pick<SaveData, 'chaptersUnlocked'>,
@@ -27,15 +27,15 @@ export function chapterGate(
   hasData: boolean,
 ): ChapterGate {
   if (!Number.isInteger(chapter) || chapter < 1 || chapter > CHAPTERS_PER_RUN) {
-    return { allowed: false, reason: `Chapter ${chapter} không tồn tại` };
+    return { allowed: false, reason: `Chapter ${chapter} does not exist` };
   }
   if (!hasData) {
-    return { allowed: false, reason: `Chapter ${chapter} chưa có dữ liệu level` };
+    return { allowed: false, reason: `Chapter ${chapter} has no level data` };
   }
 
   const unlocked = Number.isInteger(save.chaptersUnlocked) ? save.chaptersUnlocked : 1;
   if (chapter > unlocked) {
-    return { allowed: false, reason: `Chapter ${chapter} còn khoá (đã mở 1..${unlocked})` };
+    return { allowed: false, reason: `Chapter ${chapter} is locked (unlocked 1..${unlocked})` };
   }
 
   return ALLOWED;

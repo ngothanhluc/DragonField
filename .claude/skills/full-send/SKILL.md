@@ -1,94 +1,95 @@
 ---
 name: full-send
-description: Tự lái một ticket từ issue tới PR đã merge, không người canh. Gõ "/full-send #<số issue>".
+description: Drive a ticket from issue to merged PR on your own, unattended. Type "/full-send #<issue number>".
 disable-model-invocation: true
 ---
 
 # Full send
 
-Người dùng gõ lệnh này vì họ **không ngồi xem**. Tin nhắn giữa chừng của bạn không ai đọc tới rất lâu sau. Bạn sở hữu ticket từ trạng thái hiện tại tới **PR đã merge**. Kết thúc lượt khi CI hoặc executor còn chạy là công việc chết, vì không ai prompt lại: luôn chờ bằng `hc wait`.
+The user typed this command because they are **not watching**. Your mid-run messages will not be read until much later. You own the ticket from its current state to a **merged PR**. Ending the turn while CI or an executor is still running is dead work, because nobody will prompt you again: always wait with `hc wait`.
 
-Vai trò: bạn (Claude Opus) là **orchestrator**. Bạn viết brief và test đỏ, review, proof, mở PR, theo dõi CI, merge. Code sản phẩm do **executor** (opencode, model trong `models.json`) viết trong worktree riêng qua hc.
+Role: you (Claude Opus) are the **orchestrator**. You write the brief and the red test, review, prove, open the PR, watch CI, merge. Product code is written by the **executor** (opencode, model from `models.json`) in a separate worktree via hc.
 
-## Quyền được cấp
+## Granted permissions
 
-Lệnh `/full-send` là giấy phép cho:
+The `/full-send` command is permission to:
 
-- Merge PR khi qua **cổng merge**.
-- Push và `--force-with-lease` lên branch của chính ticket này sau khi rebase.
-- Mọi cách test mà proof cần (chạy app, dev server, trình duyệt, chụp màn hình), kể cả khi tài liệu nào đó bảo hỏi trước. Quy tắc về *cách* test (lệnh nào, fixture nào) vẫn áp dụng.
+- Merge the PR once it passes the **merge gate**.
+- Push and `--force-with-lease` to this ticket's own branch after rebasing.
+- Any testing the proof needs (run the app, dev server, browser, screenshots), even when some document says to ask first. Rules about *how* to test (which command, which fixture) still apply.
 
-Mọi lệnh `gh` và `git` chạm remote đi qua `scripts/as-owner` (account `ngothanhluc`). Báo cáo, mô tả PR, comment issue viết bằng tiếng Việt.
+Every `gh` and `git` command that touches the remote goes through `scripts/as-owner` (account `ngothanhluc`). Reports, PR descriptions and issue comments are written in English.
 
-## Bước
+## Steps
 
-Mở todo list với đúng 9 bước dưới đây. Bước nào bỏ thì giữ trong list với `skip: <lý do>`.
+Open a todo list with exactly the 9 steps below. If you skip one, keep it in the list with `skip: <reason>`.
 
-1. **Khởi động.** Chạy từ repo gốc:
-   - `$HC_TERMINAL_ID` phải có (đang chạy trong herdr-core). Không có thì dừng và nói cần chạy trong hc.
-   - `scripts/resolve-models`. Ghi lại mọi dòng `changed:` và `orchestrator-latest:` cho báo cáo.
-   - `hc templates` phải có `oc-impl`, `oc-impl-pro`, `oc-adversary`; thiếu thì chạy `scripts/install-hc-templates`.
-   - `git ls-tree --name-only <nhánh mặc định> .opencode/opencode.json scripts/oc-agent` phải ra cả hai file: worktree tạo từ nhánh mặc định, nên bộ tự động hoá phải được commit ở đó.
-   - `scripts/as-owner gh repo view --json defaultBranchRef` phải có tên nhánh. Rỗng nghĩa là remote chưa có nhánh nào: hỏi người dùng (mục **Hỏi người dùng**).
-   - `scripts/as-owner gh issue view <n> --json number,title,state,labels`: issue mở và có nhãn `ready-for-agent`. Nêu tiêu đề issue.
-2. **Brief.** Đọc `.claude/skills/brief/SKILL.md` và làm theo. Đầu ra: worktree, branch, SHA commit test đỏ, `.kol-auto/brief.md`, cờ `rủi ro`.
-3. **Giao executor.** Đọc `.claude/skills/effort/SKILL.md`; khởi động ở bậc 1 (ghi `low` vào `.kol-auto/effort.executor`) và ghi dòng `effort` vào ledger.
+1. **Bootstrap.** Run from the repo root:
+   - `$HC_TERMINAL_ID` must exist (you are running inside herdr-core). If not, stop and say it must run in hc.
+   - `scripts/resolve-models`. Record every `changed:` and `orchestrator-latest:` line for the report.
+   - `hc templates` must have `oc-impl`, `oc-impl-pro`, `oc-adversary`; if missing, run `scripts/install-hc-templates`.
+   - `git ls-tree --name-only <default branch> .opencode/opencode.json scripts/oc-agent` must list both files: worktrees are created from the default branch, so the automation must be committed there.
+   - `scripts/as-owner gh repo view --json defaultBranchRef` must return a branch name. Empty means the remote has no branches yet: ask the user (section **Asking the user**).
+   - `scripts/as-owner gh issue view <n> --json number,title,state,labels`: the issue is open and labeled `ready-for-agent`. State the issue title.
+2. **Brief.** Read `.claude/skills/brief/SKILL.md` and follow it. Output: worktree, branch, red-test commit SHA, `.kol-auto/brief.md`, `risk` flag.
+3. **Hand off to the executor.** Read `.claude/skills/effort/SKILL.md`; start at rung 1 (write `low` to `.kol-auto/effort.executor`) and write the `effort` line to the ledger.
    ```sh
    hc run --bg --name impl-<n> --cwd <worktree> oc-impl \
-     "Ticket #<n>. Brief: .kol-auto/brief.md. Terminal cha: $HC_TERMINAL_ID. Báo về bằng hc send khi done hoặc blocked."
+     "Ticket #<n>. Brief: .kol-auto/brief.md. Parent terminal: $HC_TERMINAL_ID. Report back with hc send when done or blocked."
    ```
-   Kiểm `first_message.sent`; false thì `hc read impl-<n>`, xử lý màn hình đang chờ, rồi mới gửi lại. Chờ bằng `hc wait --children any` cho tới khi có tin `<hc from="... impl-<n>">`. Hc báo executor `blocked`/`error`/thoát mà chưa gửi tin thì `hc read impl-<n> --lines 80` để biết vì sao.
-4. **Review.** Đọc `.claude/skills/review-loop/SKILL.md` và làm theo, trên báo cáo `.kol-auto/report.md` của executor. Lượt sửa gửi bằng `hc send impl-<n> "<finding>"` và chờ như bước 3. Áp dụng **thang executor** bên dưới.
-5. **Proof.** Đọc `.claude/skills/proof/SKILL.md` và làm theo. Không có proof cho một thay đổi thì chưa có full confidence: hỏi người dùng.
-6. **Mở PR.**
-   - `scripts/as-owner git fetch origin`, rebase branch lên `origin/<nhánh mặc định>`, chạy lại lệnh check của brief.
-   - `scripts/as-owner git push -u origin <branch>` (sau rebase: `--force-with-lease`).
-   - `scripts/as-owner gh pr create --base <nhánh mặc định> --title ... --body-file ...`. PR thật, không draft.
-   - Tiêu đề theo quy ước commit của repo, nói vì sao thay đổi quan trọng. Thân PR: câu mở đầu là **vấn đề** của người dùng (lấy từ issue), rồi giải pháp ngắn gọn, rồi `Closes #<n>`, một dòng `Proof: ...`, một dòng `Review: <số vòng>, <kết quả ledger>`, và dòng cuối `Tạo bởi Claude Opus (orchestrator) + <model executor thật đã dùng> qua opencode.` Soát thân PR không chứa secret hay dữ liệu cá nhân.
-7. **Theo dõi PR.** Đọc `.claude/skills/watch-pr/SKILL.md` và làm theo. Exit 1 vì check fail: sửa (giao lại executor nếu là code sản phẩm), proof lại, push, theo dõi lại.
-8. **Merge.** Khi qua **cổng merge**, lấy khoá merge rồi merge (mục **Merge**).
-9. **Dọn dẹp và báo cáo.** `hc kill`/`hc rm` các terminal của ticket, `git worktree remove <worktree>`, xoá branch local. Báo cáo cuối (mục **Báo cáo**).
+   Check `first_message.sent`; if false, `hc read impl-<n>`, clear whatever screen is waiting, then resend. Wait with `hc wait --children any` until a `<hc from="... impl-<n>">` message arrives. If hc reports the executor `blocked`/`error`/exited without sending a message, run `hc read impl-<n> --lines 80` to find out why.
+4. **Review.** Read `.claude/skills/review-loop/SKILL.md` and follow it, on the executor's `.kol-auto/report.md`. Send fix rounds with `hc send impl-<n> "<finding>"` and wait as in step 3. Apply the **executor ladder** below.
+5. **Proof.** Read `.claude/skills/proof/SKILL.md` and follow it. No proof for a change means no full confidence: ask the user.
+6. **Open the PR.**
+   - `scripts/as-owner git fetch origin`, rebase the branch onto `origin/<default branch>`, rerun the brief's check command.
+   - `scripts/as-owner git push -u origin <branch>` (after a rebase: `--force-with-lease`).
+   - `scripts/as-owner gh pr create --base <default branch> --title ... --body-file ...`. A real PR, not a draft.
+   - Title follows the repo's commit convention and says why the change matters. PR body: the opening sentence is the user's **problem** (from the issue), then a short solution, then `Closes #<n>`, one `Proof: ...` line, one `Review: <round count>, <ledger outcome>` line, and the last line `Created by Claude Opus (orchestrator) + <actual executor model used> via opencode.` Check the PR body contains no secrets or personal data.
+7. **Watch the PR.** Read `.claude/skills/watch-pr/SKILL.md` and follow it. Exit 1 because a check failed: fix it (hand back to the executor if it is product code), prove again, push, watch again.
+8. **Merge.** Once it passes the **merge gate**, take the merge lock and merge (section **Merge**).
+9. **Clean up and report.** `hc kill`/`hc rm` the ticket's terminals, `git worktree remove <worktree>`, delete the local branch. Final report (section **Report**).
 
-## Thang executor
+## Executor ladder
 
-Một **vòng thua** là một lượt executor kết thúc mà gate của bước đó vẫn chưa qua: báo `blocked`, test nghiệm thu còn đỏ, check còn đỏ, hoặc một finding blocker đã gửi sửa vẫn còn.
+A **lost round** is an executor turn that ends with that step's gate still failing: reported `blocked`, red acceptance test, red checks, or a blocker finding that was sent for fixing still unresolved.
 
-- Mỗi vòng thua → lên một bậc trong **thang executor** của `.claude/skills/effort/SKILL.md` (flash low → high → max → pro high → max), terminal mới, cùng worktree.
-- Thua ở bậc cuối → dừng giao việc. Trong lượt có từ `ultrathink`, viết **tiền đề** mà các lần thử cùng dựa vào ra một câu, rồi kiểm nó trực tiếp (chạy, đọc code, đọc issue). Tiền đề sai: sửa brief/test đỏ và giao lại từ bậc 1. Tiền đề đúng: tự implement trong worktree và ghi rõ trong báo cáo.
-- Executor báo hết quota hoặc model bị chặn: giữ nguyên worktree và hỏi người dùng: chờ quota reset, để Opus tự implement, hay dừng.
+- Each lost round → go up one rung on the **executor ladder** in `.claude/skills/effort/SKILL.md` (flash low → high → max → pro high → max), new terminal, same worktree.
+- Losing at the last rung → stop delegating. On a turn containing `ultrathink`, write down the **premise** all attempts share as one sentence, then verify it directly (run it, read the code, read the issue). Wrong premise: fix the brief/red test and delegate again from rung 1. Right premise: implement it yourself in the worktree and say so clearly in the report.
+- Executor out of quota or model blocked: keep the worktree and ask the user: wait for quota reset, have Opus implement, or stop.
 
-File test đỏ (đường dẫn trong brief) phải giữ nguyên sau mọi lượt: `git diff <SHA test đỏ> HEAD -- <file test>` rỗng. Khác rỗng là vòng thua, kèm finding blocker "sửa test nghiệm thu".
+The red test file (path in the brief) must stay unchanged after every round: `git diff <red-test SHA> HEAD -- <test file>` is empty. Non-empty is a lost round, with a blocker finding "do not edit the acceptance test".
 
-## Cổng merge
+## Merge gate
 
-Tất cả đúng trên commit mới nhất của PR:
+All true on the PR's latest commit:
 
-- Proof phủ mọi thay đổi trong diff.
-- `pr-wait` exit 0 ở commit này.
-- Ledger review không còn blocker hay should mở.
-- Không review nào của người đang request changes.
-- Branch cập nhật với nhánh mặc định và GitHub báo mergeable.
+- Proof covers every change in the diff.
+- `pr-wait` exits 0 on this commit.
+  - Known exception (owner decision, 2026-11-19): the Cloudflare check `Workers Builds: yokai-field` always fails on non-production PR branches (preview `versions upload`; logs not reachable from here). It does not gate the merge. If `pr-wait` exits 1 **only** for that check and the GitHub `check` job is green on this commit, treat the CI gate as passed. Remove this exception once preview builds are disabled in Cloudflare.
+- The review ledger has no open blocker or should.
+- No reviewer is requesting changes.
+- The branch is up to date with the default branch and GitHub reports it mergeable.
 
 ## Merge
 
-Các ticket chạy song song merge lần lượt: `scripts/merge-lock acquire` (chặn tới khi tới lượt; chạy nó với timeout Bash tối đa và gọi lại nếu hết giờ).
+Tickets run in parallel and merge one at a time: `scripts/merge-lock acquire` (blocks until it is your turn; run it with the maximum Bash timeout and call it again if it times out).
 
-Trong khoá: `scripts/as-owner git fetch origin`. Nhánh mặc định có commit mới kể từ lần check xanh cuối thì rebase, chạy lại check, push `--force-with-lease` và chạy lại `pr-wait` theo `watch-pr`, **vẫn giữ khoá**. Merge bằng `scripts/as-owner gh pr merge <pr> --squash --delete-branch`, không bao giờ `--admin`. Xác nhận `scripts/as-owner gh pr view <pr> --json state` là `MERGED` và issue đã đóng, rồi `scripts/merge-lock release`.
+Inside the lock: `scripts/as-owner git fetch origin`. If the default branch has new commits since the last green check, rebase, rerun the checks, push `--force-with-lease` and rerun `pr-wait` as in `watch-pr`, **still holding the lock**. Merge with `scripts/as-owner gh pr merge <pr> --squash --delete-branch`, never `--admin`. Confirm `scripts/as-owner gh pr view <pr> --json state` is `MERGED` and the issue is closed, then `scripts/merge-lock release`.
 
-Rebase ra conflict, check đỏ, hoặc `pr-wait` exit 1: `release` trước, rồi quay lại bước 4 hoặc 7. Bất kỳ đường thoát nào khác khỏi bước này cũng `release` trước.
+Rebase conflict, red checks, or `pr-wait` exit 1: `release` first, then go back to step 4 or 7. Any other exit path from this step must also `release` first.
 
-## Hỏi người dùng
+## Asking the user
 
-Câu hỏi trong tin nhắn thường không ai thấy. Hỏi bằng `AskUserQuestion` để thread hiện trạng thái đang chờ; câu hỏi tự chứa: link issue/PR, cái gì chặn, các lựa chọn với khuyến nghị đứng đầu. Chỉ hỏi khi:
+Questions in a message usually go unseen. Ask with `AskUserQuestion` so the thread shows a waiting state; the question must be self-contained: issue/PR link, what is blocking, the options with the recommendation first. Ask only when:
 
-- Không proof được thay đổi.
-- Cổng merge kẹt và bạn không tự gỡ được.
-- Bước tiếp theo vượt quyền được cấp: xoá dữ liệu, đụng production, đổi thứ ngoài repo, đóng PR/issue, force-push branch khác, push nhánh mặc định.
-- Mục tiêu mơ hồ đến mức đổi kết quả.
-- Hết quota opencode-go.
+- The change cannot be proven.
+- The merge gate is stuck and you cannot unstick it yourself.
+- The next step exceeds granted permission: deleting data, touching production, changing something outside the repo, closing a PR/issue, force-pushing another branch, pushing the default branch.
+- The goal is so ambiguous that it changes the outcome.
+- opencode-go quota is exhausted.
 
-Mọi chuyện khác tự quyết với mặc định hợp lý và liệt kê trong báo cáo. Công cụ hỏi không có hoặc không trả lời: đi đường an toàn (để PR mở, không merge) và mở đầu báo cáo bằng câu hỏi.
+Everything else: decide with a sensible default and list it in the report. If the asking tool is unavailable or unanswered: take the safe path (leave the PR open, do not merge) and open the report with the question.
 
-## Báo cáo
+## Report
 
-Tiếng Việt, gồm: link PR và merge commit; proof (lệnh và kết quả đã thấy); ledger review (fixed / declined / disagree, mỗi mục một dòng); model đã dùng cho từng vai trò và mọi dòng `changed:`/`orchestrator-latest:` từ bước 1; số vòng executor và có lên thang không; mỗi quyết định bạn tự đưa ra; việc ngoài phạm vi đã ghi làm follow-up.
+In English, including: PR link and merge commit; proof (commands and observed results); review ledger (fixed / declined / disagree, one line each); model used per role and every `changed:`/`orchestrator-latest:` line from step 1; number of executor rounds and whether the ladder was climbed; every decision you made yourself; out-of-scope work recorded as follow-ups.

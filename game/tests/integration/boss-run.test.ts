@@ -21,7 +21,7 @@ function eventsOf<K extends BossRunEvent['kind']>(
   );
 }
 
-describe('boss run — god mode thắng Tengu', () => {
+describe('boss run — god mode beats Tengu', () => {
   const maxDurationMs = 180_000;
   const result = simulateBossRun({
     bossId: 'tengu',
@@ -31,7 +31,7 @@ describe('boss run — god mode thắng Tengu', () => {
     maxDurationMs,
   });
 
-  it('thắng trong thời gian cho phép, boss về 0 máu, player không mất tim', () => {
+  it('wins within the allowed time, boss down to 0 health, player loses no hearts', () => {
     expect(result.outcome).toBe('won');
     expect(result.bossHealth).toBe(0);
     expect(result.playerHearts).toBe(DEFAULT_COMBAT.playerMaxHearts);
@@ -39,24 +39,24 @@ describe('boss run — god mode thắng Tengu', () => {
     expect(result.durationMs).toBeLessThan(maxDurationMs);
   });
 
-  it('đi qua đủ 3 phase, mỗi ngưỡng đúng một lần', () => {
+  it('goes through all 3 phases, each threshold exactly once', () => {
     expect(result.phaseChanges).toEqual([2, 3]);
     expect(eventsOf(result, 'boss-phase').map((event) => event.phase)).toEqual([2, 3]);
   });
 
-  it('mọi loại BossEvent đều vào log (shoot/move/telegraph/animation)', () => {
+  it('every BossEvent kind reaches the log (shoot/move/telegraph/animation)', () => {
     expect(eventsOf(result, 'boss-shoot').length).toBeGreaterThan(0);
     expect(eventsOf(result, 'boss-move').length).toBeGreaterThan(0);
     expect(eventsOf(result, 'boss-telegraph').length).toBeGreaterThan(0);
     expect(eventsOf(result, 'boss-animation').length).toBeGreaterThan(0);
 
-    // Animation ghi đúng key manifest, không phải tên ý đồ.
+    // Animations record the real manifest key, not the intent name.
     for (const event of eventsOf(result, 'boss-animation')) {
       expect(BOSSES.tengu.animations).toContain(event.animation);
     }
   });
 
-  it('đạn player trừ máu boss đúng từng viên, máu không tăng lại', () => {
+  it('player bullets subtract boss health per bullet, and health never goes back up', () => {
     const hits = eventsOf(result, 'boss-hit');
 
     expect(hits).toHaveLength(BOSSES.tengu.maxHealth);
@@ -70,7 +70,7 @@ describe('boss run — god mode thắng Tengu', () => {
       expect(current.nowMs).toBeGreaterThanOrEqual(previous.nowMs);
     }
 
-    // Boss chỉ chết một lần, kết thúc run ngay.
+    // The boss dies only once and the run ends immediately.
     expect(eventsOf(result, 'boss-defeated')).toHaveLength(1);
   });
 });
@@ -85,7 +85,7 @@ describe('boss run — player zero DPS', () => {
     maxDurationMs,
   });
 
-  it('hết giờ với boss còn đầy máu', () => {
+  it('time runs out with the boss at full health', () => {
     expect(result.outcome).toBe('timeout');
     expect(result.bossHealth).toBe(BOSSES.tengu.maxHealth);
     expect(result.phaseChanges).toEqual([]);
@@ -93,7 +93,7 @@ describe('boss run — player zero DPS', () => {
     expect(result.durationMs).toBeLessThan(maxDurationMs + BOSS_RUN_STEP_MS);
   });
 
-  it('vẫn ăn ít nhất một đòn từ đạn thật của boss', () => {
+  it('still takes at least one hit from real boss bullets', () => {
     const hits = eventsOf(result, 'player-hit');
 
     expect(eventsOf(result, 'boss-shoot').length).toBeGreaterThan(0);
@@ -105,7 +105,7 @@ describe('boss run — player zero DPS', () => {
       expect(hit.hearts).toBeGreaterThanOrEqual(0);
     }
 
-    // Không có sát thương nào lên boss vì đạn damage 0.
+    // No damage lands on the boss because bullet damage is 0.
     expect(eventsOf(result, 'boss-hit')).toHaveLength(0);
   });
 });
@@ -119,7 +119,7 @@ describe('boss run — determinism', () => {
     maxDurationMs: 120_000,
   } as const;
 
-  it('cùng seed → cùng outcome, cùng số event, cùng nội dung event', () => {
+  it('same seed → same outcome, same event count, same event content', () => {
     const first = simulateBossRun(options);
     const second = simulateBossRun(options);
 
@@ -132,7 +132,7 @@ describe('boss run — determinism', () => {
     expect(second.events).toEqual(first.events);
   });
 
-  it('chạy lại từ seed khác vẫn giữ nguyên luật chơi (không phụ thuộc thứ tự gọi)', () => {
+  it('re-running from another seed keeps the rules intact (no call-order dependence)', () => {
     const other = simulateBossRun({ ...options, seed: 99 });
 
     expect(other.outcome).toBe('won');
@@ -142,7 +142,7 @@ describe('boss run — determinism', () => {
   });
 });
 
-describe('boss run — summon của Squid', () => {
+describe('boss run — Squid summons', () => {
   const result = simulateBossRun({
     bossId: 'squid',
     seed: 11,
@@ -152,24 +152,24 @@ describe('boss run — summon của Squid', () => {
   });
   const summons = eventsOf(result, 'boss-summon');
 
-  it('đi qua phase 3 và có gọi quái', () => {
+  it('goes through phase 3 and summons enemies', () => {
     expect(result.phaseChanges).toEqual([2, 3]);
     expect(summons.length).toBeGreaterThan(0);
   });
 
-  it('quái chỉ xuất hiện từ phase 2 trở đi', () => {
+  it('enemies only appear from phase 2 onward', () => {
     for (const summon of summons) {
       expect(summon.phase).toBeGreaterThanOrEqual(2);
     }
 
-    // Không có event summon nào trước phase-change đầu tiên.
+    // No summon event before the first phase-change.
     const firstPhaseIndex = result.events.findIndex((event) => event.kind === 'boss-phase');
     const firstSummonIndex = result.events.findIndex((event) => event.kind === 'boss-summon');
     expect(firstPhaseIndex).toBeGreaterThanOrEqual(0);
     expect(firstSummonIndex).toBeGreaterThan(firstPhaseIndex);
   });
 
-  it('quái nằm trong phòng và có id tất định', () => {
+  it('enemies stay inside the room and have deterministic ids', () => {
     for (const summon of summons) {
       expect(summon.at.x).toBeGreaterThanOrEqual(0);
       expect(summon.at.x).toBeLessThanOrEqual(ROOM_COLS);
@@ -182,7 +182,7 @@ describe('boss run — summon của Squid', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('gọi đúng 2 caster mỗi lần, như GDD §5', () => {
+  it('summons exactly 2 casters each time, per GDD §5', () => {
     const byMoment = new Map<number, SummonEvent[]>();
     for (const summon of summons) {
       const group = byMoment.get(summon.nowMs);
@@ -199,18 +199,18 @@ describe('boss run — summon của Squid', () => {
 });
 
 describe('boss hitbox', () => {
-  it('có bán kính cho cả 3 boss và nằm trong biên hợp lý của arena', () => {
+  it('has a radius for all 3 bosses, within sensible arena bounds', () => {
     for (const id of BOSS_IDS) {
       const radius = BOSSES[id].hitboxRadiusTiles;
       expect(radius).toBeGreaterThan(0);
-      // Nửa bề rộng phòng là 16 tile; hitbox boss không thể lớn hơn thế.
+      // Half the room width is 16 tiles; a boss hitbox cannot be larger than that.
       expect(radius).toBeLessThan(ROOM_COLS / 2);
       expect(radius).toBeLessThan(ROOM_ROWS / 2);
     }
   });
 
-  it('hitbox là proxy nhỏ hơn nửa frame sprite lớn nhất (không trúng không khí)', () => {
-    // Frame boss lớn nhất: 82 px Tengu, 76 px Squid, 96 px Samurai (GDD §5).
+  it('the hitbox is a proxy smaller than half the largest sprite frame (no hitting air)', () => {
+    // Largest boss frames: 82 px Tengu, 76 px Squid, 96 px Samurai (GDD §5).
     const framePx = { tengu: 82, squid: 76, samurai: 96 };
 
     for (const id of BOSS_IDS) {

@@ -1,92 +1,92 @@
 /**
- * Schema + validator của số liệu tune balance (`game/config/tuning.json`).
+ * Schema + validator for balance tuning numbers (`game/config/tuning.json`).
  *
- * File này **không đọc file, không import `cc`** — nó chỉ nhận một object thô và
- * trả object đã validate. Nhờ vậy cả hai nơi dùng chung đúng một bộ luật:
+ * This file **does not read files and does not import `cc`** — it only takes a raw object and
+ * returns a validated object. That way both call sites share exactly one rule set:
  *
- * 1. `scripts/gen-tuning.ts` (bun, lúc generate) validate JSON trước khi sinh
+ * 1. `scripts/gen-tuning.ts` (bun, at generate time) validates the JSON before emitting
  *    `tuning.generated.ts`.
- * 2. `tuning.ts` (lúc runtime, trong game) validate lại bản generated như một
- *    lớp phòng thủ — file generated hỏng thì nổ ngay, không lặng lẽ ra `NaN`.
+ * 2. `tuning.ts` (at runtime, inside the game) re-validates the generated module as a
+ *    defence layer — a broken generated file blows up immediately instead of quietly producing `NaN`.
  *
- * `parseTuning()` gom toàn bộ lỗi theo đường dẫn (`enemies.roles.caster.health: …`)
- * rồi ném một `Error` duy nhất, cùng kiểu `level-data.ts`.
+ * `parseTuning()` collects every problem by path (`enemies.roles.caster.health: …`)
+ * then throws a single `Error`, same shape as `level-data.ts`.
  */
 import { ENEMY_ROLES, type EnemyRole } from '../level/level-data';
 import { CHAPTERS_PER_RUN } from '../run/run-state';
 
-/** Số liệu combat của player (GDD §3). */
+/** Player combat numbers (GDD §3). */
 export interface CombatTuning {
-  /** Số phát bắn mỗi giây ở trạng thái cơ bản. */
+  /** Shots per second in the base state. */
   readonly fireRatePerSecond: number;
-  /** Sát thương mỗi viên đạn cơ bản. */
+  /** Damage per base projectile. */
   readonly damage: number;
-  /** Số viên đạn mỗi phát ở trạng thái cơ bản. */
+  /** Projectiles per shot in the base state. */
   readonly projectiles: number;
-  /** Tốc độ đạn, tile/giây. */
+  /** Projectile speed, tiles/second. */
   readonly projectileSpeedTilesPerSecond: number;
-  /** Tốc chạy cơ bản, tile/giây. */
+  /** Base movement speed, tiles/second. */
   readonly moveSpeedTilesPerSecond: number;
-  /** Số tim tối đa. */
+  /** Maximum hearts. */
   readonly playerMaxHearts: number;
-  /** Bất tử sau khi trúng đòn, ms. */
+  /** Invulnerability after taking a hit, ms. */
   readonly invulnerabilityMs: number;
-  /** Sát thương cơ bản khi enemy chạm player. */
+  /** Base damage when an enemy touches the player. */
   readonly contactDamage: number;
-  /** Tầm auto-aim, tile. */
+  /** Auto-aim range, tiles. */
   readonly targetingRangeTiles: number;
-  /** Quãng đường knockback player khi trúng đòn, tile. */
+  /** Player knockback distance when hit, tiles. */
   readonly playerKnockbackDistanceTiles: number;
-  /** Thời gian đi hết quãng knockback player, ms. */
+  /** Time to travel the full player knockback distance, ms. */
   readonly playerKnockbackDurationMs: number;
-  /** Quãng đường knockback enemy khi trúng đạn, tile. */
+  /** Enemy knockback distance when hit by a projectile, tiles. */
   readonly enemyKnockbackDistanceTiles: number;
-  /** Thời gian đi hết quãng knockback enemy, ms. */
+  /** Time to travel the full enemy knockback distance, ms. */
   readonly enemyKnockbackDurationMs: number;
   /**
-   * Hitstop khi đạn player trúng enemy, ms (ADR-008: 70). Toàn bộ mô phỏng
-   * đứng yên trong khoảng này — xem `core/combat/hitstop.ts`.
+   * Hitstop when a player projectile hits an enemy, ms (ADR-008: 70). The whole simulation
+   * stands still for this long — see `core/combat/hitstop.ts`.
    */
   readonly enemyHitstopMs: number;
-  /** Thời gian enemy đứng yên sau khi trúng đạn, ms (ADR-008: 150). */
+  /** Time an enemy stands still after being hit by a projectile, ms (ADR-008: 150). */
   readonly enemyStaggerMs: number;
 }
 
 /**
- * Đòn thêm của elite chaser: telegraph rồi lao một quãng ngắn.
+ * Elite chaser extra attack: telegraph, then a short pounce.
  *
- * Chaser thường không có đòn nào ngoài chạm người, nên "1 đòn thêm" của bản
- * elite chính là cú lao này.
+ * A regular chaser has no attack besides contact, so the elite's "1 extra attack" is
+ * exactly this pounce.
  */
 export interface EliteChaserTuning {
-  /** Thời lượng telegraph trước khi lao, ms. */
+  /** Telegraph duration before the pounce, ms. */
   readonly pounceTelegraphMs: number;
-  /** Tốc độ lúc lao, tile/giây. */
+  /** Speed during the pounce, tiles/second. */
   readonly pounceSpeedTilesPerSecond: number;
-  /** Thời gian lao một đường thẳng, ms. */
+  /** Time pouncing in a straight line, ms. */
   readonly pounceDurationMs: number;
-  /** Cooldown giữa hai cú lao, ms. */
+  /** Cooldown between two pounces, ms. */
   readonly pounceCooldownMs: number;
-  /** Chỉ lao khi player trong tầm này, tile. */
+  /** Only pounce when the player is within this range, tiles. */
   readonly pounceRangeTiles: number;
 }
 
-/** Đòn thêm của elite caster: một loạt đạn toả quạt thay vì một viên. */
+/** Elite caster extra attack: a fan volley instead of a single projectile. */
 export interface EliteCasterTuning {
-  /** Số viên mỗi loạt; lẻ và >= 1 để có viên giữa. */
+  /** Projectiles per volley; odd and >= 1 so there is a centre projectile. */
   readonly volleyShots: number;
-  /** Góc lệch giữa hai viên kề, radian. */
+  /** Angular offset between two adjacent projectiles, radians. */
   readonly volleySpreadRadians: number;
 }
 
-/** Đòn thêm của elite tank: lao thêm `extraCharges` lần, mỗi lần chốt hướng mới. */
+/** Elite tank extra attack: charge `extraCharges` more times, each locking a new direction. */
 export interface EliteTankTuning {
   readonly extraCharges: number;
 }
 
-/** Toàn bộ số liệu riêng của bản elite (GDD §4 + M3). */
+/** Every number specific to the elite version (GDD §4 + M3). */
 export interface EliteTuning {
-  /** Scale node so với bản thường (GDD §4: 1.15). */
+  /** Node scale relative to the regular version (GDD §4: 1.15). */
   readonly scale: number;
   readonly chaser: EliteChaserTuning;
   readonly caster: EliteCasterTuning;
@@ -94,86 +94,86 @@ export interface EliteTuning {
 }
 
 /**
- * Số liệu của một vai trò enemy.
+ * Numbers for one enemy role.
  *
- * Hai field cuối là 0 với vai trò không dùng: chaser/caster không lao, nên
- * `chargeSpeedTilesPerSecond` và `chargeDurationMs` = 0. Giữ schema phẳng như
- * vậy để bảng JSON đọc được như một bảng, và để validator chỉ cần một hàm thay
- * vì một union phân biệt theo `role`.
+ * The last two fields are 0 for roles that do not use them: chaser/caster never charge, so
+ * `chargeSpeedTilesPerSecond` and `chargeDurationMs` = 0. Keeping the schema flat like
+ * this lets the JSON table read like a table, and the validator needs only one function in
+ * place of a discriminated union keyed on `role`.
  *
- * Ý nghĩa `preferredRange*` khác nhau theo vai trò, đúng như hành vi:
- * - chaser: khoảng cách dừng lại khi đã chạm (contact range).
- * - caster: dải giữ khoảng cách (lùi khi gần hơn `min`, tiến khi xa hơn `max`).
- * - tank: `max` là tầm ra đòn — xa hơn thì đi bộ, gần hơn thì telegraph rồi lao.
+ * The meaning of `preferredRange*` differs per role, matching behaviour:
+ * - chaser: distance at which it stops once touching (contact range).
+ * - caster: spacing band (back off when closer than `min`, step in when farther than `max`).
+ * - tank: `max` is strike range — farther it walks, closer it telegraphs then charges.
  */
 export interface EnemyRoleTuning {
-  /** Máu cơ bản trước scale elite. */
+  /** Base health before elite scaling. */
   readonly health: number;
-  /** Tốc độ đi bộ, tile/giây. Elite không đổi tốc độ. */
+  /** Walk speed, tiles/second. Elites keep the same speed. */
   readonly speedTilesPerSecond: number;
-  /** Cooldown tối thiểu giữa hai đòn, ms. */
+  /** Minimum cooldown between two attacks, ms. */
   readonly attackCooldownMs: number;
-  /** Thời lượng telegraph (dấu hiệu đọc đòn), ms; 0 = không có đòn cần báo. */
+  /** Telegraph duration (attack tell), ms; 0 = no attack needs a tell. */
   readonly telegraphMs: number;
-  /** Cận dưới dải khoảng cách mong muốn, tile. */
+  /** Lower bound of the preferred range band, tiles. */
   readonly preferredRangeMinTiles: number;
-  /** Cận trên dải khoảng cách mong muốn, tile. */
+  /** Upper bound of the preferred range band, tiles. */
   readonly preferredRangeMaxTiles: number;
-  /** Sát thương khi chạm người (hoặc mỗi viên đạn của caster). */
+  /** Contact damage (or damage per caster projectile). */
   readonly contactDamage: number;
-  /** Tốc độ lúc lao, tile/giây; 0 = vai trò không lao. */
+  /** Charge speed, tiles/second; 0 = this role does not charge. */
   readonly chargeSpeedTilesPerSecond: number;
-  /** Thời gian lao một đường thẳng, ms; 0 = vai trò không lao. */
+  /** Time charging in a straight line, ms; 0 = this role does not charge. */
   readonly chargeDurationMs: number;
   /**
-   * Hệ số silhouette: scale node so với frame gốc (1 texture px = 1/16 unit).
-   * Tất cả monster của pack đều là frame 16×16, nên brute chỉ "to" hơn được nhờ
-   * số này (M3: 1.75; elite nhân thêm `enemies.elite.scale`).
+   * Silhouette factor: node scale relative to the source frame (1 texture px = 1/16 unit).
+   * Every monster in the pack uses a 16×16 frame, so a brute can only look "big" through
+   * this number (M3: 1.75; elites multiply it by `enemies.elite.scale`).
    */
   readonly scale: number;
 }
 
 export interface EnemiesTuning {
-  /** Hệ số máu của elite (GDD §4: ×2). */
+  /** Elite health multiplier (GDD §4: ×2). */
   readonly eliteHealthMultiplier: number;
-  /** Hệ số sát thương của elite. */
+  /** Elite damage multiplier. */
   readonly eliteDamageMultiplier: number;
-  /** Lề tường để tâm enemy/player không chạm mép phòng, tile. */
+  /** Wall margin so an enemy/player centre never touches the room edge, tiles. */
   readonly roomEdgeMarginTiles: number;
-  /** Số liệu riêng của bản elite: scale, đòn thêm theo vai trò. */
+  /** Elite-only numbers: scale, extra attack per role. */
   readonly elite: EliteTuning;
   readonly roles: Readonly<Record<EnemyRole, EnemyRoleTuning>>;
 }
 
 export interface TuningConfig {
-  /** Tăng khi đổi nghĩa của field, để save/replay cũ nhận ra. */
+  /** Bump when a field changes meaning, so old saves/replays can tell. */
   readonly version: number;
   readonly combat: CombatTuning;
-  /** Hệ số scale theo chapter (GDD §4): mỗi chapter khó hơn, không chỉ đông hơn. */
+  /** Per-chapter scale factors (GDD §4): each chapter is harder, not just busier. */
   readonly chapters: ChapterScalingTuning;
   readonly enemies: EnemiesTuning;
-  /** Số liệu "juice" (ticket #2): rung, squash, coin, số damage, muzzle. */
+  /** "Juice" numbers (ticket #2): shake, squash, coins, damage numbers, muzzle. */
   readonly feel: FeelTuning;
 }
 
 /**
- * Rung camera theo trauma (0..1, cộng dồn + kẹp). Mỗi sự kiện một lượng trauma;
- * offset tỉ lệ trauma² nên đòn nhẹ gần như không thấy, đòn nặng mới đáng kể.
+ * Camera shake by trauma (0..1, additive + clamped). Each event adds trauma;
+ * offset scales with trauma² so a light hit is barely visible, a heavy hit is noticeable.
  */
 export interface ShakeTuning {
-  /** Biên độ tối đa khi trauma = 1, tile. */
+  /** Maximum amplitude at trauma = 1, tiles. */
   readonly maxOffsetTiles: number;
-  /** Trauma mất mỗi giây (tuyến tính). */
+  /** Trauma lost per second (linear). */
   readonly decayPerSecond: number;
-  /** Trauma khi player trúng đòn thật (0..1). */
+  /** Trauma when the player takes a real hit (0..1). */
   readonly playerHurt: number;
-  /** Trauma khi vụ nổ Explosive phát ra (0..1). */
+  /** Trauma when an Explosive enemy detonates (0..1). */
   readonly explosion: number;
-  /** Trauma khi thân boss lao vào player (0..1). */
+  /** Trauma when a boss body charges into the player (0..1). */
   readonly bossCharge: number;
 }
 
-/** Squash/stretch giữ diện tích, mỗi sự kiện một cặp thời lượng + biên độ. */
+/** Squash/stretch preserving area; each event is a duration + amplitude pair. */
 export interface SquashTuning {
   readonly playerTurnMs: number;
   readonly playerTurnAmount: number;
@@ -185,40 +185,40 @@ export interface SquashTuning {
   readonly bossHitAmount: number;
 }
 
-/** Số damage bay lên. */
+/** Damage numbers floating up. */
 export interface DamageNumberTuning {
-  /** Sống bao lâu trước khi mờ hẳn, ms. */
+  /** How long it lives before fully fading, ms. */
   readonly lifetimeMs: number;
-  /** Bay lên bao nhiêu tile trong cả đời. */
+  /** How many tiles it rises over its whole life. */
   readonly riseTiles: number;
-  /** Số label dựng sẵn trong pool (không `new` node mỗi hit). */
+  /** Labels pre-built in the pool (no `new` node per hit). */
   readonly poolSize: number;
 }
 
-/** Coin bay về ô vàng HUD khi nhận vàng. */
+/** Coins flying to the HUD gold slot when gold is collected. */
 export interface CoinTuning {
-  /** Số coin mỗi lần nhận vàng (chia đều số tiền, coin cuối nhận phần lẻ). */
+  /** Coins per gold pickup (the amount is split evenly, the last coin takes the remainder). */
   readonly coinsPerPickup: number;
-  /** Thời gian bay một coin, ms. */
+  /** Flight time of one coin, ms. */
   readonly durationMs: number;
-  /** Coin sau xuất phát chậm hơn coin trước, ms. */
+  /** Each later coin starts this much later than the previous one, ms. */
   readonly staggerMs: number;
-  /** Độ cao cung so với đường thẳng, tile. */
+  /** Arc height above the straight line, tiles. */
   readonly arcHeightTiles: number;
-  /** Số coin dựng sẵn trong pool. */
+  /** Coins pre-built in the pool. */
   readonly poolSize: number;
 }
 
-/** Muzzle flash mỗi phát bắn. */
+/** Muzzle flash per shot. */
 export interface MuzzleTuning {
-  /** Bề rộng FX, world unit. */
+  /** FX width, world units. */
   readonly drawUnits: number;
   readonly lifetimeMs: number;
-  /** Khoảng cách từ tâm player ra đầu nòng, tile. */
+  /** Distance from the player centre to the muzzle tip, tiles. */
   readonly offsetTiles: number;
 }
 
-/** Toàn bộ số liệu juice (ticket #2). */
+/** All juice numbers (ticket #2). */
 export interface FeelTuning {
   readonly shake: ShakeTuning;
   readonly squash: SquashTuning;
@@ -228,18 +228,18 @@ export interface FeelTuning {
 }
 
 /**
- * Scale enemy theo chapter. Phần lớn độ khó đến từ số lượng/thành phần trong
- * `.tmx` (GDD §4); hai mảng này là phần **số** để chapter 2–3 không chỉ đông
- * hơn mà mỗi con cũng dai/đau hơn.
+ * Enemy scaling per chapter. Most of the difficulty comes from the count/composition in
+ * `.tmx` (GDD §4); these two arrays are the **numeric** part so chapters 2–3 are not only
+ * busier but each enemy is also tougher and hits harder.
  */
 export interface ChapterScalingTuning {
-  /** Nhân máu enemy theo chapter, index 0 = chapter 1. */
+  /** Enemy health multiplier per chapter, index 0 = chapter 1. */
   readonly enemyHealthMultipliers: readonly number[];
-  /** Nhân sát thương enemy theo chapter, index 0 = chapter 1. */
+  /** Enemy damage multiplier per chapter, index 0 = chapter 1. */
   readonly enemyDamageMultipliers: readonly number[];
 }
 
-/** Nguồn số liệu, dùng trong thông báo lỗi để người sửa biết mở file nào. */
+/** Data source, used in error messages so whoever fixes it knows which file to open. */
 export const TUNING_SOURCE_PATH = 'config/tuning.json';
 
 const COMBAT_FIELDS = [
@@ -326,7 +326,7 @@ const COIN_FIELDS = [
 
 const MUZZLE_FIELDS = ['drawUnits', 'lifetimeMs', 'offsetTiles'] as const;
 
-/** Gom toàn bộ lỗi rồi ném một `Error` duy nhất (cùng kiểu `level-data.ts`). */
+/** Collect every problem then throw a single `Error` (same shape as `level-data.ts`). */
 class ProblemList {
   private readonly items: string[] = [];
 
@@ -339,7 +339,7 @@ class ProblemList {
 
     const details = this.items.map((item) => `  - ${item}`).join('\n');
     throw new Error(
-      `${TUNING_SOURCE_PATH} không hợp lệ (${this.items.length} lỗi)\n${details}`,
+      `${TUNING_SOURCE_PATH} is invalid (${this.items.length} problem(s))\n${details}`,
     );
   }
 }
@@ -349,7 +349,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function describe(value: unknown): string {
-  if (value === undefined) return 'undefined (thiếu field?)';
+  if (value === undefined) return 'undefined (missing field?)';
   if (typeof value === 'string') return JSON.stringify(value);
   if (typeof value === 'number' || typeof value === 'boolean')
     return String(value);
@@ -363,9 +363,9 @@ function joinPath(prefix: string, key: string): string {
 }
 
 /**
- * Đọc một field số; `options` quyết định ràng buộc. Trả `undefined` khi lỗi để
- * caller dùng giá trị mặc định an toàn (config sai thì còn một lỗi rõ ràng,
- * không có NaN lan vào combat).
+ * Read one number field; `options` decides the constraints. Returns `undefined` on error so
+ * the caller can use a safe default (a bad config yields one clear error instead of
+ * NaN leaking into combat).
  */
 function readNumber(
   source: Record<string, unknown>,
@@ -378,25 +378,25 @@ function readNumber(
   const fieldPath = joinPath(path, field);
 
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    problems.add(fieldPath, `phải là số hữu hạn, nhận ${describe(value)}`);
+    problems.add(fieldPath, `must be a finite number, got ${describe(value)}`);
     return undefined;
   }
   if (value < 0) {
-    problems.add(fieldPath, `không được âm, nhận ${value}`);
+    problems.add(fieldPath, `must not be negative, got ${value}`);
     return undefined;
   }
   if (options.positive === true && value === 0) {
-    problems.add(fieldPath, `phải > 0, nhận ${value}`);
+    problems.add(fieldPath, `must be > 0, got ${value}`);
     return undefined;
   }
   if (options.integer === true && !Number.isInteger(value)) {
-    problems.add(fieldPath, `phải là số nguyên, nhận ${value}`);
+    problems.add(fieldPath, `must be an integer, got ${value}`);
     return undefined;
   }
   return value;
 }
 
-/** Thiếu field nào thì báo đúng field đó, kèm danh sách field mong đợi. */
+/** Report exactly the missing field, plus the list of expected fields. */
 function readObject(
   source: Record<string, unknown>,
   field: string,
@@ -408,19 +408,19 @@ function readObject(
   if (!isRecord(value)) {
     problems.add(
       joinPath(path, field),
-      `phải là object { ${expected.join(', ')} }, nhận ${describe(value)}`,
+      `must be an object { ${expected.join(', ')} }, got ${describe(value)}`,
     );
     return undefined;
   }
 
   for (const key of expected) {
     if (!(key in value))
-      problems.add(joinPath(joinPath(path, field), key), 'thiếu field');
+      problems.add(joinPath(joinPath(path, field), key), 'missing field');
   }
   return value;
 }
 
-/** Đọc mảng số đúng `length` phần tử, mọi phần tử hữu hạn và > 0. */
+/** Read an array of exactly `length` numbers, every element finite and > 0. */
 function readMultiplierArray(
   source: Record<string, unknown>,
   field: string,
@@ -430,20 +430,20 @@ function readMultiplierArray(
   const fieldPath = joinPath(path, field);
   const value = source[field];
   if (!Array.isArray(value)) {
-    problems.add(fieldPath, `phải là mảng ${CHAPTERS_PER_RUN} số, nhận ${describe(value)}`);
+    problems.add(fieldPath, `must be an array of ${CHAPTERS_PER_RUN} numbers, got ${describe(value)}`);
     return CHAPTERS_PER_RUN_MULTIPLIERS;
   }
   if (value.length !== CHAPTERS_PER_RUN) {
     problems.add(
       fieldPath,
-      `phải có đúng ${CHAPTERS_PER_RUN} phần tử (mỗi chapter một hệ số), nhận ${value.length}`,
+      `must have exactly ${CHAPTERS_PER_RUN} elements (one factor per chapter), got ${value.length}`,
     );
   }
 
   const result: number[] = [];
   value.forEach((entry, index) => {
     if (typeof entry !== 'number' || !Number.isFinite(entry) || entry <= 0) {
-      problems.add(`${fieldPath}[${index}]`, `phải là số hữu hạn > 0, nhận ${describe(entry)}`);
+      problems.add(`${fieldPath}[${index}]`, `must be a finite number > 0, got ${describe(entry)}`);
       result.push(1);
       return;
     }
@@ -452,7 +452,7 @@ function readMultiplierArray(
   return result;
 }
 
-/** Mặc định khi config thiếu: không scale (mọi chapter như chapter 1). */
+/** Default when the config is missing: no scaling (every chapter behaves like chapter 1). */
 const CHAPTERS_PER_RUN_MULTIPLIERS: readonly number[] = Array.from(
   { length: CHAPTERS_PER_RUN },
   () => 1,
@@ -627,12 +627,12 @@ function parseElite(
       readNumber(chaserSource, 'pounceRangeTiles', `${path}.chaser`, problems) ?? 0,
   };
   if (chaser.pounceRangeTiles < 0) {
-    problems.add(`${path}.chaser.pounceRangeTiles`, 'không được âm');
+    problems.add(`${path}.chaser.pounceRangeTiles`, 'must not be negative');
   }
   if (chaser.pounceTelegraphMs > 0 && chaser.pounceDurationMs <= 0) {
     problems.add(
       `${path}.chaser.pounceDurationMs`,
-      'phải > 0 khi có telegraph — cú lao cần thời gian bay',
+      'must be > 0 when there is a telegraph — a pounce needs travel time',
     );
   }
 
@@ -697,7 +697,7 @@ function parseRole(
   if (tuning.preferredRangeMaxTiles < tuning.preferredRangeMinTiles) {
     problems.add(
       `${path}.preferredRangeMaxTiles`,
-      `phải >= preferredRangeMinTiles (${tuning.preferredRangeMinTiles}), nhận ${tuning.preferredRangeMaxTiles}`,
+      `must be >= preferredRangeMinTiles (${tuning.preferredRangeMinTiles}), got ${tuning.preferredRangeMaxTiles}`,
     );
   }
 
@@ -742,8 +742,8 @@ function parseEnemies(
 }
 
 /**
- * Trauma là tỉ lệ 0..1: > 1 làm offset vượt biên độ khai báo, khó suy ra hình
- * dung khi tune. Vượt thì báo lỗi và kẹp về 1.
+ * Trauma is a 0..1 ratio: > 1 makes the offset exceed the declared amplitude, which is hard
+ * to reason about while tuning. Going over is reported and clamped to 1.
  */
 function readTrauma(
   source: Record<string, unknown>,
@@ -754,7 +754,7 @@ function readTrauma(
   const value = readNumber(source, field, path, problems);
   if (value === undefined) return 0;
   if (value > 1) {
-    problems.add(joinPath(path, field), `phải nằm trong 0..1, nhận ${value}`);
+    problems.add(joinPath(path, field), `must be within 0..1, got ${value}`);
     return 1;
   }
   return value;
@@ -859,7 +859,7 @@ function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTun
   return { shake, squash, damageNumbers, coin, muzzle };
 }
 
-/** Freeze sâu để không ai vô tình sửa số tune lúc runtime. */
+/** Deep freeze so nobody can accidentally change tuned numbers at runtime. */
 function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null) return value;
 
@@ -869,16 +869,16 @@ function deepFreeze<T>(value: T): T {
 }
 
 /**
- * Parse + validate số liệu tune. Ném một `Error` gom đủ lỗi nếu sai cấu trúc.
- * Test dùng hàm này trên bản copy để thử số khác mà không đụng object export.
+ * Parse + validate tuning data. Throws one `Error` collecting every problem when the structure is wrong.
+ * Tests call this on a copy to try other numbers without touching the exported object.
  *
- * Object trả về được freeze sâu và **giữ nguyên thứ tự field** khai báo ở trên,
- * nên `scripts/gen-tuning.ts` in thẳng nó ra file generated là tất định.
+ * The returned object is deeply frozen and **keeps the field declaration order above**,
+ * so `scripts/gen-tuning.ts` printing it straight to the generated file is deterministic.
  */
 export function parseTuning(raw: unknown): TuningConfig {
   if (!isRecord(raw)) {
     throw new Error(
-      `${TUNING_SOURCE_PATH} không hợp lệ: gốc phải là object, nhận ${describe(raw)}`,
+      `${TUNING_SOURCE_PATH} is invalid: root must be an object, got ${describe(raw)}`,
     );
   }
 
@@ -894,7 +894,7 @@ export function parseTuning(raw: unknown): TuningConfig {
   } else {
     problems.add(
       'version',
-      `phải là số nguyên >= 1, nhận ${describe(raw.version)}`,
+      `must be an integer >= 1, got ${describe(raw.version)}`,
     );
   }
 

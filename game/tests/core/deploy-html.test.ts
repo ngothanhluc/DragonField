@@ -8,37 +8,37 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = readFileSync(join(HERE, '..', 'fixtures', 'cocos-web-desktop-index.html'), 'utf8');
 const META = {
   title: 'Yokai Field — "test" & <x>',
-  description: 'Mô tả',
+  description: 'Description',
   origin: 'https://yokai.lukeinc.tech',
   ogImagePath: '/og.png',
 };
 
-describe('patchIndexHtml (template web-desktop của Cocos 3.8.8)', () => {
+describe('patchIndexHtml (Cocos 3.8.8 web-desktop template)', () => {
   const html = patchIndexHtml(TEMPLATE, META);
 
-  it('thay tiêu đề mặc định, escape HTML', () => {
+  it('replaces the default title, escaping HTML', () => {
     expect(html).not.toContain('Cocos Creator | yokai-field');
     expect(html).toContain('<title>Yokai Field — &quot;test&quot; &amp; &lt;x&gt;</title>');
   });
 
-  it('có OG với URL ảnh tuyệt đối và canonical', () => {
+  it('has OG with an absolute image URL and a canonical link', () => {
     expect(html).toContain('<meta property="og:image" content="https://yokai.lukeinc.tech/og.png"/>');
     expect(html).toContain('<link rel="canonical" href="https://yokai.lukeinc.tech/"/>');
   });
 
-  it('bỏ header/footer và favicon.ico của template', () => {
+  it('drops the template header/footer and favicon.ico', () => {
     expect(html).not.toContain('class="header"');
     expect(html).not.toContain('class="footer"');
     expect(html).not.toContain('favicon.ico');
     expect(html).toContain('href="favicon.png"');
   });
 
-  it('giữ nguyên canvas và script nạp engine', () => {
+  it('keeps the canvas and the engine loader script', () => {
     expect(html).toContain('<canvas id="GameCanvas"');
     expect(html).toContain("System.import('./index.js')");
   });
 
-  it('template lạ thì báo lỗi thay vì ship trang nửa vời', () => {
+  it('an unexpected template errors instead of shipping a half-baked page', () => {
     expect(() => patchIndexHtml('<html><body></body></html>', META)).toThrow(/<title>/);
   });
 });

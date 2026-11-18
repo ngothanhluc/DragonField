@@ -1,9 +1,9 @@
 /**
- * Kênh SFX một chiều: gameplay không import `cc` cũng không giữ AudioSource.
+ * One-way SFX channel: gameplay imports no `cc` and holds no AudioSource.
  *
- * `AudioManager` (game/audio/audio-manager.ts) đăng ký làm sink lúc boot. Trước
- * khi có sink (menu/title chưa boot xong) mọi tiếng đều rơi im lặng — không có
- * hàng đợi vô hạn và không có lỗi.
+ * `AudioManager` (game/audio/audio-manager.ts) registers as the sink at boot. Before a sink
+ * exists (menu/title while boot is unfinished) every sound is silently dropped — no unbounded
+ * queue and no error.
  */
 
 export type SfxId =
@@ -45,12 +45,12 @@ export type SfxSink = (id: SfxId) => void;
 
 let sink: SfxSink | null = null;
 
-/** Đăng ký sink; trả hàm gỡ (dùng khi teardown). */
+/** Register the sink (pass `null` to remove it on teardown). */
 export function setSfxSink(next: SfxSink | null): void {
   sink = next;
 }
 
-/** Phát một SFX; không có sink thì bỏ qua. */
+/** Play one SFX; skipped when there is no sink. */
 export function playSfx(id: SfxId): void {
   sink?.(id);
 }

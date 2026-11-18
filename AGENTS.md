@@ -1,143 +1,143 @@
 # AGENTS.md — Yokai Field
 
-Hướng dẫn cho agent (và cho người) làm việc trong repo này. Đọc file này trước khi sửa code.
+Guidance for agents (and people) working in this repo. Read this file before changing code.
 
-## Dự án là gì
+## What the project is
 
-Roguelite né đạn top-down, pixel 16px, chạy trên web. Người chơi **tự động bắn**, kỹ năng nằm ở di chuyển. Dọn phòng → chọn 1 trong 3 skill → boss cuối chapter. Chết là hết run, giữ vàng mua upgrade vĩnh viễn.
+Top-down bullet-hell roguelite, 16px pixel art, runs on the web. The player **fires automatically**; the skill is in movement. Clear a room → pick 1 of 3 skills → chapter boss. Death ends the run; keep gold to buy permanent upgrades.
 
-- Thiết kế: `docs/gdd.md`
-- Quyết định kỹ thuật: `docs/tech-decisions.md`
-- Mốc và nghiệm thu: `docs/milestones.md`
-- Kiểm kê art: `docs/art/pack-inventory.md`
-- Số liệu bản Unity cũ (đã xoá, tag `unity-final`): `docs/research/2026-11-unity-content-audit.md`
+- Design: `docs/gdd.md`
+- Technical decisions: `docs/tech-decisions.md`
+- Milestones and acceptance: `docs/milestones.md`
+- Art inventory: `docs/art/pack-inventory.md`
+- Old Unity build metrics (deleted, tag `unity-final`): `docs/research/2026-11-unity-content-audit.md`
 
 ## Stack
 
-- **Cocos Creator 3.8.8** (LTS). Không dùng 4.0 — mới chỉ là beta.
-- **Bun** là package manager duy nhất (`bun install`, `bun run …`). Không dùng npm/yarn/pnpm: repo chỉ có `bun.lock`, không có `package-lock.json`.
-- TypeScript. Không C#, không GDScript.
-- Target duy nhất: **web-desktop**. Không mobile, không native, không mini-game.
-- Nguồn art duy nhất: **Ninja Adventure Update #8** (CC0). Không thêm pack ngoài.
-- Tên game: **Yokai Field**. Tên folder repo vẫn là `DragonField` (đổi tên folder sẽ phá đường dẫn tuyệt đối trong các session đang mở).
+- **Cocos Creator 3.8.8** (LTS). Do not use 4.0 — it is only beta.
+- **Bun** is the only package manager (`bun install`, `bun run …`). Do not use npm/yarn/pnpm: the repo only has `bun.lock`, no `package-lock.json`.
+- TypeScript. No C#, no GDScript.
+- Only target: **web-desktop**. No mobile, no native, no mini-game.
+- Only art source: **Ninja Adventure Update #8** (CC0). Do not add outside packs.
+- Game name: **Yokai Field**. The repo folder is still named `DragonField` (renaming the folder would break absolute paths in open sessions).
 
-## Trạng thái hiện tại
+## Current status
 
-M0–M7 xong (đã ship); M8 (hình ảnh) và M9 (nội dung) đã chốt spec, chưa bắt đầu — xem `docs/milestones.md` và GDD §13. Game chạy ở **https://yokai.lukeinc.tech**
-(Cloudflare Worker `yokai-field`, chỉ file tĩnh). Trang giới thiệu nằm ở portfolio:
-https://lukeinc.tech/projects/dragon-field (repo riêng `luke-tech`).
+M0–M7 done (shipped); M8 (visuals) and M9 (content) have agreed specs, not started — see `docs/milestones.md` and GDD §13. The game runs at **https://yokai.lukeinc.tech**
+(Cloudflare Worker `yokai-field`, static files only). The showcase page lives in the portfolio:
+https://lukeinc.tech/projects/dragon-field (separate repo `luke-tech`).
 
-Mọi lệnh và đường dẫn dưới đây tính từ repo root, trừ khi ghi rõ.
+Every command and path below is relative to the repo root, unless stated otherwise.
 
-## Lệnh
+## Commands
 
 ```bash
 cd game
-bun run check      # bắt buộc trước khi báo "xong": check:config + tsc + vitest + eslint
-bun run gen        # sinh lại tuning.generated.ts từ config/tuning.json
-bun run check:config  # chỉ kiểm tra generated code có lệch JSON không
+bun run check      # required before reporting "done": check:config + tsc + vitest + eslint
+bun run gen        # regenerate tuning.generated.ts from config/tuning.json
+bun run check:config  # only check whether generated code drifted from the JSON
 bun run test       # vitest
 bun run typecheck  # tsc --noEmit
 bun run lint       # eslint
 ```
 
-Build web (cần editor đã cài, không chạy trong CI):
+Build web (needs the editor installed, does not run in CI):
 
 ```bash
 /Applications/Cocos/Creator/3.8.8/CocosCreator.app/Contents/MacOS/CocosCreator \
   --project game --build "platform=web-desktop;debug=false"
-# exit code 36 = build thành công (quy ước của CLI Cocos), không phải lỗi
+# exit code 36 = successful build (Cocos CLI convention), not an error
 ```
 
-Deploy: Cloudflare Workers Builds tự deploy khi push `master` (root `game`, không có build command,
-deploy `npx wrangler deploy`). Cloudflare **không chạy được editor Cocos**, nên `game/deploy/` được
-commit sẵn — ra bản mới = build bằng editor rồi:
+Deploy: Cloudflare Workers Builds deploys automatically on push to `master` (root `game`, no build command,
+runs `npx wrangler deploy`). Cloudflare **cannot run the Cocos editor**, so `game/deploy/` is
+committed — to ship a new build, build with the editor then:
 
 ```bash
 cd game
 bun run check
-bun run deploy:prepare   # build/web-desktop → deploy/ + sửa index.html, icon, OG, _headers; chặn nếu > 15 MB
-git add deploy && git commit -m "chore(deploy): ..." && git push   # Cloudflare deploy
-# bun run deploy = check + deploy:prepare + wrangler deploy từ máy (cần `bunx wrangler login`)
+bun run deploy:prepare   # build/web-desktop → deploy/ + patch index.html, icons, OG, _headers; aborts if > 15 MB
+git add deploy && git commit -m "chore(deploy): ..." && git push   # Cloudflare deploys
+# bun run deploy = check + deploy:prepare + wrangler deploy from your machine (needs `bunx wrangler login`)
 ```
 
-`.gitignore` có `native/` (build native của Cocos) — `!game/deploy/**/native/` giữ lại texture/audio của bản web.
+`.gitignore` has `native/` (Cocos native build) — `!game/deploy/**/native/` keeps the web build's textures/audio.
 
-## Cấu trúc
+## Structure
 
 ```text
-game/                  # project Cocos Creator — mọi thứ engine đọc nằm ở đây
+game/                  # Cocos Creator project — everything the engine reads lives here
 ├── assets/
 │   ├── scripts/
-│   │   ├── core/      # logic thuần TS — KHÔNG được import 'cc'
-│   │   ├── game/      # component Cocos: adapter mỏng quanh core
-│   │   ├── screens/   # màn M5 dựng bằng code (title/shop/pause/result/…)
-│   │   └── ui/        # component UI
+│   │   ├── core/      # pure TS logic — must NOT import 'cc'
+│   │   ├── game/      # Cocos components: thin adapters around core
+│   │   ├── screens/   # M5 screens built in code (title/shop/pause/result/…)
+│   │   └── ui/        # UI components
 │   └── resources/
 │       ├── data/      # animations manifest, level data
-│       └── art/       # subset của pack, load theo path lúc runtime
+│       └── art/       # subset of the pack, loaded by path at runtime
 ├── config/
-│   └── tuning.json    # số liệu tune (nguồn duy nhất) → bun run gen
-├── settings/          # editor sinh
+│   └── tuning.json    # tuning numbers (single source) → bun run gen
+├── settings/          # generated by the editor
 ├── library/ temp/     # cache, gitignored
 └── package.json
-docs/                  # thiết kế + quyết định + kiểm kê
-art-source/            # pack đầy đủ, KHÔNG commit (gitignored)
+docs/                  # design + decisions + inventory
+art-source/            # full pack, NOT committed (gitignored)
 ```
 
-## Quy tắc bắt buộc
+## Mandatory rules
 
-1. **`src/core/` không import `cc`.** Mọi thứ trong core phải test được bằng vitest, không cần engine. Ranh giới này được enforce bằng eslint `no-restricted-imports`.
-2. **Không hardcode đường dẫn sprite.** Tham chiếu qua tên logic trong `assets/resources/data/animations.json` (`player.idle.down`). Pack thiếu thì khai báo `fallback`.
-3. **Số liệu tune nằm trong `game/config/tuning.json`** (ngoài asset DB), không nằm trong code. Sửa số → `bun run gen` → `bun run check`. `bun run check` chạy `check:config` trước, nên generated code lệch JSON là fail ngay.
-4. **Luôn chạy `bun run check`.** Cocos **bỏ qua TypeScript type error** khi compile (docs xác nhận) — không có gate này thì lỗi kiểu chỉ nổ lúc runtime.
-5. **Không tự sửa `.scene`/`.prefab` bằng tay** khi có thể mở editor; file đó là JSON do editor sinh, sửa tay dễ hỏng tham chiếu UUID.
-6. **Không thêm asset pack ngoài.** Nếu thiếu sprite, chọn asset khác trong pack hoặc dùng primitive/particle.
-7. **Test đi kèm logic.** Thay đổi trong `core/` phải có test tương ứng; test là thứ duy nhất chứng minh combat/skill/save đúng.
+1. **`src/core/` must not import `cc`.** Everything in core must be testable with vitest, without the engine. This boundary is enforced by eslint `no-restricted-imports`.
+2. **Do not hardcode sprite paths.** Reference logical names in `assets/resources/data/animations.json` (`player.idle.down`). If the pack lacks one, declare a `fallback`.
+3. **Tuning numbers live in `game/config/tuning.json`** (outside the asset DB), not in code. Change a number → `bun run gen` → `bun run check`. `bun run check` runs `check:config` first, so generated code drifting from the JSON fails immediately.
+4. **Always run `bun run check`.** Cocos **ignores TypeScript type errors** when compiling (docs confirm) — without this gate, type errors only blow up at runtime.
+5. **Do not hand-edit `.scene`/`.prefab`** when you can open the editor; those files are editor-generated JSON, and hand edits easily break UUID references.
+6. **Do not add outside asset packs.** If a sprite is missing, pick another asset from the pack or use a primitive/particle.
+7. **Tests accompany logic.** Changes in `core/` must have matching tests; tests are the only thing proving combat/skills/save are correct.
 
-## Quy ước
+## Conventions
 
-- File/thư mục: `kebab-case`. Class/type: `PascalCase`. Biến/hàm: `camelCase`.
-- Mỗi hệ thống một thư mục trong `core/`: `combat/`, `skills/`, `run/`, `meta/`, `save/`, `level/`.
-- Không dùng `any` trừ khi bất khả kháng, và phải có comment lý do.
-- Commit message: `type(scope): mô tả` — `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
+- Files/directories: `kebab-case`. Classes/types: `PascalCase`. Variables/functions: `camelCase`.
+- One directory per system in `core/`: `combat/`, `skills/`, `run/`, `meta/`, `save/`, `level/`.
+- No `any` unless unavoidable, and it needs a comment explaining why.
+- Commit message: `type(scope): description` — `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
 
-## Bẫy đã biết của Cocos
+## Known Cocos traps
 
-| Bẫy | Cách tránh |
+| Trap | How to avoid |
 |---|---|
-| Compile bỏ qua type error | `bun run check` |
-| Không có authoring headless | scene dựng bằng editor hoặc bằng code; level là data |
-| Không có TileMap native, chỉ TiledMap (TMX) | map vẽ bằng Tiled |
-| Không có Cinemachine | không cần — phòng chỉ 1 màn hình, camera tĩnh |
-| `tsconfig.json` không được đọc lúc compile | dùng để IDE check + `tsc --noEmit` trong CI |
-| `resources.load` cần hậu tố `/spriteFrame` | dùng manifest, không load path thủ công |
-| Stub `cc` làm named import thành `any` **value**, không dùng được ở vị trí type | trong `assets/scripts/game/`, alias `type Node = InstanceType<typeof CocosNode>` (đã dùng ở 5 file); gom về một file khi có `cc.d.ts` thật từ editor |
-| `resources.load` callback: `err` là `undefined` (không phải `null`) khi thành công | kiểm tra bằng truthiness (`if (err)`), đừng so `=== null` — sẽ đọc `.message` trên `undefined` |
-| Build transpile kiểu loose: `[...set]` thành `[].concat(set)` → mảng chứa nguyên `Set` (vitest/tsc không bắt được) | Set/Map/iterator → mảng thì dùng `Array.from(x)`; chỉ spread array thật |
-| Sprite/Label không nằm dưới Canvas thì **không được vẽ** | node gốc của world phải có `RenderRoot2D` (đã gắn trong `createWorldLayers`) |
-| `.tmx` tham chiếu `.tsx` bằng tên file trần, cùng thư mục | importer lưu đúng chuỗi `source` làm key và engine tra `tsxContentMap[source]` **không fallback** (ảnh thì có fallback theo basename). Đặt `field.tsx` cạnh `room-*.tmx`, `source="field.tsx"`; ảnh trong `.tsx` cứ dùng đường dẫn tương đối |
-| `TiledMap` vẽ tile bằng **pixel**, không phải unit | node map scale `1/16` (`ACTOR_SCALE`) và đặt ở tâm phòng `(16,9)`, anchor `(0.5,0.5)`; va chạm/vật cản lấy từ object layer (`.tmx` → `LevelData.obstacles`), **không** suy ra từ tile |
-| Stub `cc` là `any` nên `this.foo()` trên class extends `Component` không bị tsc kiểm tra | method không tồn tại chỉ nổ lúc runtime — chạy build web thử sau khi sửa `game/` |
-| Bộ gõ tiếng Việt (Telex/VNI) đang soạn chữ gửi `keydown` với `keyCode = 229`, `key = 'Process'`/`'ư'`/`'đ'`; `input` của Cocos chỉ chuyển `keyCode` → WASD kẹt. CDP/puppeteer không qua bộ gõ nên không tái hiện | Phím di chuyển đọc `event.code` (phím vật lý) trên `document` capture (`game/keyboard-move.ts` + `core/movement/move-keys.ts`), nhả hết phím khi `blur`. `?debug=1` có `__yokai.keyLog()` để xem event thật |
-| `nine_path_panel*.png` (theme-wood) có sẵn một ô vuông lệch tâm bên trong → kéo 9-slice ra hai khung chồng lệch | panel/thẻ dùng `nine_path_panel_interior.png` (tâm đồng màu) |
-| Camera world ở bội số nguyên (M7) có thể nhỏ hơn band UI `SHOW_ALL` → HUD dựng theo mép design sẽ trôi ra vùng bar | `WorldCamera.hudScale` (`worldToUiScale`) — node HUD nhân theo số này để bám mép phòng |
-| Boss lớn hơn hitbox nhiều (Samurai 96 px); chừa tường theo hitbox thì charge sát tường bị camera cắt nửa người | `BOSSES[id].spriteExtentTiles` (đo từ PNG, `art-files.test` kiểm) → `bossRoomBounds` |
-| Scale sprite | **1 texture px = 1/16 unit** (`ACTOR_SCALE` trong `level-view.ts`). Không chuẩn hoá theo bề rộng frame — làm vậy player 32 px sẽ nhỏ bằng nửa con quái 16 px |
-| `Sprite.sizeMode = CUSTOM` lấy kích thước từ `UITransform.contentSize` (**mặc định 100×100**), không lấy từ frame | mọi sprite dựng bằng code phải gọi `transform.setContentSize(frame.width, frame.height)`; thiếu dòng đó thì hình to gấp ~3 lần dù rect/scale đúng (vòng telegraph M3 bị đúng lỗi này) |
-| Build `web-desktop` ép `exactFitScreen = false` (plugin build ghi đè trong settings) → canvas đứng yên ở kích thước lúc build, `window.resize` **không** tự đổi canvas; chỉ `screen.windowSize` mới đổi được (chế độ SubFrame) | Từ M5 `game/viewport.ts` (`fillBrowserViewport`) gán `screen.windowSize` lúc boot + mỗi `window.resize`, nên canvas bám viewport và UI 16:9/16:10/4:3 không bị cắt. Test phải kiểm `canvas.getBoundingClientRect()` = `innerWidth×innerHeight`, không chỉ `page.setViewport` |
-| Template build đặt canvas trong `#GameDiv` có **border 5px** + inline `1280×960`, kèm `h1.header`/`p.footer` | `fillBrowserViewport` phải set `#GameDiv` fixed `100vw/100vh`, border 0, ẩn header/footer; chỉ đổi `screen.windowSize` thì canvas lệch 5px và tràn viewport (đo được ở headless: `canvas.x = 5`) |
-| `label.node.position` là toạ độ **local** trong button cha, không phải toạ độ canvas | debug `uiText()`/click-to-label phải dùng `node.worldPosition` (Canvas ở 0,0); dùng `.position` thì mọi nút báo cùng một rect và click "Play" rơi vào nút bên dưới |
-| Texture UI import mặc định lọc **bilinear** → nút gỗ 16×8 phóng to và thẻ skill bị nhoè | UI frame/thẻ/chapter button load qua `loadPixelTexture` (`setFilters(NEAREST, NEAREST)`); HUD tim/thanh máu cũng dùng. World art vẫn đi `loadTexture` cho tới khi M6 quyết riêng |
-| Kéo giãn frame nút 16×8 có góc trong suốt làm nền tối full-screen + nearest → 4 góc trong suốt phóng to thành lỗ, HUD/world lọt qua | nền phủ màn dùng `Graphics` (`createBackdropPanel`), không dùng sprite frame nút |
-| Trình duyệt dùng Esc để thoát fullscreen và **không giao keydown** cho page | Màn Settings vẫn phải có nút Back chuột; nghe `fullscreenchange` để đồng bộ save/nhãn, đừng coi Esc là đường thoát duy nhất khi đang fullscreen |
-| `Camera.clearFlags = SOLID_COLOR` chỉ xoá trong `rect` của camera; phần ngoài rect là backbuffer (đen, không đảm bảo màu) | Camera nền `visibility = 0`, `priority = -1`, `rect = (0,0,1,1)` để tô bar letterbox (`bootstrap.createBackdropCamera`) |
-| Asset mới (`.tmx`/`.tsx`/folder) cần `.meta`; meta sai JSON thì asset-db báo `Read meta ... failed` và lần build đó có thể bỏ qua asset | `.tmx.meta`: `importer: "tiled-map"`, `files: [".json", ".tmx"]`; `.tsx.meta`: `importer: "text"`, `files: [".json"]`; folder: `importer: "directory"`. Sinh meta bằng script thì kiểm `python3 -c 'import json,glob;...'` trước khi build |
-| Nhiều tileset trong một `.tmx`: `firstgid` phải bằng tổng `tilecount` của các tileset trước + 1 (`TilesetField` có 75 tile → tileset thứ hai `firstgid="76"`) | gid trong layer = `firstgid + row*columns + col`; sai firstgid thì tile hiện lệch cả bảng hoặc trong suốt |
-| Key event "tổng hợp"/headless không tới `input` của Cocos hoặc bị canvas chặn bubble; UI modal nghe phím sẽ im lặng | UI cần phím (skill pick 1/2/3) nghe thêm `document.addEventListener('keydown', handler, true)` ở **capture phase**, và gỡ đúng handler khi destroy; đừng chỉ dựa vào `input.on(KEY_DOWN)` |
-| `input.on` của Cocos gắn sau `await` (load texture) → người chơi bấm phím ngay frame mở modal bị mất | gắn listener phím **trước** mọi `await` trong hàm dựng modal; build phần hình sau |
-| `TilesetWater` là autotile **kênh rưới** (nền xanh + bờ cam), không phải sông; stamp khối 4×3 ra hình ống/mosaic | `Backgrounds/Animated/Waterfall/*` và `Water Ripples/*` mới là sprite strip nước; đặt bằng `room-water.ts` + nền `Graphics` xanh, không đưa vào tile layer |
-| Mỗi slot FX dùng một `SpriteAnimator` (component + promise load frame mỗi lần đổi frame) làm `stress()` tụt còn ~40 fps | pool FX tự slice frame lúc init + **một** clock chung (`fx/effect-pool.ts`); chỉ dùng `SpriteAnimator` cho actor |
-| `Sprite.Type.SLICED` không có inset trên `SpriteFrame` thì vẫn kéo giãn cả 4 góc | set `insetLeft/Right/Top/Bottom` khi slice (xem `sliceSliced` trong `screens/menu.ts`) |
-| Font pixel load async; label tạo trước khi font về giữ metrics font hệ thống và có thể cắt chữ | `applyPixelFont` đổi `useSystemFont=false` + `font` + `updateRenderData(true)` khi promise xong; mọi label UI đi qua `createLabel` |
-| `NormalFont.ttf` của pack có space advance 227/2048 em (~0.11 em) → Cocos render "Clearthechapter", dấu cách gần như mất | patch `hmtx` glyph space lên 682/2048 em bằng `bun run fix:font` (`scripts/lib/font-spacing.ts`; `stage:art` tự gọi sau khi copy font) |
+| Compile ignores type errors | `bun run check` |
+| No headless authoring | scenes are built in the editor or in code; levels are data |
+| No native TileMap, only TiledMap (TMX) | draw maps with Tiled |
+| No Cinemachine | not needed — rooms are a single screen, camera is static |
+| `tsconfig.json` is not read at compile time | use it for IDE checks + `tsc --noEmit` in CI |
+| `resources.load` needs the `/spriteFrame` suffix | use the manifest, do not load paths by hand |
+| The `cc` stub makes named imports an `any` **value**, unusable in type position | in `assets/scripts/game/`, alias `type Node = InstanceType<typeof CocosNode>` (used in 5 files); consolidate into one file once the editor provides a real `cc.d.ts` |
+| `resources.load` callback: `err` is `undefined` (not `null`) on success | check by truthiness (`if (err)`), do not compare `=== null` — that reads `.message` on `undefined` |
+| The build transpiles loosely: `[...set]` becomes `[].concat(set)` → an array holding the `Set` itself (vitest/tsc cannot catch it) | to turn a Set/Map/iterator into an array use `Array.from(x)`; only spread real arrays |
+| Sprite/Label not under a Canvas is **not drawn** | the world root node must have `RenderRoot2D` (already attached in `createWorldLayers`) |
+| `.tmx` references `.tsx` by bare file name, same directory | the importer stores the exact `source` string as the key and the engine looks up `tsxContentMap[source]` **with no fallback** (images do fall back by basename). Put `field.tsx` next to `room-*.tmx`, use `source="field.tsx"`; images inside `.tsx` can keep relative paths |
+| `TiledMap` draws tiles in **pixels**, not units | the map node scales by `1/16` (`ACTOR_SCALE`) and sits at room center `(16,9)` with anchor `(0.5,0.5)`; collision/obstacles come from the object layer (`.tmx` → `LevelData.obstacles`), **not** inferred from tiles |
+| The `cc` stub is `any`, so `this.foo()` on a class extending `Component` is not checked by tsc | a missing method only blows up at runtime — try a web build after changing `game/` |
+| A Vietnamese IME (Telex/VNI) mid-composition sends `keydown` with `keyCode = 229`, `key = 'Process'`/`'ư'`/`'đ'`; Cocos `input` only maps `keyCode` → WASD gets stuck. CDP/puppeteer bypasses the IME so it does not reproduce | movement keys read `event.code` (physical key) on `document` capture (`game/keyboard-move.ts` + `core/movement/move-keys.ts`), and release all keys on `blur`. `?debug=1` exposes `__yokai.keyLog()` to see raw events | <!-- i18n-allow: IME key data -->
+| `nine_path_panel*.png` (theme-wood) already contains an off-center square inside → stretching the 9-slice produces two offset frames | panels/cards use `nine_path_panel_interior.png` (uniform center color) |
+| World camera at integer multiples (M7) can be smaller than the `SHOW_ALL` UI band → HUD built against the design edges drifts into the bar area | `WorldCamera.hudScale` (`worldToUiScale`) — HUD nodes multiply by it to hug the room edges |
+| Bosses are much larger than their hitbox (Samurai 96 px); wall clearance based on the hitbox lets a charge near the wall cut the sprite in half | `BOSSES[id].spriteExtentTiles` (measured from the PNG, checked by `art-files.test`) → `bossRoomBounds` |
+| Sprite scale | **1 texture px = 1/16 unit** (`ACTOR_SCALE` in `level-view.ts`). Do not normalize by frame width — doing so makes the 32 px player half the size of a 16 px enemy |
+| `Sprite.sizeMode = CUSTOM` takes its size from `UITransform.contentSize` (**defaults to 100×100**), not from the frame | every code-built sprite must call `transform.setContentSize(frame.width, frame.height)`; without that line the image is ~3× too big even when rect/scale are right (this exact bug hit the M3 telegraph ring) |
+| The `web-desktop` build forces `exactFitScreen = false` (the build plugin overrides it in settings) → the canvas stays at its build-time size, `window.resize` does **not** change the canvas by itself; only `screen.windowSize` can (SubFrame mode) | since M5, `game/viewport.ts` (`fillBrowserViewport`) sets `screen.windowSize` at boot and on every `window.resize`, so the canvas tracks the viewport and 16:9/16:10/4:3 UI is not cropped. Tests must assert `canvas.getBoundingClientRect()` = `innerWidth×innerHeight`, not just `page.setViewport` |
+| The build template puts the canvas in `#GameDiv` with a **5px border** + inline `1280×960`, plus `h1.header`/`p.footer` | `fillBrowserViewport` must set `#GameDiv` to fixed `100vw/100vh`, border 0, and hide header/footer; changing only `screen.windowSize` leaves the canvas off by 5px and overflowing the viewport (measurable in headless: `canvas.x = 5`) |
+| `label.node.position` is **local** to the parent button, not canvas coordinates | debug helpers `uiText()`/click-to-label must use `node.worldPosition` (the Canvas sits at 0,0); with `.position` every button reports the same rect and clicking "Play" lands on the button below |
+| UI textures import with **bilinear** filtering by default → 16×8 wooden buttons and skill cards look blurry when scaled up | UI frames/cards/chapter buttons load through `loadPixelTexture` (`setFilters(NEAREST, NEAREST)`); HUD hearts/health bar do too. World art still goes through `loadTexture` until M6 decides separately |
+| Stretching a 16×8 button frame with transparent corners as a full-screen dark background + nearest → the 4 transparent corners enlarge into holes that let the HUD/world show through | full-screen backdrops use `Graphics` (`createBackdropPanel`), not the button sprite frame |
+| Browsers use Esc to exit fullscreen and **do not deliver keydown** to the page | the Settings screen must still have a mouse Back button; listen to `fullscreenchange` to sync the save/label; do not treat Esc as the only way out while fullscreen |
+| `Camera.clearFlags = SOLID_COLOR` only clears within the camera's `rect`; outside the rect is the backbuffer (black, color not guaranteed) | the background camera uses `visibility = 0`, `priority = -1`, `rect = (0,0,1,1)` to paint the letterbox bars (`bootstrap.createBackdropCamera`) |
+| New assets (`.tmx`/`.tsx`/folders) need a `.meta`; malformed meta JSON makes the asset-db log `Read meta ... failed` and that build may skip the asset | `.tmx.meta`: `importer: "tiled-map"`, `files: [".json", ".tmx"]`; `.tsx.meta`: `importer: "text"`, `files: [".json"]`; folders: `importer: "directory"`. If a script generates metas, validate with `python3 -c 'import json,glob;...'` before building |
+| Multiple tilesets in one `.tmx`: `firstgid` must equal the sum of the previous tilesets' `tilecount` + 1 (`TilesetField` has 75 tiles → the second tileset gets `firstgid="76"`) | a layer gid = `firstgid + row*columns + col`; a wrong firstgid shows the whole sheet shifted or transparent |
+| "Synthetic"/headless key events never reach Cocos `input` or are swallowed by the canvas during bubbling; modal UI listening for keys stays silent | UI that needs keys (skill pick 1/2/3) must also listen via `document.addEventListener('keydown', handler, true)` in the **capture phase**, and remove the exact handler on destroy; do not rely on `input.on(KEY_DOWN)` alone |
+| Cocos `input.on` attached after an `await` (texture load) → a player pressing a key on the frame the modal opens loses it | attach key listeners **before** any `await` in the modal builder; build the visuals afterwards |
+| `TilesetWater` is an **irrigation channel** autotile (blue base + orange banks), not a river; stamping a 4×3 block yields a pipe/mosaic look | `Backgrounds/Animated/Waterfall/*` and `Water Ripples/*` are the actual water sprite strips; place them via `room-water.ts` + a blue `Graphics` backdrop, not the tile layer |
+| One `SpriteAnimator` per FX slot (component + frame-load promise on every frame change) drags `stress()` down to ~40 fps | the FX pool slices frames at init + uses **one** shared clock (`fx/effect-pool.ts`); use `SpriteAnimator` only for actors |
+| `Sprite.Type.SLICED` without insets on the `SpriteFrame` still stretches all 4 corners | set `insetLeft/Right/Top/Bottom` when slicing (see `sliceSliced` in `screens/menu.ts`) |
+| The pixel font loads async; a label created before the font arrives keeps system-font metrics and may clip text | `applyPixelFont` sets `useSystemFont=false` + `font` + `updateRenderData(true)` when the promise resolves; all UI labels go through `createLabel` |
+| The pack's `NormalFont.ttf` has a space advance of 227/2048 em (~0.11 em) → Cocos renders "Clearthechapter", spaces nearly vanish | patch the `hmtx` space glyph to 682/2048 em with `bun run fix:font` (`scripts/lib/font-spacing.ts`; `stage:art` calls it automatically after copying fonts) |

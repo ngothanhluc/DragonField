@@ -1,10 +1,10 @@
 /**
- * Skill của một run: loadout + RNG roll + màn chọn 1/3.
+ * Skills of one run: loadout + RNG roll + the 1-of-3 picker.
  *
- * Tách khỏi `bootstrap.ts` để run flow không phải giữ 4 field rời (loadout,
- * rng, screen, choices) và để luật "roll bằng seed của run, tôn trọng max stack"
- * nằm một chỗ. File này không quyết định chuyển phòng — bootstrap vẫn làm việc
- * đó sau khi `choose()` trả về.
+ * Split from `bootstrap.ts` so run flow does not hold 4 loose fields (loadout,
+ * rng, screen, choices) and so the rule "roll from the run seed, respect max stacks"
+ * lives in one place. This file does not move between rooms — bootstrap still does that
+ * after `choose()` returns.
  */
 import { SkillLoadout, type AcquireResult } from '../core/skills/loadout';
 import type { DerivedStats, StatsBaseline } from '../core/skills/derived-stats';
@@ -30,14 +30,14 @@ export interface SkillGrant {
 export class SkillRun {
   private loadout = new SkillLoadout();
   private rng = SeededRng.fromSeed(1);
-  /** Baseline đã cộng meta upgrade (M5); skill cộng dồn trên nền này. */
+  /** Baseline with meta upgrades added (M5); skills stack on top of it. */
   private base: StatsBaseline = DEFAULT_COMBAT;
   private screen: SkillPickScreen | null = null;
   private offered: readonly SkillDef[] | null = null;
-  /** Tăng mỗi lần mở/đóng để bỏ kết quả build screen cũ (đổi phòng nhanh). */
+  /** Bumped on every open/close to drop stale screen builds (fast room changes). */
   private token = 0;
 
-  /** Bắt đầu run mới: loadout rỗng, RNG lấy từ seed của run, baseline từ meta. */
+  /** Start a new run: empty loadout, RNG from the run seed, baseline from meta. */
   reset(seed: number, base: StatsBaseline = DEFAULT_COMBAT): void {
     this.destroy();
     this.loadout = new SkillLoadout();
@@ -65,19 +65,19 @@ export class SkillRun {
     return this.loadout.stacks(id);
   }
 
-  /** 3 skill được offer hiện tại (id), `null` khi không ở màn chọn. */
+  /** The 3 skills currently offered (ids), `null` when not on the picker. */
   get choices(): string[] | null {
     return this.offered === null ? null : this.offered.map((skill) => skill.id);
   }
 
-  /** Quay thẻ bằng RNG của run; pool cạn thì trả ít hơn 3 (kể cả rỗng). */
+  /** Roll cards with the run RNG; an exhausted pool returns fewer than 3 (even none). */
   roll(): SkillDef[] {
     return rollChoices({ rng: this.rng, owned: this.loadout.snapshot() });
   }
 
   /**
-   * Dựng màn chọn. Nghe phím được gắn ngay trong `buildSkillPick` trước await,
-   * nên bấm 1/2/3 ngay frame mở vẫn ăn.
+   * Build the picker. Keys are wired inside `buildSkillPick` before any await,
+   * so hitting 1/2/3 on the opening frame still registers.
    */
   async open(parent: PickParent, choices: readonly SkillDef[], onPick: (index: number) => void): Promise<void> {
     this.offered = choices;
@@ -96,8 +96,8 @@ export class SkillRun {
   }
 
   /**
-   * Chọn thẻ theo index hoặc id. Trả `null` khi không có màn chọn / thẻ sai /
-   * đã đạt max stack. Không tự chuyển phòng.
+   * Pick a card by index or id. Returns `null` when there is no picker / the card is wrong /
+   * max stacks is reached. Does not move rooms by itself.
    */
   choose(indexOrId: number | string): SkillPickResult | null {
     const choices = this.offered;
@@ -120,13 +120,13 @@ export class SkillRun {
     return { def, result };
   }
 
-  /** Debug: nhặt ngoài màn chọn; trả stack sau khi nhặt. */
+  /** Debug: take a skill outside the picker; returns the stack count after. */
   grant(id: string, stacks = 1): SkillGrant {
     const result = this.loadout.acquire(id, stacks);
     return { acquired: result.acquired, healNow: result.healNow, stacks: this.loadout.stacks(id) };
   }
 
-  /** Đóng màn chọn (nếu có) và huỷ offer hiện tại. */
+  /** Close the picker (if open) and drop the current offer. */
   destroy(): void {
     this.token += 1;
     this.offered = null;

@@ -1,4 +1,4 @@
-/** Chạy: `bun run scripts/fix-font-spacing.ts` (idempotent). */
+/** Run: `bun run scripts/fix-font-spacing.ts` (idempotent). */
 import { fixFontSpacing } from './lib/font-spacing';
 
 const result = fixFontSpacing();
