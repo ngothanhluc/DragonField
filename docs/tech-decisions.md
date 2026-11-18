@@ -200,7 +200,7 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 
 **Rationale.** Multiplicative tint (M3) drifts off the pack palette; custom shaders in Cocos 3.8 are effortful and risky for web builds. The remap script is testable with vitest using the `scripts/lib/png.ts` decoder.
 
-**Consequences.** Adds PNGs to `resources/art` (slight size increase — the 15 MB cap was dropped at M8). Test: every output pixel belongs to the palette.
+**Consequences.** Adds PNGs to `resources/art` (slight size increase — the 15 MB cap was dropped at M8). Test: every output pixel belongs to the palette. Regenerate with `cd game && bun run gen:elites`; the tables live in `game/config/elite-palette.json` and `gen:anim` keeps the elite keys.
 
 ---
 

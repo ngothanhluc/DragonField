@@ -42,6 +42,15 @@ export function eliteScale(tuning: EnemiesTuning = ENEMY_TUNING): number {
   return tuning.elite.scale;
 }
 
+/**
+ * Manifest actor prefix for an enemy: the base monster (`bluebat`) or its generated elite
+ * variant (`bluebat.elite`, ADR-015). `enemy-view` builds animation keys (`<actor>.idle.down`)
+ * through this so an elite never plays the regular sheet.
+ */
+export function spriteActorFor(monster: string, elite: boolean): string {
+  return elite ? `${monster}.elite` : monster;
+}
+
 /** Number of **extra** charges after the first for an elite tank. */
 export function eliteExtraCharges(
   role: EnemyRole,

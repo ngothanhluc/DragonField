@@ -50,7 +50,7 @@ import {
 } from '../core/enemies/behaviours';
 import type { EnemyAction, EnemyState } from '../core/enemies/behaviours';
 import { nextActionStartedMs } from '../core/enemies/attack-cycle';
-import { eliteScale } from '../core/enemies/elite';
+import { eliteScale, spriteActorFor } from '../core/enemies/elite';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
@@ -110,7 +110,6 @@ export function loadTelegraphFrames(): Promise<SpriteFrame[]> {
 /** Base colour (no tint) plus role/kind colours. */
 const NO_TINT = new CocosColor(255, 255, 255, 255);
 const HIT_TINT = new CocosColor(255, 250, 225, 255);
-const ELITE_TINT = new CocosColor(206, 174, 255, 255);
 const FROZEN_TINT = new CocosColor(150, 220, 255, 255);
 const POISONED_TINT = new CocosColor(170, 230, 130, 255);
 const TELEGRAPH_TINT: Readonly<Record<RoleTelegraphKind, Color>> = {
@@ -281,7 +280,7 @@ export class EnemyView extends Component {
     this.syncNodePosition();
     this.applyScale(1, 0);
     this.playMotion(false, 'down', true);
-    this.applyTint(this.idleTint());
+    this.applyTint(NO_TINT);
 
     // The telegraph ring loads afterwards (its texture is preloaded at chapter start, so it is near-instant).
     void this.createRing().catch((error: unknown) => {
@@ -499,16 +498,11 @@ export class EnemyView extends Component {
     this.hideRing();
   }
 
-  /** Status tint outside telegraph: frozen > poisoned > elite. */
+  /** Status tint outside telegraph: frozen > poisoned > none (elites have their own art, ADR-015). */
   private stateTint(nowMs: number): Color {
     if (this.statuses.isSlowed(nowMs)) return FROZEN_TINT;
     if (this.statuses.isPoisoned(nowMs)) return POISONED_TINT;
-    return this.idleTint();
-  }
-
-  /** Elites keep a pale purple tint even at rest — an unlabelled "this one is stronger" cue. */
-  private idleTint(): Color {
-    return this.isElite ? ELITE_TINT : NO_TINT;
+    return NO_TINT;
   }
 
   /**
@@ -536,7 +530,9 @@ export class EnemyView extends Component {
    */
   private playMotion(moving: boolean, direction: Direction, force = false): void {
     const clip = moving ? 'walk' : 'idle';
-    const key = `${this.monster}.${clip}`;
+    // Elites use their own generated sheet (`<monster>.elite.*`, ADR-015) instead of a tint.
+    const actor = spriteActorFor(this.monster, this.isElite);
+    const key = `${actor}.${clip}`;
     if (!force && this.animKey === key && this.animDirection === direction && this.animMoving === moving) {
       return;
     }
