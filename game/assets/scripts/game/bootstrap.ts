@@ -55,18 +55,23 @@ import { RunRewards } from '../core/run/run-rewards';
 import { chapterGate } from '../core/save/chapter-gate';
 import { withBest } from '../core/save/save-data';
 import type { SaveData } from '../core/save/save-data';
+import { applySettings } from '../core/save/settings';
 import type { Settings } from '../core/save/settings';
 import type { SaveRepository } from '../core/save/storage';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { preloadSheets } from './assets/texture-cache';
 import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
-import { BulletView, ENEMY_BULLET_SHEET, PLAYER_BULLET_SHEET } from './bullet-view';
+import { BulletView } from './bullet-view';
 import { CombatLoop, STRESS_ENEMY_BULLETS } from './combat-loop';
-import type { DebugStatus, DebugUiText } from './debug-api';
+import type { DebugStatus, DebugUiText, DebugVfxSnapshot } from './debug-api';
 import { TELEGRAPH_RING_SHEET } from './enemy-view';
 import { createFxPool } from './fx/effect-pool';
 import type { FxPool } from './fx/effect-pool';
+import {
+  enemyProjectileKey,
+  playerProjectileLook,
+} from '../core/vfx/weapon-vfx';
 import { FeelView } from './feel-view';
 import { FpsMeter } from './fps-meter';
 import { Hud, HEART_SHEET } from './hud';
@@ -423,7 +428,7 @@ export class Bootstrap extends Component {
 
     this.audio?.playMusic(chapterMusic(firstRoom.chapter));
 
-    this.combat = new CombatLoop({
+    const combat = new CombatLoop({
       player,
       bulletView: this.bulletView,
       manifest,
@@ -438,6 +443,8 @@ export class Bootstrap extends Component {
       ...(this.camera !== null ? { shake: this.camera.shake } : {}),
     });
 
+    this.combat = combat;
+    combat.setEffectsMode(save.settings.effects);
     this.status = 'playing';
     this.screens.setScreen('playing');
     this.persistBest(firstRoom.room);
@@ -576,8 +583,7 @@ export class Bootstrap extends Component {
       }
     }
 
-    sheets.add(PLAYER_BULLET_SHEET);
-    sheets.add(ENEMY_BULLET_SHEET);
+    // Bullet sheets are loaded by `BulletView.init` from the manifest (one per loadout/chapter).
     sheets.add(TELEGRAPH_RING_SHEET);
     sheets.add(HEART_SHEET);
     for (const sheet of obstacleSheets(chapter.chapter)) sheets.add(sheet);
@@ -661,7 +667,12 @@ export class Bootstrap extends Component {
     node.parent = this.bulletLayer ?? this.node;
 
     const bulletView: BulletView = node.addComponent(BulletView);
-    await bulletView.init(player.bullets);
+    await bulletView.init(player.bullets, {
+      // Live closures: a skill pick changes the sprite/trail on the next frame, no rebuild.
+      loadout: () => this.skills.snapshot(),
+      chapter: () => this.run?.chapter ?? 1,
+      effects: () => this.save?.settings.effects ?? 'full',
+    });
     this.bulletView = bulletView;
   }
 
@@ -834,6 +845,7 @@ export class Bootstrap extends Component {
 
     const { def, result } = picked;
     this.applyLoadout(result.healNow);
+    this.player?.playSkillBoost();
     console.log(
       `[YokaiField] Took ${def.name} → stack ${result.stacks}/${def.maxStacks}` +
         `${result.healNow > 0 ? `, healed ${result.healNow} hearts` : ''}.`,
@@ -848,6 +860,7 @@ export class Bootstrap extends Component {
     const player = this.player;
     const stats = this.skills.stats();
     player?.applyStats(stats, healNow);
+    player?.setLoadout(this.skills.snapshot());
     this.hud?.setSkills(this.skills.entries);
     if (player !== null) this.hud?.setMaxHearts(player.maxHearts);
     this.hud?.setHearts(player?.hearts ?? 0);
@@ -950,10 +963,12 @@ export class Bootstrap extends Component {
     this.hud?.setGold(this.displayedGold);
   }
 
-  /** Accessibility flags (shake, damage numbers) applied immediately when changed in Settings. */
+  /** Accessibility flags (shake, damage numbers) + effects mode applied immediately. */
   private setFeelSettings(settings: Settings): void {
     if (this.camera !== null) this.camera.shake.enabled = settings.screenShake;
     if (this.feel !== null) this.feel.damageNumbersEnabled = settings.damageNumbers;
+    this.player?.setEffectsMode(settings.effects);
+    this.combat?.setEffectsMode(settings.effects);
   }
 
   /** Snapshot the run for the result screen before teardown (ScreenFlow knows no RunState/combat). */
@@ -1073,14 +1088,57 @@ export class Bootstrap extends Component {
       fxLayer: () => this.fxLayer,
       uiRoot: () => this.uiRoot,
       audioManager: () => this.audio,
+      setEffects: (mode) => this.debugSetEffects(mode),
+      vfx: () => this.debugVfx(),
     });
   }
 
 
+  /** Debug: flip Effects Full/Reduced through the same save path the Settings screen uses. */
+  private debugSetEffects(mode: 'full' | 'reduced'): boolean {
+    if (mode !== 'full' && mode !== 'reduced') return false;
+    const save = this.save;
+    const repo = this.saveRepo;
+    if (save === null || repo === null) return false;
+
+    try {
+      const next: SaveData = {
+        ...save,
+        settings: applySettings({ ...save.settings, effects: mode }),
+      };
+      repo.save(next);
+      this.save = next;
+      this.setFeelSettings(next.settings);
+      return true;
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] Could not set effects: ${errorMessage(error)}`);
+      return false;
+    }
+  }
+
+  /**
+   * Debug `vfx()`: what the weapon layer is actually showing. Read from the live adapters,
+   * not recomputed, so a broken bullet view shows up in the proof instead of hiding behind it.
+   */
+  private debugVfx(): DebugVfxSnapshot {
+    const owned = this.skills.snapshot();
+    const chapter = this.run?.chapter ?? 1;
+    return {
+      effects: this.save?.settings.effects ?? 'full',
+      projectileKey: this.bulletView?.projectileKey ?? playerProjectileLook(owned).key,
+      trailGhostsActive: this.bulletView?.trailGhostsActive ?? 0,
+      auraVisible: this.fx?.auraVisible ?? false,
+      enemyProjectileKey: this.bulletView?.enemyProjectileKey ?? enemyProjectileKey(chapter),
+    };
+  }
+
   /** Debug: take a skill outside the picker; returns the stack count after (0 for an unknown id). */
   private debugGrantSkill(id: string, stacks: number): number {
     const grant = this.skills.grant(id, stacks);
-    if (grant.acquired) this.applyLoadout(grant.healNow);
+    if (grant.acquired) {
+      this.applyLoadout(grant.healNow);
+      this.player?.playSkillBoost();
+    }
     console.log(
       `[YokaiField] debug grantSkill ${id} ×${stacks} → stack ${grant.stacks}`,
     );

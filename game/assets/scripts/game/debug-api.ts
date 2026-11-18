@@ -79,6 +79,18 @@ export interface DebugAudioSnapshot {
   readonly lastClips: readonly string[];
 }
 
+/** Weapon VFX state (ticket #3), so the browser proof can read it instead of eyeballing pixels. */
+export interface DebugVfxSnapshot {
+  readonly effects: 'full' | 'reduced';
+  /** Manifest key of the sprite the current loadout shoots. */
+  readonly projectileKey: string;
+  /** Ghost nodes that are actually visible right now. */
+  readonly trailGhostsActive: number;
+  readonly auraVisible: boolean;
+  /** Round ball the current chapter's enemies fire. */
+  readonly enemyProjectileKey: string;
+}
+
 /** Currently playing animation of each actor (manifest key). */
 export interface DebugAnimationSnapshot {
   readonly player: string | null;
@@ -127,6 +139,10 @@ export interface DebugProvider {
   readonly audio: () => DebugAudioSnapshot;
   /** Playing animation key; pass a node name to get a single actor. */
   readonly anim: (nodeName?: string) => string | DebugAnimationSnapshot | null;
+  /** Debug-only: flip Effects Full/Reduced at runtime (persisted like the Settings row). */
+  readonly setEffects: (mode: 'full' | 'reduced') => boolean;
+  /** Weapon VFX state: effects mode, projectile keys, trail ghosts, aura. */
+  readonly vfx: () => DebugVfxSnapshot;
 }
 
 export type YokaiDebugApi = Omit<
@@ -173,6 +189,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
     placeholders: { value: provider.placeholders, enumerable: true },
     audio: { value: provider.audio, enumerable: true },
     anim: { value: provider.anim, enumerable: true },
+    setEffects: { value: provider.setEffects, enumerable: true },
+    vfx: { value: provider.vfx, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -181,7 +199,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
     '[YokaiField] debug=1: window.__yokai ready ' +
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, ' +
-      'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, keyLog).',
+      'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
+      'setEffects, vfx, keyLog).',
   );
   return true;
 }

@@ -4,8 +4,13 @@
  * `core/combat/bullets.ts` owns the lifecycle (travel, ttl expiry, recall, pool full). This
  * file only reads `pool.active()` each frame and assigns positions/frames to existing nodes.
  *
- * Frames come from the manifest (`fx.shuriken`, `fx.energy-ball`) and advance with time:
- * the shuriken spins through 15 frames, the energy ball has 4. All frames are sliced once at init.
+ * Ticket #3: the sprite is not fixed any more.
+ * - Player bullets pick their look from the live loadout (`playerProjectileLook`), so a skill
+ *   pickup changes the bullet on the next frame.
+ * - Enemy bullets are round and per chapter (`enemyProjectileKey`); only ch1 keeps the old tint.
+ * - A pooled **ghost trail** follows each player bullet, tinted by `trailElement`.
+ *
+ * All frames come from the manifest and are sliced once at init — no path is assembled here.
  */
 import {
   _decorator,
@@ -15,37 +20,72 @@ import {
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
 } from 'cc';
-import type { Bullet, BulletOwner, BulletPool } from '../core/combat/bullets';
+import { resolve } from '../core/art/manifest';
+import type { Bullet, BulletPool } from '../core/combat/bullets';
+import { FEEL_TUNING } from '../core/enemies/tuning';
 import type { Vec2 } from '../core/math/vec2';
-import { loadTexture } from './assets/texture-cache';
-import { sliceFrame, tileToWorld } from './level-view';
-import type { TileRect } from './level-view';
+import {
+  ELEMENT_TINTS,
+  effectsLayers,
+  enemyProjectileKey,
+  playerProjectileLook,
+  trailElement,
+  type EffectsMode,
+  type VfxElement,
+} from '../core/vfx/weapon-vfx';
+import { loadAnimationManifest } from './anim/sprite-animator';
+import { getFrame } from './assets/sprite-frame-cache';
+import { tileToWorld } from './level-view';
 
 const { ccclass } = _decorator;
 
 /** `cc` is an any module in this repo: types must be derived from the import value (see `texture-cache.ts`). */
+type Color = InstanceType<typeof CocosColor>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
-type SpriteFrame = ReturnType<typeof sliceFrame>;
+type SpriteFrame = Awaited<ReturnType<typeof getFrame>>;
 
-/** Player bullet: `fx/shuriken`. 690×54 px sheet; 690/15 = 46 ⇒ 46×54 frames. */
-export const PLAYER_BULLET_SHEET = 'resources/art/fx/shuriken/SpriteSheet.png';
-/** Enemy bullet: `fx/energy-ball`, 64×16 = 4 frames of 16×16. */
-export const ENEMY_BULLET_SHEET = 'resources/art/fx/energy-ball/EnergyBall.png';
+/** Every projectile the player can shoot (`playerProjectileLook` only returns these). */
+const PLAYER_KEYS = [
+  'fx.shuriken',
+  'fx.big-shuriken',
+  'fx.kunai',
+  'fx.big-kunai',
+  'fx.ice-spike',
+  'fx.plant-spike',
+  'fx.shuriken-magic',
+  'fx.big-energy-ball',
+] as const;
 
-const PLAYER_BULLET_RECT: TileRect = { x: 0, y: 0, width: 46, height: 54 };
-const ENEMY_BULLET_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
-const PLAYER_FRAMES = 15;
-const ENEMY_FRAMES = 4;
-const PLAYER_FPS = 20;
-const ENEMY_FPS = 12;
+/** Round enemy balls, one per chapter (`enemyProjectileKey`). */
+const ENEMY_KEYS = ['fx.energy-ball', 'fx.bubble', 'fx.canon-ball', 'fx.fireball'] as const;
 
-/** Base colour (unchanged) and a **warm orange** for enemy bullets — clearly unlike the player's blue shuriken. */
+/** Pointed sprites are rotated into the flight direction; the spinning shuriken art is not. */
+const ROTATING_KEYS: ReadonlySet<string> = new Set([
+  'fx.ice-spike',
+  'fx.plant-spike',
+  'fx.kunai',
+  'fx.big-kunai',
+]);
+
+/**
+ * Base colour (unchanged) and a **warm orange** for ch1 enemy bullets — clearly unlike the
+ * player's blue shuriken. Chapters 2–4 use the art's own colour (ADR-016: round + dark outline).
+ */
 const BULLET_NO_TINT = new CocosColor(255, 255, 255, 255);
 const ENEMY_BULLET_TINT = new CocosColor(255, 142, 78, 255);
 
+/** Cached `cc.Color` per element — the trail spawns many ghosts and must not allocate per frame. */
+const ELEMENT_COLORS: Readonly<Record<VfxElement, Color>> = {
+  fire: new CocosColor(ELEMENT_TINTS.fire.r, ELEMENT_TINTS.fire.g, ELEMENT_TINTS.fire.b, 255),
+  ice: new CocosColor(ELEMENT_TINTS.ice.r, ELEMENT_TINTS.ice.g, ELEMENT_TINTS.ice.b, 255),
+  poison: new CocosColor(ELEMENT_TINTS.poison.r, ELEMENT_TINTS.poison.g, ELEMENT_TINTS.poison.b, 255),
+  homing: new CocosColor(ELEMENT_TINTS.homing.r, ELEMENT_TINTS.homing.g, ELEMENT_TINTS.homing.b, 255),
+  crit: new CocosColor(ELEMENT_TINTS.crit.r, ELEMENT_TINTS.crit.g, ELEMENT_TINTS.crit.b, 255),
+};
+
 /**
- * Maximum number of pre-built nodes. The pool holds 256 bullets, but a 32×18 tile screen
+ * Maximum number of pre-built bullet nodes. The pool holds 256 bullets, but a 32×18 tile screen
  * rarely has more than a few dozen at once; past this threshold extra bullets are simply not
  * drawn (silently, no crash) instead of allocating unbounded nodes.
  */
@@ -53,61 +93,118 @@ const MAX_BULLET_NODES = 64;
 
 /** Drawn diameter of one bullet, world units — larger than the 0.15 tile hitbox so it is visible. */
 const BULLET_DRAW_UNITS = 0.6;
+/** Ghosts are slightly smaller than the bullet so the trail reads as "behind", not "another shot". */
+const GHOST_SCALE = 0.85;
 
-interface BulletFrames {
-  readonly player: readonly SpriteFrame[];
-  readonly enemy: readonly SpriteFrame[];
+export interface BulletViewOptions {
+  /** Live loadout (skill id → stacks), i.e. `SkillLoadout.snapshot()`. */
+  readonly loadout: () => ReadonlyMap<string, number>;
+  /** Chapter of the current run — picks the enemy ball. */
+  readonly chapter: () => number;
+  /** Full/Reduced: Reduced turns the trail off. */
+  readonly effects: () => EffectsMode;
+}
+
+interface KeyData {
+  readonly frames: readonly SpriteFrame[];
+  readonly fps: number;
+  readonly width: number;
+  readonly height: number;
 }
 
 interface BulletNode {
   readonly node: Node;
   readonly sprite: Sprite;
   lastFrame: number;
-  lastOwner: BulletOwner | null;
+  lastKey: string;
+}
+
+interface GhostNode {
+  readonly node: Node;
+  readonly sprite: Sprite;
+  readonly color: Color;
+  active: boolean;
+  remainingMs: number;
+  totalMs: number;
 }
 
 @ccclass('BulletView')
 export class BulletView extends Component {
   private pool: BulletPool | null = null;
-  private frames: BulletFrames | null = null;
+  private options: BulletViewOptions | null = null;
+  private readonly byKey = new Map<string, KeyData>();
   private readonly nodes: BulletNode[] = [];
+  private readonly ghosts: GhostNode[] = [];
+  /** Last ghost spawn time per player bullet id (bullets are recycled, ids never repeat). */
+  private readonly ghostClock = new Map<number, number>();
   private limit = MAX_BULLET_NODES;
   private elapsedMs = 0;
+  private playerKey = 'fx.shuriken';
+  private enemyKey = 'fx.energy-ball';
 
-  /** Preload both bullet sheets and **pre-build every node** — no allocation during play. */
-  async init(pool: BulletPool): Promise<void> {
+  /** Preload every projectile sheet and **pre-build every node** — no allocation during play. */
+  async init(pool: BulletPool, options: BulletViewOptions): Promise<void> {
     this.pool = pool;
+    this.options = options;
     this.limit = Math.max(1, Math.min(pool.capacity, MAX_BULLET_NODES));
 
-    const [playerTexture, enemyTexture] = await Promise.all([
-      loadTexture(PLAYER_BULLET_SHEET),
-      loadTexture(ENEMY_BULLET_SHEET),
-    ]);
-    this.frames = {
-      player: Array.from({ length: PLAYER_FRAMES }, (_, index) =>
-        sliceFrame(playerTexture, { ...PLAYER_BULLET_RECT, x: index * PLAYER_BULLET_RECT.width }),
-      ),
-      enemy: Array.from({ length: ENEMY_FRAMES }, (_, index) =>
-        sliceFrame(enemyTexture, { ...ENEMY_BULLET_RECT, x: index * ENEMY_BULLET_RECT.width }),
-      ),
-    };
+    const manifest = await loadAnimationManifest();
+    for (const key of [...PLAYER_KEYS, ...ENEMY_KEYS]) {
+      const entry = resolve(manifest, key);
+      const frames = await Promise.all(
+        Array.from({ length: entry.frames }, (_, index) => getFrame(entry, 'down', index)),
+      );
+      this.byKey.set(key, {
+        frames,
+        fps: entry.fps,
+        width: entry.frameWidth,
+        height: entry.frameHeight,
+      });
+    }
 
+    // Ghosts first: children of one node draw in creation order, so the trail stays behind bullets.
+    for (let index = 0; index < FEEL_TUNING.vfx.trailPoolSize; index += 1) {
+      this.ghosts.push(this.createGhost(index));
+    }
     // The node pool is built once here: 8 enemies + 40 bullets spawn no nodes mid-run.
     for (let index = 0; index < this.limit; index += 1) {
       this.ensureNode(index);
     }
   }
 
-  /** Bullet animation clock (independent of the display frame rate). */
+  /** Bullet + ghost animation clock (independent of the display frame rate). */
   update(deltaTime: number): void {
     this.elapsedMs += Math.max(0, deltaTime) * 1000;
+    const step = Math.max(0, deltaTime) * 1000;
+
+    for (const ghost of this.ghosts) {
+      if (!ghost.active) continue;
+      ghost.remainingMs -= step;
+      if (ghost.remainingMs <= 0) {
+        ghost.active = false;
+        ghost.node.active = false;
+        continue;
+      }
+      // Fade out linearly; the tint stays so the element colour is readable.
+      ghost.color.a = Math.round(255 * Math.min(1, ghost.remainingMs / ghost.totalMs));
+      ghost.sprite.color = ghost.color;
+    }
   }
 
   /** Call every frame **after** `BulletPool.update()` so positions are final. */
   sync(): void {
     const pool = this.pool;
-    const frames = this.frames;
-    if (pool === null || frames === null) return;
+    const options = this.options;
+    if (pool === null || options === null) return;
+
+    const owned = options.loadout();
+    const layers = effectsLayers(options.effects());
+    const look = playerProjectileLook(owned);
+    this.playerKey = look.key;
+    this.enemyKey = enemyProjectileKey(options.chapter());
+
+    const playerTint = look.tint === null ? BULLET_NO_TINT : ELEMENT_COLORS[look.tint];
+    const enemyTint = options.chapter() === 1 ? ENEMY_BULLET_TINT : BULLET_NO_TINT;
 
     const active = pool.active();
     const drawn = Math.min(active.length, this.limit);
@@ -120,33 +217,100 @@ export class BulletView extends Component {
       if (entry === null) break;
 
       const player = bullet.owner === 'player';
-      const list = player ? frames.player : frames.enemy;
-      const fps = player ? PLAYER_FPS : ENEMY_FPS;
-      const frameIndex = Math.floor((this.elapsedMs * fps) / 1000) % list.length;
-      const frame = list[frameIndex];
+      const key = player ? look.key : this.enemyKey;
+      const data = this.byKey.get(key);
+      if (data === undefined) continue;
+
+      const frameIndex = Math.floor((this.elapsedMs * data.fps) / 1000) % data.frames.length;
+      const frame = data.frames[frameIndex];
       if (frame === undefined) continue;
 
-      if (entry.lastFrame !== frameIndex || entry.lastOwner !== bullet.owner) {
+      if (entry.lastFrame !== frameIndex || entry.lastKey !== key) {
         entry.lastFrame = frameIndex;
-        entry.lastOwner = bullet.owner;
+        entry.lastKey = key;
         entry.sprite.spriteFrame = frame;
-        entry.sprite.color = player ? BULLET_NO_TINT : ENEMY_BULLET_TINT;
 
-        const rect = player ? PLAYER_BULLET_RECT : ENEMY_BULLET_RECT;
         const transform = entry.node.getComponent(CocosUITransform);
-        if (transform !== null) transform.setContentSize(rect.width, rect.height);
-        const scale = BULLET_DRAW_UNITS / Math.max(rect.width, rect.height);
+        // `sizeMode = CUSTOM` takes its size from UITransform — set the sliced frame size.
+        if (transform !== null) transform.setContentSize(data.width, data.height);
+        const scale = BULLET_DRAW_UNITS / Math.max(data.width, data.height);
         entry.node.setScale(scale, scale, 1);
       }
 
+      entry.sprite.color = player ? playerTint : enemyTint;
       this.applyPosition(entry.node, bullet.position);
-      entry.node.active = true;
+      // Tile space has y down, Cocos rotation counter-clockwise: negate the angle.
+      entry.node.angle =
+        player && ROTATING_KEYS.has(key)
+          ? (-Math.atan2(bullet.velocity.y, bullet.velocity.x) * 180) / Math.PI
+          : 0;
+
+      if (player && layers.trail) {
+        const element = trailElement(owned, bullet.crit);
+        if (element !== null) this.spawnGhost(bullet, data, frameIndex, element);
+      }
     }
 
     for (let index = drawn; index < this.nodes.length; index += 1) {
       const entry: BulletNode | undefined = this.nodes[index];
       if (entry !== undefined && entry.node.isValid) entry.node.active = false;
     }
+  }
+
+  /** Debug `vfx()`: how many trail ghosts are alive right now. */
+  get trailGhostsActive(): number {
+    return this.ghosts.filter((ghost) => ghost.active).length;
+  }
+
+  /** Debug `vfx()`: the projectile key the current loadout selects. */
+  get projectileKey(): string {
+    return this.playerKey;
+  }
+
+  /** Debug `vfx()`: the enemy ball of the current chapter. */
+  get enemyProjectileKey(): string {
+    return this.enemyKey;
+  }
+
+  private spawnGhost(bullet: Bullet, data: KeyData, frameIndex: number, element: VfxElement): void {
+    const now = this.elapsedMs;
+    const last = this.ghostClock.get(bullet.id);
+    const spawnMs = FEEL_TUNING.vfx.trailSpawnMs;
+    if (last !== undefined && now - last < spawnMs) return;
+    this.ghostClock.set(bullet.id, now);
+    // Bound the map: bullets are recycled by id, so dead ids would leak without pruning.
+    if (this.ghostClock.size > 512) {
+      for (const id of this.ghostClock.keys()) {
+        if (id !== bullet.id) {
+          this.ghostClock.delete(id);
+          break;
+        }
+      }
+    }
+
+    const ghost = this.ghosts.find((candidate) => !candidate.active);
+    if (ghost === undefined) return;
+
+    const frame = data.frames[frameIndex];
+    if (frame === undefined) return;
+
+    const tint = ELEMENT_COLORS[element];
+    ghost.color.r = tint.r;
+    ghost.color.g = tint.g;
+    ghost.color.b = tint.b;
+    ghost.color.a = 255;
+    ghost.sprite.color = ghost.color;
+    ghost.active = true;
+    ghost.remainingMs = FEEL_TUNING.vfx.trailLifetimeMs;
+    ghost.totalMs = ghost.remainingMs;
+    ghost.node.active = true;
+    ghost.sprite.spriteFrame = frame;
+
+    const transform = ghost.node.getComponent(CocosUITransform);
+    if (transform !== null) transform.setContentSize(data.width, data.height);
+    const scale = (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) * GHOST_SCALE;
+    ghost.node.setScale(scale, scale, 1);
+    this.applyPosition(ghost.node, bullet.position);
   }
 
   private ensureNode(index: number): BulletNode | null {
@@ -162,9 +326,25 @@ export class BulletView extends Component {
     node.parent = this.node;
     node.active = false;
 
-    const entry: BulletNode = { node, sprite, lastFrame: -1, lastOwner: null };
+    const entry: BulletNode = { node, sprite, lastFrame: -1, lastKey: '' };
     this.nodes.push(entry);
     return entry;
+  }
+
+  private createGhost(index: number): GhostNode {
+    const node = new CocosNode(`bullet-trail-${index}`);
+    const sprite: Sprite = node.addComponent(CocosSprite);
+    sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+    node.parent = this.node;
+    node.active = false;
+    return {
+      node,
+      sprite,
+      color: new CocosColor(255, 255, 255, 255),
+      active: false,
+      remainingMs: 0,
+      totalMs: 1,
+    };
   }
 
   private applyPosition(node: Node, position: Vec2): void {

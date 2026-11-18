@@ -15,6 +15,7 @@ import type {
   DebugScreenId,
   DebugStatus,
   DebugUiText,
+  DebugVfxSnapshot,
 } from './debug-api';
 import { installDebugApi } from './debug-api';
 import { animationOfNode, collectAnimations, collectPlaceholders } from './debug-extras';
@@ -55,6 +56,8 @@ export interface DebugWiringHost {
   readonly fxLayer: () => Node | null;
   readonly uiRoot: () => Node | null;
   readonly audioManager: () => AudioManager | null;
+  readonly setEffects: (mode: 'full' | 'reduced') => boolean;
+  readonly vfx: () => DebugVfxSnapshot;
 }
 
 /** Install the API if the URL has `?debug=1`; returns `true` when installed. */
@@ -105,6 +108,8 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
       nodeName === undefined
         ? collectAnimations(host.actorLayer())
         : animationOfNode(host.actorLayer(), nodeName),
+    setEffects: host.setEffects,
+    vfx: host.vfx,
   };
 
   return installDebugApi(provider);

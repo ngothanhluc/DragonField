@@ -46,6 +46,11 @@ import { spawnWave } from '../core/enemies/waves';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { distance, type Vec2 } from '../core/math/vec2';
 import type { SeededRng } from '../core/rng';
+import type { DerivedStats } from '../core/skills/derived-stats';
+import {
+  effectsLayers,
+  type EffectsMode,
+} from '../core/vfx/weapon-vfx';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { BossView } from './boss-view';
 import type { BulletView } from './bullet-view';
@@ -60,6 +65,14 @@ type Node = InstanceType<typeof CocosNodeValue>;
 
 /** Player radius for enemy bullets / dashes, tiles — same convention as the sim. */
 export const PLAYER_RADIUS_TILES = 0.25;
+
+/** Impact colours (cached: a busy frame must not allocate a `Color` per hit). */
+const HIT_TINT = new CocosColor(255, 236, 190, 255);
+const CRIT_FLASH_TINT = new CocosColor(255, 255, 255, 255);
+const EXECUTE_TINT = new CocosColor(255, 90, 90, 255);
+const LIFESTEAL_TINT = new CocosColor(230, 60, 60, 255);
+const POISON_TINT = new CocosColor(120, 240, 110, 255);
+const RICOCHET_TINT = new CocosColor(255, 245, 170, 255);
 
 /** Number of enemies and enemy bullets `stress()` keeps alive. */
 export const STRESS_ENEMY_COUNT = 8;
@@ -148,6 +161,8 @@ export class CombatLoop {
   private readonly shake: ScreenShake | null;
   private readonly onDamage: (info: DamagePopupInfo) => void;
   private readonly hitstop = new HitstopClock(DEFAULT_COMBAT.enemyHitstopMs);
+  /** `Settings.effects` — Reduced keeps impacts/telegraphs but drops secondary particles. */
+  private effectsMode: EffectsMode = 'full';
   private readonly enemies: EnemyView[] = [];
   private boss: BossView | null = null;
   /** Enemy/boss already rewarded — stops double gold when update scans again. */
@@ -486,18 +501,23 @@ export class CombatLoop {
           bullet.damage,
           boss.health / boss.maxHealth,
         );
+        const crit = bullet.damage > stats.damage * 1.01;
         boss.takeDamage(damage, this.nowMs);
-        this.reportDamage(damage, boss.position, bullet.damage > stats.damage * 1.01);
+        this.reportDamage(damage, boss.position, crit);
         this.bossStatus.apply(stats, this.nowMs);
-        this.fx?.spawn('fx.impact', bullet.position, {
-          tint: new CocosColor(255, 236, 190, 255),
-          drawUnits: 1.4,
-        });
         playSfx('enemy-hit');
-        player.heal(lifestealHeal(stats, damage));
+        const healed = lifestealHeal(stats, damage);
+        player.heal(healed);
         bullet.hitIds.push(BOSS_TARGET_ID);
+        this.spawnHitEffects({
+          position: boss.position,
+          crit,
+          executeApplied: damage > bullet.damage + 1e-9,
+          healed,
+          stats,
+        });
         this.explode(bullet, boss.position, null);
-        this.hitstop.request();
+        this.hitstop.request(crit ? FEEL_TUNING.vfx.critHitstopMs : undefined);
         consumed = this.resolveBullet(bullet);
         if (consumed) {
           spent.add(bullet.id);
@@ -512,18 +532,23 @@ export class CombatLoop {
         }
 
         const damage = damageAfterExecute(stats, bullet.damage, victim.health / victim.maxHealth);
+        const crit = bullet.damage > stats.damage * 1.01;
         victim.takeDamage(damage, bullet.position, this.nowMs);
-        this.reportDamage(damage, victim.position, bullet.damage > stats.damage * 1.01);
+        this.reportDamage(damage, victim.position, crit);
         victim.applyStatus(stats, this.nowMs);
-        this.fx?.spawn('fx.impact', victim.position, {
-          tint: new CocosColor(255, 236, 190, 255),
-          drawUnits: 1.4,
-        });
         playSfx('enemy-hit');
-        player.heal(lifestealHeal(stats, damage));
+        const healed = lifestealHeal(stats, damage);
+        player.heal(healed);
         bullet.hitIds.push(victim.id);
+        this.spawnHitEffects({
+          position: victim.position,
+          crit,
+          executeApplied: damage > bullet.damage + 1e-9,
+          healed,
+          stats,
+        });
         this.explode(bullet, victim.position, victim);
-        this.hitstop.request();
+        this.hitstop.request(crit ? FEEL_TUNING.vfx.critHitstopMs : undefined);
         consumed = this.resolveBullet(bullet);
         if (consumed) break;
       }
@@ -564,6 +589,13 @@ export class CombatLoop {
       drawUnits: Math.max(1.2, bullet.explosiveRadiusTiles * 2),
       lifetimeMs: 820,
     });
+    // Secondary smoke ring: the explosion is the telegraph of the AoE, the smoke sells the size.
+    if (effectsLayers(this.effectsMode).secondaryParticles) {
+      this.fx?.spawn('fx.smoke-circular', center, {
+        drawUnits: Math.max(1.0, bullet.explosiveRadiusTiles * 1.6),
+        lifetimeMs: 900,
+      });
+    }
     this.shake?.addTrauma(FEEL_TUNING.shake.explosion);
     playSfx('explosion');
   }
@@ -581,6 +613,8 @@ export class CombatLoop {
   }): boolean {
     if (bullet.pierceRemaining > 0) {
       bullet.pierceRemaining -= 1;
+      // The bullet went through: a small cut at the entry point reads as "it kept going".
+      this.fx?.spawn('fx.cut', bullet.position, { drawUnits: 0.8, lifetimeMs: 220 });
       return false;
     }
 
@@ -602,6 +636,9 @@ export class CombatLoop {
         const length = Math.hypot(dx, dy) || 1;
         bullet.velocity.x = (dx / length) * speed;
         bullet.velocity.y = (dy / length) * speed;
+        // Spark at the bounce point + a short tracer to the new target (Ricochet).
+        this.fx?.spawn('fx.spark', bullet.position);
+        this.fx?.line(bullet.position, next.position, RICOCHET_TINT);
         return false;
       }
     }
@@ -646,6 +683,84 @@ export class CombatLoop {
         enemy.takeDamage(thorns.damage, player.position, this.nowMs);
       }
     }
+  }
+
+  /**
+   * Dedicated hit impact (ticket #3): every hit gets the base spark; crit/freeze/poison/execute
+   * add their own effect. Secondary particles (bubbles, lifesteal orbs) obey `Settings.effects`.
+   * Purely visual — damage, hitbox and hitstop default are untouched.
+   */
+  private spawnHitEffects(args: {
+    readonly position: Vec2;
+    readonly crit: boolean;
+    readonly executeApplied: boolean;
+    readonly healed: number;
+    readonly stats: DerivedStats;
+  }): void {
+    const fx = this.fx;
+    if (fx === null) return;
+
+    const vfx = FEEL_TUNING.vfx;
+    const secondary = effectsLayers(this.effectsMode).secondaryParticles;
+
+    fx.spawn('fx.impact', args.position, {
+      tint: HIT_TINT,
+      drawUnits: args.crit ? vfx.critImpactDrawUnits : vfx.impactDrawUnits,
+    });
+    if (args.crit) {
+      // A short pure-white flash on top of the larger spark.
+      fx.spawn('fx.impact', args.position, {
+        tint: CRIT_FLASH_TINT,
+        drawUnits: vfx.critImpactDrawUnits + 0.6,
+        lifetimeMs: 110,
+      });
+    }
+
+    if (args.stats.slowOnHit !== undefined) fx.spawn('fx.ice', args.position);
+    if (args.stats.poisonOnHit !== undefined) {
+      fx.spawn('fx.poison', args.position);
+      if (secondary) {
+        for (let index = 0; index < 2; index += 1) {
+          const angle = (index / 2) * Math.PI * 2;
+          fx.spawn(
+            'fx.bubble',
+            { x: args.position.x + Math.cos(angle) * 0.3, y: args.position.y + Math.sin(angle) * 0.3 },
+            { tint: POISON_TINT, drawUnits: 0.35, lifetimeMs: 500 },
+          );
+        }
+      }
+    }
+
+    if (args.executeApplied) {
+      fx.spawn('fx.slash-arc', args.position);
+      fx.spawn('fx.impact', args.position, {
+        tint: EXECUTE_TINT,
+        drawUnits: vfx.impactDrawUnits + 0.4,
+        lifetimeMs: 120,
+      });
+    }
+
+    if (args.healed > 0 && secondary) {
+      // A few red orbs flying from the victim back to the player.
+      for (let index = 0; index < 3; index += 1) {
+        const angle = (index / 3) * Math.PI * 2;
+        fx.spawn(
+          'fx.spark',
+          { x: args.position.x + Math.cos(angle) * 0.25, y: args.position.y + Math.sin(angle) * 0.25 },
+          {
+            tint: LIFESTEAL_TINT,
+            to: this.player.position,
+            travelMs: 240,
+            lifetimeMs: 260,
+          },
+        );
+      }
+    }
+  }
+
+  /** `Settings.effects`: Reduced drops the smoke ring and secondary particles only. */
+  setEffectsMode(mode: EffectsMode): void {
+    this.effectsMode = mode;
   }
 
   /**

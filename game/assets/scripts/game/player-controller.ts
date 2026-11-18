@@ -29,6 +29,14 @@ import type { Vec2 } from '../core/math/vec2';
 import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-intent';
 import { SeededRng } from '../core/rng';
 import { computeDerivedStats, type DerivedStats } from '../core/skills/derived-stats';
+import {
+  ELEMENT_TINTS,
+  effectsLayers,
+  showAura,
+  strongestElement,
+  type EffectsMode,
+  type VfxElement,
+} from '../core/vfx/weapon-vfx';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { KeyboardMove } from './keyboard-move';
 import { playSfx } from './audio/sfx';
@@ -69,6 +77,15 @@ const PLAYER_BULLET_TTL_MS = Math.max(
 /** How long the `player.hit.*` frame stays after a hit (GDD §3: it must read as "I just got hit"). */
 const HIT_ANIM_MS = 150;
 
+/** Cached `cc.Color` per element — the aura is re-applied every frame and must not allocate. */
+const AURA_COLORS: Readonly<Record<VfxElement, Color>> = {
+  fire: new CocosColor(ELEMENT_TINTS.fire.r, ELEMENT_TINTS.fire.g, ELEMENT_TINTS.fire.b, 255),
+  ice: new CocosColor(ELEMENT_TINTS.ice.r, ELEMENT_TINTS.ice.g, ELEMENT_TINTS.ice.b, 255),
+  poison: new CocosColor(ELEMENT_TINTS.poison.r, ELEMENT_TINTS.poison.g, ELEMENT_TINTS.poison.b, 255),
+  homing: new CocosColor(ELEMENT_TINTS.homing.r, ELEMENT_TINTS.homing.g, ELEMENT_TINTS.homing.b, 255),
+  crit: new CocosColor(ELEMENT_TINTS.crit.r, ELEMENT_TINTS.crit.g, ELEMENT_TINTS.crit.b, 255),
+};
+
 /** Default facing while there is no input. */
 const START_FACING: Direction = 'down';
 
@@ -92,6 +109,9 @@ export class PlayerController extends Component {
   private shield = new ShieldCharger(0, 0);
   private rng = SeededRng.fromSeed(1);
   private fx: FxPool | null = null;
+  /** Live loadout (skill id → stacks) — drives the projectile look, trail and aura. */
+  private loadout: ReadonlyMap<string, number> = new Map();
+  private effectsMode: EffectsMode = 'full';
   private sprite: Sprite | null = null;
   private tintUntilMs = 0;
   private tint: Color = PLAYER_NO_TINT;
@@ -153,6 +173,25 @@ export class PlayerController extends Component {
   /** Heal (lifesteal, Second Wind, Vitality on pickup). Returns hearts after healing. */
   heal(amount: number): number {
     return this.health.heal(amount);
+  }
+
+  /** New loadout: the aura appears/disappears and its colour follows the strongest element. */
+  setLoadout(owned: ReadonlyMap<string, number>): void {
+    this.loadout = owned;
+  }
+
+  /** `Settings.effects` — Reduced hides the aura (impacts/telegraphs stay). */
+  setEffectsMode(mode: EffectsMode): void {
+    this.effectsMode = mode;
+  }
+
+  /** A skill was just acquired: one boost burst at the player's feet (off under Reduced effects). */
+  playSkillBoost(): void {
+    if (!effectsLayers(this.effectsMode).aura) return;
+    this.fx?.spawn('fx.boost', {
+      x: this.tilePosition.x,
+      y: this.tilePosition.y + FEEL_TUNING.vfx.auraOffsetTiles,
+    });
   }
 
   /**
@@ -254,6 +293,7 @@ export class PlayerController extends Component {
 
     this.applyKnockback(deltaMs, level);
     this.fireIfReady(nowMs, deltaMs, targets);
+    this.updateAura();
     this.playCurrentAnimation(nowMs, moving);
     this.applyStateTint(nowMs);
     this.applySquash(nowMs);
@@ -285,6 +325,7 @@ export class PlayerController extends Component {
     if (result.dead) {
       // On death `step()` stops running: a half-finished squash would freeze, so reset the base scale.
       this.node.setScale(this.baseScale, this.baseScale, 1);
+      this.fx?.setAura(null, null);
       this.playAnimation('player.dead');
       playSfx('game-over');
       return true;
@@ -411,7 +452,8 @@ export class PlayerController extends Component {
       this.playAnimation(`player.hit.${this.facing}`, this.facing);
       return;
     }
-    if (nowMs < this.attackUntilMs) {
+    // The throw pose only reads when standing still; running keeps the walk cycle (ticket #3).
+    if (!moving && nowMs < this.attackUntilMs) {
       this.playAnimation(`player.attack.${this.facing}`, this.facing);
       return;
     }
@@ -432,6 +474,28 @@ export class PlayerController extends Component {
     this.animKey = key;
     this.animDirection = direction ?? this.animDirection;
     this.animator?.play(key, direction);
+  }
+
+  /**
+   * Aura at the feet: visible with ≥ 8 stacks or any Epic skill, tinted by the strongest
+   * element, hidden entirely under Reduced effects. Re-applied every frame so it follows
+   * the player without a second clock.
+   */
+  private updateAura(): void {
+    const fx = this.fx;
+    if (fx === null) return;
+
+    if (!effectsLayers(this.effectsMode).aura || !showAura(this.loadout)) {
+      fx.setAura(null, null);
+      return;
+    }
+
+    const element = strongestElement(this.loadout);
+    fx.setAura(
+      { x: this.tilePosition.x, y: this.tilePosition.y + FEEL_TUNING.vfx.auraOffsetTiles },
+      element === null ? null : AURA_COLORS[element],
+      FEEL_TUNING.vfx.auraDrawUnits,
+    );
   }
 
   private syncNodePosition(): void {
