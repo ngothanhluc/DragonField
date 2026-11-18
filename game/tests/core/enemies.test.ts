@@ -30,9 +30,9 @@ import {
 import { distance } from '../../assets/scripts/core/math/vec2';
 
 /**
- * Phòng thử 32×18 có 3 wave: [chaser ×2], [caster elite], [tank].
- * Dựng qua `parseLevelData` để test dùng đúng hợp đồng dữ liệu thật, không
- * phải một `LevelData` tự chế có thể lệch schema.
+ * Test room 32×18 with 3 waves: [chaser ×2], [caster elite], [tank].
+ * Built through `parseLevelData` so the test uses the real data contract, not a
+ * hand-rolled `LevelData` that could drift from the schema.
  */
 function makeLevel(obstacles: readonly Obstacle[] = []): LevelData {
   return parseLevelData({
@@ -86,7 +86,7 @@ function enemy(options: EnemyOptions): EnemyState {
 }
 
 describe('enemy behaviours — chaser', () => {
-  it('đi về phía player nên khoảng cách giảm', () => {
+  it('moves toward the player so the distance shrinks', () => {
     const state = enemy({ role: 'chaser', x: 2, y: 5 });
     const player = { x: 20, y: 5 };
 
@@ -99,7 +99,7 @@ describe('enemy behaviours — chaser', () => {
     expect(speedFor('chaser', false)).toBeGreaterThan(0);
   });
 
-  it('đứng yên khi đã chạm player', () => {
+  it('stands still once it touches the player', () => {
     const action = decideAction({
       state: enemy({ role: 'chaser', x: 10, y: 5 }),
       player: { x: 10.2, y: 5 },
@@ -112,7 +112,7 @@ describe('enemy behaviours — chaser', () => {
 });
 
 describe('enemy behaviours — caster', () => {
-  it('lùi khi player gần hơn 4 tile', () => {
+  it('backs off when the player is closer than 4 tiles', () => {
     const state = enemy({ role: 'caster', x: 6, y: 5 });
     const player = { x: 5, y: 5 };
 
@@ -127,7 +127,7 @@ describe('enemy behaviours — caster', () => {
     expect(after).toBeCloseTo(CASTER_MAX_RANGE_TILES);
   });
 
-  it('tiến khi player xa hơn 6 tile', () => {
+  it('steps in when the player is farther than 6 tiles', () => {
     const state = enemy({ role: 'caster', x: 25, y: 5 });
     const player = { x: 5, y: 5 };
 
@@ -140,12 +140,12 @@ describe('enemy behaviours — caster', () => {
     expect(distance(action.target, player)).toBeCloseTo(CASTER_MAX_RANGE_TILES);
   });
 
-  it('telegraph rồi mới bắn, và đòn đã vào telegraph thì chạy hết', () => {
+  it('telegraphs before firing, and an attack in telegraph runs to completion', () => {
     const player = { x: 5, y: 5 };
     const start = 1200;
     const state = enemy({ role: 'caster', x: 10, y: 5 });
 
-    // 5 tile: trong khoảng 4–6, cooldown đã hết.
+    // 5 tiles: inside 4–6, cooldown already elapsed.
     const telegraph = decideAction({ state, player, nowMs: start, level });
     expect(telegraph).toEqual({ kind: 'telegraph', sinceMs: start });
 
@@ -159,7 +159,7 @@ describe('enemy behaviours — caster', () => {
     });
     expect(justBefore).toEqual({ kind: 'telegraph', sinceMs: start });
 
-    // Player lùi ra thật xa: telegraph vẫn phải chạy nốt.
+    // Player backs far away: the telegraph must still finish.
     const playerFled = { x: 30, y: 5 };
     const fired = decideAction({
       state: telegraphing,
@@ -171,7 +171,7 @@ describe('enemy behaviours — caster', () => {
     expect(attackReleased(telegraph, fired)).toBe('shot');
   });
 
-  it('không bắn lại ngay sau phát trước — chờ cooldown', () => {
+  it('does not fire again right after the previous shot — waits for the cooldown', () => {
     const player = { x: 5, y: 5 };
     const state = enemy({ role: 'caster', x: 10, y: 5, actionStartedMs: 1000 });
 
@@ -179,13 +179,13 @@ describe('enemy behaviours — caster', () => {
     expect(decideAction({ state, player, nowMs: 2200, level }).kind).toBe('telegraph');
   });
 
-  it('chỉ đứng yên tại chỗ khi điểm giữ khoảng cách rơi vào vật cản', () => {
+  it('only stands still when the spacing point falls inside an obstacle', () => {
     const blockedLevel = makeLevel([{ kind: 'pillar', x: 18, y: 2, width: 2, height: 2 }]);
     const state = enemy({ role: 'caster', x: 15, y: 3 });
     const player = { x: 13, y: 3 };
 
-    // Player sát bên (2 tile < 4) nên caster lùi; điểm lùi cách player 6 tile
-    // rơi đúng vào cột ở x = 18..20.
+    // Player is right next (2 tiles < 4) so the caster backs off; the retreat point 6 tiles from the player
+    // falls exactly on the pillar at x = 18..20.
     const action = decideAction({
       state,
       player,
@@ -198,14 +198,14 @@ describe('enemy behaviours — caster', () => {
 });
 
 describe('enemy behaviours — tank', () => {
-  it('đi bộ khi player ngoài tầm lao', () => {
+  it('walks when the player is outside charge range', () => {
     const state = enemy({ role: 'tank', x: 2, y: 16 });
     const action = decideAction({ state, player: { x: 2, y: 2 }, nowMs: 0, level });
 
     expect(action.kind).toBe('walk');
   });
 
-  it('telegraph 700 ms rồi lao thẳng, hết thời gian lao thì nghỉ', () => {
+  it('telegraphs for 700 ms then charges straight, and rests when the charge ends', () => {
     const player = { x: 10, y: 9 };
     const state = enemy({ role: 'tank', x: 10, y: 14 });
     const start = 900;
@@ -233,7 +233,7 @@ describe('enemy behaviours — tank', () => {
     expect(charge.untilMs).toBe(start + TELEGRAPH_MS.tank + TANK_CHARGE_DURATION_MS);
     expect(attackReleased(telegraph, charge)).toBe('charge');
 
-    // Player né sang ngang: hướng lao đã chốt, không bám theo.
+    // Player dodges sideways: the charge direction was locked and does not follow.
     const charging: EnemyState = { ...telegraphing, action: charge };
     expect(
       decideAction({
@@ -250,8 +250,8 @@ describe('enemy behaviours — tank', () => {
   });
 });
 
-describe('enemy behaviours — hợp đồng thuần', () => {
-  it('cùng input ở cùng nowMs cho cùng action, không sửa state', () => {
+describe('enemy behaviours — pure contract', () => {
+  it('same input at the same nowMs gives the same action, without mutating state', () => {
     const state = enemy({ role: 'caster', x: 10, y: 5 });
     const before = JSON.stringify(state);
 
@@ -262,7 +262,7 @@ describe('enemy behaviours — hợp đồng thuần', () => {
     expect(JSON.stringify(state)).toBe(before);
   });
 
-  it('dead là cuối, không hồi sinh', () => {
+  it('dead is final, no resurrection', () => {
     const dead = decideAction({
       state: enemy({ role: 'chaser', x: 2, y: 2, action: { kind: 'dead' }, health: 3 }),
       player: { x: 20, y: 2 },
@@ -280,7 +280,7 @@ describe('enemy behaviours — hợp đồng thuần', () => {
     expect(killed).toEqual({ kind: 'dead' });
   });
 
-  it('elite chỉ đổi máu và sát thương, không đổi tốc độ', () => {
+  it('elites only change health and damage, not speed', () => {
     for (const role of ['chaser', 'caster', 'tank'] as const) {
       expect(speedFor(role, true)).toBe(speedFor(role, false));
       expect(contactDamageFor(role, true)).toBeGreaterThan(contactDamageFor(role, false));
@@ -290,7 +290,7 @@ describe('enemy behaviours — hợp đồng thuần', () => {
 });
 
 describe('telegraph', () => {
-  it('progress 0 ở đầu, 1 ở cuối, kẹp ngoài cửa sổ', () => {
+  it('progress 0 at the start, 1 at the end, clamped outside the window', () => {
     expect(telegraphProgress(1000, 1000, 'caster')).toBe(0);
     expect(telegraphProgress(1000, 1250, 'caster')).toBe(0.5);
     expect(telegraphProgress(1000, 1500, 'caster')).toBe(1);
@@ -298,7 +298,7 @@ describe('telegraph', () => {
     expect(telegraphProgress(1000, 0, 'caster')).toBe(0);
   });
 
-  it('isTelegraphComplete đúng biên của từng loại', () => {
+  it('isTelegraphComplete is correct at each boundary', () => {
     expect(isTelegraphComplete(1000, 1000 + TELEGRAPH_MS.caster - 1, 'caster')).toBe(false);
     expect(isTelegraphComplete(1000, 1000 + TELEGRAPH_MS.caster, 'caster')).toBe(true);
     expect(isTelegraphComplete(0, TELEGRAPH_MS.tank, 'tank')).toBe(true);
@@ -315,7 +315,7 @@ describe('BulletPool', () => {
     ttlMs: 1000,
   };
 
-  it('bay đúng velocity × delta', () => {
+  it('flies exactly velocity × delta', () => {
     const pool = new BulletPool(4);
     pool.spawn({ ...base, position: { x: 1, y: 1 }, velocity: { x: 6, y: -3 } });
 
@@ -326,7 +326,7 @@ describe('BulletPool', () => {
     expect(bullet?.ttlMs).toBe(500);
   });
 
-  it('thu hồi đạn hết ttl', () => {
+  it('retires projectiles past their ttl', () => {
     const pool = new BulletPool(4);
     pool.spawn({ ...base, position: { x: 0, y: 0 }, velocity: { x: 1, y: 0 }, ttlMs: 100 });
 
@@ -337,7 +337,7 @@ describe('BulletPool', () => {
     expect(pool.active()).toHaveLength(0);
   });
 
-  it('đầy capacity thì thu hồi viên cũ nhất, không phình mảng', () => {
+  it('at capacity it retires the oldest projectile, without growing the array', () => {
     const pool = new BulletPool(3);
 
     for (let damage = 1; damage <= 5; damage += 1) {
@@ -349,7 +349,7 @@ describe('BulletPool', () => {
     expect(pool.snapshot().map((bullet) => bullet.id)).toEqual([3, 4, 5]);
   });
 
-  it('snapshot là bản sao, update sau đó không làm nó đổi', () => {
+  it('a snapshot is a copy, later updates do not change it', () => {
     const pool = new BulletPool(2);
     pool.spawn({ ...base, position: { x: 0, y: 0 }, velocity: { x: 4, y: 0 }, ttlMs: 2000 });
 
@@ -360,7 +360,7 @@ describe('BulletPool', () => {
     expect(pool.snapshot()[0]?.position).toEqual({ x: 4, y: 0 });
   });
 
-  it('clear thu hồi toàn bộ', () => {
+  it('clear retires everything', () => {
     const pool = new BulletPool(2);
     pool.spawn({ ...base, position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } });
 
@@ -372,7 +372,7 @@ describe('BulletPool', () => {
 });
 
 describe('hitsCircle', () => {
-  it('chạm đúng một điểm vẫn tính là trúng, hơn một chút là trượt', () => {
+  it('touching exactly one point still counts as a hit, slightly beyond is a miss', () => {
     const a = { position: { x: 0, y: 0 }, radiusTiles: 0.5 };
 
     expect(hitsCircle(a, { position: { x: 1, y: 0 }, radiusTiles: 0.5 })).toBe(true);
@@ -387,7 +387,7 @@ describe('firstHit', () => {
     { kind: 'pillar', x: 15, y: 4, width: 2, height: 2 },
   ]);
 
-  it('dừng ở vật cản đầu tiên trên đường đạn', () => {
+  it('stops at the first obstacle on the projectile path', () => {
     const hit = firstHit({ from: { x: 5, y: 5 }, to: { x: 20, y: 5 } }, withObstacles);
     expect(hit).not.toBeNull();
     if (hit === null) return;
@@ -398,18 +398,18 @@ describe('firstHit', () => {
     expect(hit.progress).toBeCloseTo((hit.point.x - 5) / 15);
   });
 
-  it('trả về null khi đường đi không chạm gì', () => {
+  it('returns null when the path hits nothing', () => {
     expect(firstHit({ from: { x: 5, y: 2 }, to: { x: 20, y: 2 } }, withObstacles)).toBeNull();
   });
 
-  it('trúng ngay tại điểm xuất phát thì progress là 0', () => {
+  it('hitting at the start point gives progress 0', () => {
     const hit = firstHit({ from: { x: 10.5, y: 5 }, to: { x: 20, y: 5 } }, withObstacles);
     expect(hit?.progress).toBe(0);
   });
 });
 
 describe('waves', () => {
-  it('id tất định và duy nhất, spawn lại cho cùng kết quả', () => {
+  it('ids are deterministic and unique, respawning gives the same result', () => {
     const all = [0, 1, 2].flatMap((index) => spawnWave(level, index));
     const ids = all.map((state) => state.id);
 
@@ -418,7 +418,7 @@ describe('waves', () => {
     expect(spawnWave(level, 0)).toEqual(spawnWave(level, 0));
   });
 
-  it('elite có nhiều máu hơn bản thường', () => {
+  it('elites have more health than the regular version', () => {
     const [normal] = spawnWave(level, 0);
     const [elite] = spawnWave(level, 1);
 
@@ -428,16 +428,16 @@ describe('waves', () => {
     expect(elite?.health).toBe(elite?.maxHealth);
   });
 
-  it('waveIndex ngoài phạm vi thì ném lỗi', () => {
+  it('an out-of-range waveIndex throws', () => {
     expect(() => spawnWave(level, 3)).toThrow();
   });
 
-  it('wave chỉ sạch khi mọi enemy đã chết', () => {
+  it('a wave is clear only when every enemy is dead', () => {
     const states = spawnWave(level, 0);
     expect(isWaveCleared(states)).toBe(false);
 
     const [first, second] = states;
-    if (first === undefined || second === undefined) throw new Error('wave 0 phải có 2 enemy');
+    if (first === undefined || second === undefined) throw new Error('wave 0 must have 2 enemies');
 
     expect(isWaveCleared([{ ...first, health: 0 }, second])).toBe(false);
     expect(
@@ -449,7 +449,7 @@ describe('waves', () => {
     expect(isWaveCleared([])).toBe(true);
   });
 
-  it('nextWaveIndex trả null ở wave cuối', () => {
+  it('nextWaveIndex returns null on the last wave', () => {
     expect(nextWaveIndex(0, level)).toBe(1);
     expect(nextWaveIndex(1, level)).toBe(2);
     expect(nextWaveIndex(2, level)).toBeNull();

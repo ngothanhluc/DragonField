@@ -15,8 +15,8 @@ function spawnShot(pool: BulletPool, index: number): void {
   });
 }
 
-describe('BulletPool — 1000 phát không rò rỉ', () => {
-  it('sức chứa cứng: active + recycled không bao giờ vượt capacity', () => {
+describe('BulletPool — 1000 shots without a leak', () => {
+  it('hard capacity: active + recycled never exceeds capacity', () => {
     const pool = new BulletPool(CAPACITY);
     const ids = new Set<number>();
 
@@ -24,7 +24,7 @@ describe('BulletPool — 1000 phát không rò rỉ', () => {
       spawnShot(pool, index);
       ids.add(pool.active()[pool.active().length - 1]?.id ?? 0);
 
-      // Mỗi 5 phát thì mô phỏng vài frame để TTL thu hồi slot.
+      // Every 5 shots simulate a few frames so TTL retires a slot.
       if (index % 5 === 0) {
         for (let frame = 0; frame < 4; frame += 1) pool.update(16);
       }
@@ -36,7 +36,7 @@ describe('BulletPool — 1000 phát không rò rỉ', () => {
     expect(ids.size).toBe(1000);
   });
 
-  it('slot được tái dùng: cùng object trả về sau khi viên cũ hết TTL', () => {
+  it('slots are reused: the same object comes back after the old bullet TTL expires', () => {
     const pool = new BulletPool(2);
     const first = pool.spawn({
       position: { x: 0, y: 0 },
@@ -61,12 +61,12 @@ describe('BulletPool — 1000 phát không rò rỉ', () => {
       ttlMs: 100,
     });
 
-    // Cùng một object: không cấp phát slot mới cho phát thứ hai.
+    // The same object: no new slot is allocated for the second shot.
     expect(second).toBe(first);
     expect(second.id).toBeGreaterThan(firstId);
   });
 
-  it('pool đầy thì đẩy viên cũ nhất, số slot giữ nguyên sau 1000 phát liên tục', () => {
+  it('a full pool pushes out the oldest bullet, slot count stays fixed after 1000 continuous shots', () => {
     const pool = new BulletPool(16);
 
     for (let index = 0; index < 1000; index += 1) spawnShot(pool, index);
@@ -75,13 +75,13 @@ describe('BulletPool — 1000 phát không rò rỉ', () => {
     expect(pool.recycledCount).toBe(0);
     expect(pool.size + pool.recycledCount).toBe(16);
 
-    // Viên mới nhất luôn còn, viên cũ nhất đã bị lấy slot.
+    // The newest bullet is always present, the oldest has lost its slot.
     const ids = pool.active().map((bullet) => bullet.id);
     expect(ids[ids.length - 1]).toBe(1000);
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
   });
 
-  it('1000 loạt đạn của caster elite vẫn nằm trong capacity và dọn sạch được', () => {
+  it('1000 elite caster volleys stay within capacity and can be fully cleared', () => {
     const pool = new BulletPool(CAPACITY);
 
     for (let volley = 0; volley < 1000; volley += 1) {

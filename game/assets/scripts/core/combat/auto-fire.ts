@@ -2,10 +2,10 @@ import type { Vec2 } from '../math/vec2';
 import { FireControl } from './fire-control';
 import { findNearestTarget, type Targetable } from './targeting';
 
-/** Viên đạn mà engine cần sinh ra ở frame này. */
+/** The bullet the engine needs to spawn this frame. */
 export interface ShotIntent {
   readonly targetId: string;
-  /** Vector đơn vị từ `origin` tới mục tiêu. */
+  /** Unit vector from `origin` to the target. */
   readonly direction: Vec2;
   readonly origin: Vec2;
 }
@@ -14,11 +14,11 @@ export interface AutoFireUpdateArgs {
   readonly deltaMs: number;
   readonly origin: Vec2;
   readonly targets: readonly Targetable[];
-  /** Tầm auto-aim, tính theo tile (xem `CombatConfig.targetingRangeTiles`). */
+  /** Auto-aim range, in tiles (see `CombatConfig.targetingRangeTiles`). */
   readonly rangeTiles: number;
 }
 
-/** Hướng mặc định khi player đứng trùng vị trí mục tiêu (không có hướng xác định). */
+/** Default direction when the player stands on the target (no defined direction). */
 const FALLBACK_DIRECTION: Vec2 = { x: 1, y: 0 };
 
 function directionTo(origin: Vec2, target: Vec2): Vec2 {
@@ -30,12 +30,12 @@ function directionTo(origin: Vec2, target: Vec2): Vec2 {
 }
 
 /**
- * Bắn tự động vào enemy gần nhất trong tầm (GDD §3).
+ * Auto-fire at the nearest enemy in range (GDD §3).
  *
- * Thứ tự kiểm tra quan trọng: tìm mục tiêu **trước** rồi mới tick cooldown.
- * Nếu tick trước, mỗi frame không có enemy vẫn bị trừ cooldown, nên phát bắn
- * đầu tiên sẽ trễ tới cả giây sau khi enemy xuất hiện. Kiểm tra trước thì
- * phát bắn rơi đúng frame đầu tiên có mục tiêu.
+ * The order of checks matters: find the target **before** ticking the cooldown.
+ * If the cooldown ticked first, every frame without an enemy would still drain it, so the first
+ * shot would be delayed by up to a second after an enemy appears. Checking first makes the
+ * shot land on the very first frame a target exists.
  */
 export class AutoFire {
   private readonly fireControl: FireControl;

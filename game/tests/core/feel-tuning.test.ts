@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { FEEL_TUNING, TUNING, TUNING_SOURCE, parseTuning } from '../../assets/scripts/core/enemies/tuning';
 
 /**
- * Số liệu juice (ticket #2) cũng phải đi qua `config/tuning.json` như mọi số
- * balance khác (AGENTS rule 3): JSON là nguồn, code không giữ bản chép.
+ * Juice numbers (ticket #2) must also go through `config/tuning.json` like every other
+ * balance number (AGENTS rule 3): the JSON is the source, code keeps no copy.
  */
 function cloneSource(): Record<string, unknown> {
   return structuredClone(TUNING_SOURCE) as Record<string, unknown>;
@@ -17,14 +17,14 @@ function groupOf(raw: Record<string, unknown>, group: string): Record<string, un
   return feelOf(raw)[group] as Record<string, unknown>;
 }
 
-describe('feel tuning — config/tuning.json là nguồn duy nhất', () => {
-  it('FEEL_TUNING khớp đúng block "feel" của JSON', () => {
+describe('feel tuning — config/tuning.json is the single source', () => {
+  it('FEEL_TUNING matches the JSON "feel" block exactly', () => {
     expect(FEEL_TUNING).toEqual(feelOf(cloneSource()));
     expect(TUNING.feel).toBe(FEEL_TUNING);
   });
 
-  it('giá trị mặc định nằm trong khoảng dùng được', () => {
-    // Rung không bao giờ nhảy quá nửa tile mỗi frame và phải tàn trong vài giây.
+  it('default values stay inside a usable range', () => {
+    // Shake never jumps more than half a tile per frame and must die out within a few seconds.
     expect(FEEL_TUNING.shake.maxOffsetTiles).toBeGreaterThan(0);
     expect(FEEL_TUNING.shake.maxOffsetTiles).toBeLessThanOrEqual(1);
     expect(FEEL_TUNING.shake.decayPerSecond).toBeGreaterThan(0);
@@ -37,7 +37,7 @@ describe('feel tuning — config/tuning.json là nguồn duy nhất', () => {
       expect(trauma).toBeLessThanOrEqual(1);
     }
 
-    // Squash ≤150 ms theo tiêu chí nghiệm thu.
+    // Squash ≤150 ms per the acceptance criteria.
     expect(FEEL_TUNING.squash.playerHurtMs).toBeLessThanOrEqual(150);
     expect(FEEL_TUNING.squash.enemyHitMs).toBeLessThanOrEqual(150);
     expect(FEEL_TUNING.squash.bossHitMs).toBeLessThanOrEqual(150);
@@ -48,23 +48,23 @@ describe('feel tuning — config/tuning.json là nguồn duy nhất', () => {
     expect(FEEL_TUNING.damageNumbers.lifetimeMs).toBeGreaterThan(0);
   });
 
-  it('thiếu block feel bị bắt kèm đường dẫn', () => {
+  it('a missing feel block is caught with the path', () => {
     const raw = cloneSource();
     delete raw.feel;
-    expect(() => parseTuning(raw)).toThrowError(/feel.*thiếu field/);
+    expect(() => parseTuning(raw)).toThrowError(/feel.*missing field/);
   });
 
-  it('trauma ngoài 0..1 và pool size 0 bị từ chối', () => {
+  it('trauma outside 0..1 and a pool size of 0 are rejected', () => {
     const tooMuch = cloneSource();
     groupOf(tooMuch, 'shake').playerHurt = 2;
     expect(() => parseTuning(tooMuch)).toThrowError(/feel\.shake\.playerHurt/);
 
     const emptyPool = cloneSource();
     groupOf(emptyPool, 'damageNumbers').poolSize = 0;
-    expect(() => parseTuning(emptyPool)).toThrowError(/feel\.damageNumbers\.poolSize.*phải > 0/);
+    expect(() => parseTuning(emptyPool)).toThrowError(/feel\.damageNumbers\.poolSize.*must be > 0/);
 
     const noDecay = cloneSource();
     groupOf(noDecay, 'shake').decayPerSecond = 0;
-    expect(() => parseTuning(noDecay)).toThrowError(/feel\.shake\.decayPerSecond.*phải > 0/);
+    expect(() => parseTuning(noDecay)).toThrowError(/feel\.shake\.decayPerSecond.*must be > 0/);
   });
 });

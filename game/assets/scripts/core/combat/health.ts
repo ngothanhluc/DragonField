@@ -1,13 +1,13 @@
 import type { CombatConfig } from '../config';
 
 export interface DamageResult {
-  /** false khi đòn bị bỏ qua (đang i-frame hoặc đã chết). */
+  /** false when the hit is ignored (i-frame active or already dead). */
   readonly applied: boolean;
   readonly hearts: number;
   readonly dead: boolean;
 }
 
-/** Máu + i-frame của player. Không biết gì về engine, thời gian truyền vào từ ngoài. */
+/** Player health + i-frame. Knows nothing about the engine; time is passed in from outside. */
 export class HealthState {
   private hearts: number;
   private maxHearts: number;
@@ -36,10 +36,10 @@ export class HealthState {
   }
 
   /**
-   * Đổi trần máu và thời gian i-frame giữa run (Vitality / Long i-frame).
+   * Change the health cap and i-frame duration mid-run (Vitality / Long i-frame).
    *
-   * Giảm trần (save hỏng, debug) kẹp luôn máu hiện tại; không tự hồi máu —
-   * hiệu ứng "hồi 1 tim ngay" của Vitality là việc của run (`heal`).
+   * Lowering the cap (broken save, debug) also clamps current health; never heals on its own —
+   * Vitality's "heal 1 heart now" is the run's job (`heal`).
    */
   configure(maxHearts: number, invulnerabilityMs: number): void {
     if (!Number.isFinite(maxHearts) || maxHearts < 1) return;

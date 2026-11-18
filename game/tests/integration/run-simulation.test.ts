@@ -29,10 +29,10 @@ import { join } from 'node:path';
 
 const chapterOne = loadChapterOne();
 
-/** Không bấm phím nào: dùng cho cả god-mode và player "đứng yên". */
+/** No keys pressed: used for both god mode and the "stand still" player. */
 const standStill: InputPolicy = () => ({ up: false, down: false, left: false, right: false });
 
-/** Đi tuần vòng quanh phòng theo thời gian — tất định, không cần né giỏi. */
+/** Circle around the room over time — deterministic, no dodging skill needed. */
 const patrol: InputPolicy = ({ nowMs }) => {
   const phase = Math.floor(nowMs / 700) % 4;
   return {
@@ -44,12 +44,12 @@ const patrol: InputPolicy = ({ nowMs }) => {
 };
 
 /**
- * Policy né: mỗi frame chọn 1 trong 8 hướng, hướng nào giữ **khoảng cách nhỏ
- * nhất tới địch trên cả quãng đường 1.2 s** lớn nhất thì đi. Khác "chạy thẳng
- * ra xa địch gần nhất" ở chỗ nó nhìn cả đường đi, nên không tự dồn mình vào
- * góc phòng — đúng lỗi làm policy ngây thơ chết sớm hơn cả đứng yên.
+ * Dodge policy: each frame pick 1 of 8 directions, the one that keeps the **smallest
+ * distance to an enemy across the full 1.2 s path** wins. Unlike "run straight
+ * away from the nearest enemy", it looks at the whole path, so it does not corner
+ * itself — exactly the bug that made the naive policy die sooner than standing still.
  *
- * Đây là policy test, không phải AI của game: nó chỉ đọc `PolicyWorld`.
+ * This is a test policy, not game AI: it only reads `PolicyWorld`.
  */
 const DODGE_DIRECTIONS = [
   { x: 0, y: -1, up: true, down: false, left: false, right: false },
@@ -105,7 +105,7 @@ function makeDodgePolicy(): InputPolicy {
           gap = Math.min(gap, Math.hypot(x - bx, y - by) * 1.25);
         }
 
-        // Bị tường chặn thì quãng đường thực ngắn hơn — coi như tệ hơn.
+        // Blocked by a wall means a shorter actual path — treat it as worse.
         const blocked = Math.hypot(x - rawX, y - rawY);
         score = Math.min(score, gap - blocked * 2);
       }
@@ -125,18 +125,18 @@ function makeDodgePolicy(): InputPolicy {
   };
 }
 
-/** 9 phòng × (thời gian đi bộ tới chỗ bắn + TTK) — biên rộng để không flaky. */
+/** 9 rooms × (walk time to firing position + TTK) — wide bounds to avoid flakiness. */
 const CHAPTER_CLEAR_MIN_MS = 60_000;
 /**
- * M4: boss thật (60 HP Tengu + 3 phase) dài hơn tank placeholder, nên trần
- * nới từ 180 s lên 240 s. Run vẫn nằm trong khoảng 8–12 phút của GDD §2.
+ * M4: the real boss (60 HP Tengu + 3 phases) takes longer than the placeholder tank, so the cap
+ * moved from 180 s to 240 s. A run still sits in the 8–12 minute range of GDD §2.
  */
 const CHAPTER_CLEAR_MAX_MS = 240_000;
-/** Phòng 1 một mình, god-mode, không skill — đo nhịp dọn phòng. */
+/** Room 1 alone, god mode, no skills — measures room-clear pacing. */
 const ROOM_ONE_CLEAR_MIN_MS = 15_000;
 const ROOM_ONE_CLEAR_MAX_MS = 60_000;
 
-describe('simulateRun — god mode dọn chapter 1', () => {
+describe('simulateRun — god mode clears chapter 1', () => {
   const result = simulateRun({
     seed: 7,
     level: chapterOne,
@@ -145,7 +145,7 @@ describe('simulateRun — god mode dọn chapter 1', () => {
     maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
   });
 
-  it('thắng sau 9 phòng và không nhận sát thương', () => {
+  it('wins after 9 rooms and takes no damage', () => {
     expect(result.status).toBe('won');
     expect(result.roomsCleared).toBe(ROOMS_PER_CHAPTER);
     expect(result.events.filter((event) => event.kind === 'room-cleared')).toHaveLength(
@@ -154,12 +154,12 @@ describe('simulateRun — god mode dọn chapter 1', () => {
     expect(result.events.some((event) => event.kind === 'player-hit')).toBe(false);
   });
 
-  it('thời gian nằm trong biên hợp lý (không treo, không tức thời)', () => {
+  it('time falls in a sensible bound (no hang, not instant)', () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(CHAPTER_CLEAR_MIN_MS);
     expect(result.durationMs).toBeLessThanOrEqual(CHAPTER_CLEAR_MAX_MS);
   });
 
-  it('vàng cộng đúng từ event giết địch và dọn phòng', () => {
+  it('gold is added exactly from kill and room-clear events', () => {
     const fromEvents = result.events.reduce((sum, event) => {
       if (event.kind === 'kill' || event.kind === 'room-cleared') return sum + event.gold;
       return sum;
@@ -174,9 +174,9 @@ describe('simulateRun — god mode dọn chapter 1', () => {
 });
 
 /**
- * Phòng dựng tay có chaser spawn sát player: đo i-frame và luồng thua mà không
- * phụ thuộc balance của chapter 1. Cùng schema `LevelData`, cùng
- * `behaviours`/`waves` — chỉ khác vị trí spawn.
+ * Hand-built room with a chaser spawned next to the player: measures the i-frame and the loss
+ * flow without depending on chapter 1 balance. Same `LevelData` schema, same
+ * `behaviours`/`waves` — only the spawn position differs.
  */
 function meleeRoom(roomNumber: number): LevelData {
   return parseLevelData({
@@ -207,16 +207,16 @@ const meleeChapter: ChapterData = {
   rooms: [meleeRoom(1), meleeRoom(2), meleeRoom(3)],
 };
 
-describe('simulateRun — player đứng yên', () => {
+describe('simulateRun — player stands still', () => {
   const result = simulateRun({ seed: 11, level: meleeChapter, policy: standStill });
 
-  it('chết trong 3 phòng đầu', () => {
+  it('dies within the first 3 rooms', () => {
     expect(result.status).toBe('lost');
     expect(result.roomsCleared).toBeLessThan(3);
     expect(result.events.some((event) => event.kind === 'run-lost')).toBe(true);
   });
 
-  it('i-frame 0.8 s được tôn trọng giữa hai lần trúng đòn', () => {
+  it('the 0.8 s i-frame is respected between two hits', () => {
     const hitTimes = result.events.flatMap((event) =>
       event.kind === 'player-hit' ? [event.nowMs] : [],
     );
@@ -230,8 +230,8 @@ describe('simulateRun — player đứng yên', () => {
     }
   });
 
-  it('summary vẫn đúng shape và sạch số liệu', () => {
-    // Màn hình kết quả coi timeout là thua; `summariseRun` chỉ biết RunStatus.
+  it('summary keeps the right shape and sanitised numbers', () => {
+    // The result screen treats timeout as a loss; `summariseRun` only knows RunStatus.
     const status = result.status === 'won' ? 'won' : 'lost';
     const summary = summariseRun({
       roomsCleared: result.roomsCleared,
@@ -257,7 +257,7 @@ describe('simulateRun — player đứng yên', () => {
 });
 
 describe('simulateRun — determinism', () => {
-  it('cùng seed + cùng policy cho cùng kết quả', () => {
+  it('same seed + same policy gives the same result', () => {
     const first = simulateRun({
       seed: 4242,
       level: chapterOne,
@@ -285,7 +285,7 @@ describe('simulateRun — determinism', () => {
     expect(second.events).toEqual(first.events);
   });
 
-  it('seed khác chỉ đổi chi tiết ngẫu nhiên, không đổi luật chơi', () => {
+  it('a different seed only changes random details, not the rules', () => {
     const a = simulateRun({ seed: 1, level: chapterOne, policy: standStill, godMode: true });
     const b = simulateRun({ seed: 2, level: chapterOne, policy: standStill, godMode: true });
 
@@ -295,8 +295,8 @@ describe('simulateRun — determinism', () => {
   });
 });
 
-describe('simulateRun — balance phòng 1', () => {
-  it('trung bình 20 seed nằm trong khoảng đã ghi nhận', () => {
+describe('simulateRun — room 1 balance', () => {
+  it('average over 20 seeds stays inside the recorded range', () => {
     const singleRoom: ChapterData = { chapter: 1, rooms: chapterOne.rooms.slice(0, 1) };
     const times: number[] = [];
 
@@ -314,20 +314,20 @@ describe('simulateRun — balance phòng 1', () => {
 });
 
 /**
- * Balance của chapter 1, đo bằng chính simulation:
+ * Chapter 1 balance, measured by the simulation itself:
  *
- * - Đứng yên **phải thua**: nếu không, game không có gameplay (defect gốc).
- * - Né **phải sống lâu hơn đáng kể**: đây là bằng chứng đòn còn né được, chứ
- *   không phải enemy one-shot.
- * - Caster phải bắn được ít nhất một phát trước khi chết, nếu không thì
- *   "telegraph rồi bắn" chỉ là code chết.
- * - Ít nhất một enemy phải tiếp cận được tầm chạm khi player đứng yên, nếu
- *   không thì melee không bao giờ là mối đe doạ.
+ * - Standing still **must lose**: otherwise the game has no gameplay (the original defect).
+ * - Dodging **must survive clearly longer**: this proves attacks are still dodgeable, not
+ *   one-shot enemies.
+ * - A caster must land at least one shot before dying, otherwise
+ *   "telegraph then fire" is dead code.
+ * - At least one enemy must reach contact range while the player stands still, otherwise
+ *   melee is never a threat.
  */
 const BALANCE_SEEDS = [1, 7, 42];
 
 describe('simulateRun — balance chapter 1', () => {
-  it('player đứng yên thua trong 3 phòng đầu', () => {
+  it('a standing player loses within the first 3 rooms', () => {
     for (const seed of BALANCE_SEEDS) {
       const result = simulateRun({ seed, level: chapterOne, policy: standStill });
 
@@ -337,7 +337,7 @@ describe('simulateRun — balance chapter 1', () => {
     }
   });
 
-  it('player chạy né sống lâu hơn đứng yên ít nhất 2 lần', () => {
+  it('a dodging player survives at least 2× longer than standing still', () => {
     for (const seed of BALANCE_SEEDS) {
       const idle = simulateRun({ seed, level: chapterOne, policy: standStill });
       const dodging = simulateRun({ seed, level: chapterOne, policy: makeDodgePolicy() });
@@ -347,7 +347,7 @@ describe('simulateRun — balance chapter 1', () => {
     }
   });
 
-  it('caster bắn ít nhất một phát trước khi chết, mỗi con', () => {
+  it('every caster lands at least one shot before dying', () => {
     const seenBullets = new Set<number>();
     const castersThatFired = new Set<string>();
     const castersSeen = new Set<string>();
@@ -366,8 +366,8 @@ describe('simulateRun — balance chapter 1', () => {
       for (const bullet of world.bullets) {
         if (bullet.owner !== 'enemy' || seenBullets.has(bullet.id)) continue;
         seenBullets.add(bullet.id);
-        // Đạn enemy sinh ra đúng tại tâm caster, và trong frame này chỉ bay
-        // 0.064 tile — nên khoảng cách nhỏ là đủ để quy đạn về caster.
+        // Enemy bullets spawn exactly at the caster centre, and in this frame only fly
+        // 0.064 tiles — so a small distance is enough to attribute them to the caster.
         for (const caster of casters) {
           const gap = Math.hypot(
             bullet.position.x - caster.position.x,
@@ -380,7 +380,7 @@ describe('simulateRun — balance chapter 1', () => {
       return standStill(world);
     };
 
-    // God mode để không con caster nào bị "may mắn" chết trước khi wave sau tới.
+    // God mode so no caster gets "lucky" and dies before the next wave arrives.
     const result = simulateRun({ seed: 7, level: chapterOne, policy: spy, godMode: true });
 
     expect(result.status).toBe('won');
@@ -389,7 +389,7 @@ describe('simulateRun — balance chapter 1', () => {
     expect([...castersSeen].filter((id) => !castersThatFired.has(id))).toEqual([]);
   });
 
-  it('có enemy tiếp cận tầm chạm khi player đứng yên', () => {
+  it('an enemy reaches contact range while the player stands still', () => {
     let closestGap = Number.POSITIVE_INFINITY;
 
     const measure: InputPolicy = (world) => {
@@ -414,7 +414,7 @@ describe('simulateRun — balance chapter 1', () => {
   });
 });
 
-/** Loadout tiêu biểu của một người chơi đã nhặt vài thẻ trong run. */
+/** A typical loadout of a player who picked up a few cards during the run. */
 const SKILLED_LOADOUT: ReadonlyMap<string, number> = new Map([
   ['sharpen', 2],
   ['rapid-fire', 2],
@@ -426,8 +426,8 @@ const SKILLED_LOADOUT: ReadonlyMap<string, number> = new Map([
   ['shield', 1],
 ]);
 
-describe('simulateRun — skill có tác dụng thật', () => {
-  it('skill tăng DPS làm phòng 1 sạch nhanh hơn hẳn (god mode, đứng yên)', () => {
+describe('simulateRun — skills really matter', () => {
+  it('a DPS skill clears room 1 clearly faster (god mode, standing still)', () => {
     const singleRoom: ChapterData = { chapter: 1, rooms: chapterOne.rooms.slice(0, 1) };
     const base = simulateRun({ seed: 7, level: singleRoom, policy: standStill, godMode: true });
     const combo = simulateRun({
@@ -447,7 +447,7 @@ describe('simulateRun — skill có tác dụng thật', () => {
     expect(combo.durationMs).toBeLessThan(base.durationMs * 0.7);
   });
 
-  it('loadout tiêu biểu dọn được cả 3 chapter, kể cả boss (policy né)', () => {
+  it('a typical loadout clears all 3 chapters, boss included (dodge policy)', () => {
     for (const chapter of [1, 2, 3]) {
       const level = chapterFromLevels(
         loadTmxLevels(join(LEVELS_ROOT, `chapter-${chapter}`)),
@@ -466,16 +466,16 @@ describe('simulateRun — skill có tác dụng thật', () => {
   });
 });
 
-describe('simulateRun — balance chapter 2 và 3 với run 0 skill', () => {
+describe('simulateRun — chapter 2 and 3 balance with a 0-skill run', () => {
   /**
-   * Mỗi chapter là một run mới (GDD §2), nên phải chứng minh cửa vào của ch2/ch3
-   * chơi được **không cần skill**: đứng yên vẫn thua trong 3 phòng đầu, còn né
-   * không skill phải sống ít nhất 2× và dọn được ít nhất 3 phòng.
+   * Each chapter is a new run (GDD §2), so the ch2/ch3 entrance must be proven
+   * playable **without skills**: standing still still loses within the first 3 rooms, while dodging
+   * with no skills must survive at least 2× and clear at least 3 rooms.
    */
   for (const chapter of [2, 3]) {
     const level = chapterFromLevels(loadTmxLevels(join(LEVELS_ROOT, `chapter-${chapter}`)));
 
-    it(`chapter ${chapter}: đứng yên thua trong 3 phòng đầu`, () => {
+    it(`chapter ${chapter}: standing still loses within the first 3 rooms`, () => {
       for (const seed of BALANCE_SEEDS) {
         const result = simulateRun({ seed, level, policy: standStill });
         expect(result.status, `chapter ${chapter} seed ${seed}`).toBe('lost');
@@ -483,7 +483,7 @@ describe('simulateRun — balance chapter 2 và 3 với run 0 skill', () => {
       }
     });
 
-    it(`chapter ${chapter}: né không skill sống ≥2× và dọn ≥3 phòng`, () => {
+    it(`chapter ${chapter}: dodging with no skills survives ≥2× and clears ≥3 rooms`, () => {
       for (const seed of BALANCE_SEEDS) {
         const idle = simulateRun({ seed, level, policy: standStill });
         const dodging = simulateRun({
@@ -502,8 +502,8 @@ describe('simulateRun — balance chapter 2 và 3 với run 0 skill', () => {
   }
 });
 
-describe('simulateRun — tích hợp save', () => {
-  it('vàng của run thắng cộng vào save và round-trip qua SaveRepository', () => {
+describe('simulateRun — save integration', () => {
+  it('won-run gold is added to the save and round-trips through SaveRepository', () => {
     const result = simulateRun({
       seed: 7,
       level: chapterOne,
@@ -528,7 +528,7 @@ describe('simulateRun — tích hợp save', () => {
     expect(repository.lastLoadError).toBeNull();
   });
 
-  it('applyGold chặn trần save: không bao giờ vượt MAX_GOLD', () => {
+  it('applyGold respects the save cap: never exceeds MAX_GOLD', () => {
     const { gold, save } = applyGold(createDefaultSave(), Number.MAX_VALUE);
 
     expect(gold).toBe(MAX_GOLD);

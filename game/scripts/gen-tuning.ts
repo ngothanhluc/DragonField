@@ -1,21 +1,21 @@
 /**
- * Sinh `assets/scripts/core/enemies/tuning.generated.ts` từ `config/tuning.json`.
+ * Emit `assets/scripts/core/enemies/tuning.generated.ts` from `config/tuning.json`.
  *
- * Chạy bằng bun:
+ * Run with bun:
  *
  * ```bash
- * bun run gen           # sinh lại file generated
- * bun run check:config  # chỉ kiểm tra, exit 1 nếu file lệch hoặc thiếu
+ * bun run gen           # regenerate the generated file
+ * bun run check:config  # check only, exit 1 when the file drifts or is missing
  * ```
  *
- * Vì sao có script này: `config/tuning.json` nằm **ngoài `assets/`** để Cocos
- * không coi số liệu tune là asset — import JSON từ trong `assets/` có thể không
- * sống sót qua bước bundle script của editor, và ta không có cách kiểm chứng
- * bằng CLI. Thay vào đó, JSON được biên dịch sẵn thành một module TS thường
- * (`tuning.generated.ts`), thứ chắc chắn được bundle như mọi script khác.
+ * Why this script exists: `config/tuning.json` sits **outside `assets/`** so Cocos
+ * does not treat tuning numbers as an asset — a JSON import from inside `assets/` may not
+ * survive the editor's script bundle step, and we have no way to verify that from
+ * the CLI. Instead, the JSON is compiled ahead of time into a plain TS module
+ * (`tuning.generated.ts`), which is certainly bundled like every other script.
  *
- * Script chỉ đọc/ghi file và gọi `parseTuning()` — **không** giữ bản sao luật
- * validate, để JSON hợp lệ lúc generate là JSON hợp lệ lúc runtime.
+ * The script only reads/writes files and calls `parseTuning()` — it keeps **no** copy of the
+ * validation rules, so JSON valid at generate time is JSON valid at runtime.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,7 +25,7 @@ import {
   type TuningConfig,
 } from '../assets/scripts/core/enemies/tuning-schema';
 
-/** Repo path của nguồn và đích, dùng cho thông báo lỗi dễ đọc. */
+/** Repo path of the source and target, used for readable error messages. */
 const CONFIG_RELATIVE_PATH = 'config/tuning.json';
 const OUTPUT_RELATIVE_PATH = 'assets/scripts/core/enemies/tuning.generated.ts';
 
@@ -37,18 +37,18 @@ const HEADER =
   '// AUTO-GENERATED from game/config/tuning.json — do not edit. Run: bun run gen';
 const NOTE = [
   '//',
-  '// Số liệu balance đã validate từ `config/tuning.json`. Sửa JSON rồi chạy `bun run gen`;',
-  '// `bun run check:config` chặn file này lệch khỏi nguồn.',
+  '// Validated balance numbers from `config/tuning.json`. Edit the JSON then run `bun run gen`;',
+  '// `bun run check:config` blocks this file from drifting from the source.',
 ].join('\n');
 
-/** Đọc + validate JSON nguồn. Ném lỗi đã đủ ngữ cảnh từ `parseTuning`. */
+/** Read + validate the source JSON. Throws `parseTuning` errors, which already carry context. */
 function readTuning(): TuningConfig {
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
   } catch (error) {
     throw new Error(
-      `không đọc được ${CONFIG_RELATIVE_PATH}: ${(error as Error).message}`,
+      `cannot read ${CONFIG_RELATIVE_PATH}: ${(error as Error).message}`,
     );
   }
   return parseTuning(raw);
@@ -57,10 +57,10 @@ function readTuning(): TuningConfig {
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /**
- * In một object thành literal TS, giữ đúng thứ tự key của `parseTuning`.
+ * Print an object as a TS literal, keeping `parseTuning`'s key order.
  *
- * Định dạng cố ý khớp Prettier mặc định (2 space, key không quote khi là
- * identifier, dấu phẩy cuối) để `bun run format` không làm file "lệch" giả.
+ * Formatting intentionally matches Prettier defaults (2 spaces, unquoted keys when they are
+ * identifiers, trailing commas) so `bun run format` does not create false "drift".
  */
 function renderObject(source: Record<string, unknown>, indent: string): string {
   const lines: string[] = ['{'];
@@ -89,10 +89,10 @@ function renderValue(value: unknown, indent: string): string {
   if (typeof value === 'object')
     return renderObject(value as Record<string, unknown>, indent);
 
-  throw new Error(`không in được giá trị kiểu ${typeof value} ra module TS`);
+  throw new Error(`cannot print a value of type ${typeof value} into a TS module`);
 }
 
-/** Nội dung file generated. Tất định: cùng JSON → cùng byte. */
+/** Content of the generated file. Deterministic: same JSON → same bytes. */
 function renderModule(tuning: TuningConfig): string {
   return `${HEADER}\n${NOTE}\n\nexport const TUNING_DATA = ${renderObject(
     tuning as unknown as Record<string, unknown>,
@@ -100,7 +100,7 @@ function renderModule(tuning: TuningConfig): string {
   )} as const;\n`;
 }
 
-/** Dòng lệch đầu tiên + số dòng lệch, đủ để thấy phải chạy `bun run gen`. */
+/** First drifting line + drift count, enough to see that `bun run gen` is needed. */
 function describeDrift(expected: string, actual: string): string {
   const expectedLines = expected.split('\n');
   const actualLines = actual.split('\n');
@@ -115,14 +115,14 @@ function describeDrift(expected: string, actual: string): string {
 
   const first = mismatches[0] ?? 0;
   const lineNumber = first + 1;
-  const expectedLine = expectedLines[first] ?? '<hết file>';
-  const actualLine = actualLines[first] ?? '<hết file>';
+  const expectedLine = expectedLines[first] ?? '<end of file>';
+  const actualLine = actualLines[first] ?? '<end of file>';
 
   return [
-    `${OUTPUT_RELATIVE_PATH} lệch khỏi ${CONFIG_RELATIVE_PATH} (${mismatches.length} dòng khác).`,
-    `  dòng ${lineNumber} mong đợi: ${expectedLine}`,
-    `  dòng ${lineNumber} hiện có: ${actualLine}`,
-    `  Chạy \`bun run gen\` để sinh lại.`,
+    `${OUTPUT_RELATIVE_PATH} has drifted from ${CONFIG_RELATIVE_PATH} (${mismatches.length} differing line(s)).`,
+    `  line ${lineNumber} expected: ${expectedLine}`,
+    `  line ${lineNumber} actual: ${actualLine}`,
+    `  Run \`bun run gen\` to regenerate.`,
   ].join('\n');
 }
 
@@ -132,7 +132,7 @@ function check(expected: string): boolean {
     actual = readFileSync(OUTPUT_PATH, 'utf8');
   } catch {
     console.error(
-      `${OUTPUT_RELATIVE_PATH} chưa được sinh từ ${CONFIG_RELATIVE_PATH}.\n  Chạy \`bun run gen\` để tạo.`,
+      `${OUTPUT_RELATIVE_PATH} has not been generated from ${CONFIG_RELATIVE_PATH}.\n  Run \`bun run gen\` to create it.`,
     );
     return false;
   }
@@ -147,7 +147,7 @@ function main(args: readonly string[]): number {
   const unknownFlags = args.filter((arg) => arg !== '--check');
   if (unknownFlags.length > 0) {
     console.error(
-      `tham số không hỗ trợ: ${unknownFlags.join(' ')}\nDùng: bun run scripts/gen-tuning.ts [--check]`,
+      `unsupported argument: ${unknownFlags.join(' ')}\nUsage: bun run scripts/gen-tuning.ts [--check]`,
     );
     return 1;
   }
@@ -164,14 +164,14 @@ function main(args: readonly string[]): number {
 
   if (args.includes('--check')) {
     if (check(expected)) {
-      console.log(`${OUTPUT_RELATIVE_PATH} khớp ${CONFIG_RELATIVE_PATH}.`);
+      console.log(`${OUTPUT_RELATIVE_PATH} matches ${CONFIG_RELATIVE_PATH}.`);
       return 0;
     }
     return 1;
   }
 
   writeFileSync(OUTPUT_PATH, expected, 'utf8');
-  console.log(`Đã sinh ${OUTPUT_RELATIVE_PATH} từ ${CONFIG_RELATIVE_PATH}.`);
+  console.log(`Generated ${OUTPUT_RELATIVE_PATH} from ${CONFIG_RELATIVE_PATH}.`);
   return 0;
 }
 

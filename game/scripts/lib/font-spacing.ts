@@ -1,13 +1,13 @@
 /**
- * Sửa advance của glyph space trong TTF pixel font.
+ * Fix the space glyph advance in the pixel TTF font.
  *
- * NormalFont.ttf của pack có space = 227/2048 em (~0.11 em), nên trong Cocos
- * các từ dính vào nhau ("Clearthechapter"). Ta tăng advance của **glyph space**
- * lên 682/2048 em (1/3 em) — cùng glyph, cùng font, không đổi hình chữ, không
- * cần space ký tự Unicode ngoài cmap (Label vẫn dùng dấu cách bình thường).
+ * The pack's NormalFont.ttf has space = 227/2048 em (~0.11 em), so in Cocos
+ * words stick together ("Clearthechapter"). We raise the advance of the **space glyph**
+ * to 682/2048 em (1/3 em) — same glyph, same font, no glyph shape change, no need for an
+ * extra Unicode space character outside the cmap (Label still uses ordinary spaces).
  *
- * Script thuần Bun/Node, không thêm dependency: đọc bảng sfnt, patch `hmtx`,
- * tính lại checksum của bảng và `head.checkSumAdjustment`.
+ * A pure Bun/Node script, no added dependency: parses the sfnt tables, patches `hmtx`,
+ * recomputes the table checksum and `head.checkSumAdjustment`.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -42,7 +42,7 @@ function tables(buffer: Buffer): Table[] {
 
 function table(list: readonly Table[], tag: string): Table {
   const found = list.find((entry) => entry.tag === tag);
-  if (found === undefined) throw new Error(`font thiếu bảng ${tag}`);
+  if (found === undefined) throw new Error(`font is missing table ${tag}`);
   return found;
 }
 
@@ -60,7 +60,7 @@ function checksum(buffer: Buffer, offset: number, length: number): number {
   return sum >>> 0;
 }
 
-/** cmap format 4 → gid của U+0020. */
+/** cmap format 4 → gid of U+0020. */
 function spaceGlyph(buffer: Buffer, list: readonly Table[]): number {
   const cmap = table(list, 'cmap');
   const count = buffer.readUInt16BE(cmap.offset + 2);
@@ -75,9 +75,9 @@ function spaceGlyph(buffer: Buffer, list: readonly Table[]): number {
       break;
     }
   }
-  if (unicodeOffset < 0) throw new Error('font không có cmap Unicode');
+  if (unicodeOffset < 0) throw new Error('font has no Unicode cmap');
   if (buffer.readUInt16BE(unicodeOffset) !== 4) {
-    throw new Error('cmap không phải format 4');
+    throw new Error('cmap is not format 4');
   }
 
   const segmentCount = buffer.readUInt16BE(unicodeOffset + 6) / 2;
@@ -98,7 +98,7 @@ function spaceGlyph(buffer: Buffer, list: readonly Table[]): number {
     const glyph = buffer.readUInt16BE(glyphAt);
     return glyph === 0 ? 0 : (glyph + delta) & 0xffff;
   }
-  throw new Error('font không có glyph space');
+  throw new Error('font has no space glyph');
 }
 
 export function fixFontSpacing(path: string = FONT): { readonly glyph: number; readonly oldAdvance: number } {
@@ -108,7 +108,7 @@ export function fixFontSpacing(path: string = FONT): { readonly glyph: number; r
   const hhea = table(list, 'hhea');
   const hmtx = table(list, 'hmtx');
   const metrics = buffer.readUInt16BE(hhea.offset + 34);
-  if (gid >= metrics) throw new Error(`space gid ${gid} nằm ngoài ${metrics} long metrics`);
+  if (gid >= metrics) throw new Error(`space gid ${gid} is outside ${metrics} long metrics`);
 
   const advanceAt = hmtx.offset + gid * 4;
   const oldAdvance = buffer.readUInt16BE(advanceAt);

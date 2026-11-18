@@ -1,28 +1,28 @@
 /**
- * Đạn của enemy: chốt hướng tại lúc bắn, bay chậm để né được (GDD §4).
+ * Enemy bullets: direction locked at fire time, flying slowly enough to dodge (GDD §4).
  *
- * Cùng một đường code cho mọi nguồn đạn enemy trong game (caster thường, caster
- * elite toả quạt, boss sau này): chọn góc → xoay vector đơn vị → spawn vào
- * `BulletPool`. Nhờ vậy "một loạt mấy viên" là tham số của hàm này, không phải
- * một vòng lặp riêng ở adapter — chỗ dễ lệch giữa sim và game.
+ * One code path for every enemy bullet source in the game (regular caster, elite
+ * caster fan volley, bosses later): pick an angle → rotate the unit vector → spawn into
+ * `BulletPool`. That makes "a volley of N bullets" a parameter of this function instead of
+ * a separate loop in the adapter — the place easiest to drift between sim and game.
  *
- * Đạn enemy dùng **cùng pool** với đạn player: pool có sức chứa cứng và tái dùng
- * slot, nên bắn 40 viên hay 400 viên cũng không cấp phát node/đối tượng trong
- * vòng lặp game.
+ * Enemy bullets use the **same pool** as player bullets: the pool has hard capacity and reuses
+ * slots, so firing 40 or 400 bullets allocates no nodes/objects inside the
+ * game loop.
  */
 import type { Vec2 } from '../math/vec2';
 import type { BulletPool } from './bullets';
 
-/** Bán kính đạn enemy, tile — cùng quy ước với đạn player (0.15). */
+/** Enemy bullet radius, tiles — same convention as player bullets (0.15). */
 export const ENEMY_BULLET_RADIUS_TILES = 0.15;
 
-/** Tốc độ đạn enemy, tile/giây. Chậm hơn đạn player (12) nhiều để né được. */
+/** Enemy bullet speed, tiles/second. Much slower than player bullets (12) so they can be dodged. */
 export const ENEMY_BULLET_SPEED_TILES_PER_SECOND = 4;
 
-/** Đạn enemy sống đủ lâu để bay hết phòng (32 tile / 4 = 8 s). */
+/** Enemy bullets live long enough to cross the room (32 tiles / 4 = 8 s). */
 export const ENEMY_BULLET_TTL_MS = 8000;
 
-/** Hướng từ `from` tới `to`; hai điểm trùng nhau thì mặc định bay sang phải. */
+/** Direction from `from` to `to`; coincident points default to flying right. */
 export function aimDirection(from: Vec2, to: Vec2): Vec2 {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -31,7 +31,7 @@ export function aimDirection(from: Vec2, to: Vec2): Vec2 {
   return { x: dx / length, y: dy / length };
 }
 
-/** Xoay vector đơn vị quanh gốc `angle` radian (dương = kim đồng hồ trên màn hình). */
+/** Rotate a unit vector around the origin by `angle` radians (positive = clockwise on screen). */
 export function rotateDirection(direction: Vec2, angle: number): Vec2 {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
@@ -43,12 +43,12 @@ export function rotateDirection(direction: Vec2, angle: number): Vec2 {
 
 export interface EnemyVolleyArgs {
   readonly pool: BulletPool;
-  /** Chỗ đạn xuất phát (tâm enemy). */
+  /** Where the bullet starts (enemy centre). */
   readonly from: Vec2;
-  /** Vị trí player tại lúc bắn — đạn **không** bám theo sau đó. */
+  /** Player position at fire time — the bullet does **not** track afterwards. */
   readonly to: Vec2;
   readonly damage: number;
-  /** Góc lệch so với hướng thẳng tới player, radian. Mỗi phần tử là một viên. */
+  /** Angle offset from the straight line to the player, radians. One element per bullet. */
   readonly angles: readonly number[];
   readonly speedTilesPerSecond?: number;
   readonly ttlMs?: number;
@@ -56,8 +56,8 @@ export interface EnemyVolleyArgs {
 }
 
 /**
- * Bắn một loạt đạn về phía `to`. Trả về **số viên** vừa spawn (0 khi `angles`
- * rỗng). Mọi viên trong loạt chia đúng `damage` của tham số, không chia nhỏ.
+ * Fire a volley toward `to`. Returns the **number** of bullets spawned (0 when `angles`
+ * is empty). Every bullet in the volley gets exactly the `damage` parameter, never split.
  */
 export function fireEnemyVolley(args: EnemyVolleyArgs): number {
   const speed = args.speedTilesPerSecond ?? ENEMY_BULLET_SPEED_TILES_PER_SECOND;

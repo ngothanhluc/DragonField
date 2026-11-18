@@ -1,11 +1,11 @@
 /**
- * Khiên của Shield (GDD §6): chặn N đòn rồi hồi lại sau 20 s.
+ * Shield skill (GDD §6): blocks N hits then recharges after 20 s.
  *
- * Mô hình: mỗi stack = một charge. Dùng hết charge thì **tất cả** hồi cùng lúc
- * sau `cooldownMs` kể từ đòn bị chặn cuối. Đơn giản, đọc được trên HUD, và
- * không cần bộ đếm riêng cho từng charge.
+ * Model: each stack is one charge. When charges run out, **all** of them refill together
+ * after `cooldownMs` from the last blocked hit. Simple, readable on the HUD, and
+ * no per-charge counter is needed.
  *
- * Không import `cc`, không đọc `Date.now`: caller truyền `nowMs` của run.
+ * No `cc` import, no `Date.now` read: the caller passes the run's `nowMs`.
  */
 export class ShieldCharger {
   private ready = 0;
@@ -16,10 +16,10 @@ export class ShieldCharger {
     readonly cooldownMs: number,
   ) {
     if (!Number.isInteger(maxCharges) || maxCharges < 0) {
-      throw new Error(`ShieldCharger cần maxCharges là số nguyên >= 0, nhận ${maxCharges}`);
+      throw new Error(`ShieldCharger needs maxCharges to be an integer >= 0, got ${maxCharges}`);
     }
     if (!(cooldownMs >= 0)) {
-      throw new Error(`ShieldCharger cần cooldownMs >= 0, nhận ${cooldownMs}`);
+      throw new Error(`ShieldCharger needs cooldownMs >= 0, got ${cooldownMs}`);
     }
     this.ready = maxCharges;
   }
@@ -32,15 +32,15 @@ export class ShieldCharger {
     return this.ready >= this.maxCharges;
   }
 
-  /** Hồi charge khi đã đủ thời gian. Gọi mỗi frame; idempotent. */
+  /** Refill charges once the time is up. Call each frame; idempotent. */
   update(nowMs: number): void {
     if (this.ready >= this.maxCharges) return;
     if (nowMs >= this.readyAtMs) this.ready = this.maxCharges;
   }
 
   /**
-   * Thử chặn một đòn. Trả `true` khi đòn bị chặn (và tiêu một charge).
-   * Charge cuối bị tiêu thì bắt đầu đồng hồ hồi.
+   * Try to block one hit. Returns `true` when the hit is blocked (and spends one charge).
+   * Spending the last charge starts the recharge clock.
    */
   tryBlock(nowMs: number): boolean {
     this.update(nowMs);
@@ -51,7 +51,7 @@ export class ShieldCharger {
     return true;
   }
 
-  /** Đặt lại về đầy charge (đổi phòng / nhặt thêm stack). */
+  /** Reset to full charges (room change / picking up another stack). */
   refill(): void {
     this.ready = this.maxCharges;
   }

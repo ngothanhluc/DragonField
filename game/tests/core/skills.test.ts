@@ -9,7 +9,7 @@ function owned(...entries: readonly (readonly [string, number])[]): ReadonlyMap<
   return new Map(entries);
 }
 
-/** Map mà mọi skill trong pool đều đạt maxStacks. */
+/** A map where every skill in the pool is at maxStacks. */
 function allMaxed(): ReadonlyMap<string, number> {
   return new Map(SKILLS.map((skill) => [skill.id, skill.maxStacks]));
 }
@@ -19,11 +19,11 @@ function ids(skills: readonly { id: string }[]): string[] {
 }
 
 describe('Skill pool', () => {
-  it('có đúng 20 skill như GDD §6', () => {
+  it('has exactly 20 skills like GDD §6', () => {
     expect(SKILLS).toHaveLength(20);
   });
 
-  it('id duy nhất và đúng kebab-case', () => {
+  it('ids are unique and kebab-case', () => {
     const idList = SKILLS.map((skill) => skill.id);
 
     expect(new Set(idList).size).toBe(idList.length);
@@ -32,7 +32,7 @@ describe('Skill pool', () => {
     }
   });
 
-  it('mọi rarity hợp lệ và mọi skill có ít nhất 1 stack', () => {
+  it('every rarity is valid and every skill has at least 1 stack', () => {
     for (const skill of SKILLS) {
       expect(RARITIES).toContain(skill.rarity);
       expect(skill.maxStacks).toBeGreaterThanOrEqual(1);
@@ -41,7 +41,7 @@ describe('Skill pool', () => {
     }
   });
 
-  it('trần stack khớp bảng GDD', () => {
+  it('stack caps match the GDD table', () => {
     expect(getSkill('sharpen').maxStacks).toBe(5);
     expect(getSkill('twin-shot').maxStacks).toBe(3);
     expect(getSkill('homing').maxStacks).toBe(1);
@@ -49,14 +49,14 @@ describe('Skill pool', () => {
     expect(getSkill('executioner').maxStacks).toBe(2);
   });
 
-  it('getSkill trả đúng skill và ném lỗi với id lạ', () => {
+  it('getSkill returns the right skill and throws on an unknown id', () => {
     expect(getSkill('rapid-fire').name).toBe('Rapid Fire');
     expect(() => getSkill('khong-ton-tai')).toThrow(/khong-ton-tai/);
   });
 });
 
 describe('RNG', () => {
-  it('cùng seed cho cùng dãy số', () => {
+  it('same seed gives the same number sequence', () => {
     const a = SeededRng.fromSeed(1234);
     const b = SeededRng.fromSeed(1234);
     const other = SeededRng.fromSeed(4321);
@@ -69,7 +69,7 @@ describe('RNG', () => {
     expect(sequenceA).not.toEqual(sequenceOther);
   });
 
-  it('next luôn nằm trong [0, 1)', () => {
+  it('next is always within [0, 1)', () => {
     const rng = SeededRng.fromSeed(7);
 
     for (let i = 0; i < 5000; i += 1) {
@@ -79,7 +79,7 @@ describe('RNG', () => {
     }
   });
 
-  it('int nằm trong khoảng và từ chối biên không hợp lệ', () => {
+  it('int stays in range and rejects invalid bounds', () => {
     const rng = SeededRng.fromSeed(99);
     const seen = new Set<number>();
 
@@ -91,7 +91,7 @@ describe('RNG', () => {
     expect(() => rng.int(2.5)).toThrow();
   });
 
-  it('weightedIndex tôn trọng trọng số', () => {
+  it('weightedIndex respects the weights', () => {
     const rng = SeededRng.fromSeed(2026);
     let first = 0;
     let second = 0;
@@ -101,14 +101,14 @@ describe('RNG', () => {
       else second += 1;
     }
 
-    // Kỳ vọng 25% / 75%; biên rộng để không flaky.
+    // Expect 25% / 75%; wide bounds to avoid flakiness.
     expect(first / 10_000).toBeGreaterThan(0.2);
     expect(first / 10_000).toBeLessThan(0.3);
     expect(second / 10_000).toBeGreaterThan(0.7);
     expect(second / 10_000).toBeLessThan(0.8);
   });
 
-  it('weightedIndex bỏ qua trọng số 0', () => {
+  it('weightedIndex skips zero weights', () => {
     const rng = SeededRng.fromSeed(5);
 
     for (let i = 0; i < 200; i += 1) {
@@ -116,7 +116,7 @@ describe('RNG', () => {
     }
   });
 
-  it('weightedIndex từ chối mảng rỗng, toàn 0, hoặc có số âm', () => {
+  it('weightedIndex rejects an empty array, all zeros, or a negative number', () => {
     const rng = SeededRng.fromSeed(1);
 
     expect(() => rng.weightedIndex([])).toThrow();
@@ -125,7 +125,7 @@ describe('RNG', () => {
     expect(() => rng.weightedIndex([Number.NaN])).toThrow();
   });
 
-  it('pick ném lỗi với mảng rỗng và chọn trong mảng', () => {
+  it('pick throws on an empty array and selects within the array', () => {
     const rng = SeededRng.fromSeed(3);
 
     expect(() => rng.pick([])).toThrow();
@@ -136,7 +136,7 @@ describe('RNG', () => {
 });
 
 describe('Roll skill', () => {
-  it('tất định với seed cố định', () => {
+  it('is deterministic for a fixed seed', () => {
     const run = (seed: number): string[][] => {
       const rng = SeededRng.fromSeed(seed);
       return Array.from({ length: 40 }, () => ids(rollChoices({ rng, owned: owned() })));
@@ -146,7 +146,7 @@ describe('Roll skill', () => {
     expect(run(20261115)).not.toEqual(run(7));
   });
 
-  it('mặc định trả 3 thẻ, không trùng trong một lần quay', () => {
+  it('returns 3 cards by default, without duplicates in one roll', () => {
     const rng = SeededRng.fromSeed(11);
 
     for (let i = 0; i < 300; i += 1) {
@@ -157,7 +157,7 @@ describe('Roll skill', () => {
     }
   });
 
-  it('không trả skill đã đạt maxStacks', () => {
+  it('never returns a skill already at maxStacks', () => {
     const rng = SeededRng.fromSeed(77);
     const maxed = owned(['sharpen', 5], ['rapid-fire', 5], ['twin-shot', 3]);
 
@@ -170,7 +170,7 @@ describe('Roll skill', () => {
     }
   });
 
-  it('trả ít hơn count khi pool gần cạn thay vì ném lỗi', () => {
+  it('returns fewer than count when the pool nearly runs out instead of throwing', () => {
     const rng = SeededRng.fromSeed(4);
     const nearlyEmpty = new Map(allMaxed());
     nearlyEmpty.delete('executioner');
@@ -180,13 +180,13 @@ describe('Roll skill', () => {
     expect(ids(roll)).toEqual(['executioner']);
   });
 
-  it('trả mảng rỗng khi mọi skill đã max', () => {
+  it('returns an empty array when every skill is maxed', () => {
     const rng = SeededRng.fromSeed(4);
 
     expect(rollChoices({ rng, owned: allMaxed() })).toEqual([]);
   });
 
-  it('count tuỳ biến được và từ chối count âm', () => {
+  it('count is customisable and a negative count is rejected', () => {
     const rng = SeededRng.fromSeed(8);
 
     expect(rollChoices({ rng, owned: owned(), count: 1 })).toHaveLength(1);
@@ -195,7 +195,7 @@ describe('Roll skill', () => {
     expect(() => rollChoices({ rng, owned: owned(), count: 1.5 })).toThrow();
   });
 
-  it('Luck làm tăng tần suất rarity cao, trong biên hợp lý', () => {
+  it('Luck raises the frequency of high rarities, within sensible bounds', () => {
     const countRarities = (luckStacks: number): Record<string, number> => {
       const rng = SeededRng.fromSeed(2026);
       const ownedMap = luckStacks > 0 ? owned(['luck', luckStacks]) : owned();
@@ -213,8 +213,8 @@ describe('Roll skill', () => {
     const withoutLuck = countRarities(0);
     const withLuck = countRarities(3);
 
-    // 6000 thẻ: epic kỳ vọng 300 (5%) → 480 (8%). Biên rộng: test này chỉ cần
-    // bắt được "Luck không có tác dụng", không phải kiểm tra con số chính xác.
+    // 6000 cards: epic expected 300 (5%) → 480 (8%). Wide bounds: this test only needs
+    // to catch "Luck has no effect", not to check the exact number.
     const withoutLuckEpic = withoutLuck.epic ?? 0;
     const withLuckEpic = withLuck.epic ?? 0;
 
@@ -225,14 +225,14 @@ describe('Roll skill', () => {
     expect(withLuckEpic).toBeGreaterThan(400);
     expect(withLuckEpic).toBeLessThan(620);
 
-    // Common vẫn là rarity phổ biến nhất.
+    // Common is still the most frequent rarity.
     expect(withoutLuck.common ?? 0).toBeGreaterThan(withoutLuck.rare ?? 0);
     expect(withoutLuck.common ?? 0).toBeGreaterThan(withoutLuck.epic ?? 0);
   });
 });
 
 describe('Derived stats', () => {
-  it('map rỗng cho đúng chỉ số base của DEFAULT_COMBAT', () => {
+  it('an empty map gives exactly the DEFAULT_COMBAT base stats', () => {
     const stats = computeDerivedStats(owned());
 
     expect(stats.damage).toBe(1);
@@ -255,7 +255,7 @@ describe('Derived stats', () => {
     expect(stats.healPerRoom).toBeUndefined();
   });
 
-  it('map rỗng không sinh NaN/Infinity', () => {
+  it('an empty map produces no NaN/Infinity', () => {
     const stats = computeDerivedStats(owned());
     const numbers = Object.values(stats).filter(
       (value): value is number => typeof value === 'number',
@@ -274,13 +274,13 @@ describe('Derived stats', () => {
     expect(stats.damage).toBe(computeDerivedStats(owned()).damage + 1);
   });
 
-  it('Rapid Fire 2 stack cho 1.5× nhịp bắn', () => {
+  it('Rapid Fire 2 stacks gives 1.5× fire rate', () => {
     const stats = computeDerivedStats(owned(['rapid-fire', 2]));
 
     expect(stats.fireRatePerSecond).toBeCloseTo(DEFAULT_COMBAT.fireRatePerSecond * 1.5, 10);
   });
 
-  it('stack dừng ở maxStacks', () => {
+  it('stacks stop at maxStacks', () => {
     const sharpen = computeDerivedStats(owned(['sharpen', 99]));
     const rapidFire = computeDerivedStats(owned(['rapid-fire', 99]));
     const twinShot = computeDerivedStats(owned(['twin-shot', 99]));
@@ -293,26 +293,26 @@ describe('Derived stats', () => {
     expect(twinShot.projectiles).toBe(1 + getSkill('twin-shot').maxStacks);
   });
 
-  it('Twin Shot cộng thêm viên đạn', () => {
+  it('Twin Shot adds a projectile', () => {
     expect(computeDerivedStats(owned(['twin-shot', 1])).projectiles).toBe(2);
     expect(computeDerivedStats(owned(['twin-shot', 3])).projectiles).toBe(4);
   });
 
-  it('Piercing cộng số enemy xuyên qua', () => {
+  it('Piercing adds enemies passed through', () => {
     expect(computeDerivedStats(owned(['piercing', 2])).pierce).toBe(2);
     expect(computeDerivedStats(owned(['piercing', 99])).pierce).toBe(
       getSkill('piercing').maxStacks,
     );
   });
 
-  it('Crit Eye cộng dồn cơ hội chí mạng và giữ hệ số ×2', () => {
+  it('Crit Eye stacks crit chance and keeps the ×2 factor', () => {
     const stats = computeDerivedStats(owned(['crit-eye', 2]));
 
     expect(stats.critChance).toBeCloseTo(0.3, 10);
     expect(stats.critMultiplier).toBe(2);
   });
 
-  it('Vitality, Swift, Greed, Lifesteal cộng dồn đúng', () => {
+  it('Vitality, Swift, Greed, Lifesteal stack correctly', () => {
     const stats = computeDerivedStats(
       owned(['vitality', 2], ['swift', 2], ['greed', 2], ['lifesteal', 1]),
     );
@@ -326,11 +326,11 @@ describe('Derived stats', () => {
     expect(stats.lifestealPercent).toBeCloseTo(0.05, 10);
   });
 
-  it('Long i-frame 1 stack đưa i-frame từ 0.8 lên 1.1 s', () => {
+  it('Long i-frame 1 stack takes the i-frame from 0.8 to 1.1 s', () => {
     expect(computeDerivedStats(owned(['long-iframe', 1])).invulnerabilityMs).toBeCloseTo(1100, 10);
   });
 
-  it('skill có hiệu ứng phụ bật đúng flag', () => {
+  it('skills with side effects turn on the right flags', () => {
     const stats = computeDerivedStats(
       owned(['shield', 2], ['thorns', 1], ['second-wind', 1], ['freeze', 1], ['poison', 2]),
     );
@@ -342,14 +342,14 @@ describe('Derived stats', () => {
     expect(stats.poisonOnHit).toEqual({ dps: 2, durationMs: 3000 });
   });
 
-  it('Executioner cộng bonus nhưng giữ ngưỡng 30%', () => {
+  it('Executioner adds bonus while keeping the 30% threshold', () => {
     const stats = computeDerivedStats(owned(['executioner', 2]));
 
     expect(stats.executeThreshold).toBeCloseTo(0.3, 10);
     expect(stats.executeBonus).toBeCloseTo(1, 10);
   });
 
-  it('estimateDps tăng khi damage tăng và khi nhịp bắn tăng', () => {
+  it('estimateDps rises with damage and with fire rate', () => {
     const base = estimateDps(computeDerivedStats(owned()));
     const moreDamage = estimateDps(computeDerivedStats(owned(['sharpen', 2])));
     const faster = estimateDps(computeDerivedStats(owned(['rapid-fire', 2])));
@@ -360,15 +360,15 @@ describe('Derived stats', () => {
     expect(moreProjectiles).toBeGreaterThan(base);
   });
 
-  it('estimateDps tính kỳ vọng chí mạng', () => {
+  it('estimateDps includes the crit expectation', () => {
     const stats = computeDerivedStats(owned(['crit-eye', 3]));
     const base = computeDerivedStats(owned());
 
-    // 45% ×2 → hệ số kỳ vọng 1.45.
+    // 45% ×2 → expected factor 1.45.
     expect(estimateDps(stats)).toBeCloseTo(estimateDps(base) * 1.45, 10);
   });
 
-  it('base tuỳ biến được truyền vào', () => {
+  it('a custom base can be passed in', () => {
     const stats = computeDerivedStats(owned(['sharpen', 1]), {
       fireRatePerSecond: 3,
       playerMaxHearts: 8,

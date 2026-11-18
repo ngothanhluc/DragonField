@@ -7,25 +7,25 @@ function loadChapter(): ChapterData {
 }
 
 /**
- * Test trên file `.tmx` thật, không phải fixture inline.
- * Mục đích: file trong `assets/resources/data/levels/` không thể lệch schema mà
- * `bun run check` vẫn xanh.
+ * Tests against real `.tmx` files, not inline fixtures.
+ * Purpose: files under `assets/resources/data/levels/` cannot drift from the schema
+ * while `bun run check` stays green.
  */
 describe('assets/resources/data/levels/chapter-1/*.tmx', () => {
-  it('parse được và có đủ 9 phòng', () => {
+  it('parses and has all 9 rooms', () => {
     const chapter = loadChapter();
 
     expect(chapter.rooms).toHaveLength(9);
   });
 
-  it('phòng 1 có ít nhất 3 wave và vật cản để né đạn', () => {
+  it('room 1 has at least 3 waves and obstacles to dodge projectiles', () => {
     const first = roomOf(loadChapter(), 1);
 
     expect(first.waves.length).toBeGreaterThanOrEqual(3);
     expect(first.obstacles.length).toBeGreaterThan(0);
   });
 
-  it('phòng 1 chứa đủ 2 vai trò địch (chaser + caster)', () => {
+  it('room 1 has both enemy roles (chaser + caster)', () => {
     const roles = new Set(
       roomOf(loadChapter(), 1).waves.flatMap((wave) =>
         wave.enemies.map((enemy) => enemy.role),
@@ -35,7 +35,7 @@ describe('assets/resources/data/levels/chapter-1/*.tmx', () => {
     expect(roles).toEqual(new Set(['chaser', 'caster']));
   });
 
-  it('phòng cuối là boss room có tên boss', () => {
+  it('the last room is a boss room with a boss name', () => {
     const rooms = loadChapter().rooms;
     const last = rooms[rooms.length - 1];
 

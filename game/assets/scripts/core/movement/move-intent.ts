@@ -1,6 +1,6 @@
 import type { Vec2 } from '../math/vec2';
 
-/** Trạng thái 4 phím di chuyển trong một frame. */
+/** State of the 4 movement keys within one frame. */
 export interface MoveInput {
   readonly up: boolean;
   readonly down: boolean;
@@ -8,14 +8,14 @@ export interface MoveInput {
   readonly right: boolean;
 }
 
-/** cos(45°) = sin(45°), dùng để chuẩn hoá vector chéo. */
+/** cos(45°) = sin(45°), used to normalise a diagonal vector. */
 const DIAGONAL_COMPONENT = Math.SQRT1_2;
 
 /**
- * Đổi phím WASD thành vector 8 hướng, dài tối đa 1.
+ * Turn WASD keys into an 8-way vector of length at most 1.
  *
- * Phím đối nhau triệt tiêu nhau (A + D = 0), nên không cần xử lý ưu tiên phím.
- * Vector chéo được chuẩn hoá để tốc độ đi chéo bằng tốc độ đi thẳng (GDD §3).
+ * Opposite keys cancel each other out (A + D = 0), so no key priority handling is needed.
+ * The diagonal vector is normalised so diagonal speed equals straight speed (GDD §3).
  */
 export function normalizeMoveInput(input: MoveInput): Vec2 {
   const x = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -26,7 +26,7 @@ export function normalizeMoveInput(input: MoveInput): Vec2 {
   return { x, y };
 }
 
-/** Nhân vector hướng (dài ≤ 1) với tốc độ tile/giây để ra vận tốc. */
+/** Multiply a direction vector (length ≤ 1) by tile/second speed to get velocity. */
 export function velocityFromInput(input: Vec2, speedTilesPerSecond: number): Vec2 {
   return { x: input.x * speedTilesPerSecond, y: input.y * speedTilesPerSecond };
 }

@@ -18,7 +18,7 @@ function load(): AnimationManifest {
 }
 
 describe('frame geometry', () => {
-  it('sheet 4 hướng là 4 cột × frames hàng', () => {
+  it('a 4-direction sheet is 4 columns × frames rows', () => {
     const entry = load().sprites['player.idle.down'];
 
     expect(entry).toBeDefined();
@@ -28,17 +28,17 @@ describe('frame geometry', () => {
     expect(frameRows(entry)).toBe(4);
   });
 
-  it('tính đúng rect của một hướng cụ thể', () => {
+  it('computes the exact rect of one direction', () => {
     const entry = load().sprites['player.idle.down'];
-    if (!entry) throw new Error('thiếu key player.idle.down');
+    if (!entry) throw new Error('missing key player.idle.down');
 
-    // Cột 2 = left (thứ tự D/U/L/R), hàng 3 = frame thứ 4.
+    // Column 2 = left (D/U/L/R order), row 3 = the 4th frame.
     expect(frameRect(entry, 'left', 3)).toEqual({ x: 64, y: 96, width: 32, height: 32 });
   });
 
-  it('sheet chết một cột không chia cho 0', () => {
+  it('a single-column dead sheet does not divide by 0', () => {
     const entry = load().sprites['player.dead'];
-    if (!entry) throw new Error('thiếu key player.dead');
+    if (!entry) throw new Error('missing key player.dead');
 
     expect(entry.directions).toHaveLength(0);
     expect(frameColumns(entry)).toBe(1);
@@ -46,9 +46,9 @@ describe('frame geometry', () => {
     expect(frameRect(entry, 'down', 1)).toEqual({ x: 0, y: 32, width: 32, height: 32 });
   });
 
-  it('sheet boss là strip: 1 hàng, direction bị bỏ qua', () => {
+  it('boss sheets are strips: 1 row, direction ignored', () => {
     const entry = load().sprites['tengu.idle'];
-    if (!entry) throw new Error('thiếu key tengu.idle');
+    if (!entry) throw new Error('missing key tengu.idle');
 
     expect(entry.layout).toBe('strip');
     expect(frameRows(entry)).toBe(1);
@@ -61,7 +61,7 @@ describe('frame geometry', () => {
     });
   });
 
-  it('mọi sheet nằm trong resources/ để load được lúc runtime', () => {
+  it('every sheet lives under resources/ so it can load at runtime', () => {
     const manifest = load();
 
     for (const [key, entry] of Object.entries(manifest.sprites)) {
@@ -69,16 +69,16 @@ describe('frame geometry', () => {
     }
   });
 
-  it('từ chối frame ngoài phạm vi và hướng không có', () => {
+  it('rejects out-of-range frames and missing directions', () => {
     const entry = load().sprites['player.walk.down'];
-    if (!entry) throw new Error('thiếu key player.walk.down');
+    if (!entry) throw new Error('missing key player.walk.down');
 
     expect(() => frameRect(entry, 'down', entry.frames)).toThrow();
     expect(() => frameRect(entry, 'down', -1)).toThrow();
     expect(() => frameRect(entry, 'down', 0.5)).toThrow();
 
     const single = load().sprites['squid.shoot'];
-    if (!single) throw new Error('thiếu key squid.shoot');
+    if (!single) throw new Error('missing key squid.shoot');
     expect(() => frameRect(single, 'up', 0)).not.toThrow();
   });
 });

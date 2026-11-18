@@ -1,26 +1,26 @@
 /**
- * Parser XML tối giản, đủ để đọc file `.tmx`/`.tsx` do Tiled sinh ra.
+ * Minimal XML parser, just enough to read `.tmx`/`.tsx` files produced by Tiled.
  *
- * Vì sao tự viết thay vì dùng `DOMParser`: `core/` là TS thuần, chạy trong Node
- * bằng vitest (không có DOM), và runtime Cocos cũng dùng **đúng** parser này
- * (`core/level/tmx.ts`) nên test và build không thể lệch nhau.
+ * Why hand-rolled instead of `DOMParser`: `core/` is pure TS, runs under Node with
+ * vitest (no DOM), and the Cocos runtime uses **this same** parser
+ * (`core/level/tmx.ts`), so tests and build cannot drift apart.
  *
- * Phạm vi:
- * - Thẻ mở/đóng/self-closing, thuộc tính `"…"` và `'…'`, entity chuẩn (kể cả `&#nn;`).
- * - Bỏ qua `<?xml …?>`, `<!-- … -->`, `<!DOCTYPE …>`.
- * - Một phần tử gốc duy nhất; text ngoài phần tử gốc hoặc thẻ lệch tên đều là lỗi.
- * - Không hỗ trợ namespace (Tiled không dùng) và không giữ thứ tự text/child — TMX
- *   chỉ cần text của `<data>` và cây phần tử.
+ * Scope:
+ * - Open/close/self-closing tags, `"…"` and `'…'` attributes, standard entities (including `&#nn;`).
+ * - Skips `<?xml …?>`, `<!-- … -->`, `<!DOCTYPE …>`.
+ * - A single root element; text outside the root or mismatched tag names are errors.
+ * - No namespace support (Tiled does not use them) and text/child order is not kept — TMX
+ *   only needs `<data>` text and the element tree.
  *
- * Mọi lỗi ném `Error` kèm số dòng/cột (1-based) để sửa file tay vẫn tìm được chỗ sai.
+ * Every error throws an `Error` with line/column (1-based) so fixing a file by hand still finds the spot.
  */
 
 export interface XmlElement {
   readonly name: string;
-  /** Thuộc tính đã giải entity; giá trị không bao giờ `undefined`. */
+  /** Attributes with entities resolved; a value is never `undefined`. */
   readonly attributes: Readonly<Record<string, string>>;
   readonly children: XmlElement[];
-  /** Text trực tiếp của phần tử (đã giải entity), thường là CSV trong `<data>`. */
+  /** Direct element text (entities resolved), usually CSV inside `<data>`. */
   readonly text: string;
 }
 
@@ -33,7 +33,7 @@ interface MutableElement {
 
 const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_:.-]*$/;
 
-/** Vị trí 1-based để message khớp với thứ mà editor hiển thị. */
+/** 1-based position so messages match what the editor shows. */
 function positionAt(source: string, index: number): string {
   let line = 1;
   let column = 1;
@@ -46,11 +46,11 @@ function positionAt(source: string, index: number): string {
       column += 1;
     }
   }
-  return `dòng ${line}, cột ${column}`;
+  return `line ${line}, column ${column}`;
 }
 
 function xmlError(source: string, index: number, message: string): Error {
-  return new Error(`XML không hợp lệ (${positionAt(source, index)}): ${message}`);
+  return new Error(`Invalid XML (${positionAt(source, index)}): ${message}`);
 }
 
 function decodeEntities(source: string, raw: string, baseIndex: number): string {
@@ -68,7 +68,7 @@ function decodeEntities(source: string, raw: string, baseIndex: number): string 
 
     const end = raw.indexOf(';', index + 1);
     if (end < 0) {
-      throw xmlError(source, baseIndex + index, `entity không có ";" kết thúc trong "${raw}"`);
+      throw xmlError(source, baseIndex + index, `entity has no terminating ";" in "${raw}"`);
     }
 
     const body = raw.slice(index + 1, end);
@@ -83,19 +83,19 @@ function decodeEntities(source: string, raw: string, baseIndex: number): string 
     if (body.startsWith('#x') || body.startsWith('#X')) {
       const code = Number.parseInt(body.slice(2), 16);
       if (!Number.isInteger(code) || code <= 0) {
-        throw xmlError(source, baseIndex + index, `entity số không hợp lệ "&${body};"`);
+        throw xmlError(source, baseIndex + index, `invalid numeric entity "&${body};"`);
       }
       result += String.fromCodePoint(code);
     } else if (body.startsWith('#')) {
       const code = Number.parseInt(body.slice(1), 10);
       if (!Number.isInteger(code) || code <= 0) {
-        throw xmlError(source, baseIndex + index, `entity số không hợp lệ "&${body};"`);
+        throw xmlError(source, baseIndex + index, `invalid numeric entity "&${body};"`);
       }
       result += String.fromCodePoint(code);
     } else {
       const replacement = named[body];
       if (replacement === undefined) {
-        throw xmlError(source, baseIndex + index, `entity không hỗ trợ "&${body};"`);
+        throw xmlError(source, baseIndex + index, `unsupported entity "&${body};"`);
       }
       result += replacement;
     }
@@ -112,11 +112,11 @@ function isWhitespace(text: string): boolean {
 
 function top(stack: readonly MutableElement[]): MutableElement {
   const element = stack[stack.length - 1];
-  if (element === undefined) throw new Error('XML không hợp lệ: stack rỗng (lỗi nội bộ)');
+  if (element === undefined) throw new Error('Invalid XML: empty stack (internal error)');
   return element;
 }
 
-/** Bỏ qua khoảng trắng trong thẻ mở. */
+/** Skip whitespace inside an open tag. */
 function skipWhitespace(source: string, index: number): number {
   let cursor = index;
   while (cursor < source.length && /\s/.test(source[cursor] ?? '')) cursor += 1;
@@ -125,7 +125,7 @@ function skipWhitespace(source: string, index: number): number {
 
 export function parseXml(source: string): XmlElement {
   if (typeof source !== 'string' || source.trim() === '') {
-    throw new Error('XML không hợp lệ: nội dung rỗng');
+    throw new Error('Invalid XML: empty content');
   }
 
   const stack: MutableElement[] = [];
@@ -145,7 +145,7 @@ export function parseXml(source: string): XmlElement {
   const appendText = (raw: string, at: number): void => {
     if (isWhitespace(raw)) return;
     if (stack.length === 0) {
-      throw xmlError(source, at, `text nằm ngoài phần tử gốc: ${JSON.stringify(raw.slice(0, 24))}`);
+      throw xmlError(source, at, `text outside the root element: ${JSON.stringify(raw.slice(0, 24))}`);
     }
     top(stack).text += decodeEntities(source, raw, at);
   };
@@ -167,40 +167,40 @@ export function parseXml(source: string): XmlElement {
 
     if (source.startsWith('<?', index)) {
       const end = source.indexOf('?>', index + 2);
-      if (end < 0) throw xmlError(source, index, 'khai báo "<?…?>" không đóng');
+      if (end < 0) throw xmlError(source, index, '"<?…?>" declaration is not closed');
       index = end + 2;
       continue;
     }
 
     if (source.startsWith('<!--', index)) {
       const end = source.indexOf('-->', index + 4);
-      if (end < 0) throw xmlError(source, index, 'comment "<!--…-->" không đóng');
+      if (end < 0) throw xmlError(source, index, '"<!--…-->" comment is not closed');
       index = end + 3;
       continue;
     }
 
     if (source.startsWith('<!', index)) {
       const end = source.indexOf('>', index + 2);
-      if (end < 0) throw xmlError(source, index, 'khai báo "<!…>" không đóng');
+      if (end < 0) throw xmlError(source, index, '"<!…>" declaration is not closed');
       index = end + 1;
       continue;
     }
 
     if (source.startsWith('</', index)) {
       const end = source.indexOf('>', index + 2);
-      if (end < 0) throw xmlError(source, index, 'thẻ đóng không có ">"');
+      if (end < 0) throw xmlError(source, index, 'close tag has no ">"');
       const name = source.slice(index + 2, end).trim();
       const current = stack.pop();
       if (current === undefined) {
-        throw xmlError(source, index, `thẻ đóng "</${name}>" khi không có phần tử mở`);
+        throw xmlError(source, index, `close tag "</${name}>" with no open element`);
       }
       if (current.name !== name) {
-        throw xmlError(source, index, `thẻ đóng "</${name}>" không khớp "<${current.name}>"`);
+        throw xmlError(source, index, `close tag "</${name}>" does not match "<${current.name}>"`);
       }
       const finished = finishElement(current);
       if (stack.length === 0) {
         if (root !== null) {
-          throw xmlError(source, index, 'có nhiều hơn một phần tử gốc');
+          throw xmlError(source, index, 'more than one root element');
         }
         root = finished;
       } else {
@@ -210,17 +210,17 @@ export function parseXml(source: string): XmlElement {
       continue;
     }
 
-    // Thẻ mở: <name attr="value" …> hoặc <name …/>
+    // Open tag: <name attr="value" …> or <name …/>
     let cursor = index + 1;
     if (!/[A-Za-z_]/.test(source[cursor] ?? '')) {
-      throw xmlError(source, index, 'thẻ mở phải bắt đầu bằng chữ cái');
+      throw xmlError(source, index, 'an open tag must start with a letter');
     }
 
     let nameEnd = cursor;
     while (nameEnd < source.length && !/[\s/>]/.test(source[nameEnd] ?? '')) nameEnd += 1;
     const name = source.slice(cursor, nameEnd);
     if (!NAME_PATTERN.test(name)) {
-      throw xmlError(source, index, `tên phần tử không hợp lệ "${name}"`);
+      throw xmlError(source, index, `invalid element name "${name}"`);
     }
     cursor = nameEnd;
 
@@ -231,14 +231,14 @@ export function parseXml(source: string): XmlElement {
       cursor = skipWhitespace(source, cursor);
       const char = source[cursor];
 
-      if (char === undefined) throw xmlError(source, index, `thẻ "<${name}>" không đóng`);
+      if (char === undefined) throw xmlError(source, index, `tag "<${name}>" is not closed`);
       if (char === '>') {
         cursor += 1;
         break;
       }
       if (char === '/') {
         if (source[cursor + 1] !== '>') {
-          throw xmlError(source, cursor, `kỳ vọng "/>" để đóng thẻ "<${name}>"`);
+          throw xmlError(source, cursor, `expected "/>" to close tag "<${name}>"`);
         }
         cursor += 2;
         selfClosing = true;
@@ -251,26 +251,26 @@ export function parseXml(source: string): XmlElement {
       }
       const attributeName = source.slice(cursor, attributeEnd);
       if (attributeName === '' || !NAME_PATTERN.test(attributeName)) {
-        throw xmlError(source, cursor, `tên thuộc tính không hợp lệ "${attributeName}"`);
+        throw xmlError(source, cursor, `invalid attribute name "${attributeName}"`);
       }
       if (Object.prototype.hasOwnProperty.call(attributes, attributeName)) {
-        throw xmlError(source, cursor, `thuộc tính "${attributeName}" bị lặp trong "<${name}>"`);
+        throw xmlError(source, cursor, `attribute "${attributeName}" is duplicated in "<${name}>"`);
       }
 
       cursor = skipWhitespace(source, attributeEnd);
       if (source[cursor] !== '=') {
-        throw xmlError(source, cursor, `thuộc tính "${attributeName}" thiếu "="`);
+        throw xmlError(source, cursor, `attribute "${attributeName}" is missing "="`);
       }
       cursor = skipWhitespace(source, cursor + 1);
 
       const quote = source[cursor];
       if (quote !== '"' && quote !== "'") {
-        throw xmlError(source, cursor, `giá trị thuộc tính "${attributeName}" phải nằm trong dấu nháy`);
+        throw xmlError(source, cursor, `attribute value "${attributeName}" must be quoted`);
       }
       const valueStart = cursor + 1;
       const valueEnd = source.indexOf(quote, valueStart);
       if (valueEnd < 0) {
-        throw xmlError(source, valueStart, `giá trị thuộc tính "${attributeName}" không đóng`);
+        throw xmlError(source, valueStart, `attribute value "${attributeName}" is not closed`);
       }
 
       attributes[attributeName] = decodeEntities(source, source.slice(valueStart, valueEnd), valueStart);
@@ -281,7 +281,7 @@ export function parseXml(source: string): XmlElement {
 
     if (stack.length === 0) {
       if (root !== null) {
-        throw xmlError(source, index, 'có nhiều hơn một phần tử gốc');
+        throw xmlError(source, index, 'more than one root element');
       }
       if (selfClosing) {
         root = finishElement(element);
@@ -301,21 +301,21 @@ export function parseXml(source: string): XmlElement {
 
   if (stack.length > 0) {
     const open = top(stack);
-    throw new Error(`XML không hợp lệ: phần tử "<${open.name}>" chưa được đóng`);
+    throw new Error(`Invalid XML: element "<${open.name}>" is never closed`);
   }
   if (root === null) {
-    throw new Error('XML không hợp lệ: không có phần tử gốc');
+    throw new Error('Invalid XML: no root element');
   }
 
   return root;
 }
 
-/** Text trực tiếp của `element`, đã trim (dùng cho `<data>` CSV). */
+/** Direct text of `element`, trimmed (used for `<data>` CSV). */
 export function elementText(element: XmlElement): string {
   return element.text.trim();
 }
 
-/** Con trực tiếp đầu tiên có tên `name`, hoặc `null`. */
+/** First direct child named `name`, or `null`. */
 export function firstChild(element: XmlElement, name: string): XmlElement | null {
   for (const child of element.children) {
     if (child.name === name) return child;
@@ -323,7 +323,7 @@ export function firstChild(element: XmlElement, name: string): XmlElement | null
   return null;
 }
 
-/** Mọi con trực tiếp có tên `name`. */
+/** Every direct child named `name`. */
 export function childrenNamed(element: XmlElement, name: string): XmlElement[] {
   return element.children.filter((child) => child.name === name);
 }

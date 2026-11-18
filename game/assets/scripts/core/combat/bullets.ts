@@ -1,30 +1,30 @@
 /**
- * Đạn và object pool (ADR-008, M3: "không `new` mỗi phát").
+ * Bullets and the object pool (ADR-008, M3: "no `new` per shot").
  *
- * Toạ độ tile unit, cùng hệ với `LevelData`. Đạn là hình tròn; va chạm là
- * chồng lấn hai hình tròn, biên tính là trúng.
+ * Tile-unit coordinates, same system as `LevelData`. A bullet is a circle; collision is
+ * circle overlap, touching the boundary counts as a hit.
  *
- * Pool có **sức chứa cứng**: khi đầy, viên **cũ nhất** bị thu hồi và dùng lại
- * cho phát mới thay vì để mảng phình ra. Nhờ vậy 8 enemy + 40 viên đạn vẫn
- * chạy 60 fps mà không có frame nào cấp phát vượt kiểm soát. Hệ quả: đừng giữ
- * tham chiếu `Bullet` qua nhiều lần `spawn` — slot có thể đã thuộc về viên
- * khác. So sánh `id` nếu cần nhận diện.
+ * The pool has a **hard capacity**: when full, the **oldest** bullet is retired and reused
+ * for the new shot instead of letting the array grow. That keeps 8 enemies + 40 bullets
+ * at 60 fps with no frame allocating unpredictably. Consequence: do not keep a
+ * `Bullet` reference across `spawn` calls — the slot may already belong to another
+ * bullet. Compare `id` if you need identity.
  *
- * Hợp đồng vòng đời một viên đạn:
+ * Bullet lifecycle contract:
  *
- * - `spawn` đưa slot vào `live` (và trả về chính object mutable đó để adapter
- *   đọc ngay frame này).
- * - Viên rời pool bằng **một trong ba** đường: hết `ttlMs` (trong `update`),
- *   bị đẩy ra khi pool đầy (`spawn`), hoặc bị thu hồi chủ động (`consume` /
- *   `consumeWhere`). Cả ba đường đều đưa slot về `recycled` để `spawn` sau
- *   dùng lại — không có `new` trong vòng lặp game.
- * - Id tăng đơn điệu và **không bao giờ sống lại**: viên đã consume không còn
- *   trong `active()`, và id của nó không thể xuất hiện trên viên khác.
+ * - `spawn` puts the slot into `live` (and returns that same mutable object so the adapter
+ *   can read it this frame).
+ * - A bullet leaves the pool by **one of three** paths: `ttlMs` runs out (in `update`),
+ *   it is pushed out when the pool is full (`spawn`), or it is consumed on purpose (`consume` /
+ *   `consumeWhere`). All three return the slot to `recycled` for the next
+ *   `spawn` — no `new` inside the game loop.
+ * - Ids increase monotonically and **never come back**: a consumed bullet is no longer
+ *   in `active()`, and its id can never appear on another bullet.
  *
- * Vì vậy đừng mô phỏng "đạn trúng" bằng `bullet.ttlMs = 0` rồi chờ `update`
- * kế tiếp: viên đó vẫn nằm trong `active()` (và vẫn chiếm slot, vẫn nhìn thấy
- * được với adapter) cho tới frame sau. Dùng `consume(id)` / `consumeWhere(...)`
- * để bắn hạ ngay trong frame va chạm.
+ * So never simulate "a bullet hit" by setting `bullet.ttlMs = 0` and waiting for the
+ * next `update`: that bullet is still in `active()` (still occupying the slot, still
+ * visible to the adapter) until the following frame. Use `consume(id)` / `consumeWhere(...)`
+ * to kill it in the collision frame.
  */
 import type { LevelData, Obstacle } from '../level/level-data';
 import { obstacleAt } from '../level/level-data';
@@ -35,23 +35,23 @@ export type BulletOwner = 'player' | 'enemy';
 export interface Bullet {
   id: number;
   position: Vec2;
-  /** Mutable để Homing/Ricochet xoay hướng bay của chính viên đạn. */
+  /** Mutable so Homing/Ricochet can rotate the bullet's own flight direction. */
   velocity: { x: number; y: number };
   radiusTiles: number;
   damage: number;
   owner: BulletOwner;
   ttlMs: number;
-  /** Số enemy còn xuyên qua được (Piercing). 0 = dừng ở enemy đầu tiên. */
+  /** Enemies it can still pass through (Piercing). 0 = stops at the first enemy. */
   pierceRemaining: number;
-  /** Số lần còn nảy sang enemy khác (Ricochet). 0 = không nảy. */
+  /** Remaining bounces to another enemy (Ricochet). 0 = no bounce. */
   ricochetRemaining: number;
-  /** Đạn tự bám mục tiêu (Homing). */
+  /** Bullet tracks its target (Homing). */
   homing: boolean;
-  /** Bán kính nổ khi trúng, tile; 0 = không nổ (Explosive). */
+  /** Explosion radius on hit, tiles; 0 = no explosion (Explosive). */
   explosiveRadiusTiles: number;
-  /** Damage vụ nổ, đã tính crit + ratio. */
+  /** Explosion damage, crit + ratio already applied. */
   explosiveDamage: number;
-  /** Id actor đã trúng — đạn xuyên/nảy không bao giờ trúng lại cùng một mục tiêu. */
+  /** Actor ids already hit — a piercing/ricocheting bullet never hits the same target twice. */
   hitIds: string[];
 }
 
@@ -74,21 +74,21 @@ export interface BulletSpawnArgs {
   readonly explosiveDamage?: number;
 }
 
-/** Sức chứa mặc định: hơn 5× số đạn tối đa trên màn của mục tiêu M3 (40). */
+/** Default capacity: more than 5× the M3 target of max on-screen bullets (40). */
 export const DEFAULT_BULLET_CAPACITY = 256;
 
-/** Bước lấy mẫu khi quét đường đi của đạn qua vật cản, tile. */
+/** Sampling step when sweeping a bullet path through obstacles, tiles. */
 export const HIT_SAMPLE_STEP_TILES = 0.25;
 
 /**
- * Bản nội bộ dùng `{ x, y }` mutable để mỗi frame không phải cấp phát object
- * toạ độ mới. Nó vẫn gán được cho `Bullet` vì `Vec2` chỉ `readonly` ở mức type.
+ * Internal version uses a mutable `{ x, y }` so each frame allocates no new
+ * coordinate object. It still assigns to `Bullet` because `Vec2` is only `readonly` at the type level.
  */
 interface MutableBullet extends Bullet {
   position: { x: number; y: number };
 }
 
-/** Va chạm hai hình tròn; chạm đúng một điểm vẫn tính là trúng. */
+/** Circle collision; touching at exactly one point still counts as a hit. */
 export function hitsCircle(a: CircleArea, b: CircleArea): boolean {
   const reach = a.radiusTiles + b.radiusTiles;
   return distanceSquared(a.position, b.position) <= reach * reach;
@@ -102,16 +102,16 @@ export interface SweepArea {
 export interface ObstacleHit {
   readonly obstacle: Obstacle;
   readonly point: Vec2;
-  /** 0..1 dọc theo đoạn `from` -> `to`. */
+  /** 0..1 along the segment `from` -> `to`. */
   readonly progress: number;
 }
 
 /**
- * Vật cản đầu tiên trên đường đạn đi từ `from` tới `to`.
+ * First obstacle on the bullet path from `from` to `to`.
  *
- * Lấy mẫu dọc đoạn với bước `HIT_SAMPLE_STEP_TILES` rồi hỏi `obstacleAt`, nên
- * không thể xuyên qua cột mỏng nhất (1 tile) dù frame dài. Chỉ đọc
- * `level.obstacles`; các trường khác của `LevelData` không được dùng.
+ * Samples along the segment with step `HIT_SAMPLE_STEP_TILES` and asks `obstacleAt`, so
+ * it cannot pass through the thinnest pillar (1 tile) however long the frame. Reads only
+ * `level.obstacles`; no other field of `LevelData` is used.
  */
 export function firstHit(area: SweepArea, level: LevelData): ObstacleHit | null {
   const dx = area.to.x - area.from.x;
@@ -139,7 +139,7 @@ export class BulletPool {
 
   constructor(readonly capacity: number = DEFAULT_BULLET_CAPACITY) {
     if (!Number.isInteger(capacity) || capacity < 1) {
-      throw new Error(`BulletPool cần capacity là số nguyên >= 1, nhận ${capacity}`);
+      throw new Error(`BulletPool needs capacity to be an integer >= 1, got ${capacity}`);
     }
   }
 
@@ -148,20 +148,20 @@ export class BulletPool {
   }
 
   /**
-   * Số slot đang chờ tái dùng. `size + recycledCount` **không bao giờ vượt
-   * `capacity`** — test "1000 phát không rò rỉ" dựa vào bất biến này.
+   * Number of slots waiting to be reused. `size + recycledCount` **never exceeds
+   * `capacity`** — the "1000 shots without a leak" test relies on this invariant.
    */
   get recycledCount(): number {
     return this.recycled.length;
   }
 
   /**
-   * Sinh một viên đạn. Khi pool đầy, viên **cũ nhất** bị thu hồi để lấy slot —
-   * pool không bao giờ vượt `capacity`.
+   * Spawn a bullet. When the pool is full the **oldest** bullet is retired to free a slot —
+   * the pool never exceeds `capacity`.
    */
   spawn(args: BulletSpawnArgs): Bullet {
     if (!(args.ttlMs > 0)) {
-      throw new Error(`Đạn cần ttlMs > 0, nhận ${args.ttlMs}`);
+      throw new Error(`Bullet needs ttlMs > 0, got ${args.ttlMs}`);
     }
 
     const bullet = this.takeSlot();
@@ -185,12 +185,12 @@ export class BulletPool {
   }
 
   /**
-   * Bay theo vận tốc, trừ ttl, thu hồi viên hết hạn. Viên hết hạn trong frame
-   * này bị bỏ luôn, không bay thêm — nó đã "sống" đủ thời gian của mình.
+   * Fly by velocity, subtract ttl, retire expired bullets. A bullet that expires this frame
+   * is dropped without flying further — it has "lived" its full time.
    */
   update(deltaMs: number): void {
     if (!(deltaMs >= 0)) {
-      throw new Error(`BulletPool.update cần deltaMs >= 0, nhận ${deltaMs}`);
+      throw new Error(`BulletPool.update needs deltaMs >= 0, got ${deltaMs}`);
     }
 
     const seconds = deltaMs / 1000;
@@ -216,21 +216,21 @@ export class BulletPool {
     this.live.length = writeIndex;
   }
 
-  /** Đạn đang sống, cũ nhất trước. Chỉ đọc — đừng sửa phần tử. */
+  /** Live bullets, oldest first. Read only — do not modify the elements. */
   active(): readonly Bullet[] {
     return this.live;
   }
 
   /**
-   * Thu hồi ngay viên đạn `id` (nếu có) và trả slot về `recycled`.
+   * Retire bullet `id` immediately (if present) and return the slot to `recycled`.
    *
-   * Trả `true` khi viên đó đang sống và vừa bị bỏ, `false` khi không có id đó
-   * trong pool — gọi lại lần hai trên cùng id luôn trả `false` (id không sống
-   * lại). Sức chứa không đổi: thu hồi chỉ làm `size` giảm, slot được tái dùng
-   * cho `spawn` kế tiếp.
+   * Returns `true` when that bullet was alive and just dropped, `false` when the id is not
+   * in the pool — calling twice with the same id always returns `false` (ids do not come
+   * back). Capacity is unchanged: consuming only lowers `size`, the slot is reused
+   * by the next `spawn`.
    *
-   * Không gọi trong lúc `update`/`consumeWhere` đang chạy — hai hàm đó tự quản
-   * lý mảng. Gọi sau `update` (hoặc sau khi duyệt xong `active()`) là hợp lệ.
+   * Do not call while `update`/`consumeWhere` is running — those two manage
+   * the array themselves. Calling after `update` (or after iterating `active()`) is fine.
    */
   consume(id: number): boolean {
     for (let index = 0; index < this.live.length; index += 1) {
@@ -244,14 +244,14 @@ export class BulletPool {
   }
 
   /**
-   * Thu hồi mọi viên thoả `predicate`, trả về **số viên** đã bỏ.
+   * Retire every bullet matching `predicate`, returning the **count** dropped.
    *
-   * Dùng cho collision resolution: một frame có thể có nhiều viên trúng, gom
-   * lại rồi gọi một lần thay vì `consume` từng id (mỗi lần `consume` phải dò
-   * và dồn mảng). Predicate chỉ được **đọc** bullet — đừng gọi `spawn` /
-   * `consume` bên trong nó; muốn đổi pool thì gọi sau khi hàm này trả về.
+   * Used for collision resolution: a frame can have several bullets hit, collect
+   * them then call once instead of `consume` per id (each `consume` has to scan
+   * and compact the array). The predicate may only **read** bullets — do not call `spawn` /
+   * `consume` inside it; if you need to change the pool, do so after this function returns.
    *
-   * Thứ tự "cũ nhất trước" của `active()` được giữ nguyên cho các viên còn lại.
+   * The "oldest first" order of `active()` is preserved for the remaining bullets.
    */
   consumeWhere(predicate: (bullet: Readonly<Bullet>) => boolean): number {
     let writeIndex = 0;
@@ -275,7 +275,7 @@ export class BulletPool {
     return removed;
   }
 
-  /** Bản sao sâu, dùng cho test và debug. */
+  /** Deep copy, for tests and debugging. */
   snapshot(): Bullet[] {
     return this.live.map((bullet) => ({
       id: bullet.id,
@@ -294,15 +294,15 @@ export class BulletPool {
     }));
   }
 
-  /** Thu hồi toàn bộ đạn, ví dụ khi đổi phòng. */
+  /** Retire every bullet, e.g. when changing rooms. */
   clear(): void {
     this.recycled.push(...this.live);
     this.live.length = 0;
   }
 
   /**
-   * Bỏ phần tử `index` khỏi `live` và trả slot về `recycled`, dồn phần đuôi
-   * sang trái để giữ thứ tự cũ → mới. `index` phải là index hợp lệ của `live`.
+   * Remove element `index` from `live` and return the slot to `recycled`, shifting the tail
+   * left to keep oldest → newest order. `index` must be a valid index into `live`.
    */
   private retireAt(index: number): void {
     const bullet = this.live[index];

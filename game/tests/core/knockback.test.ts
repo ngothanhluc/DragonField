@@ -35,7 +35,7 @@ function config(distanceTiles: number, durationMs: number) {
   return { distanceTiles, durationMs };
 }
 
-/** Chạy cú đẩy theo từng frame 16 ms; trả vị trí cuối + state cuối. */
+/** Run the push frame by frame at 16 ms; return the final position + final state. */
 function runToEnd(
   position: Vec2,
   state: KnockbackState,
@@ -51,14 +51,14 @@ function runToEnd(
     current = result.position;
     active = result.state;
     frames += 1;
-    if (frames > 1000) throw new Error('knockback không bao giờ kết thúc');
+    if (frames > 1000) throw new Error('knockback never finishes');
   }
 
   return { position: current, state: active, frames };
 }
 
-describe('knockback — hướng và độ lớn', () => {
-  it('đẩy ra xa nguồn theo vector đơn vị', () => {
+describe('knockback — direction and magnitude', () => {
+  it('pushes away from the source along a unit vector', () => {
     const state = startKnockback({ x: 10, y: 10 }, { x: 8, y: 10 }, config(1.5, 180));
 
     expect(state).not.toBeNull();
@@ -66,7 +66,7 @@ describe('knockback — hướng và độ lớn', () => {
     expect(state?.direction.y).toBeCloseTo(0);
   });
 
-  it('hướng chéo được chuẩn hoá, không dài hơn 1', () => {
+  it('a diagonal direction is normalised, never longer than 1', () => {
     const state = startKnockback({ x: 10, y: 10 }, { x: 7, y: 6 }, config(1.5, 180));
     const direction = state?.direction;
 
@@ -74,7 +74,7 @@ describe('knockback — hướng và độ lớn', () => {
     expect(Math.hypot(direction?.x ?? NaN, direction?.y ?? NaN)).toBeCloseTo(1);
   });
 
-  it('đi đúng quãng đường trong đúng thời gian (không hardcode số)', () => {
+  it('travels exactly the distance in exactly the time (no hardcoded numbers)', () => {
     const level = makeLevel();
     const state = startKnockback({ x: 10, y: 10 }, { x: 8, y: 10 }, config(1.5, 180));
     expect(state).not.toBeNull();
@@ -84,11 +84,11 @@ describe('knockback — hướng và độ lớn', () => {
 
     expect(result.position.x - 10).toBeCloseTo(1.5);
     expect(result.position.y).toBeCloseTo(10);
-    // 180 ms / 16 ms → 12 frame (frame cuối chỉ 4 ms).
+    // 180 ms / 16 ms → 12 frames (the last frame is only 4 ms).
     expect(result.frames).toBe(12);
   });
 
-  it('dừng sau duration dù frame dài hơn thời gian còn lại', () => {
+  it('stops after the duration even when the frame is longer than the remaining time', () => {
     const level = makeLevel();
     const state = startKnockback({ x: 10, y: 10 }, { x: 8, y: 10 }, config(1.5, 180));
     expect(state).not.toBeNull();
@@ -100,20 +100,20 @@ describe('knockback — hướng và độ lớn', () => {
     expect(result.position.x - 10).toBeCloseTo(1.5);
   });
 
-  it('nguồn trùng vị trí actor không tạo NaN', () => {
+  it('a source coincident with the actor produces no NaN', () => {
     const state = startKnockback({ x: 10, y: 10 }, { x: 10, y: 10 }, config(1.5, 180));
 
     expect(state).toBeNull();
   });
 
-  it('cấu hình distance/duration <= 0 bị bỏ qua', () => {
+  it('a distance/duration <= 0 config is ignored', () => {
     expect(startKnockback({ x: 10, y: 10 }, { x: 8, y: 10 }, config(0, 180))).toBeNull();
     expect(startKnockback({ x: 10, y: 10 }, { x: 8, y: 10 }, config(1.5, 0))).toBeNull();
   });
 });
 
-describe('knockback — va chạm và biên phòng', () => {
-  it('bị vật cản chặn và không kết thúc bên trong vật cản', () => {
+describe('knockback — collision and room bounds', () => {
+  it('is blocked by an obstacle and never ends inside one', () => {
     const level = makeLevel([{ kind: 'pillar', x: 11, y: 9, width: 1, height: 2 }]);
     const state = startKnockback({ x: 10, y: 10 }, { x: 8, y: 10 }, config(1.5, 180));
     expect(state).not.toBeNull();
@@ -127,7 +127,7 @@ describe('knockback — va chạm và biên phòng', () => {
     expect(result.state).toBeNull();
   });
 
-  it('không đẩy ra ngoài phòng dù nguồn nằm sát tường', () => {
+  it('does not push outside the room even when the source is against the wall', () => {
     const level = makeLevel();
     const state = startKnockback({ x: 31.2, y: 10 }, { x: 30, y: 10 }, config(1.5, 180));
     expect(state).not.toBeNull();
@@ -140,7 +140,7 @@ describe('knockback — va chạm và biên phòng', () => {
     expect(result.state).toBeNull();
   });
 
-  it('dừng ở mép trên/dưới của phòng', () => {
+  it('stops at the top/bottom edge of the room', () => {
     const level = makeLevel();
     const state = startKnockback({ x: 10, y: 17.7 }, { x: 10, y: 16 }, config(1.5, 180));
     expect(state).not.toBeNull();
@@ -153,8 +153,8 @@ describe('knockback — va chạm và biên phòng', () => {
   });
 });
 
-describe('knockback — tune lấy từ config/tuning.json', () => {
-  it('DEFAULT_COMBAT có knockback dương và hợp lệ', () => {
+describe('knockback — tuning from config/tuning.json', () => {
+  it('DEFAULT_COMBAT has a positive, valid knockback', () => {
     expect(DEFAULT_COMBAT.playerKnockbackDistanceTiles).toBeGreaterThan(0);
     expect(DEFAULT_COMBAT.playerKnockbackDurationMs).toBeGreaterThan(0);
     expect(DEFAULT_COMBAT.enemyKnockbackDistanceTiles).toBeGreaterThan(0);

@@ -38,7 +38,7 @@ import { SeededRng } from '../../assets/scripts/core/rng';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = join(HERE, '..', '..', 'assets', 'resources', 'data', 'animations.json');
 
-/** Boss đứng giữa sân; player đi vòng để pattern phải bám chứ không đứng yên. */
+/** Boss stands mid-arena; the player circles so patterns must track instead of standing still. */
 const BOSS_START: Vec2 = { x: 16, y: 9 };
 
 function playerAt(nowMs: number): Vec2 {
@@ -59,8 +59,8 @@ interface SimResult {
 }
 
 /**
- * Chạy boss từ đầu trong `seconds` giây, bước đều `deltaMs`. State được luồn
- * qua từng frame đúng như adapter sẽ làm, nên test không tự dựng lại state.
+ * Run the boss from the start for `seconds` seconds, stepping at a steady `deltaMs`. State is threaded
+ * through each frame exactly as the adapter would, so the test never rebuilds state itself.
  */
 function simulate(id: BossId, options: SimOptions): SimResult {
   const deltaMs = options.deltaMs ?? 40;
@@ -105,7 +105,7 @@ function bulletsOf(events: readonly BossEvent[]): BulletVerb[] {
   return shootEvents(events).flatMap((event) => event.bullets);
 }
 
-/** Tổng thời lượng một vòng đầy đủ (lần chạy đầu) của phase. */
+/** Total duration of one full loop (first run) of the phase. */
 function scriptDurationMs(id: BossId, phase: BossPhase): number {
   return BOSS_SCRIPTS[id][phase].steps.reduce((sum, step) => sum + step.durationMs, 0);
 }
@@ -120,7 +120,7 @@ function actionKinds(step: BossStep): string[] {
   return step.actions.map((action) => action.kind);
 }
 
-/** Đạn khớp "dấu vân tay" của một `VolleySpec` (số viên + tốc độ + sát thương + bán kính). */
+/** Bullets matching the "fingerprint" of a `VolleySpec` (count + speed + damage + radius). */
 function matchesSpec(bullets: readonly BulletVerb[], spec: VolleySpec): boolean {
   return (
     bullets.length === spec.count &&
@@ -134,7 +134,7 @@ function matchesSpec(bullets: readonly BulletVerb[], spec: VolleySpec): boolean 
 }
 
 describe('boss defs', () => {
-  it('máu đúng GDD 60 / 80 / 100 và đủ 3 chapter', () => {
+  it('health exactly as GDD 60 / 80 / 100 from all 3 chapters', () => {
     expect(BOSS_IDS.map((id) => BOSSES[id].maxHealth)).toEqual([60, 80, 100]);
     expect(BOSS_IDS.map((id) => BOSSES[id].chapter)).toEqual([1, 2, 3]);
     expect(BOSSES.tengu.spriteName).toBe('TenguBlue');
@@ -142,33 +142,33 @@ describe('boss defs', () => {
     expect(BOSSES.samurai.spriteName).toBe('GiantBlueSamurai');
   });
 
-  it('animation khai báo đều có thật trong manifest', () => {
+  it('every declared animation really exists in the manifest', () => {
     const raw: unknown = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
     if (typeof raw !== 'object' || raw === null || !('sprites' in raw)) {
-      throw new Error('animations.json không có trường sprites');
+      throw new Error('animations.json has no sprites field');
     }
     const sprites = (raw as { sprites: Record<string, unknown> }).sprites;
 
     for (const id of BOSS_IDS) {
       expect(BOSSES[id].animations.length).toBeGreaterThan(0);
       for (const key of BOSSES[id].animations) {
-        expect(sprites[key], `${id} thiếu ${key} trong manifest`).toBeDefined();
+        expect(sprites[key], `${id} is missing ${key} in the manifest`).toBeDefined();
       }
     }
   });
 
-  it('samurai đổi animation theo hướng, hai boss kia thì không', () => {
+  it('samurai switches animation by facing, the other two do not', () => {
     expect(animationFor('samurai', 'attack', 'left')).toBe('samurai.attack.left');
     expect(animationFor('samurai', 'attack', 'right')).toBe('samurai.attack.right');
     expect(animationFor('samurai', 'charge', 'left')).toBe('samurai.charge.left');
     expect(animationFor('tengu', 'attack', 'left')).toBe(animationFor('tengu', 'attack', 'right'));
     expect(animationFor('tengu', 'teleport', 'right')).toBe('tengu.trans');
     expect(animationFor('squid', 'loop', 'left')).toBe('squid.attack-loop');
-    // Boss không có animation đó thì lùi về attack, không trả key rác.
+    // A boss without that animation falls back to attack, never a garbage key.
     expect(animationFor('tengu', 'loop', 'left')).toBe('tengu.attack');
   });
 
-  it('tra boss theo tên sprite trong TMX', () => {
+  it('looks up a boss by the sprite name in the TMX', () => {
     expect(bossForSpriteName('TenguBlue')?.id).toBe('tengu');
     expect(bossForSpriteName('GiantBlueSamurai')?.id).toBe('samurai');
     expect(bossForSpriteName('Dragon')).toBeUndefined();
@@ -176,14 +176,14 @@ describe('boss defs', () => {
 });
 
 describe('phaseFor', () => {
-  it('biên 100 / 66 / 33 / 0', () => {
+  it('boundaries 100 / 66 / 33 / 0', () => {
     expect(phaseFor('tengu', 1)).toBe(1);
     expect(phaseFor('tengu', 0.66)).toBe(2);
     expect(phaseFor('tengu', 0.33)).toBe(3);
     expect(phaseFor('tengu', 0)).toBe(3);
   });
 
-  it('ngưỡng tính về phase sau, giống nhau cho cả ba boss', () => {
+  it('thresholds count as the later phase, the same for all three bosses', () => {
     for (const id of BOSS_IDS) {
       expect(phaseFor(id, 1)).toBe(1);
       expect(phaseFor(id, 0.99)).toBe(1);
@@ -196,7 +196,7 @@ describe('phaseFor', () => {
     }
   });
 
-  it('healthFraction kẹp trong [0, 1]', () => {
+  it('healthFraction clamps into [0, 1]', () => {
     expect(healthFraction('tengu', 60)).toBe(1);
     expect(healthFraction('tengu', 30)).toBe(0.5);
     expect(healthFraction('tengu', 0)).toBe(0);
@@ -206,7 +206,7 @@ describe('phaseFor', () => {
 });
 
 describe('boss phase change', () => {
-  it('mỗi boss đi qua đủ 3 phase, mỗi ngưỡng phát phase-change đúng một lần', () => {
+  it('each boss goes through all 3 phases, each threshold emits phase-change exactly once', () => {
     for (const id of BOSS_IDS) {
       const def = BOSSES[id];
       const rng = new SeededRng(99);
@@ -220,10 +220,10 @@ describe('boss phase change', () => {
         const result = stepBoss({ state, nowMs, deltaMs: 40, player: BOSS_START, rng });
         state = result.state;
         events.push(...result.events);
-        expect(state.phase, `${id} ở ${fraction} máu`).toBe(phaseFor(id, fraction));
+        expect(state.phase, `${id} at ${fraction} health`).toBe(phaseFor(id, fraction));
       }
 
-      // Chạy thêm 2 giây: không được phát lại phase-change nào.
+      // Run 2 more seconds: no phase-change may be emitted again.
       for (let frame = 0; frame < 50; frame += 1) {
         nowMs += 40;
         const result = stepBoss({ state, nowMs, deltaMs: 40, player: BOSS_START, rng });
@@ -235,7 +235,7 @@ describe('boss phase change', () => {
     }
   });
 
-  it('máu tụt một nhịp qua hai ngưỡng thì phát hai event, không phát lại', () => {
+  it('health dropping through two thresholds in one beat emits two events, never repeats', () => {
     const id: BossId = 'squid';
     const rng = new SeededRng(7);
     const events: BossEvent[] = [];
@@ -253,7 +253,7 @@ describe('boss phase change', () => {
     expect(phaseChangeEvents(again.events)).toHaveLength(0);
   });
 
-  it('boss chết thì đứng im, không bắn thêm', () => {
+  it('a dead boss stands still and fires nothing more', () => {
     const dead: BossState = { ...initialBossState('tengu', BOSS_START), health: 0, phase: 3 };
     const result = stepBoss({
       state: dead,
@@ -270,7 +270,7 @@ describe('boss phase change', () => {
 });
 
 describe('telegraph', () => {
-  it('mọi bước gây sát thương đều đứng ngay sau một bước telegraph (dữ liệu pattern)', () => {
+  it('every damage step sits right behind a telegraph step (pattern data)', () => {
     for (const id of BOSS_IDS) {
       for (const phase of [1, 2, 3] as const) {
         const script = BOSS_SCRIPTS[id][phase];
@@ -282,17 +282,17 @@ describe('telegraph', () => {
 
           const previousIndex = index === loopFrom ? steps.length - 1 : Math.max(0, index - 1);
           const previous = steps[previousIndex];
-          expect(previous, `${id} p${phase} bước ${index} không có bước trước`).toBeDefined();
+          expect(previous, `${id} p${phase} step ${index} has no previous step`).toBeDefined();
           expect(
             previous?.actions.some((action) => action.kind === 'telegraph'),
-            `${id} p${phase} bước ${index} (${actionKinds(step).join('+')}) thiếu telegraph`,
+            `${id} p${phase} step ${index} (${actionKinds(step).join('+')}) is missing a telegraph`,
           ).toBe(true);
         });
       }
     }
   });
 
-  it('trong 30 s chạy thật, không phát đạn nào trước telegraph 800 ms', () => {
+  it('in 30 s of real running, nothing is fired before the 800 ms telegraph', () => {
     for (const id of BOSS_IDS) {
       for (const fraction of [1, 0.6, 0.2]) {
         const { events } = simulate(id, { seconds: 30, healthFraction: fraction });
@@ -307,7 +307,7 @@ describe('telegraph', () => {
             telegraphs += 1;
           }
           if (event.kind === 'shoot') {
-            expect(telegraphs, `${id} bắn trước telegraph`).toBeGreaterThan(0);
+            expect(telegraphs, `${id} fired before its telegraph`).toBeGreaterThan(0);
             shoots += 1;
           }
         }
@@ -318,12 +318,12 @@ describe('telegraph', () => {
     }
   });
 
-  it('telegraph phát kèm animation báo đòn, rồi đòn thật ở bước kế', () => {
+  it('a telegraph emits the tell animation, then the real attack lands in the next step', () => {
     const { events } = simulate('tengu', { seconds: 12, healthFraction: 1 });
     const telegraph = telegraphEvents(events)[0];
     expect(telegraph).toBeDefined();
 
-    // Bước telegraph phát: [telegraph, play-animation attack]; đòn thật ở bước kế.
+    // The telegraph step emits: [telegraph, play-animation attack]; the real attack is in the next step.
     const index = events.indexOf(telegraph as TelegraphedEvent);
     expect(events[index + 1]?.kind).toBe('play-animation');
 
@@ -335,7 +335,7 @@ describe('telegraph', () => {
 });
 
 describe('determinism', () => {
-  it('cùng seed + cùng input → chuỗi event và state y hệt', () => {
+  it('same seed + same input → identical event stream and state', () => {
     for (const id of BOSS_IDS) {
       const first = simulate(id, { seconds: 20, seed: 4242, healthFraction: 0.5 });
       const second = simulate(id, { seconds: 20, seed: 4242, healthFraction: 0.5 });
@@ -345,13 +345,13 @@ describe('determinism', () => {
     }
   });
 
-  it('seed khác → dịch chuyển khác', () => {
+  it('a different seed → different teleports', () => {
     const first = simulate('tengu', { seconds: 8, seed: 1, healthFraction: 0.5 });
     const second = simulate('tengu', { seconds: 8, seed: 2, healthFraction: 0.5 });
     expect(first.events).not.toEqual(second.events);
   });
 
-  it('state chỉ là dữ liệu phẳng: JSON round-trip không mất gì', () => {
+  it('state is flat data only: a JSON round-trip loses nothing', () => {
     const { state } = simulate('samurai', { seconds: 6, healthFraction: 0.2 });
     const roundTrip: unknown = JSON.parse(JSON.stringify(state));
     expect(roundTrip).toEqual(state);
@@ -361,7 +361,7 @@ describe('determinism', () => {
     }
   });
 
-  it('không sửa state của caller', () => {
+  it('does not mutate the caller state', () => {
     const state: BossState = { ...initialBossState('tengu', BOSS_START), phase: 2, health: 40 };
     const before = JSON.stringify(state);
 
@@ -370,7 +370,7 @@ describe('determinism', () => {
     expect(JSON.stringify(state)).toBe(before);
   });
 
-  it('một frame dài (mất frame) vẫn chạy hết các bước, không kẹt vòng lặp', () => {
+  it('a long frame (dropped frame) still runs every step, without getting stuck in the loop', () => {
     const state: BossState = { ...initialBossState('tengu', BOSS_START), health: 10, phase: 3 };
     const result = stepBoss({
       state,
@@ -380,7 +380,7 @@ describe('determinism', () => {
       rng: new SeededRng(3),
     });
 
-    // 6100 ms/vòng ⇒ 12 s phải đi qua gần hai vòng, tức là có ít nhất 4 chùm 5 viên.
+    // 6100 ms/loop ⇒ 12 s must cross almost two loops, i.e. at least 4 five-bullet fans.
     const fans = shootEvents(result.events).filter((event) => event.bullets.length === 5);
     expect(fans.length).toBeGreaterThanOrEqual(4);
     expect(Number.isFinite(result.state.position.x)).toBe(true);
@@ -388,11 +388,11 @@ describe('determinism', () => {
 });
 
 describe('bullet verbs', () => {
-  it('mọi viên đạn đều hợp lệ và nằm trong phòng', () => {
+  it('every bullet is valid and inside the room', () => {
     for (const id of BOSS_IDS) {
       for (const fraction of [1, 0.6, 0.2]) {
         const bullets = bulletsOf(simulate(id, { seconds: 25, healthFraction: fraction }).events);
-        expect(bullets.length, `${id} không bắn viên nào`).toBeGreaterThan(0);
+        expect(bullets.length, `${id} fired no bullets`).toBeGreaterThan(0);
 
         for (const bullet of bullets) {
           expect(bullet.speed).toBeGreaterThan(0);
@@ -404,7 +404,7 @@ describe('bullet verbs', () => {
           expect(bullet.from.y).toBeGreaterThanOrEqual(0);
           expect(bullet.from.y).toBeLessThanOrEqual(ROOM_ROWS);
 
-          // Hoặc có điểm nhắm thật, hoặc có góc tuyệt đối — không được mơ hồ cả hai.
+          // Either it has a real aim point, or an absolute angle — never both ambiguously.
           if (bullet.toward !== null) {
             expect(distance(bullet.from, bullet.toward)).toBeGreaterThan(0);
           }
@@ -413,7 +413,7 @@ describe('bullet verbs', () => {
     }
   });
 
-  it('chùm fan/spread nhắm player và đối xứng quanh hướng nhắm', () => {
+  it('fan/spread volleys aim at the player and are symmetric around the aim direction', () => {
     const { events } = simulate('tengu', {
       seconds: scriptDurationMs('tengu', 1) / 1000,
       healthFraction: 1,
@@ -436,32 +436,32 @@ describe('bullet verbs', () => {
     }
   });
 
-  it('count đạn khớp GDD: 5 / 8 / 3 đợt chùm 5 / 5 toả / xoắn', () => {
-    // Ch1 phase 1: một chùm 5 viên mỗi vòng.
+  it('bullet counts match the GDD: 5 / 8 / 3 fans of 5 / 5 spread / spiral', () => {
+    // Ch1 phase 1: one 5-bullet fan per loop.
     const tengu1 = shootEvents(
       simulate('tengu', { seconds: scriptDurationMs('tengu', 1) / 1000, healthFraction: 1 }).events,
     );
     expect(tengu1.map((event) => event.bullets.length)).toEqual([5]);
 
-    // Ch1 phase 2: một vòng 8 viên mỗi vòng.
+    // Ch1 phase 2: one 8-bullet ring per loop.
     const tengu2 = shootEvents(
       simulate('tengu', { seconds: scriptDurationMs('tengu', 2) / 1000, healthFraction: 0.6 }).events,
     );
     expect(tengu2.map((event) => event.bullets.length)).toEqual([8]);
 
-    // Ch1 phase 3: dịch chuyển ×3, chùm 5 viên ×3 đợt.
+    // Ch1 phase 3: teleport ×3, 5-bullet fans ×3.
     const tengu3 = shootEvents(
       simulate('tengu', { seconds: scriptDurationMs('tengu', 3) / 1000, healthFraction: 0.2 }).events,
     );
     expect(tengu3.map((event) => event.bullets.length)).toEqual([5, 5, 5]);
 
-    // Ch2 phase 1: một loạt 5 viên toả mỗi vòng.
+    // Ch2 phase 1: one 5-bullet spread per loop.
     const squid1 = shootEvents(
       simulate('squid', { seconds: scriptDurationMs('squid', 1) / 1000, healthFraction: 1 }).events,
     );
     expect(squid1.map((event) => event.bullets.length)).toEqual([5]);
 
-    // Ch3 phase 1: một sóng slash 3 viên.
+    // Ch3 phase 1: one 3-bullet slash wave.
     const samurai1 = shootEvents(
       simulate('samurai', { seconds: scriptDurationMs('samurai', 1) / 1000, healthFraction: 1 })
         .events,
@@ -469,7 +469,7 @@ describe('bullet verbs', () => {
     expect(samurai1.map((event) => event.bullets.length)).toEqual([3]);
   });
 
-  it('xoắn ốc phát đúng nhịp và quay đều góc', () => {
+  it('the spiral fires at the right cadence and rotates the angle evenly', () => {
     const spiralAction = BOSS_SCRIPTS.squid[2].steps
       .flatMap((step) => step.actions)
       .find((action) => action.kind === 'spiral');
@@ -503,7 +503,7 @@ describe('bullet verbs', () => {
     }
   });
 
-  it('mọi volley khai báo trong script đều xuất hiện đúng số viên khi chạy', () => {
+  it('every volley declared in the script appears with the right bullet count at runtime', () => {
     for (const id of BOSS_IDS) {
       for (const phase of [1, 2, 3] as const) {
         const fraction = phase === 1 ? 1 : phase === 2 ? 0.6 : 0.2;
@@ -516,14 +516,14 @@ describe('bullet verbs', () => {
         for (const spec of volleySpecs(id, phase)) {
           expect(
             shots.some((shot) => matchesSpec(shot.bullets, spec)),
-            `${id} p${phase} thiếu volley ${spec.shape} ${spec.count} viên`,
+            `${id} p${phase} is missing volley ${spec.shape} ${spec.count} bullets`,
           ).toBe(true);
         }
       }
     }
   });
 
-  it('slash của samurai bay theo hướng facing, không toả 360°', () => {
+  it('the samurai slash flies along the facing direction, not a 360° spread', () => {
     const { events } = simulate('samurai', {
       seconds: scriptDurationMs('samurai', 1) / 1000,
       healthFraction: 1,
@@ -538,7 +538,7 @@ describe('bullet verbs', () => {
     }
   });
 
-  it('phase 3 của samurai: vệt lửa + đúng 2 sóng slash', () => {
+  it('samurai phase 3: fire trail + exactly 2 slash waves', () => {
     const { events } = simulate('samurai', {
       seconds: scriptDurationMs('samurai', 3) / 1000,
       healthFraction: 0.2,
@@ -564,7 +564,7 @@ describe('summon', () => {
     phase: 3,
   };
 
-  it('id duy nhất và đúng tiền tố boss-<id>-', () => {
+  it('ids are unique and carry the boss-<id>- prefix', () => {
     const list = summonedEnemies(summoner, 'caster', 2, new SeededRng(5));
     expect(list).toHaveLength(2);
 
@@ -573,7 +573,7 @@ describe('summon', () => {
     for (const id of ids) expect(id.startsWith('boss-squid-')).toBe(true);
   });
 
-  it('trong phòng và không đè lên boss', () => {
+  it('inside the room and not on top of the boss', () => {
     for (const seed of [1, 2, 3, 17, 99]) {
       const list = summonedEnemies(summoner, 'caster', 2, new SeededRng(seed));
       for (const enemy of list) {
@@ -588,7 +588,7 @@ describe('summon', () => {
     }
   });
 
-  it('boss đứng sát góc vẫn gọi ra quái không đè lên mình', () => {
+  it('a boss in the corner still summons enemies that do not overlap it', () => {
     for (const corner of [
       { x: 1, y: 1 },
       { x: ROOM_COLS - 1, y: ROOM_ROWS - 1 },
@@ -608,7 +608,7 @@ describe('summon', () => {
     }
   });
 
-  it('cùng seed → cùng danh sách, khác seed → vị trí khác', () => {
+  it('same seed → same list, different seed → different positions', () => {
     const first = summonedEnemies(summoner, 'caster', 2, new SeededRng(42));
     const second = summonedEnemies(summoner, 'caster', 2, new SeededRng(42));
     expect(first).toEqual(second);
@@ -621,7 +621,7 @@ describe('summon', () => {
     expect(variants.size).toBeGreaterThan(1);
   });
 
-  it('squid phase 3 gọi đúng 2 caster một lần mỗi lần vào phase', () => {
+  it('squid phase 3 summons exactly 2 casters once per phase entry', () => {
     const { events } = simulate('squid', {
       seconds: scriptDurationMs('squid', 3) / 1000,
       healthFraction: 0.2,
@@ -632,8 +632,8 @@ describe('summon', () => {
   });
 });
 
-describe('boss không tràn sprite ra ngoài phòng', () => {
-  /** Player bám từng góc/mép để kéo boss (chase/line-up/charge) ra sát tường. */
+describe('the boss sprite never spills outside the room', () => {
+  /** The player hugs every corner/edge to drag the boss (chase/line-up/charge) against the wall. */
   const EDGE_PLAYERS: readonly Vec2[] = [
     { x: 0.5, y: 0.5 },
     { x: ROOM_COLS - 0.5, y: 0.5 },
@@ -643,7 +643,7 @@ describe('boss không tràn sprite ra ngoài phòng', () => {
     { x: 0.5, y: 9 },
   ];
 
-  it('mọi vị trí qua cả 3 phase giữ trọn sprite (theo spriteExtentTiles) trong 32×18', () => {
+  it('every position across all 3 phases keeps the whole sprite (per spriteExtentTiles) inside 32×18', () => {
     for (const id of BOSS_IDS) {
       const extent = BOSSES[id].spriteExtentTiles;
       for (const fraction of [1, 0.5, 0.2]) {
@@ -669,7 +669,7 @@ describe('boss không tràn sprite ra ngoài phòng', () => {
     }
   });
 
-  it('spawn sát góc bị kéo vào vùng đứng hợp lệ', () => {
+  it('a spawn near the corner is pulled into the valid standing area', () => {
     for (const id of BOSS_IDS) {
       const bounds = bossRoomBounds(id);
       expect(initialBossState(id, { x: 0, y: 0 }).position).toEqual({ x: bounds.minX, y: bounds.minY });

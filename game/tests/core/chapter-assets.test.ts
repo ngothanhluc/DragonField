@@ -12,7 +12,7 @@ function loadChapter(chapter: number): ChapterData {
 }
 
 describe('chapter assets', () => {
-  it('cả 3 chapter đều có 9 phòng, phòng 9 là boss đúng GDD §5', () => {
+  it('all 3 chapters have 9 rooms, room 9 is the boss per GDD §5', () => {
     expect(loadChapter(1).rooms).toHaveLength(9);
     expect(loadChapter(2).rooms).toHaveLength(9);
     expect(loadChapter(3).rooms).toHaveLength(9);
@@ -26,7 +26,7 @@ describe('chapter assets', () => {
     expect(bosses).toEqual(['TenguBlue', 'SquidGreen', 'GiantBlueSamurai']);
   });
 
-  it('chapter 1: 3–4 enemy/wave; chapter 2: 5–6/phòng; chapter 3: 7–8/phòng + elite', () => {
+  it('chapter 1: 3–4 enemies/wave; chapter 2: 5–6/room; chapter 3: 7–8/room + elite', () => {
     const chapterOne = loadChapter(1);
     for (const room of chapterOne.rooms.filter((candidate) => !candidate.isBossRoom)) {
       for (const wave of room.waves) {
@@ -38,11 +38,11 @@ describe('chapter assets', () => {
     for (const chapter of [2, 3]) {
       const rooms = loadChapter(chapter).rooms.filter((room) => !room.isBossRoom);
       for (const room of rooms) {
-        // GDD §4 tính enemy theo phòng cho chapter 2–3; mỗi phòng chia 2–3 wave.
+        // GDD §4 counts enemies per room for chapters 2–3; each room splits into 2–3 waves.
         const count = room.waves.reduce((total, wave) => total + wave.enemies.length, 0);
         const range = chapter === 2 ? [5, 6] : [7, 8];
-        expect(count, `chapter ${chapter} phòng ${room.room}`).toBeGreaterThanOrEqual(range[0] ?? 0);
-        expect(count, `chapter ${chapter} phòng ${room.room}`).toBeLessThanOrEqual(range[1] ?? 9);
+        expect(count, `chapter ${chapter} room ${room.room}`).toBeGreaterThanOrEqual(range[0] ?? 0);
+        expect(count, `chapter ${chapter} room ${room.room}`).toBeLessThanOrEqual(range[1] ?? 9);
       }
     }
 
@@ -50,11 +50,11 @@ describe('chapter assets', () => {
     const elites = chapterThree.rooms.flatMap((room) =>
       room.waves.flatMap((wave) => wave.enemies.filter((enemy) => enemy.elite)),
     );
-    // Elites bắt đầu từ phòng 4; phòng 1–3 là cửa vào của chapter.
+    // Elites start at room 4; rooms 1–3 are the chapter entrance.
     expect(elites.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('phòng 1–3 của chapter 2–3 chia thành nhiều wave để cửa vào không dồn 7 con', () => {
+  it('rooms 1–3 of chapters 2–3 split into multiple waves so the entrance is not 7 at once', () => {
     for (const chapter of [2, 3]) {
       for (const room of loadChapter(chapter).rooms.filter((candidate) => !candidate.isBossRoom).slice(0, 3)) {
         expect(room.waves.length, `ch${chapter} r${room.room}`).toBeGreaterThanOrEqual(2);
@@ -63,12 +63,12 @@ describe('chapter assets', () => {
     }
   });
 
-  it('chapter 3 boss arena: player đứng cùng hàng boss để charge ngang có nghĩa', () => {
+  it('chapter 3 boss arena: the player stands on the boss row so a horizontal charge is meaningful', () => {
     const bossRoom = loadChapter(3).rooms[8];
     expect(bossRoom?.bossStart?.y).toBe(bossRoom?.playerStart.y);
   });
 
-  it('mọi phòng đều có playerStart và ít nhất một obstacle/door hợp lệ', () => {
+  it('every room has a playerStart and at least one valid obstacle/door', () => {
     for (const chapter of [1, 2, 3]) {
       for (const room of loadChapter(chapter).rooms) {
         expect(Number.isFinite(room.playerStart.x)).toBe(true);
@@ -78,7 +78,7 @@ describe('chapter assets', () => {
     }
   });
 
-  it('không spawn/player/boss đứng trong vật cản', () => {
+  it('no spawn/player/boss stands inside an obstacle', () => {
     for (const chapter of [1, 2, 3]) {
       for (const room of loadChapter(chapter).rooms) {
         expect(obstacleAt(room, room.playerStart), `ch${chapter} r${room.room} player`).toBeNull();
@@ -97,14 +97,14 @@ describe('chapter assets', () => {
     }
   });
 
-  it('boss chapter 3 không bị cột chắn giữa đường đạn từ playerStart', () => {
+  it('the chapter 3 boss is not blocked by a pillar on the projectile path from playerStart', () => {
     const room = loadChapter(3).rooms[8];
-    if (room?.bossStart === undefined) throw new Error('thiếu bossStart');
-    // Hàng của player và boss trùng nhau; mọi cột trên hàng đó sẽ chặn đạn.
+    if (room?.bossStart === undefined) throw new Error('missing bossStart');
+    // The player and boss rows coincide; any pillar on that row would block projectiles.
     for (let x = Math.floor(room.bossStart.x); x <= Math.ceil(room.playerStart.x); x += 1) {
       expect(
         obstacleAt(room, { x: x + 0.5, y: room.bossStart.y + 0.5 }),
-        `cột chắn đạn tại x=${x}`,
+        `pillar blocking the projectile at x=${x}`,
       ).toBeNull();
     }
   });

@@ -1,37 +1,37 @@
 /**
- * Hitstop: đóng băng mô phỏng một nhịp ngắn khi đòn trúng (ADR-008: 70 ms), để
- * cú đánh "nặng tay" mà không phải chỉnh gì trong combat.
+ * Hitstop: freeze the simulation for a short beat on a hit (ADR-008: 70 ms) so
+ * the blow feels heavy without tuning anything inside combat.
  *
- * ## Quyết định thiết kế: đóng băng **thời gian mô phỏng**, không đóng băng từng hệ
+ * ## Design decision: freeze **simulation time**, not each system
  *
- * Mọi thứ trong game đều chạy trên **một** đồng hồ `nowMs` do adapter cộng dồn từ
- * `deltaMs` đã kẹp (telegraph, i-frame, cooldown, TTL đạn). Vì vậy hitstop không
- * "tắt" riêng hệ nào: nó trả `0` cho frame bị đóng băng, nên `nowMs` **không tăng**
- * và mọi hệ già đi cùng một nhịp. Không có chuyện telegraph chạy tiếp trong lúc
- * i-frame đứng yên — đó là kiểu desync mà milestone M3 yêu cầu phải tránh.
+ * Everything in the game runs on **one** `nowMs` clock the adapter accumulates from
+ * clamped `deltaMs` (telegraphs, i-frames, cooldowns, bullet TTL). So hitstop never
+ * "switches off" any system individually: it returns `0` for a frozen frame, so `nowMs` **does not advance**
+ * and every system ages at the same beat. A telegraph never keeps running while the
+ * i-frame stands still — that is the kind of desync milestone M3 requires avoiding.
  *
- * Hệ quả có chủ ý:
+ * Deliberate consequences:
  *
- * - Thời gian **thật** trôi qua trong hitstop, thời gian **mô phỏng** thì không.
- *   Run dài hơn đồng hồ tường đúng bằng tổng hitstop; không ảnh hưởng balance vì
- *   mọi thứ đều đo bằng `nowMs`.
- * - Một frame thật dài hơn phần hitstop còn lại **không bị mất**: `step` trả phần
- *   thừa để mô phỏng chạy tiếp ngay trong frame đó.
- * - Nhiều yêu cầu trong lúc đang đóng băng **không cộng dồn** (sẽ thành 140 ms nếu
- *   hai viên đạn trúng liên tiếp); lấy `max` để hitstop luôn đúng "một nhịp".
+ * - **Real** time passes during hitstop, **simulation** time does not.
+ *   A run lasts longer than the wall clock by exactly the total hitstop; balance is unaffected because
+ *   everything is measured in `nowMs`.
+ * - A real frame longer than the remaining hitstop is **not lost**: `step` returns the
+ *   remainder so the simulation continues within that same frame.
+ * - Multiple requests while frozen **do not stack** (two hits in a row would give 140 ms);
+ *   the max is taken so hitstop is always "one beat".
  *
- * File này không biết engine, không đọc thời gian: caller truyền thời gian thật.
+ * This file knows no engine and reads no clock: the caller passes real time.
  */
 export class HitstopClock {
   private remainingMs = 0;
 
   constructor(readonly defaultDurationMs: number) {
     if (!Number.isFinite(defaultDurationMs) || defaultDurationMs < 0) {
-      throw new Error(`HitstopClock cần duration hữu hạn >= 0, nhận ${defaultDurationMs}`);
+      throw new Error(`HitstopClock needs a finite duration >= 0, got ${defaultDurationMs}`);
     }
   }
 
-  /** Thời gian đóng băng còn lại, ms (0 = đang chạy bình thường). */
+  /** Remaining freeze time, ms (0 = running normally). */
   get remaining(): number {
     return this.remainingMs;
   }
@@ -41,33 +41,33 @@ export class HitstopClock {
   }
 
   /**
-   * Yêu cầu đóng băng. Đang đóng băng thì lấy **max** (không cộng dồn); tham số
-   * mặc định là `defaultDurationMs`.
+   * Request a freeze. While frozen, take the **max** (no stacking); the parameter
+   * defaults to `defaultDurationMs`.
    */
   request(durationMs: number = this.defaultDurationMs): void {
     if (!Number.isFinite(durationMs) || durationMs < 0) {
-      throw new Error(`HitstopClock.request cần ms hữu hạn >= 0, nhận ${durationMs}`);
+      throw new Error(`HitstopClock.request needs finite ms >= 0, got ${durationMs}`);
     }
     if (durationMs > this.remainingMs) this.remainingMs = durationMs;
   }
 
   /**
-   * Ăn `realDeltaMs` thời gian thật, trả về **thời gian mô phỏng** được chạy
-   * trong frame này (0 khi vừa đóng băng hết frame).
+   * Consume `realDeltaMs` of real time and return the **simulation time** that runs
+   * in this frame (0 when the freeze just covered the whole frame).
    */
   step(realDeltaMs: number): number {
     if (!Number.isFinite(realDeltaMs) || realDeltaMs < 0) {
-      throw new Error(`HitstopClock.step cần deltaMs hữu hạn >= 0, nhận ${realDeltaMs}`);
+      throw new Error(`HitstopClock.step needs finite deltaMs >= 0, got ${realDeltaMs}`);
     }
     if (this.remainingMs <= 0) return realDeltaMs;
 
     const consumed = Math.min(this.remainingMs, realDeltaMs);
     this.remainingMs -= consumed;
-    // Đóng băng hết frame này; frame sau chạy tiếp với phần chưa bị "ăn".
+    // Freeze for this whole frame; the next frame runs with the part not "eaten".
     return realDeltaMs - consumed;
   }
 
-  /** Bỏ mọi đóng băng đang chờ (đổi phòng, về menu). */
+  /** Drop every pending freeze (room change, back to menu). */
   reset(): void {
     this.remainingMs = 0;
   }

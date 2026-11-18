@@ -34,7 +34,7 @@ function roomForChapter(chapter: number) {
 }
 
 describe('chapter scaling', () => {
-  it('máu enemy tăng theo chapter đúng hệ số trong tuning.json', () => {
+  it('enemy health rises per chapter by the factors in tuning.json', () => {
     for (const role of ['chaser', 'caster', 'tank'] as const) {
       for (const chapter of [1, 2, 3]) {
         const base = maxHealthFor(role, false);
@@ -46,14 +46,14 @@ describe('chapter scaling', () => {
     }
   });
 
-  it('sát thương enemy không scale theo chapter (độ khó đến từ số lượng/elite)', () => {
+  it('enemy damage does not scale per chapter (difficulty comes from count/elites)', () => {
     for (const chapter of [1, 2, 3]) {
       expect(contactDamageFor('tank', false, undefined, chapter)).toBe(2);
       expect(contactDamageFor('chaser', false, undefined, chapter)).toBe(1);
     }
   });
 
-  it('spawnWave dùng chapter của phòng, không phải hằng số', () => {
+  it('spawnWave uses the room chapter, not a constant', () => {
     const chapterOne = spawnWave(roomForChapter(1), 0);
     const chapterThree = spawnWave(roomForChapter(3), 0);
 
@@ -65,17 +65,17 @@ describe('chapter scaling', () => {
     ]);
   });
 
-  it('validator từ chối mảng scale sai độ dài hoặc <= 0', () => {
+  it('the validator rejects a scale array of the wrong length or <= 0', () => {
     const raw = JSON.parse(JSON.stringify(TUNING_SOURCE)) as {
       chapters: { enemyHealthMultipliers: number[] };
     };
     raw.chapters.enemyHealthMultipliers = [1, 1.2];
-    expect(() => parseTuning(raw)).toThrow(/đúng 3 phần tử|3 phần tử/);
+    expect(() => parseTuning(raw)).toThrow(/exactly 3 elements|3 elements/);
 
     const negative = JSON.parse(JSON.stringify(TUNING_SOURCE)) as {
       chapters: { enemyDamageMultipliers: number[] };
     };
     negative.chapters.enemyDamageMultipliers = [1, 0, 1];
-    expect(() => parseTuning(negative)).toThrow(/hữu hạn > 0/);
+    expect(() => parseTuning(negative)).toThrow(/finite number > 0/);
   });
 });

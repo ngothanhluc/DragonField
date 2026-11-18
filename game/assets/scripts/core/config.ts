@@ -1,46 +1,46 @@
 /**
- * Số liệu combat. Đây là nguồn duy nhất; không hardcode số trong component.
- * Xem docs/gdd.md §3.
+ * Combat numbers. This is the only source; never hardcode numbers in a component.
+ * See docs/gdd.md §3.
  *
- * Số thật nằm trong `game/config/tuning.json`, được `scripts/gen-tuning.ts`
- * biên dịch sang `enemies/tuning.generated.ts`, và `enemies/tuning.ts`
- * validate; file này chỉ giữ **tên + kiểu** để phần còn lại của code import
- * một interface ổn định. Đổi balance = sửa JSON + `bun run gen`, không sửa file này.
+ * The real numbers live in `game/config/tuning.json`, which `scripts/gen-tuning.ts`
+ * compiles into `enemies/tuning.generated.ts` and `enemies/tuning.ts` validates;
+ * this file only keeps **names + types** so the rest of the code imports a stable
+ * interface. Changing balance = edit the JSON + `bun run gen`, not this file.
  */
 import { COMBAT_TUNING } from './enemies/tuning';
 
 export interface CombatConfig {
-  /** Số phát bắn mỗi giây ở trạng thái cơ bản. */
+  /** Shots per second in the base state. */
   readonly fireRatePerSecond: number;
-  /** Tốc độ đạn, tính theo tile/giây (1 tile = 16 px). */
+  /** Projectile speed, in tiles/second (1 tile = 16 px). */
   readonly projectileSpeedTilesPerSecond: number;
-  /** Sát thương mỗi viên đạn cơ bản. */
+  /** Damage per base projectile. */
   readonly damage: number;
-  /** Số viên đạn mỗi phát ở trạng thái cơ bản. */
+  /** Projectiles per shot in the base state. */
   readonly projectiles: number;
-  /** Tốc chạy cơ bản, tile/giây. */
+  /** Base movement speed, tiles/second. */
   readonly moveSpeedTilesPerSecond: number;
-  /** Số tim tối đa của player. */
+  /** Player's maximum hearts. */
   readonly playerMaxHearts: number;
-  /** Thời gian bất tử sau khi trúng đòn, ms. */
+  /** Invulnerability time after taking a hit, ms. */
   readonly invulnerabilityMs: number;
-  /** Sát thương khi enemy chạm player. */
+  /** Damage when an enemy touches the player. */
   readonly contactDamage: number;
-  /** Tầm auto-aim, tính theo tile. */
+  /** Auto-aim range, in tiles. */
   readonly targetingRangeTiles: number;
-  /** Quãng đường knockback player khi trúng đòn, tile. */
+  /** Player knockback distance when hit, tiles. */
   readonly playerKnockbackDistanceTiles: number;
-  /** Thời gian đi hết quãng knockback player, ms. */
+  /** Time to travel the full player knockback distance, ms. */
   readonly playerKnockbackDurationMs: number;
-  /** Quãng đường knockback enemy khi trúng đạn, tile. */
+  /** Enemy knockback distance when hit by a projectile, tiles. */
   readonly enemyKnockbackDistanceTiles: number;
-  /** Thời gian đi hết quãng knockback enemy, ms. */
+  /** Time to travel the full enemy knockback distance, ms. */
   readonly enemyKnockbackDurationMs: number;
-  /** Hitstop toàn cục khi đạn player trúng enemy, ms (ADR-008: 70). */
+  /** Global hitstop when a player projectile hits an enemy, ms (ADR-008: 70). */
   readonly enemyHitstopMs: number;
-  /** Thời gian enemy đứng yên sau khi trúng đạn, ms (ADR-008: 150). */
+  /** Time an enemy stands still after being hit by a projectile, ms (ADR-008: 150). */
   readonly enemyStaggerMs: number;
 }
 
-/** Số liệu combat cơ bản, đọc từ `config/tuning.json` (không chép lại số). */
+/** Base combat numbers, read from `config/tuning.json` (never duplicate the numbers). */
 export const DEFAULT_COMBAT: CombatConfig = COMBAT_TUNING;

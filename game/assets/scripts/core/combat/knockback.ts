@@ -1,60 +1,60 @@
 /**
- * Knockback: đẩy actor ra xa nguồn sát thương trong một khoảng thời gian ngắn.
+ * Knockback: push an actor away from the damage source over a short time.
  *
- * Hàm thuần, toạ độ tile unit (y hướng xuống), cùng hệ với `LevelData`. Không
- * import `cc`, không đọc thời gian — caller truyền `deltaMs` và giữ state.
+ * Pure functions, tile-unit coordinates (y pointing down), same system as `LevelData`. No
+ * `cc` import, no clock reads — the caller passes `deltaMs` and keeps the state.
  *
- * Hai bước tách rời để adapter kiểm soát vòng đời:
+ * Two separate steps so the adapter controls the lifecycle:
  *
- * 1. `startKnockback()` chốt **hướng** tại thời điểm trúng đòn. Nguồn trùng vị
- *    trí actor (không có hướng xác định) trả `null` thay vì chia cho 0.
- * 2. `stepKnockback()` mỗi frame: đi theo hướng đó, dừng ngay trước vật cản và
- *    không bao giờ ra ngoài phòng. Trả state kế tiếp, `null` khi đã hết thời gian
- *    hoặc bị chặn.
+ * 1. `startKnockback()` locks the **direction** at the moment of the hit. A source at the same
+ *    position as the actor (no defined direction) returns `null` instead of dividing by 0.
+ * 2. `stepKnockback()` each frame: move along that direction, stop just before an obstacle and
+ *    never leave the room. Returns the next state, `null` when the time is up
+ *    or it is blocked.
  *
- * Vì sao quét theo mẫu nhỏ thay vì chỉ kiểm tra điểm cuối: knockback một frame
- * có thể dài hơn vật cản mỏng nhất (1 tile), và "dừng ở điểm cuối hợp lệ" sẽ
- * teleport xuyên qua cột. Bước mẫu `KNOCKBACK_SAMPLE_STEP_TILES` nhỏ hơn nhiều
- * lần chiều dày đó.
+ * Why sample along the path instead of only checking the end point: one knockback frame
+ * can be longer than the thinnest obstacle (1 tile), and "stop at the last valid end point" would
+ * teleport through a pillar. The sample step `KNOCKBACK_SAMPLE_STEP_TILES` is many times
+ * smaller than that thickness.
  */
 import type { LevelData } from '../level/level-data';
 import { obstacleAt } from '../level/level-data';
 import type { Vec2 } from '../math/vec2';
 
-/** Khoảng cách + thời gian của một cú đẩy. */
+/** Distance + duration of one push. */
 export interface KnockbackConfig {
-  /** Tổng quãng đường, tile. */
+  /** Total distance, tiles. */
   readonly distanceTiles: number;
-  /** Thời gian đi hết quãng đường, ms. */
+  /** Time to cover the distance, ms. */
   readonly durationMs: number;
 }
 
-/** Cú đẩy đang chạy. `direction` là vector đơn vị, bất biến suốt cú đẩy. */
+/** The running push. `direction` is a unit vector, constant for the whole push. */
 export interface KnockbackState {
   readonly direction: Vec2;
-  /** Tốc độ không đổi, tile/giây. */
+  /** Constant speed, tiles/second. */
   readonly speedTilesPerSecond: number;
-  /** Thời gian còn lại, ms; luôn > 0 với state còn sống. */
+  /** Remaining time, ms; always > 0 while the state is alive. */
   readonly remainingMs: number;
 }
 
 export interface KnockbackStepResult {
   readonly position: Vec2;
-  /** `null` khi cú đẩy đã xong hoặc vừa bị vật cản/chạm tường chặn. */
+  /** `null` when the push finished or was just blocked by an obstacle/wall. */
   readonly state: KnockbackState | null;
 }
 
-/** Bước lấy mẫu khi quét đường đẩy, tile. Nhỏ hơn 1 tile để không xuyên cột. */
+/** Sampling step when sweeping the push path, tiles. Less than 1 tile so it cannot pass a pillar. */
 export const KNOCKBACK_SAMPLE_STEP_TILES = 0.05;
 
-/** Dưới ngưỡng này coi như hai điểm trùng nhau (không có hướng). */
+/** Below this threshold the two points count as coincident (no direction). */
 const MIN_SOURCE_DISTANCE_TILES = 1e-9;
 
 /**
- * Bắt đầu cú đẩy từ `source` tới `position` (đẩy **ra xa** nguồn).
+ * Start a push from `source` toward `position` (pushing **away** from the source).
  *
- * Trả `null` khi cấu hình không hợp lệ (khoảng cách/thời gian <= 0) hoặc nguồn
- * trùng vị trí actor — mọi trường hợp đó đều không có hướng đẩy xác định.
+ * Returns `null` when the config is invalid (distance/duration <= 0) or the source
+ * coincides with the actor — none of those has a defined push direction.
  */
 export function startKnockback(
   position: Vec2,
@@ -76,10 +76,10 @@ export function startKnockback(
 }
 
 /**
- * Một frame của cú đẩy. Không sửa `position` hay `state` đầu vào.
+ * One frame of the push. Never mutates `position` or the input `state`.
  *
- * `marginTiles` là lề tường mà tâm actor phải giữ (player/enemy dùng
- * `ROOM_EDGE_MARGIN_TILES`); mặc định 0 = chỉ cần nằm trong phòng.
+ * `marginTiles` is the wall margin the actor centre must keep (player/enemy use
+ * `ROOM_EDGE_MARGIN_TILES`); default 0 = only needs to stay inside the room.
  */
 export function stepKnockback(
   position: Vec2,
@@ -109,7 +109,7 @@ export function stepKnockback(
     };
 
     if (next.x < minX || next.x > maxX || next.y < minY || next.y > maxY) {
-      // Chạm tường: đặt sát mép (nếu mép không nằm trong vật cản) rồi dừng.
+      // Hit a wall: place flush against the edge (if the edge is not inside an obstacle) and stop.
       const edge: Vec2 = {
         x: clamp(next.x, minX, maxX),
         y: clamp(next.y, minY, maxY),
@@ -119,7 +119,7 @@ export function stepKnockback(
     }
 
     if (obstacleAt(level, next) !== null) {
-      // Giữ điểm hợp lệ cuối cùng, không xuyên vật cản.
+      // Keep the last valid point, do not pass through an obstacle.
       return { position: current, state: null };
     }
 

@@ -1,25 +1,25 @@
 /**
- * Hitbox quét (swept) cho đòn lao của brute/tank và cho đạn.
+ * Swept hitbox for brute/tank charges and for projectiles.
  *
- * Vì sao cần quét thay vì chỉ so vị trí cuối frame: tank lao 7 tile/s, ở frame
- * xấu nhất (adapter kẹp `MAX_STEP_MS = 50`) nó đi 0.35 tile. Cộng bán kính hai
- * bên (0.4 + 0.25) thì chưa xuyên qua được player, nhưng con số đó phụ thuộc
- * tuning và trần frame — đổi một trong hai là hitbox bắt đầu trượt qua người
- * chơi mà không ai thấy. Quét đoạn đường đi loại bỏ hẳn giả định đó, và cho phép
- * test đúng câu hỏi "cú lao có trúng không" bằng số học thuần.
+ * Why a sweep instead of only comparing end-of-frame positions: a tank charges at 7 tiles/s, and in the
+ * worst frame (adapter clamps `MAX_STEP_MS = 50`) it covers 0.35 tiles. Adding both radii
+ * (0.4 + 0.25) still cannot tunnel through the player, but that number depends on
+ * tuning and the frame cap — change either and the hitbox starts slipping through the
+ * player with nobody noticing. Sweeping the travelled segment removes that assumption and lets
+ * tests answer "did the charge hit" with pure arithmetic.
  *
- * Hình học: khoảng cách nhỏ nhất từ tâm mục tiêu tới đoạn `from -> to`; trúng khi
+ * Geometry: minimum distance from the target centre to the `from -> to` segment; a hit when
  * `<= reach + targetRadius`.
  */
 import { distanceSquared, type Vec2 } from '../math/vec2';
 
 /**
- * Đoạn `from -> to` có đi qua hình tròn (`target`, `targetRadiusTiles`) không,
- * với vật di chuyển có bán kính `reachTiles`.
+ * Does the `from -> to` segment pass through the circle (`target`, `targetRadiusTiles`)
+ * for a moving object of radius `reachTiles`?
  *
- * - `from === to` thì chỉ còn phép so hai hình tròn tại một điểm.
- * - Chạm đúng một điểm vẫn tính là trúng (biên đóng), cùng quy ước `hitsCircle`.
- * - `reachTiles` mặc định 0: đoạn đường có cắt hình tròn không.
+ * - `from === to` reduces to comparing two circles at one point.
+ * - Touching at exactly one point still counts as a hit (closed boundary), same convention as `hitsCircle`.
+ * - `reachTiles` defaults to 0: does the segment intersect the circle.
  */
 export function segmentHitsCircle(
   from: Vec2,
@@ -32,7 +32,7 @@ export function segmentHitsCircle(
   return closestPointDistanceSquared(from, to, target) <= reach * reach;
 }
 
-/** Bình phương khoảng cách từ `point` tới đoạn `from -> to`. */
+/** Squared distance from `point` to the `from -> to` segment. */
 export function closestPointDistanceSquared(from: Vec2, to: Vec2, point: Vec2): number {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -40,7 +40,7 @@ export function closestPointDistanceSquared(from: Vec2, to: Vec2, point: Vec2): 
 
   if (lengthSquared === 0) return distanceSquared(from, point);
 
-  // Chiếu point lên đường thẳng, kẹp về [0, 1] để lấy điểm gần nhất trên đoạn.
+  // Project the point onto the line, clamp to [0, 1] to get the nearest point on the segment.
   const raw = ((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSquared;
   const t = raw < 0 ? 0 : raw > 1 ? 1 : raw;
   const nearest: Vec2 = { x: from.x + dx * t, y: from.y + dy * t };

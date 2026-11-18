@@ -1,24 +1,24 @@
 /**
- * "Đòn thêm" của enemy elite (M3) và các hệ số hình ảnh của bản elite.
+ * Elite enemy "extra attacks" (M3) and the visual multipliers of the elite version.
  *
- * GDD §4 nói elite chỉ đổi máu/sát thương; milestone M3 nâng lên **tint + scale +
- * 1 đòn thêm mỗi vai trò**. File này là chỗ duy nhất mô tả đòn thêm đó ở dạng
- * thuần số học, để cả adapter Cocos lẫn test đọc cùng một định nghĩa:
+ * GDD §4 says elites only change health/damage; milestone M3 raises that to **tint + scale +
+ * 1 extra attack per role**. This file is the single place describing that extra attack
+ * in pure arithmetic, so both the Cocos adapter and tests read the same definition:
  *
- * | Vai trò | Thường | Elite |
+ * | Role   | Regular       | Elite |
  * |---|---|---|
- * | chaser | chỉ chạm người | thêm cú **lao** (telegraph → charge ngắn) |
- * | caster | 1 viên đạn | **loạt 3 viên** toả quạt |
- * | tank | 1 cú lao | **2 cú lao** liên tiếp, cú sau chốt hướng mới |
+ * | chaser | contact only  | adds a **pounce** (telegraph → short charge) |
+ * | caster | 1 projectile  | a **3-projectile fan** volley |
+ * | tank   | 1 charge      | **2 charges** in a row, the second locking a new direction |
  *
- * Số liệu nằm trong `config/tuning.json` (`enemies.elite.*`), không hardcode.
- * Cú lao của elite chaser và cú lao thứ hai của elite tank nằm trong
- * `behaviours.ts` (chúng là action, không phải loạt đạn).
+ * The numbers live in `config/tuning.json` (`enemies.elite.*`), never hardcoded.
+ * The elite chaser pounce and the elite tank's second charge live in
+ * `behaviours.ts` (they are actions, not volleys).
  */
 import type { EnemyRole } from '../level/level-data';
 import { ENEMY_TUNING, type EnemiesTuning } from './tuning';
 
-/** Góc lệch mặc định giữa hai viên kề của elite caster, radian. */
+/** Default angular offset between two adjacent elite caster projectiles, radians. */
 export function eliteVolleyAngles(
   role: EnemyRole,
   elite: boolean,
@@ -28,7 +28,7 @@ export function eliteVolleyAngles(
   if (!elite) return [0];
 
   const { volleyShots, volleySpreadRadians } = tuning.elite.caster;
-  // Lẻ để luôn có một viên đi thẳng vào player; chẵn vẫn chạy nhưng lệch tâm.
+  // Odd so one projectile always flies straight at the player; even still works but is off-centre.
   const half = (volleyShots - 1) / 2;
   const angles: number[] = [];
   for (let index = 0; index < volleyShots; index += 1) {
@@ -37,12 +37,12 @@ export function eliteVolleyAngles(
   return angles;
 }
 
-/** Scale node của elite so với bản thường (GDD §4: 1.15). */
+/** Elite node scale relative to the regular version (GDD §4: 1.15). */
 export function eliteScale(tuning: EnemiesTuning = ENEMY_TUNING): number {
   return tuning.elite.scale;
 }
 
-/** Số cú lao **thêm** sau cú đầu của elite tank. */
+/** Number of **extra** charges after the first for an elite tank. */
 export function eliteExtraCharges(
   role: EnemyRole,
   elite: boolean,
