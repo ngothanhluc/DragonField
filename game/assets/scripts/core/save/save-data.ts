@@ -10,7 +10,7 @@
 import { UPGRADE_TRACKS, createDefaultUpgrades, maxLevelFor } from '../meta/upgrades';
 import type { UpgradeTrack } from '../meta/upgrades';
 import { CHAPTERS_PER_RUN } from '../run/run-state';
-import { DEFAULT_SETTINGS, applySettings } from './settings';
+import { DEFAULT_SETTINGS, applySettings, toPlainSettings } from './settings';
 import type { Settings } from './settings';
 
 export const SAVE_VERSION = 1;
@@ -85,6 +85,24 @@ function readInteger(
   if (value < min || value > max) {
     problems.add(path, `phải nằm trong ${min}..${max}, nhận ${value}`);
     return fallback;
+  }
+  return value;
+}
+
+/**
+ * Đọc cờ boolean tuỳ chọn của settings: thiếu → `undefined` (lấy mặc định ở
+ * `applySettings`), sai kiểu → ghi lỗi `settings.<field>`.
+ */
+function readFlag(
+  source: Record<string, unknown>,
+  field: string,
+  problems: ProblemList,
+): boolean | undefined {
+  const value = source[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') {
+    problems.add(`settings.${field}`, `phải là boolean, nhận ${describeValue(value)}`);
+    return undefined;
   }
   return value;
 }
@@ -174,7 +192,7 @@ export function parseSaveData(raw: unknown): SaveData {
   if (!isRecord(rawSettings)) {
     problems.add(
       'settings',
-      `phải là object { volume, fullscreen }, nhận ${describeValue(rawSettings)}`,
+      `phải là object { volume, fullscreen, screenShake, damageNumbers }, nhận ${describeValue(rawSettings)}`,
     );
   } else {
     const volume = rawSettings.volume;
@@ -191,11 +209,20 @@ export function parseSaveData(raw: unknown): SaveData {
       );
     }
 
-    // Chỉ dùng giá trị đọc được khi cả hai field hợp lệ; nếu không, giữ mặc định.
-    settings = applySettings({
-      ...(volumeOk ? { volume } : {}),
-      ...(typeof fullscreen === 'boolean' ? { fullscreen } : {}),
-    });
+    // Cờ accessibility thêm ở ticket #2: save cũ (v1 trước ticket) thiếu field thì
+    // lấy mặc định — không bump SAVE_VERSION. Chỉ báo lỗi khi có mà sai kiểu.
+    const screenShake = readFlag(rawSettings, 'screenShake', problems);
+    const damageNumbers = readFlag(rawSettings, 'damageNumbers', problems);
+
+    // Chỉ dùng giá trị đọc được khi field hợp lệ; nếu không, giữ mặc định.
+    settings = toPlainSettings(
+      applySettings({
+        ...(volumeOk ? { volume } : {}),
+        ...(typeof fullscreen === 'boolean' ? { fullscreen } : {}),
+        ...(screenShake !== undefined ? { screenShake } : {}),
+        ...(damageNumbers !== undefined ? { damageNumbers } : {}),
+      }),
+    );
   }
 
   problems.throwIfAny('SaveData không hợp lệ');
@@ -227,7 +254,7 @@ export function serializeSave(data: SaveData): string {
     },
     chaptersUnlocked: valid.chaptersUnlocked,
     best: { chapter: valid.best.chapter, room: valid.best.room },
-    settings: { volume: valid.settings.volume, fullscreen: valid.settings.fullscreen },
+    settings: toPlainSettings(valid.settings),
   });
 }
 
@@ -328,6 +355,8 @@ function migrateSettings(raw: unknown, fallback: Settings): unknown {
   return {
     volume: pick(raw, 'volume', fallback.volume),
     fullscreen: pick(raw, 'fullscreen', fallback.fullscreen),
+    screenShake: pick(raw, 'screenShake', fallback.screenShake),
+    damageNumbers: pick(raw, 'damageNumbers', fallback.damageNumbers),
   };
 }
 

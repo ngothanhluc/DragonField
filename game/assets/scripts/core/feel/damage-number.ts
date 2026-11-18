@@ -1,4 +1,7 @@
-/** Số damage bay lên (ticket #2). Stub — executor implement. Hợp đồng: tests/core/juice.test.ts. */
+/**
+ * Số damage bay lên (ticket #2).
+ * Hợp đồng: xem tests/core/juice.test.ts.
+ */
 
 export interface DamagePopupOptions {
   readonly lifetimeMs: number;
@@ -15,10 +18,32 @@ export interface DamagePopupState {
   readonly scale: number;
 }
 
-export function damagePopupState(_elapsedMs: number, _options: DamagePopupOptions): DamagePopupState {
-  throw new Error('chưa implement');
+/** Crit to hơn số thường để đọc bằng mắt giữa đám đông. */
+export const CRIT_POPUP_SCALE = 1.4;
+
+/**
+ * Trạng thái popup sau `elapsedMs`: bay lên đều theo thời gian, mờ dần tuyến
+ * tính, crit to hơn chút. Hết đời (hoặc quá) thì alpha 0, đã bay đủ `riseTiles`.
+ */
+export function damagePopupState(
+  elapsedMs: number,
+  options: DamagePopupOptions,
+): DamagePopupState {
+  const lifetime = options.lifetimeMs;
+  const t =
+    Number.isFinite(lifetime) && lifetime > 0
+      ? Math.min(1, Math.max(0, (Number.isFinite(elapsedMs) ? elapsedMs : 0) / lifetime))
+      : 1;
+
+  return {
+    rise: options.riseTiles * t,
+    alpha: 1 - t,
+    scale: options.crit ? CRIT_POPUP_SCALE : 1,
+  };
 }
 
-export function formatDamage(_amount: number, _crit: boolean): string {
-  throw new Error('chưa implement');
+/** Số hiển thị: làm tròn về số nguyên, crit thêm `!`. */
+export function formatDamage(amount: number, crit: boolean): string {
+  const rounded = Number.isFinite(amount) ? Math.round(amount) : 0;
+  return crit ? `${rounded}!` : String(rounded);
 }
