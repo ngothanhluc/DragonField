@@ -57,6 +57,8 @@ const HEART_FULL_INDEX = 4;
 const HEART_SPACING_PX = 18;
 
 const TEXT_COLOR = new CocosColor(255, 255, 255, 255);
+/** Outline behind the HUD stack digit so it reads on any icon colour. */
+const STACK_OUTLINE_COLOR = new CocosColor(12, 10, 16, 255);
 const LABEL_FONT_SIZE = 12;
 
 /** Rarity colours shared by skill cards and the HUD skill row. */
@@ -260,7 +262,7 @@ export class Hud extends Component {
       slot.id = entry.def.id;
       slot.root.active = true;
       slot.stack.string = entry.stacks > 1 ? String(entry.stacks) : '';
-      slot.stack.color = color;
+      slot.stack.color = TEXT_COLOR;
       slot.fallback.string = skillAbbreviation(entry.def);
       slot.fallback.color = color;
       drawSkillFrame(slot.frame, color);
@@ -375,6 +377,12 @@ export class Hud extends Component {
       const stack = createLabel(root, 'stack', '');
       stack.fontSize = 9;
       stack.lineHeight = 10;
+      // White with a dark 1 px outline: a rarity-coloured digit on a same-colour icon (blue "2" on
+      // Crit Eye, grey "3" on Sharpen) is unreadable. Rarity colour already lives on the frame.
+      stack.color = TEXT_COLOR;
+      stack.enableOutline = true;
+      stack.outlineColor = STACK_OUTLINE_COLOR;
+      stack.outlineWidth = 1;
       // Bottom-right corner of the icon; a single digit never reaches the next slot.
       stack.node.setPosition(SKILL_ICON_SIZE_PX / 2 - 3, -SKILL_ICON_SIZE_PX / 2 + 4, 0);
       const stackTransform: UITransform | null = stack.node.getComponent(CocosUITransform);
