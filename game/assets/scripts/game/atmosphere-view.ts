@@ -292,9 +292,10 @@ export class AtmosphereLayers extends Component {
         const areas = this.rippleAreas;
         if (areas.length > 0) {
           const area = areas[rng.int(areas.length)] ?? areas[0]!;
-          particle.x = area.x + rng.next() * Math.max(0.5, area.width);
+          // The 1×1 ripple sprite must stay fully inside the water: keep half a tile off each edge.
+          particle.x = area.x + 0.5 + rng.next() * Math.max(0, area.width - 1);
           // Tile y (down) → world y (up): the ripple sits on the water surface.
-          particle.y = ROOM_ROWS - (area.y + rng.next() * Math.max(0.5, area.height));
+          particle.y = ROOM_ROWS - (area.y + 0.5 + rng.next() * Math.max(0, area.height - 1));
         } else {
           particle.x = 1 + rng.next() * (ROOM_COLS - 2);
           particle.y = 1 + rng.next() * (ROOM_ROWS - 2);
