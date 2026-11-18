@@ -28,10 +28,20 @@ import {
   Vec2 as EngineVec2,
 } from 'cc';
 import type { TiledMapAsset as CocosTiledMapAsset } from 'cc';
-import type { LevelData, Obstacle, ObstacleKind } from '../core/level/level-data';
+import type { LevelData, Obstacle } from '../core/level/level-data';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
+import {
+  obstacleSheets,
+  obstacleVisual,
+  type TileRect,
+} from '../core/level/obstacle-visuals';
 import type { Vec2 } from '../core/math/vec2';
 import { loadTexture } from './assets/texture-cache';
+
+// Kept re-exported for the UI modules that slice their own frames with `TileRect`
+// and for `bootstrap`'s preload list; the definitions now live in core.
+export { obstacleSheets };
+export type { TileRect };
 
 /**
  * `cc` is an any module in this repo (see `types/cc.d.ts`), so import names only work in
@@ -48,73 +58,6 @@ type UITransform = InstanceType<typeof CocosUITransform>;
 
 /** 1 tile = 1 world unit (the milestone's world convention). */
 export const TILE_WORLD_UNITS = 1;
-
-interface ObstacleVisual {
-  readonly sheet: string;
-  readonly rect: TileRect;
-  /** `true` = repeat the tile across the rect; `false` = stretch the frame (32×32 boulder) 1:1 over 2×2. */
-  readonly tile: boolean;
-}
-
-const BOUNDS = {
-  boulder: { x: 240, y: 224, width: 32, height: 32 },
-  smallRock: { x: 256, y: 192, width: 16, height: 16 },
-  natureWall: { x: 272, y: 208, width: 16, height: 16 },
-  crate: { x: 112, y: 0, width: 16, height: 16 },
-  stone: tileRectFromGid(33, 22),
-  stoneAlt: tileRectFromGid(33, 23),
-  hole: tileRectFromGid(11, 13),
-} as const satisfies Record<string, TileRect>;
-
-const OBSTACLE_VISUALS: Readonly<
-  Record<number, Readonly<Record<ObstacleKind | 'pillarSmall', ObstacleVisual>>>
-> = {
-  1: {
-    pillar: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
-    pillarSmall: { sheet: 'resources/art/tilesets/TilesetElement.png', rect: BOUNDS.crate, tile: true },
-    wall: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.natureWall, tile: true },
-    pit: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
-  },
-  2: {
-    pillar: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
-    pillarSmall: { sheet: 'resources/art/tilesets/TilesetElement.png', rect: BOUNDS.crate, tile: true },
-    wall: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.natureWall, tile: true },
-    pit: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
-  },
-  3: {
-    pillar: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
-    pillarSmall: { sheet: 'resources/art/tilesets/TilesetElement.png', rect: BOUNDS.crate, tile: true },
-    wall: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.natureWall, tile: true },
-    pit: { sheet: 'resources/art/tilesets/TilesetNature.png', rect: BOUNDS.boulder, tile: false },
-  },
-};
-
-
-/** Pixel cell of a gid (1-based) in a sheet with `columns` columns. */
-export function tileRectFromGid(columns: number, gid: number): TileRect {
-  const index = Math.max(0, gid - 1);
-  return {
-    x: (index % columns) * 16,
-    y: Math.floor(index / columns) * 16,
-    width: 16,
-    height: 16,
-  };
-}
-
-/** Every obstacle sheet that must be preloaded for a chapter. */
-export function obstacleSheets(chapter: number): string[] {
-  const visuals = OBSTACLE_VISUALS[chapter] ?? OBSTACLE_VISUALS[1]!;
-  return Array.from(new Set(Object.values(visuals).map((visual) => visual.sheet)));
-}
-
-
-/** A pixel cell in a sheet, **top-left** origin (same convention as `manifest.frameRect`). */
-export interface TileRect {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
 
 const OBSTACLE_KEYS = ['pillar', 'pillarSmall', 'wall', 'pit'] as const;
 
@@ -240,8 +183,7 @@ export function buildRoom(
 
 /** Obstacles: one tiled sprite per `Obstacle`, exactly its tile size. */
 async function buildObstacles(root: Node, level: LevelData): Promise<void> {
-  const visuals = OBSTACLE_VISUALS[level.chapter] ?? OBSTACLE_VISUALS[1]!;
-  const sheets = Array.from(new Set(Object.values(visuals).map((visual) => visual.sheet)));
+  const sheets = obstacleSheets(level.chapter);
   const textures = await Promise.all(sheets.map((sheet) => loadTexture(sheet)));
   if (!root.isValid) return;
 
@@ -253,7 +195,7 @@ async function buildObstacles(root: Node, level: LevelData): Promise<void> {
 
   const frames = new Map<string, { frame: SpriteFrame; tile: boolean }>();
   for (const kind of OBSTACLE_KEYS) {
-    const visual = visuals[kind];
+    const visual = obstacleVisual(level.chapter, kind);
     const texture = textureOf.get(visual.sheet);
     if (texture !== undefined) {
       frames.set(kind, { frame: sliceFrame(texture, visual.rect), tile: visual.tile });
