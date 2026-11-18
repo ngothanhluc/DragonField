@@ -51,6 +51,13 @@ const BUTTON_BORDERS = { left: 4, right: 4, top: 3, bottom: 3 } as const;
 const PANEL_BORDERS = { left: 4, right: 4, top: 4, bottom: 4 } as const;
 const PANEL_TINT = new CocosColor(150, 110, 90, 255);
 
+/**
+ * Width of the centred menu column behind which the living room is drawn (#8). Narrow enough that
+ * the room stays visible on both sides at every supported canvas; shared with the backdrop's
+ * player-keep-out so the idle ninja never stands under the panel.
+ */
+export const MENU_COLUMN_WIDTH = 240;
+
 
 export const MENU_TITLE_COLOR = new CocosColor(255, 230, 120, 255);
 export const MENU_TEXT_COLOR = new CocosColor(238, 238, 238, 255);
@@ -185,6 +192,12 @@ export interface MenuScreenOptions {
   readonly initialFocus?: number;
   /** ←/→ calls this instead of moving focus (volume row). */
   readonly onAdjust?: (index: number, delta: number) => void;
+  /** Alpha of the dark backdrop; screens with a living room behind them use a light dim. */
+  readonly backdropAlpha?: number;
+  /** Panel width in design px; a narrow centred column lets the room show on both sides. */
+  readonly panelWidth?: number;
+  /** Stretch the panel to the full screen height (the narrow column of the title screen). */
+  readonly panelFullHeight?: boolean;
 }
 
 /** Visible UI size (design px) — every screen uses this exact source. */
@@ -211,7 +224,7 @@ export async function buildMenuScreen(options: MenuScreenOptions): Promise<MenuS
   root.layer = Layers.Enum.UI_2D;
   root.parent = options.parent;
 
-  createScreenBackdrop(root);
+  createScreenBackdrop(root, options.backdropAlpha ?? 238);
 
   const buttonWidth = options.buttonWidth ?? 300;
   const buttonHeight = options.buttonHeight ?? 34;
@@ -267,9 +280,11 @@ export async function buildMenuScreen(options: MenuScreenOptions): Promise<MenuS
   hint.node.setPosition(0, -size.height / 2 + 12, 0);
 
   // 9-slice panel behind the content (after the backdrop but before the labels).
-  const panelHeight = Math.max(80, size.height / 2 - 8 - y + 20);
-  const panel = createMenuPanel(root, `${options.name}-panel`, frames.panel, Math.min(480, size.width - 24), panelHeight);
-  panel.setPosition(0, (size.height / 2 - 8 + y - 20) / 2, 0);
+  const panelWidth = options.panelWidth ?? Math.min(480, size.width - 24);
+  const fullHeight = options.panelFullHeight === true;
+  const panelHeight = fullHeight ? size.height - 8 : Math.max(80, size.height / 2 - 8 - y + 20);
+  const panel = createMenuPanel(root, `${options.name}-panel`, frames.panel, panelWidth, panelHeight);
+  panel.setPosition(0, fullHeight ? 0 : (size.height / 2 - 8 + y - 20) / 2, 0);
   panel.setSiblingIndex(1);
 
   const focus = new FocusList({
@@ -392,6 +407,8 @@ export interface FocusListOptions {
   readonly onBack?: () => void;
   readonly onAdjust?: (index: number, delta: number) => void;
   readonly initialFocus?: number;
+  /** Fired whenever the focus changes, including the initial focus set by the constructor. */
+  readonly onFocus?: (index: number) => void;
 }
 
 /**
@@ -400,15 +417,18 @@ export interface FocusListOptions {
  */
 export class FocusList {
   private index = 0;
+  private initialised = false;
   private readonly handles: readonly MenuButtonHandle[];
   private readonly onBack: (() => void) | undefined;
   private readonly onAdjust: ((index: number, delta: number) => void) | undefined;
+  private readonly onFocus: ((index: number) => void) | undefined;
   private readonly onKey: (event: KeyboardEvent) => void;
 
   constructor(options: FocusListOptions) {
     this.handles = options.handles;
     this.onBack = options.onBack;
     this.onAdjust = options.onAdjust;
+    this.onFocus = options.onFocus;
 
     this.handles.forEach((handle, index) => {
       handle.node.on(CocosNode.EventType.MOUSE_ENTER, () => this.focus(index));
@@ -432,9 +452,12 @@ export class FocusList {
   focus(index: number): void {
     if (this.handles.length === 0) return;
     const next = Math.min(Math.max(0, index), this.handles.length - 1);
-    if (next !== this.index) playSfx('ui-move');
+    const changed = !this.initialised || next !== this.index;
+    if (this.initialised && next !== this.index) playSfx('ui-move');
     this.index = next;
+    this.initialised = true;
     this.handles.forEach((handle, handleIndex) => handle.setFocused(handleIndex === next));
+    if (changed) this.onFocus?.(next);
   }
 
   private move(delta: number): void {

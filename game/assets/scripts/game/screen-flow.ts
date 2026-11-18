@@ -18,6 +18,7 @@ import type { SaveData } from '../core/save/save-data';
 import type { SaveRepository } from '../core/save/storage';
 import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
 import type { UpgradeTrack } from '../core/meta/upgrades';
+import { menuBackdropChapter, type MenuBackdropScreen } from '../core/view/menu-backdrop';
 import type { DebugScreenId, DebugStatus } from './debug-api';
 import type { MusicId } from './audio/audio-manager';
 import { commitRunEnd } from './run-end';
@@ -51,6 +52,10 @@ export interface ScreenFlowHost {
   setStatus(status: DebugStatus): void;
   /** Whether a chapter has level data in this build. */
   chapterAvailable(chapter: number): boolean;
+  /** Draw the living room of `chapter` behind the title / chapter select (#8). */
+  showMenuBackdrop(chapter: number): void;
+  /** Destroy every living-backdrop node (leaving the menu, entering a run). */
+  clearMenuBackdrop(): void;
   /** Start a run from chapter select (gate/status guard lives in bootstrap). */
   startChapter(chapter: number): void;
   /** Snapshot the current run; `null` when not in a run. */
@@ -76,6 +81,8 @@ export class ScreenFlow {
   private currentScreen: DebugScreenId = 'title';
   private settingsBack: (() => void) | null = null;
   private shopBack: (() => void) | null = null;
+  /** Chapter currently drawn behind title/chapter select; `null` when no backdrop is shown. */
+  private backdropChapter: number | null = null;
 
   constructor(private readonly host: ScreenFlowHost) {
     document.addEventListener('keydown', this.onKey, true);
@@ -96,6 +103,7 @@ export class ScreenFlow {
   destroy(): void {
     document.removeEventListener('keydown', this.onKey, true);
     this.clearMenu();
+    this.clearBackdrop();
   }
 
   get screenId(): DebugScreenId {
@@ -117,6 +125,26 @@ export class ScreenFlow {
     this.token += 1;
     this.clearMenu();
     return this.token;
+  }
+
+  /**
+   * Pick the room behind the menu (pure rule in `core/view/menu-backdrop.ts`) and show it.
+   * The adapter no-ops when the chapter is already drawn, so title ↔ chapter select keeps it.
+   */
+  private applyBackdrop(screen: MenuBackdropScreen, focusedChapter: number | null): void {
+    const chapter = menuBackdropChapter({
+      screen,
+      focusedChapter,
+      current: this.backdropChapter,
+      hasData: (candidate) => this.host.chapterAvailable(candidate),
+    });
+    this.backdropChapter = chapter;
+    this.host.showMenuBackdrop(chapter);
+  }
+
+  private clearBackdrop(): void {
+    this.backdropChapter = null;
+    this.host.clearMenuBackdrop();
   }
 
   async showTitle(): Promise<void> {
@@ -156,6 +184,7 @@ export class ScreenFlow {
     this.currentScreen = 'title';
     this.host.setStatus('menu');
     this.host.setMusic('title');
+    this.applyBackdrop('title', null);
     console.log(`[YokaiField] Title: gold ${save.gold}, unlocked ${save.chaptersUnlocked}/3.`);
   }
 
@@ -180,6 +209,10 @@ export class ScreenFlow {
       onSelect: (chapter) => this.host.startChapter(chapter),
       onBack: () => {
         void this.showTitle().catch((error: unknown) => this.host.fail(error));
+      },
+      onFocusChapter: (chapter) => {
+        if (token !== this.token) return;
+        this.applyBackdrop('chapter-select', chapter);
       },
     });
 
@@ -261,6 +294,7 @@ export class ScreenFlow {
   }
 
   private async showResult(data: RunResultData): Promise<void> {
+    this.clearBackdrop();
     const token = this.nextMenuToken();
     const current: RunResultData = {
       ...data,
@@ -297,6 +331,7 @@ export class ScreenFlow {
     const save = this.host.save();
     if (save === null) throw new Error('ScreenFlow: save not loaded');
 
+    this.clearBackdrop();
     this.shopBack = backTo;
     const token = this.nextMenuToken();
     const built = await buildShopScreen({
@@ -351,6 +386,7 @@ export class ScreenFlow {
     const save = this.host.save();
     if (save === null) throw new Error('ScreenFlow: save not loaded');
 
+    this.clearBackdrop();
     this.settingsBack = backTo;
     const token = this.nextMenuToken();
     const built = await buildSettingsScreen({
@@ -389,6 +425,7 @@ export class ScreenFlow {
   }
 
   private async showCredits(backTo: () => void): Promise<void> {
+    this.clearBackdrop();
     const token = this.nextMenuToken();
     const built = await buildCreditsScreen({ parent: this.host.uiRoot(), onBack: backTo });
 
@@ -405,6 +442,7 @@ export class ScreenFlow {
   async showPause(): Promise<void> {
     if (this.host.status() !== 'playing') return;
 
+    this.clearBackdrop();
     // Set the status before building: update() stops immediately, so sim clock/enemies/bullets/
     // telegraph/shield/i-frames all stand still while the pause screen loads textures.
     this.host.setStatus('paused');

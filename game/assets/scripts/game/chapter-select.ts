@@ -7,11 +7,16 @@
  *
  * Shares `screens/menu.ts` for button frames, visible focus and keys
  * ↑/↓/←/→ + Enter/Space + Esc.
+ *
+ * Since #8 a real room is drawn behind it (#8: the focused chapter's room, chapter 1 at first):
+ * the buttons stack vertically in a narrow opaque column with a light dim, so the room and its
+ * critters stay visible on both sides. `onFocusChapter` tells ScreenFlow which room to show.
  */
 import { Layers, Node as CocosNode } from 'cc';
 import type { BestProgress } from '../core/save/save-data';
 import {
   FocusList,
+  MENU_COLUMN_WIDTH,
   MENU_MUTED_COLOR,
   MENU_TEXT_COLOR,
   MENU_TITLE_COLOR,
@@ -41,6 +46,11 @@ export interface ChapterSelectOptions {
   readonly onSelect: (chapter: number) => void;
   /** Esc / the Back button. */
   readonly onBack: () => void;
+  /**
+   * Focus moved (keyboard or hover), including the initial focus: the chapter of the focused
+   * button, or `null` when focus is on Back. Drives the living room behind the menu.
+   */
+  readonly onFocusChapter?: (chapter: number | null) => void;
 }
 
 export interface ChapterSelectScreen {
@@ -48,6 +58,13 @@ export interface ChapterSelectScreen {
   focus(index: number): void;
   destroy(): void;
 }
+
+/** A light dim over the living room; the panel itself stays opaque (alpha 255). */
+const CHAPTER_BACKDROP_ALPHA = 96;
+const BUTTON_WIDTH = MENU_COLUMN_WIDTH - 40;
+const BUTTON_HEIGHT = 40;
+const BUTTON_GAP = 8;
+const PANEL_HEIGHT = 268;
 
 /** Record as text: "Best: chapter 2 · room 4" or "Best: —". */
 export function formatBest(best: BestProgress): string {
@@ -72,35 +89,33 @@ export async function buildChapterSelect(
   root.layer = Layers.Enum.UI_2D;
   root.parent = parent;
 
-  createScreenBackdrop(root);
+  createScreenBackdrop(root, CHAPTER_BACKDROP_ALPHA);
 
   const title = createLabel(root, 'title', 'YOKAI FIELD');
-  title.fontSize = 30;
-  title.lineHeight = 34;
+  title.fontSize = 26;
+  title.lineHeight = 30;
   title.color = MENU_TITLE_COLOR;
-  title.node.setPosition(0, size.height / 2 - 34, 0);
+  title.node.setPosition(0, 114, 0);
 
   const subtitle = createLabel(root, 'subtitle', 'SELECT CHAPTER');
-  subtitle.fontSize = 12;
+  subtitle.fontSize = 11;
   subtitle.color = MENU_TEXT_COLOR;
-  subtitle.node.setPosition(0, size.height / 2 - 64, 0);
+  subtitle.node.setPosition(0, 88, 0);
 
   const best = createLabel(root, 'best', formatBest(options.best));
-  best.fontSize = 11;
+  best.fontSize = 10;
   best.color = MENU_TEXT_COLOR;
-  best.node.setPosition(0, -38, 0);
+  best.node.setPosition(0, 70, 0);
 
   const hint = createLabel(root, 'hint', 'Clear a chapter to unlock the next');
   hint.fontSize = 10;
   hint.color = MENU_MUTED_COLOR;
-  hint.node.setPosition(0, -size.height / 2 + 16, 0);
+  hint.node.setPosition(0, -127, 0);
 
+  // Chapter buttons stack vertically inside the narrow column (the old 380 px row is gone).
   const handles: MenuButtonHandle[] = [];
   const count = options.chapters.length;
-  const width = 120;
-  const gap = 10;
-  const rowWidth = count * width + Math.max(0, count - 1) * gap;
-  const firstX = -rowWidth / 2 + width / 2;
+  const firstCenter = 34;
 
   options.chapters.forEach((chapter, index) => {
     const handle = createMenuButton(
@@ -113,9 +128,9 @@ export async function buildChapterSelect(
         activate: () => options.onSelect(chapter.chapter),
       },
       frames,
-      { width, height: 46, fontSize: 13 },
+      { width: BUTTON_WIDTH, height: BUTTON_HEIGHT, fontSize: 13 },
     );
-    handle.node.setPosition(firstX + index * (width + gap), 14, 0);
+    handle.node.setPosition(0, firstCenter - index * (BUTTON_HEIGHT + BUTTON_GAP), 0);
     handles.push(handle);
   });
 
@@ -124,16 +139,33 @@ export async function buildChapterSelect(
     'back',
     { label: 'Back', activate: options.onBack },
     frames,
-    { width: 120, height: 30, fontSize: 12 },
+    { width: BUTTON_WIDTH, height: 30, fontSize: 12 },
   );
-  back.node.setPosition(0, -88, 0);
+  back.node.setPosition(0, -102, 0);
   handles.push(back);
 
-  const panel = createMenuPanel(root, 'chapter-panel', frames.panel, Math.min(460, size.width - 24), size.height - 28);
+  const panel = createMenuPanel(
+    root,
+    'chapter-panel',
+    frames.panel,
+    MENU_COLUMN_WIDTH,
+    Math.min(PANEL_HEIGHT, size.height - 20),
+  );
   panel.setSiblingIndex(1);
 
   // Chapter 1 is always index 0; if this build has no data, still focus the first button.
-  const focus = new FocusList({ handles, onBack: options.onBack });
+  const focus = new FocusList({
+    handles,
+    onBack: options.onBack,
+    ...(options.onFocusChapter !== undefined
+      ? {
+          onFocus: (index: number) => {
+            const chapter = index >= 0 && index < count ? options.chapters[index]?.chapter : undefined;
+            options.onFocusChapter?.(chapter ?? null);
+          },
+        }
+      : {}),
+  });
 
   return {
     node: root,

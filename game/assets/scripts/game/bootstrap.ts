@@ -47,12 +47,10 @@ import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data
 import { parseTmxLevel } from '../core/level/tmx';
 import { parseWaterLayout, waterAreasFor } from '../core/level/water-layout';
 import type { WaterLayout } from '../core/level/water-layout';
-import { chapterAtmosphere, parseAtmosphereConfig, visibleAtmosphere } from '../core/atmosphere/atmosphere';
+import { chapterAtmosphere, parseAtmosphereConfig } from '../core/atmosphere/atmosphere';
 import type { AtmosphereConfig } from '../core/atmosphere/atmosphere';
-import { attachAtmosphere } from './atmosphere-view';
-import type { AtmosphereHandle } from './atmosphere-view';
-import { attachLivingDecor } from './living-decor-view';
-import type { DecorHandle } from './living-decor-view';
+import { attachRoomAtmosphere } from './atmosphere-view';
+import type { RoomAtmosphereParts } from './atmosphere-view';
 import type { Vec2 } from '../core/math/vec2';
 import { metaBaseline } from '../core/meta/run-stats';
 import { SeededRng } from '../core/rng';
@@ -90,6 +88,7 @@ import { AudioManager } from './audio/audio-manager';
 import type { MusicId } from './audio/audio-manager';
 import { playSfx } from './audio/sfx';
 import { installDebugWiring } from './debug-wiring';
+import { MenuBackdrop } from './menu-backdrop';
 import { createSaveRepository } from './save-storage';
 import { ScreenFlow } from './screen-flow';
 import type { RunSnapshot } from './screen-flow';
@@ -196,12 +195,13 @@ export class Bootstrap extends Component {
   /** Ticket #6: over-actor atmosphere sits above `fx-layer`, still below the HUD. */
   private atmosphereLayer: Node | null = null;
   /** Per-room atmosphere/decor nodes of the current room (destroyed on room change/effects toggle). */
-  private atmosphereHandle: AtmosphereHandle | null = null;
-  private decorHandle: DecorHandle | null = null;
+  private roomAtmosphere: RoomAtmosphereParts | null = null;
   /** What the current room really draws (debug `atmosphere()` for the browser proof). */
   private atmosphereSnapshot: DebugAtmosphereSnapshot = { chapter: 0, layers: [], animals: 0, props: 0 };
   /** Seed of the running run: decor is placed from it so a room looks the same on re-entry. */
   private runSeed = 1;
+  /** Living title / chapter-select room (#8); `null` before boot creates it. */
+  private menuBackdrop: MenuBackdrop | null = null;
 
   private player: PlayerController | null = null;
   private bulletView: BulletView | null = null;
@@ -248,6 +248,12 @@ export class Bootstrap extends Component {
       this.status = status;
     },
     chapterAvailable: (chapter) => CHAPTER_FOLDERS[chapter] !== undefined,
+    showMenuBackdrop: (chapter) => {
+      void this.menuBackdrop?.show(chapter);
+    },
+    clearMenuBackdrop: () => {
+      this.menuBackdrop?.clear();
+    },
     startChapter: (chapter) => {
       void this.startChapter(chapter);
     },
@@ -359,6 +365,18 @@ export class Bootstrap extends Component {
     };
     this.setFeelSettings(this.save.settings);
     this.createWorldLayers();
+    this.menuBackdrop = new MenuBackdrop({
+      roomLayer: () => this.roomLayer,
+      actorLayer: () => this.actorLayer,
+      atmosphereLayer: () => this.atmosphereLayer,
+      manifest: () => this.manifest,
+      atmosphereConfig: () => this.atmosphereConfig,
+      waterLayout: () => this.waterLayout,
+      effects: () => this.save?.settings.effects ?? 'full',
+      worldScale: () => this.camera?.hudScale ?? 1,
+      chapterFolder: (chapter) => CHAPTER_FOLDERS[chapter],
+      loadChapter: (folder) => this.loadChapter(folder),
+    });
     await this.screens.showTitle();
   }
 
@@ -396,6 +414,8 @@ export class Bootstrap extends Component {
     this.status = 'loading';
     this.screens.setScreen('playing');
     this.screens.clearMenu();
+    // The living menu room must be gone before the run's own room is built.
+    this.menuBackdrop?.clear();
     this.skills.destroy();
 
     const save = this.save;
@@ -684,10 +704,8 @@ export class Bootstrap extends Component {
    * `visibleAtmosphere` rather than patched piecemeal).
    */
   private rebuildRoomAtmosphere(level: LevelData): void {
-    this.atmosphereHandle?.destroy();
-    this.atmosphereHandle = null;
-    this.decorHandle?.destroy();
-    this.decorHandle = null;
+    this.roomAtmosphere?.destroy();
+    this.roomAtmosphere = null;
 
     const config = this.atmosphereConfig;
     const manifest = this.manifest;
@@ -696,50 +714,26 @@ export class Bootstrap extends Component {
     this.atmosphereSnapshot = { chapter: level.chapter, layers: [], animals: 0, props: 0 };
     if (config === null || manifest === null || save === null || roomRoot === null) return;
 
-    const atmosphere = chapterAtmosphere(config, level.chapter);
-    if (atmosphere === null) return;
-
-    const visible = visibleAtmosphere(atmosphere, save.settings.effects);
     // Same run seed + room → identical placement on re-entry, different from other rooms.
     const seed = (this.runSeed ^ (level.chapter * 0x9e3779b1) ^ (level.room * 0x85ebca6b)) >>> 0;
 
-    const handle = attachAtmosphere(roomRoot, this.atmosphereLayer, {
-      visible,
+    const parts = attachRoomAtmosphere({
+      roomRoot,
+      overLayer: this.atmosphereLayer,
+      level,
+      config,
       manifest,
+      effects: save.settings.effects,
       seed,
       // Chapter 2 ripples belong on the river/waterfall, not on dry grass.
       rippleAreas:
         this.waterLayout === null ? [] : waterAreasFor(this.waterLayout, level.chapter, level.room),
-    });
-    this.atmosphereHandle = handle;
-
-    const decor = attachLivingDecor(roomRoot, {
-      level,
-      tuning: config.animal,
-      manifest,
-      seed: (seed + 1) >>> 0,
       playerOf: () => this.player?.position ?? null,
-      visible,
-      spec: atmosphere.decor,
     });
-    this.decorHandle = decor;
+    if (parts === null) return;
 
-    // Planned counts immediately (so `atmosphere()` is never empty while textures load),
-    // then the real counts once the sprites exist.
-    this.atmosphereSnapshot = {
-      chapter: level.chapter,
-      layers: handle.kinds,
-      animals: visible.animals ? atmosphere.decor.animalsPerRoom : 0,
-      props: visible.animatedProps ? atmosphere.decor.propsPerRoom : 0,
-    };
-    void decor.ready.then((counts) => {
-      this.atmosphereSnapshot = {
-        chapter: level.chapter,
-        layers: handle.kinds,
-        animals: counts.animals,
-        props: counts.props,
-      };
-    });
+    this.roomAtmosphere = parts;
+    this.atmosphereSnapshot = parts.snapshot;
   }
 
   private createPlayer(startAt: Vec2): PlayerController {
@@ -1086,6 +1080,8 @@ export class Bootstrap extends Component {
     // Effects Reduced also turns off the secondary atmosphere layers, animals and animated props.
     const level = this.currentLevel;
     if (level !== null && this.roomRoot !== null) this.rebuildRoomAtmosphere(level);
+    // The living menu room follows the same Effects mode (#8).
+    this.menuBackdrop?.refresh();
   }
 
   /** Snapshot the run for the result screen before teardown (ScreenFlow knows no RunState/combat). */
@@ -1122,12 +1118,10 @@ export class Bootstrap extends Component {
     this.roomRoot?.destroy();
     this.roomRoot = null;
     // The over-actors atmosphere node lives on the world `atmosphere-layer`, not on `roomRoot`:
-    // destroying the room does not take it with it, so both handles must be torn down explicitly
-    // (otherwise ch1 shafts/leaves stay drawn over the next chapter and the menus).
-    this.atmosphereHandle?.destroy();
-    this.atmosphereHandle = null;
-    this.decorHandle?.destroy();
-    this.decorHandle = null;
+    // destroying the room does not take it with it, so the shared handle must be torn down
+    // explicitly (otherwise ch1 shafts/leaves stay drawn over the next chapter and the menus).
+    this.roomAtmosphere?.destroy();
+    this.roomAtmosphere = null;
     this.atmosphereSnapshot = { chapter: 0, layers: [], animals: 0, props: 0 };
     this.currentLevel = null;
     this.chapter = null;
@@ -1192,6 +1186,7 @@ export class Bootstrap extends Component {
       startChapter: async (chapter, seed) => {
         if (this.status === 'loading') return false;
         this.screens.clearMenu();
+        this.menuBackdrop?.clear();
         this.teardownRun();
         try {
           await this.launchChapter(chapter, seed);
@@ -1216,6 +1211,7 @@ export class Bootstrap extends Component {
       setEffects: (mode) => this.debugSetEffects(mode),
       vfx: () => this.debugVfx(),
       atmosphere: () => this.atmosphereSnapshot,
+      menuBackdrop: () => this.menuBackdrop?.snapshot() ?? null,
     });
   }
 
@@ -1322,6 +1318,8 @@ export class Bootstrap extends Component {
 
   protected onDestroy(): void {
     document.removeEventListener('fullscreenchange', this.onFullscreenChange);
+    this.menuBackdrop?.destroy();
+    this.menuBackdrop = null;
     this.camera?.destroy();
     this.audio?.destroy();
     this.audio = null;
