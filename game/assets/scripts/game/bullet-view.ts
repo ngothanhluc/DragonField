@@ -239,15 +239,19 @@ export class BulletView extends Component {
 
       entry.sprite.color = player ? playerTint : enemyTint;
       this.applyPosition(entry.node, bullet.position);
+      // Nodes are pre-built inactive; the pool only ever deactivates them, so a drawn bullet
+      // must switch itself back on every frame.
+      entry.node.active = true;
       // Tile space has y down, Cocos rotation counter-clockwise: negate the angle.
-      entry.node.angle =
+      const angle =
         player && ROTATING_KEYS.has(key)
           ? (-Math.atan2(bullet.velocity.y, bullet.velocity.x) * 180) / Math.PI
           : 0;
+      entry.node.angle = angle;
 
       if (player && layers.trail) {
         const element = trailElement(owned, bullet.crit);
-        if (element !== null) this.spawnGhost(bullet, data, frameIndex, element);
+        if (element !== null) this.spawnGhost(bullet, data, frameIndex, element, angle);
       }
     }
 
@@ -272,7 +276,13 @@ export class BulletView extends Component {
     return this.enemyKey;
   }
 
-  private spawnGhost(bullet: Bullet, data: KeyData, frameIndex: number, element: VfxElement): void {
+  private spawnGhost(
+    bullet: Bullet,
+    data: KeyData,
+    frameIndex: number,
+    element: VfxElement,
+    angle: number,
+  ): void {
     const now = this.elapsedMs;
     const last = this.ghostClock.get(bullet.id);
     const spawnMs = FEEL_TUNING.vfx.trailSpawnMs;
@@ -305,6 +315,8 @@ export class BulletView extends Component {
     ghost.totalMs = ghost.remainingMs;
     ghost.node.active = true;
     ghost.sprite.spriteFrame = frame;
+    // A rotated bullet (spike/kunai) leaves an equally rotated trail; every other key is 0.
+    ghost.node.angle = angle;
 
     const transform = ghost.node.getComponent(CocosUITransform);
     if (transform !== null) transform.setContentSize(data.width, data.height);
