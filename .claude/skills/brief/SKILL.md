@@ -1,43 +1,43 @@
 ---
 name: brief
-description: Biến một issue thành worktree, test nghiệm thu đỏ và brief cho executor. Bước 2 của full-send.
+description: Turn an issue into a worktree, a red acceptance test and a brief for the executor. Step 2 of full-send.
 disable-model-invocation: true
 ---
 
 # Brief
 
-Brief là **toàn bộ context** executor có: nó không thấy cuộc trò chuyện này, không đọc được issue trên GitHub. Thứ gì executor cần mà không nằm trong brief hoặc trong file brief chỉ tới thì coi như không tồn tại.
+The brief is the **entire context** the executor has: it cannot see this conversation and cannot read the GitHub issue. Anything the executor needs that is not in the brief or in a file the brief points to might as well not exist.
 
-## Bước
+## Steps
 
-1. **Đọc ticket.** `scripts/as-owner gh issue view <n> --json number,title,body,labels,comments`. Issue có `## Parent` hoặc là sub-issue thì đọc cả spec cha. Đọc `AGENTS.md`, `GLOSSARY.md` và các ADR trong `docs/adr/` mà ticket chạm tới. Dùng đúng từ trong glossary ở mọi chỗ bạn viết.
-2. **Worktree.** `scripts/as-owner git fetch origin`. Tạo branch `ticket/<n>-<slug>` từ `origin/<nhánh mặc định>` trong worktree `<thư mục cha của repo>/DragonField.worktrees/<n>-<slug>`. Đã có worktree hoặc branch của ticket này (chạy lại sau khi dừng): dùng lại, đọc `git log` và `.kol-auto/` trong đó để biết đã tới đâu.
-3. **Cờ rủi ro.** `rủi ro: có` khi ticket chạm tới xác thực hoặc phân quyền, tiền hoặc thanh toán, xoá hoặc migrate dữ liệu, máy trạng thái booking, hoặc nhiều tác nhân cùng ghi một bản ghi. Ghi lý do một dòng. Cờ này bật thêm vòng kẻ phá trong `review-loop`.
-4. **Seam và test đỏ.** Chọn seam cao nhất phủ được tiêu chí nghiệm thu của issue; seam có sẵn hơn seam mới. Viết test nghiệm thu ở seam đó, mỗi tiêu chí ít nhất một assertion, giá trị mong đợi lấy từ issue hoặc ví dụ cụ thể (không tính lại theo cách code sẽ tính). Chạy nó: phải **đỏ đúng lý do**, tức là assertion về hành vi còn thiếu fail, không phải lỗi cú pháp, import hay fixture. Commit trong worktree: `test(#<n>): test nghiệm thu đỏ`. Ghi SHA.
-   - Repo chưa có test runner, hoặc ticket thuần cấu hình/scaffold: không có test đỏ. Ghi `skip: <lý do>` và thay bằng một **lệnh nghiệm thu** chạy được (lệnh + output mong đợi) trong brief.
-5. **Lệnh check.** Lấy từ `package.json` scripts hoặc `AGENTS.md` (lệnh CI chạy: typecheck, lint, test). Chưa có thì ghi rõ "chưa có lệnh check" và chỉ dùng test nghiệm thu.
-6. **Viết `.kol-auto/brief.md`** trong worktree theo mẫu dưới.
+1. **Read the ticket.** `scripts/as-owner gh issue view <n> --json number,title,body,labels,comments`. If the issue has `## Parent` or is a sub-issue, read the parent spec too. Read `AGENTS.md`, `GLOSSARY.md` and the ADRs in `docs/adr/` the ticket touches. Use exactly the glossary's terms everywhere you write.
+2. **Worktree.** `scripts/as-owner git fetch origin`. Create branch `ticket/<n>-<slug>` from `origin/<default branch>` in worktree `<repo parent dir>/DragonField.worktrees/<n>-<slug>`. If this ticket's worktree or branch already exists (rerun after a stop): reuse it, read `git log` and `.kol-auto/` there to see how far it got.
+3. **Risk flag.** `risk: yes` when the ticket touches authentication or authorization, money or payments, deleting or migrating data, the booking state machine, or multiple actors writing the same record. Write the reason on one line. This flag adds an adversary round in `review-loop`.
+4. **Seam and red test.** Pick the highest seam that covers the issue's acceptance criteria; an existing seam beats a new one. Write the acceptance test at that seam, at least one assertion per criterion, with expected values taken from the issue or a concrete example (not recomputed the way the code will compute them). Run it: it must be **red for the right reason**, meaning the behavior assertion fails, not a syntax, import or fixture error. Commit in the worktree: `test(#<n>): red acceptance test`. Record the SHA.
+   - If the repo has no test runner yet, or the ticket is pure config/scaffold: there is no red test. Write `skip: <reason>` and replace it with a runnable **acceptance command** (command + expected output) in the brief.
+5. **Check command.** Take it from `package.json` scripts or `AGENTS.md` (the command CI runs: typecheck, lint, test). If there is none, say "no check command yet" explicitly and use only the acceptance test.
+6. **Write `.kol-auto/brief.md`** in the worktree using the template below.
 
-## Mẫu brief
+## Brief template
 
 ```markdown
-# Ticket #<n>: <tiêu đề>
+# Ticket #<n>: <title>
 
-Mục tiêu: <vấn đề của người dùng và hành vi cần có, 2-3 câu, từ góc nhìn người dùng>
-Tiêu chí nghiệm thu:
-- <copy từ issue>
-Data shape: <các type/bản ghi chính, trường quan trọng, quan hệ; dùng từ trong GLOSSARY>
-Seam (đã chốt, không hỏi lại): <seam> — bắt được gì, bỏ sót gì
-Test nghiệm thu: <đường dẫn> @ <SHA> — đỏ vì: <thông báo fail mong đợi>
-  (hoặc) Lệnh nghiệm thu: <lệnh> → <output mong đợi>
-Lệnh check: <lệnh>
-Đọc trước: <các file liên quan nhất, kèm lý do một dòng mỗi file>
-Được sửa: <thư mục/file trong phạm vi>
-Không đụng: <file test nghiệm thu, và các vùng ngoài phạm vi>
-Ngoài phạm vi: <việc liên quan nhưng không làm ở ticket này>
-Rủi ro: có | không — <lý do>
+Goal: <the user's problem and the behavior needed, 2-3 sentences, from the user's point of view>
+Acceptance criteria:
+- <copied from the issue>
+Data shape: <the main types/records, important fields, relations; use GLOSSARY terms>
+Seam (agreed, do not renegotiate): <seam> — what it catches, what it misses
+Acceptance test: <path> @ <SHA> — red because: <expected failure message>
+  (or) Acceptance command: <command> → <expected output>
+Check command: <command>
+Read first: <the most relevant files, one line of why for each>
+Allowed to edit: <directories/files in scope>
+Do not touch: <acceptance test file, and out-of-scope areas>
+Out of scope: <related work not done in this ticket>
+Risk: yes | no — <reason>
 ```
 
-## Xong khi
+## Done when
 
-`.kol-auto/brief.md` có đủ mọi mục; test nghiệm thu đã commit và output đỏ đúng lý do nằm trong tay bạn (hoặc có dòng `skip:` với lệnh nghiệm thu thay thế); `git status` trong worktree sạch ngoài `.kol-auto/`.
+`.kol-auto/brief.md` has every section; the acceptance test is committed and you have the red output showing the right reason (or a `skip:` line with a substitute acceptance command); `git status` in the worktree is clean apart from `.kol-auto/`.

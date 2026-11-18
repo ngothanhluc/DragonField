@@ -1,42 +1,42 @@
 ---
 name: effort
-description: Bảng effort theo vai trò và thang nâng effort của executor. full-send, review-loop, full-send-spec đọc khi khởi động agent.
+description: Effort table by role and the executor effort ladder. Read by full-send, review-loop and full-send-spec when starting an agent.
 disable-model-invocation: true
 ---
 
 # Effort
 
-**Bắt đầu thấp, chỉ nâng sau một thất bại đã kiểm được**: test nghiệm thu còn đỏ, check còn đỏ, executor báo `blocked`, hoặc blocker đã gửi sửa vẫn còn. "Ticket trông khó" không phải lý do nâng. Model tự chia effort kém hơn một bảng cố định, và effort cao trên việc dễ tốn gấp nhiều lần mà không hơn (nguồn và số liệu: `docs/agents/effort-research.md`).
+**Start low, climb only after a verified failure**: red acceptance test, red checks, executor reported `blocked`, or a sent blocker fix is still unresolved. "The ticket looks hard" is not a reason to climb. Models self-allocate effort worse than a fixed table, and high effort on easy work costs several times more with no gain (source and numbers: `docs/agents/effort-research.md`).
 
-## Thang executor
+## Executor ladder
 
-Mỗi bậc là một `model#variant`. Thang lấy từ `effort` trong `models.json`; model là bản mới nhất của dòng (`resolve-models`).
+Each rung is a `model#variant`. The ladder comes from `effort` in `models.json`; the model is the newest of its line (`resolve-models`).
 
-| Bậc | Template | File effort trong worktree |
+| Rung | Template | Effort file in the worktree |
 |---|---|---|
 | 1 | `oc-impl` | `.kol-auto/effort.executor` = `low` |
 | 2 | `oc-impl` | `.kol-auto/effort.executor` = `high` |
 | 3 | `oc-impl` | `.kol-auto/effort.executor` = `max` |
 | 4 | `oc-impl-pro` | `.kol-auto/effort.executor-pro` = `high` |
 | 5 | `oc-impl-pro` | `.kol-auto/effort.executor-pro` = `max` |
-| hết thang | — | orchestrator xét lại tiền đề (`full-send`, thang executor) |
+| out of rungs | — | orchestrator rechecks the premise (`full-send`, executor ladder) |
 
-- Mỗi bậc được **một vòng thua**. Lượt sửa theo finding của review không tính là thua nếu sau lượt đó gate qua.
-- Lên bậc: `hc kill` terminal executor, ghi file effort của bậc mới, chạy lại template trong **cùng worktree** với tên mới (`impl-<n>-b<bậc>`). Task gồm brief, ledger, và một dòng "bậc trước thua vì <gate + output>". Phải mở session mới vì opencode chỉ nhận variant lúc khởi động.
-- Hết quota ở bất kỳ bậc nào: không lên bậc; hỏi người dùng theo `full-send`.
+- Each rung gets **one lost round**. A fix round triggered by review findings does not count as a loss if the gate passes afterwards.
+- Climbing: `hc kill` the executor terminal, write the new rung's effort file, rerun the template in the **same worktree** with a new name (`impl-<n>-b<rung>`). The task includes the brief, the ledger, and one line "previous rung lost because <gate + output>". A new session is required because opencode only accepts the variant at startup.
+- Quota exhausted at any rung: do not climb; ask the user as described in `full-send`.
 
-## Vai trò khác
+## Other roles
 
-| Vai trò | Cách đặt | Effort |
+| Role | How to set it | Effort |
 |---|---|---|
-| Kẻ phá opencode (`oc-adversary`) | bậc đầu của `adversary` trong `models.json` | `medium` |
-| Kẻ phá Claude (Agent tool) | tham số `effort` của Agent tool | `medium` |
-| Subagent Claude đọc/tra cứu nhiều file | tham số `effort` của Agent tool | `low` |
-| Owner trong `full-send-spec` | mặc định của session | không đặt |
-| Orchestrator khi xét lại tiền đề | thêm từ `ultrathink` vào lượt đó | xhigh cho một lượt |
+| opencode adversary (`oc-adversary`) | first rung of `adversary` in `models.json` | `medium` |
+| Claude adversary (Agent tool) | the Agent tool's `effort` parameter | `medium` |
+| Claude subagent reading/searching many files | the Agent tool's `effort` parameter | `low` |
+| Owner in `full-send-spec` | the session default | unset |
+| Orchestrator rechecking the premise | add `ultrathink` to that turn | xhigh for one turn |
 
-Agent tool chỉ đặt effort khi có tài liệu yêu cầu: bảng này là yêu cầu đó, nên mỗi lần gọi Agent tool trong vòng tự động đều truyền `effort` theo bảng.
+The Agent tool only takes an effort when a document asks for it: this table is that request, so every Agent tool call in the automation passes `effort` per the table.
 
-## Ghi lại
+## Recording
 
-Mỗi lần khởi động executor hoặc kẻ phá, thêm một dòng vào `.kol-auto/ledger.md`: `effort | <vai trò> | <model#variant> | <lý do: mặc định | thua ở <gate>>`. Báo cáo cuối nêu bậc cao nhất đã dùng và vì sao.
+Every time you start an executor or an adversary, append one line to `.kol-auto/ledger.md`: `effort | <role> | <model#variant> | <reason: default | lost at <gate>>`. The final report states the highest rung used and why.

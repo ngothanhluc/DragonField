@@ -1,50 +1,50 @@
 ---
 name: executor-rules
-description: Luật làm việc của executor trong vòng tự động Yokai Field. Đọc trước mọi việc khi được giao một ticket qua hc.
+description: Working rules for the executor in the Yokai Field automation loop. Read before anything else when you are handed a ticket via hc.
 ---
 
-# Luật của executor
+# Executor rules
 
-Bạn implement **đúng một ticket** trong worktree hiện tại (cwd).
+You implement **exactly one ticket** in the current worktree (cwd).
 
-**Skill game.** Được phép load các skill gamedev trong `.claude/skills/` (`game-feel`, `game-ui-ux`, `level-design`, `performance-optimization`, `game-ai`, `roguelike`, `game-docs`, `audio-design`, `camera-systems`, `input-systems`, `physics-tuning`, `save-systems`). Brief ghi skill nào cần; load nó **trước khi** thiết kế phần đó. Các skill này engine-neutral (ví dụ Godot/Unity) — dịch kỹ thuật sang Cocos Creator 3.8 + TypeScript theo `AGENTS.md`, không chép code Godot/Unity. Skill điều phối (`full-send`, `brief`, `review-loop`, `proof`, `watch-pr`, `effort`) không phải của bạn. Orchestrator (Claude Opus) đã viết brief và test nghiệm thu; nó sẽ đọc diff, chạy proof, mở PR và merge. Phần của bạn kết thúc ở commit local.
+**Game skills.** You may load the gamedev skills in `.claude/skills/` (`game-feel`, `game-ui-ux`, `level-design`, `performance-optimization`, `game-ai`, `roguelike`, `game-docs`, `audio-design`, `camera-systems`, `input-systems`, `physics-tuning`, `save-systems`). The brief names which ones are needed; load them **before** designing that part. These skills are engine-neutral (e.g. Godot/Unity) — translate the technique to Cocos Creator 3.8 + TypeScript per `AGENTS.md`, do not copy Godot/Unity code. The coordination skills (`full-send`, `brief`, `review-loop`, `proof`, `watch-pr`, `effort`) are not yours. The orchestrator (Claude Opus) wrote the brief and the acceptance test; it will read the diff, run proof, open the PR and merge. Your part ends at the local commit.
 
-## Hợp đồng
+## Contract
 
-- **Test nghiệm thu đỏ** (đường dẫn trong brief) là hợp đồng. Mục tiêu duy nhất: làm nó xanh bằng code sản phẩm. File test đó giữ nguyên từng byte; orchestrator so lại sau mỗi lượt, và một lần sửa test là ticket bị trả về.
-- Seam đã chốt trong brief. Dùng skill `tdd` cho các bước nhỏ bên trong, ở đúng các seam đó.
-- **Thay đổi nhỏ nhất** làm test xanh. Chỉ đụng file ticket cần. Thứ brief không nhắc (refactor, tính năng phụ, đổi tên, dependency mới) để vào mục "đề xuất" trong báo cáo.
+- **The red acceptance test** (path in the brief) is the contract. The only goal: make it green with product code. That test file stays byte-for-byte identical; the orchestrator compares it after every round, and one edit to it sends the ticket back.
+- The seam is agreed in the brief. Use the `tdd` skill for the small steps inside it, at exactly those seams.
+- **The smallest change** that makes the test green. Touch only the files the ticket needs. Anything the brief does not mention (refactor, extra features, renames, new dependencies) goes into the "suggestions" section of the report.
 
-## Vòng làm
+## Work loop
 
-1. Đọc brief, `AGENTS.md` và các file brief chỉ tới.
-2. Chạy test nghiệm thu, xác nhận nó **đỏ đúng lý do** brief mô tả. Đỏ vì lý do khác (sai import, thiếu fixture) thì báo `blocked` ngay.
-3. Red → green theo `tdd` tới khi test nghiệm thu xanh.
-4. Chạy **lệnh check** trong brief. Xanh toàn bộ mới được báo `done`.
-5. Commit local trên branch hiện tại: `type(#<số issue>): mô tả`. Nhiều commit nhỏ có thứ tự là tốt.
-6. Ghi báo cáo, rồi báo về (mục **Báo cáo**).
+1. Read the brief, `AGENTS.md` and the files the brief points to.
+2. Run the acceptance test and confirm it is **red for the reason** the brief describes. Red for a different reason (bad import, missing fixture) means report `blocked` immediately.
+3. Red → green per `tdd` until the acceptance test is green.
+4. Run the **check command** from the brief. Only fully green may you report `done`.
+5. Commit locally on the current branch: `type(#<issue number>): description`. Several small commits in order are good.
+6. Write the report, then report back (section **Report**).
 
-**Lượt sửa**: khi terminal cha gửi finding, sửa đúng các finding đó, chạy lại bước 4, commit mới, ghi lại báo cáo, báo về. Finding bạn thấy sai thì ghi lý do và bằng chứng (file:dòng, output) thay vì sửa.
+**Fix round**: when the parent terminal sends findings, fix exactly those findings, rerun step 4, make a new commit, rewrite the report, report back. If you believe a finding is wrong, write the reason and evidence (file:line, output) instead of changing it.
 
-**Kẹt**: cùng một lỗi sau 2 lần thử khác nhau thì dừng, báo `blocked` kèm các hướng đã thử. Hết quota hoặc model bị chặn cũng báo `blocked` với nguyên văn thông báo lỗi.
+**Stuck**: the same error after 2 different attempts means stop, report `blocked` with the approaches you tried. Out of quota or model blocked also means report `blocked` with the error message verbatim.
 
-## Báo cáo
+## Report
 
-Ghi đè `.kol-auto/report.md` trong worktree:
+Overwrite `.kol-auto/report.md` in the worktree:
 
 ```
 status: done | blocked
-commits: <sha ngắn> <tiêu đề>   (mỗi commit một dòng)
-acceptance: <đường dẫn test> → xanh | đỏ (<lý do>)
-checks: <lệnh> → <kết quả ngắn>
-files: <các file đã sửa>
-quyết định: <những lựa chọn bạn tự đưa ra, mỗi cái một dòng>
-blocked vì: <chỉ khi blocked: lỗi nguyên văn + hướng đã thử>
-đề xuất: <việc ngoài phạm vi đáng làm sau>
+commits: <short sha> <title>   (one line per commit)
+acceptance: <test path> → green | red (<reason>)
+checks: <command> → <short result>
+files: <files changed>
+decisions: <choices you made yourself, one per line>
+blocked because: <only when blocked: verbatim error + approaches tried>
+suggestions: <out-of-scope work worth doing later>
 ```
 
-Rồi chạy đúng một lệnh: `hc send <terminal cha> "<done|blocked> #<số issue>: <một câu>. Báo cáo: .kol-auto/report.md"`. Terminal cha nằm trong brief. Sau đó dừng và chờ tin nhắn tiếp theo.
+Then run exactly one command: `hc send <parent terminal> "<done|blocked> #<issue number>: <one sentence>. Report: .kol-auto/report.md"`. The parent terminal is in the brief. After that, stop and wait for the next message.
 
-## Ranh giới
+## Boundaries
 
-Config của repo chặn: `git push`, `gh`, đổi branch, rebase/reset/merge, `git worktree`, ghi ngoài worktree, và chạy agent khác (`hc run`, `opencode`, `claude`). Gặp lỗi "Blocked by configuration policy" nghĩa là việc đó thuộc về orchestrator: ghi vào báo cáo và tiếp tục phần còn lại.
+The repo config blocks: `git push`, `gh`, switching branches, rebase/reset/merge, `git worktree`, writing outside the worktree, and running other agents (`hc run`, `opencode`, `claude`). A "Blocked by configuration policy" error means that task belongs to the orchestrator: record it in the report and continue with the rest.

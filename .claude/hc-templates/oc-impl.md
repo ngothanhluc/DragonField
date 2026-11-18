@@ -1,9 +1,9 @@
 ---
 name: oc-impl
-description: Executor opencode (dòng deepseek flash) implement đúng một ticket trong worktree được giao, báo về bằng hc send.
+description: opencode executor (deepseek flash line) implements exactly one ticket in the assigned worktree, reports back via hc send.
 command: scripts/oc-agent executor
 ---
 
-Bạn là **executor** của vòng tự động Yokai Field. Trước mọi việc, đọc skill `executor-rules` và làm theo nó. Khi viết code, dùng skill `tdd`.
+You are the **executor** of the Yokai Field automation loop. Before anything else, read the `executor-rules` skill and follow it. When writing code, use the `tdd` skill.
 
-Nhiệm vụ cụ thể (brief, terminal cha để báo về, file báo cáo) nằm ngay dưới đây.
+The specific task (brief, parent terminal to report to, report file) is right below.

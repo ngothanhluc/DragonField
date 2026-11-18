@@ -1,35 +1,35 @@
 ---
 name: watch-pr
-description: Theo dõi PR qua CI bằng scripts/pr-wait trong một terminal hc, xử lý theo exit code. Bước 7 của full-send.
+description: Watch the PR through CI with scripts/pr-wait in an hc terminal, act on the exit code. Step 7 of full-send.
 disable-model-invocation: true
 ---
 
 # Watch PR
 
-Một watcher cho mỗi PR, chạy trong terminal hc. Không tự viết vòng `sleep` hay poll: mọi watcher trên account dùng chung một rate limit GitHub.
+One watcher per PR, running in an hc terminal. Do not write your own `sleep` loops or polling: every watcher on the account shares one GitHub rate limit.
 
-## Chạy
+## Running
 
 ```sh
 hc run --bg --name prwait-<pr> --cwd <worktree> scripts/as-owner scripts/pr-wait <pr> --until green --allow-no-checks
 hc wait prwait-<pr> --timeout 1800
 ```
 
-`hc wait` trả về `timeout` là check-in, không phải lỗi: gọi lại. Khi terminal thoát: `hc read prwait-<pr> --lines 40` để đọc các dòng sự kiện, `hc get prwait-<pr> --json` để lấy `exit_code`, rồi `hc rm prwait-<pr>`. `pr-wait` báo đã có watcher khác cho PR này: dùng cái đó, không mở cái thứ hai.
+`hc wait` returning `timeout` is a check-in, not an error: call it again. When the terminal exits: `hc read prwait-<pr> --lines 40` to read the event lines, `hc get prwait-<pr> --json` to get `exit_code`, then `hc rm prwait-<pr>`. If `pr-wait` says another watcher already exists for this PR: use that one, do not open a second.
 
-`--allow-no-checks`: repo chưa có CI thì PR không có check nào được coi là xanh sau hai lần poll giống nhau. Khi repo đã có workflow CI, bỏ cờ này để một CI chưa kịp đăng ký không bị coi là xanh.
+`--allow-no-checks`: in a repo with no CI yet, a PR with no checks counts as green after two identical polls. Once the repo has a CI workflow, drop this flag so a CI that has not registered yet is not counted as green.
 
-## Theo exit code
+## By exit code
 
-- **0**: điều kiện `green` đạt hoặc PR đã merge. Sang cổng merge.
-- **1**: cần hành động. Đọc dòng sự kiện:
-  - check fail: mở link, đọc log. Lỗi thật trong code của ticket thì gửi executor sửa (thang executor vẫn áp dụng), proof lại, push. Lỗi hạ tầng hoặc flake: chạy lại job một lần (`scripts/as-owner gh run rerun <run-id> --failed`); fail giống hệt lần hai thì coi là lỗi thật.
-  - branch DIRTY (conflict): rebase lên nhánh mặc định, giải conflict theo ý ticket và các bất biến mới của nhánh mặc định, chạy lại check, `--force-with-lease`.
-  - PR đóng: dừng và hỏi người dùng.
-- **2**: tham số sai hoặc PR không tồn tại. Sửa lệnh; không thử lại vòng lặp.
+- **0**: the `green` condition is met or the PR is already merged. Move to the merge gate.
+- **1**: action needed. Read the event lines:
+  - check failed: open the link, read the log. A real bug in the ticket's code goes to the executor to fix (the executor ladder still applies), then prove again, push. Infrastructure error or flake: rerun the job once (`scripts/as-owner gh run rerun <run-id> --failed`); the same failure a second time counts as real.
+  - branch DIRTY (conflict): rebase onto the default branch, resolve conflicts per the ticket and the default branch's new invariants, rerun the checks, `--force-with-lease`.
+  - PR closed: stop and ask the user.
+- **2**: wrong arguments or the PR does not exist. Fix the command; do not retry in a loop.
 
-Sau mỗi lần push, chạy lại watcher. Nó nhớ những gì đã báo (state ở `~/.local/state/pr-wait/`), nên không mất sự kiện tới trong lúc không ai canh.
+After every push, rerun the watcher. It remembers what it has already reported (state in `~/.local/state/pr-wait/`), so no event is lost while nobody is watching.
 
 ## Rate limit
 
-`gh pr create/view/checks` dùng GraphQL. Hết GraphQL thì REST còn quota riêng: `scripts/as-owner gh api repos/<owner>/<repo>/pulls/<n>` và `.../commits/<sha>/check-runs`. Xem còn bao nhiêu: `scripts/as-owner gh api rate_limit --jq .resources.graphql`.
+`gh pr create/view/checks` use GraphQL. When GraphQL is exhausted, REST has its own quota: `scripts/as-owner gh api repos/<owner>/<repo>/pulls/<n>` and `.../commits/<sha>/check-runs`. Check the remaining budget: `scripts/as-owner gh api rate_limit --jq .resources.graphql`.
