@@ -24,6 +24,7 @@ import {
   view,
 } from 'cc';
 import { loadPixelTexture } from './assets/texture-cache';
+import { cachedSkillIcon, loadSkillIcon, SKILL_ICON_SIZE_PX } from './assets/skill-icon';
 import type { OwnedSkillStacks } from '../core/skills/pool';
 import { skillAbbreviation } from '../core/skills/description';
 import type { Vec2 } from '../core/math/vec2';
@@ -56,6 +57,8 @@ const HEART_FULL_INDEX = 4;
 const HEART_SPACING_PX = 18;
 
 const TEXT_COLOR = new CocosColor(255, 255, 255, 255);
+/** Outline behind the HUD stack digit so it reads on any icon colour. */
+const STACK_OUTLINE_COLOR = new CocosColor(12, 10, 16, 255);
 const LABEL_FONT_SIZE = 12;
 
 /** Rarity colours shared by skill cards and the HUD skill row. */
@@ -68,6 +71,21 @@ export const RARITY_COLORS = {
 /** Maximum skill slots on the HUD (GDD §9: at most 8). */
 const SKILL_SLOTS = 8;
 const SKILL_SLOT_WIDTH_PX = 34;
+/** Icon 24 px + 2 px of frame on each side → the row backdrop needs ~28 px. */
+const SKILL_ROW_HEIGHT_PX = 28;
+/** Bottom margin of the row, design px: the 24 px icon spans y 4…28 from the room's bottom edge. */
+const SKILL_ROW_BOTTOM_PX = 16;
+
+/** One HUD skill slot: icon + rarity frame + stack count, with the abbreviation as load fallback. */
+interface SkillSlot {
+  readonly root: Node;
+  readonly icon: Node;
+  readonly frame: Graphics;
+  readonly stack: Label;
+  readonly fallback: Label;
+  /** Skill id this slot currently shows; guards async icon loads against a stale slot. */
+  id: string;
+}
 
 /** Boss health bar. */
 const BOSS_BAR_WIDTH_PX = 180;
@@ -105,8 +123,8 @@ export class Hud extends Component {
   private shownRoom = '';
   private shownGold = -1;
 
-  /** HUD skill slots: abbreviation + stack, tinted by rarity. Created once, hidden when empty. */
-  private readonly skillLabels: Label[] = [];
+  /** HUD skill slots: icon + stack, framed by rarity. Created once, hidden when empty. */
+  private readonly skillSlots: SkillSlot[] = [];
   private skillRowBackdrop: Node | null = null;
   private shownSkills = '';
 
@@ -148,7 +166,7 @@ export class Hud extends Component {
     const goldTransform: UITransform | null = this.goldLabel.node.getComponent(CocosUITransform);
     if (goldTransform !== null) goldTransform.setAnchorPoint(0, 0.5);
 
-    this.createSkillRow(left, -size.height / 2 + 12);
+    this.createSkillRow(left, -size.height / 2 + SKILL_ROW_BOTTOM_PX);
     this.createBossBar(barFrame, size.height);
 
     this.setRoomLabel(roomText);
@@ -216,8 +234,9 @@ export class Hud extends Component {
   }
 
   /**
-   * Skills picked up: abbreviation + stack (GDD §9 "skill icons, at most 8").
-   * The pack has no skill icon art, so abbreviations tinted by rarity stand in.
+   * Skills picked up: icon + stack count (GDD §9 "skill icons, at most 8"), with the rarity colour
+   * on a thin frame and the stack number. Icon art comes from the pack (`core/skills/icons.ts`);
+   * while it loads — or if it fails — the 2-letter abbreviation stands in so no slot is blank.
    */
   setSkills(entries: readonly OwnedSkillStacks[]): void {
     // With no skills, hide the dark strip too — do not leave an empty black bar on the HUD.
@@ -229,24 +248,67 @@ export class Hud extends Component {
     this.shownSkills = signature;
 
     const shown = entries.slice(0, SKILL_SLOTS);
-    for (let index = 0; index < this.skillLabels.length; index += 1) {
-      const label = this.skillLabels[index];
-      if (label === null) continue;
+    for (let index = 0; index < this.skillSlots.length; index += 1) {
+      const slot = this.skillSlots[index];
+      if (slot === undefined) continue;
       const entry = shown[index];
       if (entry === undefined) {
-        label.node.active = false;
+        slot.id = '';
+        slot.root.active = false;
         continue;
       }
-      label.node.active = true;
-      label.string = `${skillAbbreviation(entry.def)}${entry.stacks > 1 ? entry.stacks : ''}`;
-      label.color = RARITY_COLORS[entry.def.rarity];
+
+      const color = RARITY_COLORS[entry.def.rarity];
+      slot.id = entry.def.id;
+      slot.root.active = true;
+      slot.stack.string = entry.stacks > 1 ? String(entry.stacks) : '';
+      slot.stack.color = TEXT_COLOR;
+      slot.fallback.string = skillAbbreviation(entry.def);
+      slot.fallback.color = color;
+      drawSkillFrame(slot.frame, color);
+
+      const ready = cachedSkillIcon(entry.def.id);
+      if (ready !== undefined) {
+        slot.icon.active = true;
+        slot.fallback.node.active = false;
+        const sprite: Sprite | null = slot.icon.getComponent(CocosSprite);
+        if (sprite !== null) sprite.spriteFrame = ready;
+        continue;
+      }
+
+      // Not loaded yet: show the abbreviation until the texture arrives.
+      slot.icon.active = false;
+      slot.fallback.node.active = true;
+      void loadSkillIcon(entry.def.id)
+        .then((frame) => {
+          if (slot.id !== entry.def.id || !slot.root.isValid) return;
+          const sprite: Sprite | null = slot.icon.getComponent(CocosSprite);
+          if (sprite === null) return;
+          sprite.spriteFrame = frame;
+          slot.icon.active = true;
+          slot.fallback.node.active = false;
+        })
+        .catch(() => {
+          // Broken art must not leave a hole: keep the abbreviation visible.
+          if (slot.id !== entry.def.id) return;
+          slot.icon.active = false;
+          slot.fallback.node.active = true;
+        });
     }
 
     // More than 8 skills: the last slot shows the remainder instead of silently truncating.
     const extra = entries.length - SKILL_SLOTS;
     if (extra > 0) {
-      const last = this.skillLabels[SKILL_SLOTS - 1];
-      if (last !== null && last !== undefined) last.string = `+${extra}`;
+      const last = this.skillSlots[SKILL_SLOTS - 1];
+      if (last !== undefined) {
+        last.id = '';
+        last.icon.active = false;
+        last.stack.string = '';
+        last.fallback.string = `+${extra}`;
+        last.fallback.color = TEXT_COLOR;
+        last.fallback.node.active = true;
+        drawSkillFrame(last.frame, TEXT_COLOR);
+      }
     }
   }
 
@@ -278,22 +340,61 @@ export class Hud extends Component {
   }
 
   private createSkillRow(left: number, y: number): void {
-    // Semi-transparent dark backdrop: abbreviations must read on gold/green/white floors.
+    // Semi-transparent dark backdrop: icons must read on gold/green/white floors.
     const width = SKILL_SLOTS * SKILL_SLOT_WIDTH_PX - 8;
-    const backdrop = createBackdropPanel(this.node, 'skill-row-backdrop', width, 18, 150);
+    const backdrop = createBackdropPanel(this.node, 'skill-row-backdrop', width, SKILL_ROW_HEIGHT_PX, 150);
     backdrop.setPosition(left + width / 2 - 4, y, 0);
     backdrop.active = false;
     this.skillRowBackdrop = backdrop;
 
     for (let index = 0; index < SKILL_SLOTS; index += 1) {
-      const label = createLabel(this.node, `skill-${index}`, '');
-      label.fontSize = 9;
-      label.lineHeight = 11;
-      label.node.setPosition(left + index * SKILL_SLOT_WIDTH_PX, y, 0);
-      const transform: UITransform | null = label.node.getComponent(CocosUITransform);
-      if (transform !== null) transform.setAnchorPoint(0, 0.5);
-      label.node.active = false;
-      this.skillLabels.push(label);
+      const slotWidth = SKILL_ICON_SIZE_PX + 2;
+      const root = new CocosNode(`skill-${index}`);
+      root.layer = Layers.Enum.UI_2D;
+      root.parent = this.node;
+      root.setPosition(left + index * SKILL_SLOT_WIDTH_PX + slotWidth / 2 - 1, y, 0);
+
+      const icon = new CocosNode('icon');
+      icon.layer = Layers.Enum.UI_2D;
+      icon.parent = root;
+      const iconSprite: Sprite = icon.addComponent(CocosSprite);
+      // CUSTOM size mode: the content size below decides the drawn size (not the 24 px texture).
+      iconSprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+      iconSprite.trim = false;
+      const iconTransform: UITransform | null = icon.getComponent(CocosUITransform);
+      if (iconTransform !== null) {
+        // ×1 = 24 px: an integer multiple keeps the pixel art crisp under nearest filtering.
+        iconTransform.setContentSize(SKILL_ICON_SIZE_PX, SKILL_ICON_SIZE_PX);
+      }
+
+      // Thin rarity frame around the icon (the rarity colour must stay visible at 1 stack).
+      const frameNode = new CocosNode('frame');
+      frameNode.layer = Layers.Enum.UI_2D;
+      frameNode.parent = root;
+      const frame: Graphics = frameNode.addComponent(CocosGraphics);
+      drawSkillFrame(frame, RARITY_COLORS.common);
+
+      const stack = createLabel(root, 'stack', '');
+      stack.fontSize = 9;
+      stack.lineHeight = 10;
+      // White with a dark 1 px outline: a rarity-coloured digit on a same-colour icon (blue "2" on
+      // Crit Eye, grey "3" on Sharpen) is unreadable. Rarity colour already lives on the frame.
+      stack.color = TEXT_COLOR;
+      stack.enableOutline = true;
+      stack.outlineColor = STACK_OUTLINE_COLOR;
+      stack.outlineWidth = 1;
+      // Bottom-right corner of the icon; a single digit never reaches the next slot.
+      stack.node.setPosition(SKILL_ICON_SIZE_PX / 2 - 3, -SKILL_ICON_SIZE_PX / 2 + 4, 0);
+      const stackTransform: UITransform | null = stack.node.getComponent(CocosUITransform);
+      if (stackTransform !== null) stackTransform.setAnchorPoint(0, 0.5);
+
+      // Load-failure fallback: the 2-letter abbreviation behind the icon.
+      const fallback = createLabel(root, 'fallback', '');
+      fallback.fontSize = 9;
+      fallback.lineHeight = 11;
+
+      root.active = false;
+      this.skillSlots.push({ root, icon, frame, stack, fallback, id: '' });
     }
   }
 
@@ -373,6 +474,23 @@ export class Hud extends Component {
 
     return node;
   }
+}
+
+/**
+ * Redraw a skill slot's 1 px rarity frame around the 24 px icon (Graphics has no "change colour
+ * only" call: clear + stroke is the cheap redraw, and it only runs when the skill row changes).
+ */
+function drawSkillFrame(graphics: Graphics, color: Color): void {
+  graphics.clear();
+  graphics.lineWidth = 1;
+  graphics.strokeColor = color;
+  graphics.rect(
+    -SKILL_ICON_SIZE_PX / 2 - 1,
+    -SKILL_ICON_SIZE_PX / 2 - 1,
+    SKILL_ICON_SIZE_PX + 2,
+    SKILL_ICON_SIZE_PX + 2,
+  );
+  graphics.stroke();
 }
 
 /**

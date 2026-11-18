@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { SKILL_ICONS } from '../assets/scripts/core/skills/icons';
 import { fixFontSpacing } from './lib/font-spacing';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -188,6 +189,16 @@ function convertAudio(sourceRel: string, targetRel: string, bitrate: string, cha
   console.log(`audio ${targetRel} (${statSync(target).size} B, ${duration.toFixed(2)} s)`);
 }
 
+/**
+ * The 20 `*Disabled.png` skill icon variants (#5). The normal variants are already staged, and
+ * re-copying them would replace their meta UUIDs; this loop adds only the missing files.
+ */
+function copyDisabledSkillIcons(): void {
+  for (const icon of Object.values(SKILL_ICONS)) {
+    copyPng(`Ui/Skill Icon/Spell/${icon}Disabled.png`, `art/ui/skill-icons/${icon}Disabled.png`);
+  }
+}
+
 function copyFont(): void {
   const source = join(PACK, 'Ui', 'Font', 'NormalFont.ttf');
   const target = join(RES, 'art', 'ui', 'fonts', 'NormalFont.ttf');
@@ -222,6 +233,13 @@ function ensureDirMeta(rel: string): void {
     });
     console.log(`dir  ${rel}`);
   }
+}
+
+// `bun run scripts/stage-m6-assets.ts --skill-icons-disabled` stages only the Disabled icon
+// variants: the full run re-encodes audio and rewrites every meta UUID (breaking sprite refs).
+if (process.argv.includes('--skill-icons-disabled')) {
+  copyDisabledSkillIcons();
+  process.exit(0);
 }
 
 ensureDirMeta('audio');
@@ -261,3 +279,4 @@ convertAudio('Audio/Sounds/Elemental/Water3.wav', 'audio/sfx/freeze.mp3', '80k',
 convertAudio('Audio/Sounds/Elemental/Grass2.wav', 'audio/sfx/poison.mp3', '80k', 1);
 
 copyFont();
+copyDisabledSkillIcons();
