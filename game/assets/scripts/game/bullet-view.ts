@@ -29,7 +29,7 @@ import {
   effectsLayers,
   enemyProjectileKey,
   playerProjectileLook,
-  trailElement,
+  strongestElement,
   type EffectsMode,
   type VfxElement,
 } from '../core/vfx/weapon-vfx';
@@ -106,12 +106,8 @@ const DRAW_SCALE: Readonly<Record<string, number>> = {
 const GHOST_SCALE = 0.85;
 
 export interface BulletViewOptions {
-  /** Live loadout (skill id → stacks), i.e. `SkillLoadout.snapshot()`. */
-  readonly loadout: () => ReadonlyMap<string, number>;
-  /** Chapter of the current run — picks the enemy ball. */
+  /** Chapter of the current run — picks the enemy ball. Cheap read, cached per change. */
   readonly chapter: () => number;
-  /** Full/Reduced: Reduced turns the trail off. */
-  readonly effects: () => EffectsMode;
 }
 
 interface KeyData {
@@ -126,6 +122,8 @@ interface BulletNode {
   readonly sprite: Sprite;
   lastFrame: number;
   lastKey: string;
+  lastPlayer: boolean | null;
+  lastAngle: number;
 }
 
 interface GhostNode {
@@ -148,8 +146,16 @@ export class BulletView extends Component {
   private readonly ghostClock = new Map<number, number>();
   private limit = MAX_BULLET_NODES;
   private elapsedMs = 0;
+  /** Loadout-derived look, cached by `setLoadout` — never recomputed inside the frame loop. */
   private playerKey = 'fx.shuriken';
+  private playerTint: Color = BULLET_NO_TINT;
+  private baseTrail: VfxElement | null = null;
+  private trailEnabled = true;
+  /** Chapter-derived enemy look, recomputed only when the chapter changes. */
   private enemyKey = 'fx.energy-ball';
+  private enemyTint: Color = BULLET_NO_TINT;
+  private chapter = 0;
+  private ghostCursor = 0;
 
   /** Preload every projectile sheet and **pre-build every node** — no allocation during play. */
   async init(pool: BulletPool, options: BulletViewOptions): Promise<void> {
@@ -179,6 +185,25 @@ export class BulletView extends Component {
     for (let index = 0; index < this.limit; index += 1) {
       this.ensureNode(index);
     }
+    this.setLoadout(new Map());
+    this.setEffectsMode('full');
+  }
+
+  /**
+   * Bootstrap pushes the loadout on every skill pick (same moment as `PlayerController.setLoadout`).
+   * `SkillLoadout.snapshot()` allocates a Map and `resolveOwnedSkills` builds arrays, so calling
+   * this from the frame loop was measurable — the loop now only reads the cached look.
+   */
+  setLoadout(owned: ReadonlyMap<string, number>): void {
+    const look = playerProjectileLook(owned);
+    this.playerKey = look.key;
+    this.playerTint = look.tint === null ? BULLET_NO_TINT : ELEMENT_COLORS[look.tint];
+    this.baseTrail = strongestElement(owned);
+  }
+
+  /** `Settings.effects`: Reduced hides the trail (cached; the loop reads one boolean). */
+  setEffectsMode(mode: EffectsMode): void {
+    this.trailEnabled = effectsLayers(mode).trail;
   }
 
   /** Bullet + ghost animation clock (independent of the display frame rate). */
@@ -206,14 +231,18 @@ export class BulletView extends Component {
     const options = this.options;
     if (pool === null || options === null) return;
 
-    const owned = options.loadout();
-    const layers = effectsLayers(options.effects());
-    const look = playerProjectileLook(owned);
-    this.playerKey = look.key;
-    this.enemyKey = enemyProjectileKey(options.chapter());
+    const chapter = options.chapter();
+    if (chapter !== this.chapter) {
+      this.chapter = chapter;
+      this.enemyKey = enemyProjectileKey(chapter);
+      this.enemyTint = chapter === 1 ? ENEMY_BULLET_TINT : BULLET_NO_TINT;
+    }
 
-    const playerTint = look.tint === null ? BULLET_NO_TINT : ELEMENT_COLORS[look.tint];
-    const enemyTint = options.chapter() === 1 ? ENEMY_BULLET_TINT : BULLET_NO_TINT;
+    const playerKey = this.playerKey;
+    const playerTint = this.playerTint;
+    const enemyTint = this.enemyTint;
+    const baseTrail = this.baseTrail;
+    const trailOn = this.trailEnabled;
 
     const active = pool.active();
     const drawn = Math.min(active.length, this.limit);
@@ -226,7 +255,7 @@ export class BulletView extends Component {
       if (entry === null) break;
 
       const player = bullet.owner === 'player';
-      const key = player ? look.key : this.enemyKey;
+      const key = player ? playerKey : this.enemyKey;
       const data = this.byKey.get(key);
       if (data === undefined) continue;
 
@@ -237,18 +266,19 @@ export class BulletView extends Component {
       const drawScale =
         (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) * (DRAW_SCALE[key] ?? 1);
 
-      if (entry.lastFrame !== frameIndex || entry.lastKey !== key) {
+      if (entry.lastFrame !== frameIndex || entry.lastKey !== key || entry.lastPlayer !== player) {
         entry.lastFrame = frameIndex;
         entry.lastKey = key;
+        entry.lastPlayer = player;
         entry.sprite.spriteFrame = frame;
 
         const transform = entry.node.getComponent(CocosUITransform);
         // `sizeMode = CUSTOM` takes its size from UITransform — set the sliced frame size.
         if (transform !== null) transform.setContentSize(data.width, data.height);
         entry.node.setScale(drawScale, drawScale, 1);
+        entry.sprite.color = player ? playerTint : enemyTint;
       }
 
-      entry.sprite.color = player ? playerTint : enemyTint;
       this.applyPosition(entry.node, bullet.position);
       // Nodes are pre-built inactive; the pool only ever deactivates them, so a drawn bullet
       // must switch itself back on every frame.
@@ -258,10 +288,13 @@ export class BulletView extends Component {
         player && ROTATING_KEYS.has(key)
           ? (-Math.atan2(bullet.velocity.y, bullet.velocity.x) * 180) / Math.PI
           : 0;
-      entry.node.angle = angle;
+      if (entry.lastAngle !== angle) {
+        entry.lastAngle = angle;
+        entry.node.angle = angle;
+      }
 
-      if (player && layers.trail) {
-        const element = trailElement(owned, bullet.crit);
+      if (player && trailOn) {
+        const element: VfxElement | null = bullet.crit ? 'crit' : baseTrail;
         if (element !== null) {
           this.spawnGhost(bullet, data, frameIndex, element, angle, drawScale);
         }
@@ -312,8 +345,8 @@ export class BulletView extends Component {
       }
     }
 
-    const ghost = this.ghosts.find((candidate) => !candidate.active);
-    if (ghost === undefined) return;
+    const ghost = this.takeGhost();
+    if (ghost === null) return;
 
     const frame = data.frames[frameIndex];
     if (frame === undefined) return;
@@ -339,6 +372,20 @@ export class BulletView extends Component {
     this.applyPosition(ghost.node, bullet.position);
   }
 
+  /** Round-robin over the ghost slots: `find` over 96 entries per spawn was measurable. */
+  private takeGhost(): GhostNode | null {
+    const count = this.ghosts.length;
+    for (let offset = 0; offset < count; offset += 1) {
+      const index = (this.ghostCursor + offset) % count;
+      const ghost = this.ghosts[index];
+      if (ghost !== undefined && !ghost.active) {
+        this.ghostCursor = (index + 1) % count;
+        return ghost;
+      }
+    }
+    return null;
+  }
+
   private ensureNode(index: number): BulletNode | null {
     const existing: BulletNode | undefined = this.nodes[index];
     if (existing !== undefined) {
@@ -352,7 +399,14 @@ export class BulletView extends Component {
     node.parent = this.node;
     node.active = false;
 
-    const entry: BulletNode = { node, sprite, lastFrame: -1, lastKey: '' };
+    const entry: BulletNode = {
+      node,
+      sprite,
+      lastFrame: -1,
+      lastKey: '',
+      lastPlayer: null,
+      lastAngle: Number.NaN,
+    };
     this.nodes.push(entry);
     return entry;
   }

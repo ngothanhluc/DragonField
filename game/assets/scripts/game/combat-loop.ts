@@ -46,7 +46,6 @@ import { spawnWave } from '../core/enemies/waves';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { distance, type Vec2 } from '../core/math/vec2';
 import type { SeededRng } from '../core/rng';
-import type { DerivedStats } from '../core/skills/derived-stats';
 import {
   effectsLayers,
   type EffectsMode,
@@ -163,6 +162,8 @@ export class CombatLoop {
   private readonly hitstop = new HitstopClock(DEFAULT_COMBAT.enemyHitstopMs);
   /** `Settings.effects` — Reduced keeps impacts/telegraphs but drops secondary particles. */
   private effectsMode: EffectsMode = 'full';
+  /** Cached layer flag: `effectsLayers()` allocates, and a busy frame spawns FX many times. */
+  private secondaryParticles = true;
   private readonly enemies: EnemyView[] = [];
   private boss: BossView | null = null;
   /** Enemy/boss already rewarded — stops double gold when update scans again. */
@@ -514,7 +515,8 @@ export class CombatLoop {
           crit,
           executeApplied: damage > bullet.damage + 1e-9,
           healed,
-          stats,
+          // Bosses ignore Freeze/Poison, so their status FX never starts.
+          poisonStarted: false,
         });
         this.explode(bullet, boss.position, null);
         this.hitstop.request(crit ? FEEL_TUNING.vfx.critHitstopMs : undefined);
@@ -535,7 +537,7 @@ export class CombatLoop {
         const crit = bullet.damage > stats.damage * 1.01;
         victim.takeDamage(damage, bullet.position, this.nowMs);
         this.reportDamage(damage, victim.position, crit);
-        victim.applyStatus(stats, this.nowMs);
+        const status = victim.applyStatus(stats, this.nowMs);
         playSfx('enemy-hit');
         const heartsBefore = player.hearts;
         const healed = player.heal(lifestealHeal(stats, damage)) - heartsBefore;
@@ -545,7 +547,7 @@ export class CombatLoop {
           crit,
           executeApplied: damage > bullet.damage + 1e-9,
           healed,
-          stats,
+          poisonStarted: status.poisonStarted,
         });
         this.explode(bullet, victim.position, victim);
         this.hitstop.request(crit ? FEEL_TUNING.vfx.critHitstopMs : undefined);
@@ -590,7 +592,7 @@ export class CombatLoop {
       lifetimeMs: 820,
     });
     // The smoke ring belongs to the explosive impact, so it stays under Reduced like the
-    // explosion itself (only secondary particles are dropped there).
+    // explosion itself (only the extra particles are dropped there).
     this.fx?.spawn('fx.smoke-circular', center, {
       drawUnits: Math.max(1.0, bullet.explosiveRadiusTiles * 1.6),
       lifetimeMs: 900,
@@ -694,13 +696,14 @@ export class CombatLoop {
     readonly crit: boolean;
     readonly executeApplied: boolean;
     readonly healed: number;
-    readonly stats: DerivedStats;
+    /** The poison status started on this hit — its FX lives here so it fires once, not per hit. */
+    readonly poisonStarted: boolean;
   }): void {
     const fx = this.fx;
     if (fx === null) return;
 
     const vfx = FEEL_TUNING.vfx;
-    const secondary = effectsLayers(this.effectsMode).secondaryParticles;
+    const secondary = this.secondaryParticles;
 
     fx.spawn('fx.impact', args.position, {
       tint: HIT_TINT,
@@ -715,18 +718,16 @@ export class CombatLoop {
       });
     }
 
-    if (args.stats.slowOnHit !== undefined) fx.spawn('fx.ice', args.position);
-    if (args.stats.poisonOnHit !== undefined) {
-      fx.spawn('fx.poison', args.position);
-      if (secondary) {
-        for (let index = 0; index < 2; index += 1) {
-          const angle = (index / 2) * Math.PI * 2;
-          fx.spawn(
-            'fx.bubble',
-            { x: args.position.x + Math.cos(angle) * 0.3, y: args.position.y + Math.sin(angle) * 0.3 },
-            { tint: POISON_TINT, drawUnits: 0.35, lifetimeMs: 500 },
-          );
-        }
+    // Freeze/Poison sprites are spawned by `EnemyView.applyStatus` on the first application only;
+    // repeating them on every hit of a rapid-fire volley is the same picture several times.
+    if (args.poisonStarted && secondary) {
+      for (let index = 0; index < 2; index += 1) {
+        const angle = (index / 2) * Math.PI * 2;
+        fx.spawn(
+          'fx.bubble',
+          { x: args.position.x + Math.cos(angle) * 0.3, y: args.position.y + Math.sin(angle) * 0.3 },
+          { tint: POISON_TINT, drawUnits: 0.35, lifetimeMs: 500 },
+        );
       }
     }
 
@@ -757,9 +758,10 @@ export class CombatLoop {
     }
   }
 
-  /** `Settings.effects`: Reduced drops the smoke ring and secondary particles only. */
+  /** `Settings.effects`: Reduced drops the extra particles (impacts/telegraphs stay). */
   setEffectsMode(mode: EffectsMode): void {
     this.effectsMode = mode;
+    this.secondaryParticles = effectsLayers(mode).secondaryParticles;
   }
 
   /**

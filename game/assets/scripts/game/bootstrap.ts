@@ -667,12 +667,11 @@ export class Bootstrap extends Component {
     node.parent = this.bulletLayer ?? this.node;
 
     const bulletView: BulletView = node.addComponent(BulletView);
-    await bulletView.init(player.bullets, {
-      // Live closures: a skill pick changes the sprite/trail on the next frame, no rebuild.
-      loadout: () => this.skills.snapshot(),
-      chapter: () => this.run?.chapter ?? 1,
-      effects: () => this.save?.settings.effects ?? 'full',
-    });
+    await bulletView.init(player.bullets, { chapter: () => this.run?.chapter ?? 1 });
+    // Push the look once; `applyLoadout`/`setFeelSettings` push it again when it really changes,
+    // so the per-frame sync never builds a loadout map.
+    bulletView.setLoadout(this.skills.snapshot());
+    bulletView.setEffectsMode(this.save?.settings.effects ?? 'full');
     this.bulletView = bulletView;
   }
 
@@ -860,7 +859,9 @@ export class Bootstrap extends Component {
     const player = this.player;
     const stats = this.skills.stats();
     player?.applyStats(stats, healNow);
-    player?.setLoadout(this.skills.snapshot());
+    const owned = this.skills.snapshot();
+    player?.setLoadout(owned);
+    this.bulletView?.setLoadout(owned);
     this.hud?.setSkills(this.skills.entries);
     if (player !== null) this.hud?.setMaxHearts(player.maxHearts);
     this.hud?.setHearts(player?.hearts ?? 0);
@@ -969,6 +970,7 @@ export class Bootstrap extends Component {
     if (this.feel !== null) this.feel.damageNumbersEnabled = settings.damageNumbers;
     this.player?.setEffectsMode(settings.effects);
     this.combat?.setEffectsMode(settings.effects);
+    this.bulletView?.setEffectsMode(settings.effects);
   }
 
   /** Snapshot the run for the result screen before teardown (ScreenFlow knows no RunState/combat). */

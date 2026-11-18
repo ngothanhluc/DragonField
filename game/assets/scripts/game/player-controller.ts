@@ -109,9 +109,15 @@ export class PlayerController extends Component {
   private shield = new ShieldCharger(0, 0);
   private rng = SeededRng.fromSeed(1);
   private fx: FxPool | null = null;
-  /** Live loadout (skill id → stacks) — drives the projectile look, trail and aura. */
+  /** Live loadout (skill id → stacks) — drives the aura decision, cached until it changes. */
   private loadout: ReadonlyMap<string, number> = new Map();
   private effectsMode: EffectsMode = 'full';
+  private auraDirty = true;
+  private auraOn = false;
+  private auraElement: VfxElement | null = null;
+  private auraShown = false;
+  /** Reused position (the aura is re-applied every frame; no object per frame). */
+  private readonly auraAt = { x: 0, y: 0 };
   private sprite: Sprite | null = null;
   private tintUntilMs = 0;
   private tint: Color = PLAYER_NO_TINT;
@@ -175,14 +181,16 @@ export class PlayerController extends Component {
     return this.health.heal(amount);
   }
 
-  /** New loadout: the aura appears/disappears and its colour follows the strongest element. */
+  /** New loadout: the aura decision (visible + colour) is recomputed once, not every frame. */
   setLoadout(owned: ReadonlyMap<string, number>): void {
     this.loadout = owned;
+    this.auraDirty = true;
   }
 
   /** `Settings.effects` — Reduced hides the aura (impacts/telegraphs stay). */
   setEffectsMode(mode: EffectsMode): void {
     this.effectsMode = mode;
+    this.auraDirty = true;
   }
 
   /** A skill was just acquired: one boost burst at the player's feet (off under Reduced effects). */
@@ -326,6 +334,7 @@ export class PlayerController extends Component {
       // On death `step()` stops running: a half-finished squash would freeze, so reset the base scale.
       this.node.setScale(this.baseScale, this.baseScale, 1);
       this.fx?.setAura(null, null);
+      this.auraShown = false;
       this.playAnimation('player.dead');
       playSfx('game-over');
       return true;
@@ -478,22 +487,33 @@ export class PlayerController extends Component {
 
   /**
    * Aura at the feet: visible with ≥ 8 stacks or any Epic skill, tinted by the strongest
-   * element, hidden entirely under Reduced effects. Re-applied every frame so it follows
-   * the player without a second clock.
+   * element, hidden entirely under Reduced effects. The **decision** is cached on
+   * `setLoadout`/`setEffectsMode`; the frame only moves the ring to follow the player.
    */
   private updateAura(): void {
     const fx = this.fx;
     if (fx === null) return;
 
-    if (!effectsLayers(this.effectsMode).aura || !showAura(this.loadout)) {
-      fx.setAura(null, null);
+    if (this.auraDirty) {
+      this.auraDirty = false;
+      this.auraOn = effectsLayers(this.effectsMode).aura && showAura(this.loadout);
+      this.auraElement = strongestElement(this.loadout);
+    }
+
+    if (!this.auraOn) {
+      if (this.auraShown) {
+        fx.setAura(null, null);
+        this.auraShown = false;
+      }
       return;
     }
 
-    const element = strongestElement(this.loadout);
+    this.auraShown = true;
+    this.auraAt.x = this.tilePosition.x;
+    this.auraAt.y = this.tilePosition.y + FEEL_TUNING.vfx.auraOffsetTiles;
     fx.setAura(
-      { x: this.tilePosition.x, y: this.tilePosition.y + FEEL_TUNING.vfx.auraOffsetTiles },
-      element === null ? null : AURA_COLORS[element],
+      this.auraAt,
+      this.auraElement === null ? null : AURA_COLORS[this.auraElement],
       FEEL_TUNING.vfx.auraDrawUnits,
     );
   }

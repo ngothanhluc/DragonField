@@ -123,6 +123,8 @@ export class FxPool {
   private readonly lineSlots: LineSlot[] = [];
   private readonly framesByKey = new Map<FxKey, { frames: readonly SpriteFrame[]; fps: number }>();
   private elapsedMs = 0;
+  /** Round-robin cursor: picking a free slot must not scan from 0 on every spawn. */
+  private slotCursor = 0;
 
   /** One dedicated looping aura ring; `null` position = hidden. */
   private auraNode: Node | null = null;
@@ -133,6 +135,7 @@ export class FxPool {
   private auraElapsedMs = 0;
   private auraActive = false;
   private readonly auraTint = new CocosColor(255, 255, 255, 255);
+  private auraScale = Number.NaN;
 
   /** Initialise the pool under `parent`; slice frames from the manifest up front. */
   async init(parent: Node): Promise<void> {
@@ -166,7 +169,7 @@ export class FxPool {
   spawn(key: FxKey, position: Vec2, options: FxSpawnOptions = {}): void {
     const data = this.framesByKey.get(key);
     if (data === undefined || data.frames.length === 0) return;
-    const slot = this.slots.find((candidate) => !candidate.active) ?? this.slots[0];
+    const slot = this.takeSlot();
     if (slot === undefined) return;
 
     const style = STYLES[key];
@@ -243,14 +246,26 @@ export class FxPool {
       if (transform !== null) transform.setContentSize(first.rect.width, first.rect.height);
     }
     node.setPosition(world.x, world.y, 0);
-    node.setScale(scale, scale, 1);
+    if (this.auraScale !== scale) {
+      this.auraScale = scale;
+      node.setScale(scale, scale, 1);
+    }
 
+    // Color is a material value: only write it when the element really changed (every frame
+    // this method runs, the position changes but the colour almost never does).
     const colour = tint ?? NO_TINT;
-    this.auraTint.r = colour.r;
-    this.auraTint.g = colour.g;
-    this.auraTint.b = colour.b;
-    this.auraTint.a = colour.a;
-    sprite.color = this.auraTint;
+    if (
+      this.auraTint.r !== colour.r ||
+      this.auraTint.g !== colour.g ||
+      this.auraTint.b !== colour.b ||
+      this.auraTint.a !== colour.a
+    ) {
+      this.auraTint.r = colour.r;
+      this.auraTint.g = colour.g;
+      this.auraTint.b = colour.b;
+      this.auraTint.a = colour.a;
+      sprite.color = this.auraTint;
+    }
   }
 
   get auraVisible(): boolean {
@@ -347,6 +362,22 @@ export class FxPool {
     this.slots.length = 0;
     this.lineSlots.length = 0;
     this.framesByKey.clear();
+  }
+
+  /** First inactive slot from the cursor; when all are busy, hand out slots round-robin. */
+  private takeSlot(): Slot | undefined {
+    const count = this.slots.length;
+    for (let offset = 0; offset < count; offset += 1) {
+      const index = (this.slotCursor + offset) % count;
+      const slot = this.slots[index];
+      if (slot !== undefined && !slot.active) {
+        this.slotCursor = (index + 1) % count;
+        return slot;
+      }
+    }
+    const fallback = this.slots[this.slotCursor];
+    if (fallback !== undefined) this.slotCursor = (this.slotCursor + 1) % count;
+    return fallback;
   }
 
   private createSlot(parent: Node, index: number): Slot {
