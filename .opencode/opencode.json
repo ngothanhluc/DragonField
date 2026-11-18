@@ -27,6 +27,66 @@
       "action": "skill",
       "resource": "executor-rules",
       "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "game-feel",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "game-ui-ux",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "level-design",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "performance-optimization",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "game-ai",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "roguelike",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "game-docs",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "audio-design",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "camera-systems",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "input-systems",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "physics-tuning",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "save-systems",
+      "effect": "allow"
     }
   ],
   "policies": [

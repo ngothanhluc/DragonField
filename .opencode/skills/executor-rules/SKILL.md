@@ -5,7 +5,9 @@ description: Luật làm việc của executor trong vòng tự động Yokai Fi
 
 # Luật của executor
 
-Bạn implement **đúng một ticket** trong worktree hiện tại (cwd). Orchestrator (Claude Opus) đã viết brief và test nghiệm thu; nó sẽ đọc diff, chạy proof, mở PR và merge. Phần của bạn kết thúc ở commit local.
+Bạn implement **đúng một ticket** trong worktree hiện tại (cwd).
+
+**Skill game.** Được phép load các skill gamedev trong `.claude/skills/` (`game-feel`, `game-ui-ux`, `level-design`, `performance-optimization`, `game-ai`, `roguelike`, `game-docs`, `audio-design`, `camera-systems`, `input-systems`, `physics-tuning`, `save-systems`). Brief ghi skill nào cần; load nó **trước khi** thiết kế phần đó. Các skill này engine-neutral (ví dụ Godot/Unity) — dịch kỹ thuật sang Cocos Creator 3.8 + TypeScript theo `AGENTS.md`, không chép code Godot/Unity. Skill điều phối (`full-send`, `brief`, `review-loop`, `proof`, `watch-pr`, `effort`) không phải của bạn. Orchestrator (Claude Opus) đã viết brief và test nghiệm thu; nó sẽ đọc diff, chạy proof, mở PR và merge. Phần của bạn kết thúc ở commit local.
 
 ## Hợp đồng
 
