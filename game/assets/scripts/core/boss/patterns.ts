@@ -1,34 +1,34 @@
 /**
- * Máy trạng thái pattern boss (GDD §5).
+ * Boss pattern state machine (GDD §5).
  *
- * Hợp đồng: `stepBoss({ state, nowMs, deltaMs, player, rng })` là **hàm thuần**
- * — không đọc đồng hồ, không `Math.random`, không đụng node Cocos. Cùng state +
- * cùng chuỗi input + cùng seed cho **đúng cùng** chuỗi event. `SeededRng` được
- * truyền vào từ ngoài, không bao giờ được tạo trong file này.
+ * Contract: `stepBoss({ state, nowMs, deltaMs, player, rng })` is a **pure function**
+ * — no clock reads, no `Math.random`, no touching Cocos nodes. Same state +
+ * same input sequence + same seed gives **exactly the same** event stream. `SeededRng` is
+ * passed in from outside and is never created in this file.
  *
- * Determinism: cùng state + cùng chuỗi input (`nowMs`, `deltaMs`, `player`) +
- * cùng seed cho **đúng cùng** chuỗi event. `SeededRng` được truyền vào từ
- * ngoài, không bao giờ được tạo trong file này — và nó **bị tiêu thụ**, nên
- * muốn chạy lại một đoạn phải dựng instance mới từ cùng seed.
+ * Determinism: same state + same input sequence (`nowMs`, `deltaMs`, `player`) +
+ * same seed gives **exactly the same** event stream. `SeededRng` is passed in from
+ * outside and is never created in this file — and it **is consumed**, so re-running
+ * a segment requires a new instance from the same seed.
  *
- * Thời gian: `state.step` là chỉ số bước trong script của phase hiện tại,
- * `state.stepStartedMs` là lúc bước đó bắt đầu. Caller chỉ cần gọi mỗi frame;
- * mọi việc còn lại (chuyển bước, lặp vòng, đổi phase) do `stepBoss` lo.
+ * Time: `state.step` is the step index in the current phase's script,
+ * `state.stepStartedMs` is when that step began. The caller only calls once per frame;
+ * everything else (advance step, loop, change phase) is `stepBoss`'s job.
  *
- * Phase **chỉ tiến, không lùi**: hồi máu không kéo boss về phase trước, vì mỗi
- * ngưỡng chỉ được phát `phase-change` đúng một lần (state.phase là bộ nhớ của
+ * Phase only ever **advances, never regresses**: healing does not pull the boss back to an earlier
+ * phase, because each threshold emits `phase-change` exactly once (state.phase is the memory of that).
  * việc đó).
  *
- * Vị trí: `state.position` là **nguồn sự thật** — `stepBoss` tự tích phân di
- * chuyển theo `deltaMs`. Event `move` chỉ là *ý đồ* cho adapter (đi tới đâu,
- * nhanh bao nhiêu) để nó chạy animation walk/charge; adapter có thể bám
- * `state.position` mỗi frame thay vì nội suy event.
+ * Position: `state.position` is the **source of truth** — `stepBoss` integrates movement
+ * by `deltaMs` itself. The `move` event is only an *intent* for the adapter (where to go,
+ * how fast) so it can play walk/charge animations; the adapter may also follow
+ * `state.position` each frame instead of interpolating events.
  *
- * Telegraph: **mọi** bước gây sát thương (volley, spiral, vệt lửa, charge) đều
- * đứng ngay sau một bước có `telegraph`, thời lượng `TELEGRAPH_MS.boss` (800 ms).
+ * Telegraph: **every** damage-dealing step (volley, spiral, trail, charge) sits
+ * immediately after a step with `telegraph`, duration `TELEGRAPH_MS.boss` (800 ms).
  *
- * Toạ độ tile unit, gốc trên-trái, y hướng xuống (cùng hệ `LevelData`). Góc
- * tính bằng **radian**, 0 = +x, `Math.PI / 2` = +y (xuống).
+ * Tile-unit coordinates, top-left origin, y pointing down (same system as `LevelData`). Angles
+ * are **radians**, 0 = +x, `Math.PI / 2` = +y (down).
  */
 import { TELEGRAPH_MS } from '../combat/telegraph';
 import { ROOM_COLS, ROOM_ROWS, type EnemyRole } from '../level/level-data';
@@ -48,32 +48,32 @@ import {
 } from './boss-defs';
 
 // ---------------------------------------------------------------------------
-// Trạng thái và event
+// State and events
 // ---------------------------------------------------------------------------
 
 /**
- * Toàn bộ trạng thái boss. **Chỉ dữ liệu phẳng** — không class, không hàm —
- * vì save/teleport sẽ snapshot nguyên object này.
+ * The whole boss state. **Flat data only** — no classes, no functions —
+ * because save/teleport will snapshot this object as-is.
  */
 export interface BossState {
   id: BossId;
   position: Vec2;
   health: number;
   phase: BossPhase;
-  /** Bước hiện tại trong script của `phase`. */
+  /** Current step in the `phase` script. */
   step: number;
   stepStartedMs: number;
   facing: Facing;
-  /** Khác `null` chỉ khi đang trong bước charge; `move` cũng đọc từ đây. */
+  /** Non-`null` only during a charge step; `move` also reads from here. */
   chargeDirection: Vec2 | null;
 }
 
 /**
- * Mô tả tối thiểu một viên đạn cho adapter: nó tự tra pool và gán ttl/owner.
+ * Minimal description of one bullet for the adapter: it looks up the pool itself and assigns ttl/owner.
  *
- * - `toward !== null`: hướng bay = `normalize(toward - from)` xoay thêm
+ * - `toward !== null`: flight direction = `normalize(toward - from)` plus
  *   `angleOffset` radian.
- * - `toward === null`: `angleOffset` là **góc tuyệt đối** (radian).
+ * - `toward === null`: `angleOffset` is the **absolute angle** (radians).
  */
 export interface BulletVerb {
   from: Vec2;
@@ -97,15 +97,15 @@ export interface StepBossArgs {
   readonly nowMs: number;
   readonly deltaMs: number;
   readonly player: Vec2;
-  /** Nguồn ngẫu nhiên duy nhất cho dịch chuyển/vị trí summon. */
+  /** The only randomness source for movement/summon placement. */
   readonly rng: SeededRng;
 }
 
-/** State khởi tạo của một boss vừa spawn; `stepStartedMs = 0`. */
+/** Initial state of a freshly spawned boss; `stepStartedMs = 0`. */
 export function initialBossState(id: BossId, position: Vec2): BossState {
   return {
     id,
-    // Spawn trong `.tmx` có thể sát tường; kéo vào để sprite không bị cắt ngay frame đầu.
+    // A `.tmx` spawn may be against the wall; pull it in so the sprite is not cut on the first frame.
     position: clampToRoom(position, bossRoomBounds(id)),
     health: BOSSES[id].maxHealth,
     phase: 1,
@@ -116,35 +116,35 @@ export function initialBossState(id: BossId, position: Vec2): BossState {
   };
 }
 
-/** Boss đã chết: không hành động, không bắn, không đổi phase nữa. */
+/** A dead boss: no actions, no shots, no further phase changes. */
 export function isBossDefeated(state: BossState): boolean {
   return state.health <= 0;
 }
 
 // ---------------------------------------------------------------------------
-// Dữ liệu pattern
+// Pattern data
 // ---------------------------------------------------------------------------
 
-/** Chừa 1 tile sát tường: boss không bao giờ chui vào tường hay đứng nửa người ngoài phòng. */
+/** Keep 1 tile off the wall: the boss never enters a wall or stands half outside the room. */
 export const BOSS_EDGE_MARGIN_TILES = 1;
 
-/** Tốc độ "dịch chuyển tức thời" phát ra event `move` — adapter coi như snap. */
+/** The "instant teleport" speed used in the `move` event — the adapter treats it as a snap. */
 export const TELEPORT_SNAP_SPEED_TILES_PER_SECOND = 64;
 
-/** Dịch chuyển phải ra xa player ít nhất chừng này, nếu không thì vô nghĩa. */
+/** A teleport must land at least this far from the player, otherwise it is pointless. */
 export const TELEPORT_MIN_DISTANCE_FROM_PLAYER_TILES = 6;
 
-/** Số lần thử chọn điểm dịch chuyển trước khi lấy điểm xa player nhất trong các lần thử. */
+/** Attempts to pick a teleport point before taking the farthest attempt from the player. */
 const TELEPORT_ATTEMPTS = 8;
 
-/** Khoảng cách giữa hai viên trong sóng slash của Samurai, tile. */
+/** Spacing between two bullets in a Samurai slash wave, tiles. */
 const LINE_BULLET_SPACING_TILES = 0.6;
 
 const TWO_PI = Math.PI * 2;
 const HALF_PI = Math.PI / 2;
 const DEG = Math.PI / 180;
 
-/** Vùng tâm hitbox boss được phép đứng, toạ độ room (tile, y hướng xuống). */
+/** Area where the boss hitbox centre may stand, room coordinates (tiles, y pointing down). */
 export interface RoomBounds {
   readonly minX: number;
   readonly maxX: number;
@@ -153,9 +153,9 @@ export interface RoomBounds {
 }
 
 /**
- * Vùng đứng của một boss: chừa ít nhất `BOSS_EDGE_MARGIN_TILES`, và đủ rộng để
- * **cả sprite** (`spriteExtentTiles`, tính từ chân) nằm trong phòng. Chỉ chừa
- * theo hitbox thì boss 96 px charge sát tường bị cắt mất nửa người.
+ * Standing area of a boss: keeps at least `BOSS_EDGE_MARGIN_TILES`, and wide enough for
+ * the **whole sprite** (`spriteExtentTiles`, measured from the feet) to stay inside the room. Reserving
+ * by hitbox only would cut half of a 96 px boss charging against the wall.
  */
 export function bossRoomBounds(id: BossId): RoomBounds {
   const extent = BOSSES[id].spriteExtentTiles;
@@ -167,35 +167,35 @@ export function bossRoomBounds(id: BossId): RoomBounds {
   };
 }
 
-/** Cách boss di chuyển trong một bước. */
+/** How the boss moves during a step. */
 export type BossMotion =
   | { readonly kind: 'chase'; readonly speedTilesPerSecond: number }
   | { readonly kind: 'swim'; readonly speedTilesPerSecond: number }
   | { readonly kind: 'charge'; readonly speedTilesPerSecond: number }
-  /** Đi theo trục y tới hàng của player (Samurai lấy đà ngang). */
+  /** Move along y to the player's row (Samurai builds speed sideways). */
   | { readonly kind: 'line-up'; readonly speedTilesPerSecond: number }
   | { readonly kind: 'teleport' };
 
 /**
- * Một đợt đạn. `fan`/`spread` tự nhắm player (khác nhau ở độ mở);
- * `ring` toả đều 360°; `line` là sóng slash bay theo hướng `facing`.
+ * One bullet batch. `fan`/`spread` auto-aim at the player (they differ in opening);
+ * `ring` spreads evenly over 360°; `line` is a slash wave flying along `facing`.
  */
 export type VolleyShape = 'fan' | 'spread' | 'ring' | 'line';
 
 export interface VolleySpec {
   readonly shape: VolleyShape;
   readonly count: number;
-  /** Tổng góc mở của `fan`/`spread`, radian. Bỏ qua với `ring`/`line`. */
+  /** Total opening angle of `fan`/`spread`, radians. Ignored for `ring`/`line`. */
   readonly spreadRadians: number;
-  /** Góc tuyệt đối của viên đầu tiên trong `ring`, radian. Bỏ qua với shape khác. */
+  /** Absolute angle of the first bullet in `ring`, radians. Ignored by the other shapes. */
   readonly baseAngleRadians: number;
   /**
-   * Ring có xoay sao cho viên đầu tiên nhắm thẳng player không.
+   * Whether the ring rotates so the first bullet points straight at the player.
    *
-   * Vòng 8 viên quanh boss vẫn là vòng 8 viên; cờ này chỉ đảm bảo **một** viên
-   * đi đúng đường tới player, nên đứng yên là trúng. Không có nó, ring bắn từ
-   * vị trí teleport ngẫu nhiên có thể để lọt player đứng ở góc — và "pattern
-   * buộc phải di chuyển" sẽ chỉ đúng trên giấy.
+   * An 8-bullet ring is still an 8-bullet ring; this flag just guarantees **one** bullet
+   * travels the exact line to the player, so standing still gets hit. Without it, a ring fired from
+   * a random teleport spot can miss a player standing in a corner — and "the pattern
+   * forces movement" would only be true on paper.
    */
   readonly ringAimsAtPlayer?: boolean;
   readonly speedTilesPerSecond: number;
@@ -204,22 +204,22 @@ export interface VolleySpec {
 }
 
 /**
- * Vệt lửa Samurai để lại khi charge (phase 3).
+ * Fire trail the Samurai leaves while charging (phase 3).
  *
- * Lửa bùng lên **dọc cả làn charge** ngay lúc boss lao (một event `shoot` với
- * nhiều viên rải sẵn), rồi trôi chậm cùng hướng charge. Cách này giữ state
- * phẳng (không cần bộ đếm nhỏ giọt) mà vẫn đọc được: boss lao 9 tile/s, lửa
- * trôi 1.2 tile/s nên chúng nằm lại phía sau gần như ngay lập tức.
+ * The fire blooms **along the whole charge lane** the moment the boss launches (one `shoot` event with
+ * many bullets placed in advance), then drifts slowly with the charge direction. That keeps state
+ * flat (no drip counter) yet still reads: the boss charges at 9 tiles/s while the fire
+ * drifts at 1.2 tiles/s, so it falls behind almost immediately.
  */
 export interface TrailSpec {
   readonly spacingTiles: number;
-  /** Vệt lửa trôi chậm theo hướng charge, không đứng yên (đạn cần speed > 0). */
+  /** The trail drifts slowly along the charge direction instead of standing still (bullets need speed > 0). */
   readonly driftSpeedTilesPerSecond: number;
   readonly damage: number;
   readonly radiusTiles: number;
 }
 
-/** Xoắn ốc của Squid: phát một viên mỗi `intervalMs`, góc quay đều. */
+/** Squid spiral: fires one bullet every `intervalMs`, rotating the angle evenly. */
 export interface SpiralSpec {
   readonly intervalMs: number;
   readonly angleStepRadians: number;
@@ -245,16 +245,16 @@ export interface BossStep {
 
 export interface BossPhaseScript {
   readonly steps: readonly BossStep[];
-  /** Bước bắt đầu vòng lặp sau lần chạy đầu. Mặc định 0. */
+  /** Step at which the loop restarts after the first run. Defaults to 0. */
   readonly loopFrom?: number;
 }
 
 export type BossScripts = Readonly<Record<BossId, Readonly<Record<BossPhase, BossPhaseScript>>>>;
 
 /**
- * Bước này có gây sát thương không? (`volley`, `spiral`, `trail`, và `move`
- * charge vì thân boss gây sát thương khi lao.) Test dùng hàm này để bắt buộc
- * mọi bước như vậy phải đứng sau một bước telegraph.
+ * Does this step deal damage? (`volley`, `spiral`, `trail`, and a charge `move`
+ * because the boss body hurts while charging.) Tests use this to enforce
+ * that every such step sits behind a telegraph step.
  */
 export function isDamagingStep(step: BossStep): boolean {
   return step.actions.some(
@@ -266,7 +266,7 @@ export function isDamagingStep(step: BossStep): boolean {
   );
 }
 
-// --- Volley dựng sẵn -------------------------------------------------------
+// --- Prebuilt volleys ------------------------------------------------------
 
 const TENGU_FAN: BossAction = {
   kind: 'volley',
@@ -331,7 +331,7 @@ const SAMURAI_FIRE_TRAIL: BossAction = {
   },
 };
 
-/** Xoắn phase 2: chậm, đọc được nhịp. */
+/** Phase 2 spiral: slow, readable rhythm. */
 const SQUID_SPIRAL_SLOW: BossAction = {
   kind: 'spiral',
   spiral: {
@@ -343,7 +343,7 @@ const SQUID_SPIRAL_SLOW: BossAction = {
   },
 };
 
-/** Xoắn phase 3: nhanh hơn (GDD §5 "xoắn nhanh hơn"). */
+/** Phase 3 spiral: faster (GDD §5 "spins faster"). */
 const SQUID_SPIRAL_FAST: BossAction = {
   kind: 'spiral',
   spiral: {
@@ -367,7 +367,7 @@ const SQUID_SWIM: BossAction = {
   motion: { kind: 'swim', speedTilesPerSecond: 2.6 },
 };
 
-/** Phase 3 Squid "tăng tốc": bơi nhanh hơn. */
+/** Squid phase 3 "speed up": swims faster. */
 const SQUID_SWIM_FAST: BossAction = {
   kind: 'move',
   motion: { kind: 'swim', speedTilesPerSecond: 3.2 },
@@ -379,17 +379,17 @@ const SAMURAI_CHARGE: BossAction = {
 };
 
 /**
- * Lấy đà theo hàng của player trước khi charge ngang (GDD §5: charge L/R là
- * dấu hiệu đọc đòn). Nếu boss cứ charge ở hàng cũ, player đứng ở hàng khác
- * không bao giờ bị đe doạ; line-up làm cú charge có ý nghĩa mà vẫn giữ hướng
- * ngang và animation L/R.
+ * Line up with the player's row before charging sideways (GDD §5: an L/R charge is an
+ * attack tell). If the boss always charged in its old row, a player standing in another
+ * row would never be threatened; lining up makes the charge meaningful while keeping the
+ * horizontal direction and L/R animation.
  */
 const SAMURAI_LINE_UP: BossAction = {
   kind: 'move',
   motion: { kind: 'line-up', speedTilesPerSecond: 8 },
 };
 
-/** Line-up đủ lâu để từ hàng boss tới hàng player ở arena 18 tile. */
+/** Long enough to line up from the boss row to the player row in an 18-tile arena. */
 const SAMURAI_LINE_UP_MS = 1600;
 
 const TELEPORT: BossAction = {
@@ -405,16 +405,16 @@ function face(direction: 'player' | 'opposite'): BossAction {
   return { kind: 'face', direction };
 }
 
-// --- Script của 3 boss -----------------------------------------------------
+// --- Scripts of the 3 bosses -----------------------------------------------
 
 /**
- * Pattern theo GDD §5. Đọc theo cột: bước nào bắt đầu bằng telegraph thì bước
- * kế tiếp là đòn thật — người chơi có đúng 800 ms để né.
+ * Patterns per GDD §5. Read by column: a step that starts with a telegraph has the real attack
+ * in the next step — the player gets exactly 800 ms to dodge.
  */
 export const BOSS_SCRIPTS: BossScripts = {
   // -------------------------------------------------------------------------
-  // Ch1 — TenguBlue: đi bộ đuổi + chùm 5 viên → thêm Trans + vòng 8 viên →
-  // enrage: dịch chuyển ×3, mỗi lần một chùm 5 viên.
+  // Ch1 — TenguBlue: walk-chase + 5-bullet fan → adds Trans + 8-bullet ring →
+  // enrage: teleport ×3, each followed by a 5-bullet fan.
   // -------------------------------------------------------------------------
   tengu: {
     1: {
@@ -454,8 +454,8 @@ export const BOSS_SCRIPTS: BossScripts = {
   },
 
   // -------------------------------------------------------------------------
-  // Ch2 — SquidGreen: bơi ngang + Shoot 5 viên toả → AttackLoop xoắn ốc →
-  // gọi 2 caster rồi xoắn nhanh hơn.
+  // Ch2 — SquidGreen: swim sideways + 5-bullet spread Shoot → AttackLoop spiral →
+  // summon 2 casters then spin faster.
   // -------------------------------------------------------------------------
   squid: {
     1: {
@@ -474,7 +474,7 @@ export const BOSS_SCRIPTS: BossScripts = {
       ],
     },
     3: {
-      // Bước 0 (gọi quái) chỉ chạy một lần khi vào phase; vòng lặp bắt đầu từ 1.
+      // Step 0 (summon) runs only once on phase entry; the loop starts at 1.
       loopFrom: 1,
       steps: [
         {
@@ -490,8 +490,8 @@ export const BOSS_SCRIPTS: BossScripts = {
   },
 
   // -------------------------------------------------------------------------
-  // Ch3 — GiantBlueSamurai: charge ngang + slash sóng thẳng → charge đôi đổi
-  // hướng → charge để lại vệt lửa + slash đôi.
+  // Ch3 — GiantBlueSamurai: horizontal charge + straight slash wave → double charge changing
+  // direction → charge leaving a fire trail + double slash.
   // -------------------------------------------------------------------------
   samurai: {
     1: {
@@ -544,20 +544,20 @@ export const BOSS_SCRIPTS: BossScripts = {
 };
 
 // ---------------------------------------------------------------------------
-// Máy trạng thái
+// State machine
 // ---------------------------------------------------------------------------
 
 export function stepBoss(args: StepBossArgs): { state: BossState; events: BossEvent[] } {
   const { nowMs, deltaMs, player } = args;
 
   if (!Number.isFinite(nowMs)) {
-    throw new Error(`stepBoss cần nowMs hữu hạn, nhận ${nowMs}`);
+    throw new Error(`stepBoss needs a finite nowMs, got ${nowMs}`);
   }
   if (!Number.isFinite(deltaMs) || deltaMs < 0) {
-    throw new Error(`stepBoss cần deltaMs hữu hạn và >= 0, nhận ${deltaMs}`);
+    throw new Error(`stepBoss needs a finite deltaMs >= 0, got ${deltaMs}`);
   }
 
-  // Bản sao: không bao giờ sửa state của caller.
+  // Copy: never mutate the caller's state.
   const state: BossState = {
     ...args.state,
     position: { x: args.state.position.x, y: args.state.position.y },
@@ -570,7 +570,7 @@ export function stepBoss(args: StepBossArgs): { state: BossState; events: BossEv
 
   if (isBossDefeated(state)) return { state, events };
 
-  // --- Đổi phase: mỗi ngưỡng bị vượt phát đúng một event ------------------
+  // --- Phase change: each crossed threshold emits exactly one event ---------
   const targetPhase = phaseFor(state.id, healthFraction(state.id, state.health));
   if (targetPhase > state.phase) {
     for (let next = state.phase + 1; next <= targetPhase; next += 1) {
@@ -587,8 +587,8 @@ export function stepBoss(args: StepBossArgs): { state: BossState; events: BossEv
   const windowStart = nowMs - deltaMs;
   const context: StepContext = { state, player, rng: args.rng, events };
 
-  // Bước bắt đầu **bên trong** cửa sổ này thì phải chạy hành động mở màn ngay.
-  // Bước bắt đầu đúng `nowMs` để frame sau xử lý (tránh phát hai lần ở biên frame).
+  // A step starting **inside** this window must run its opening action immediately.
+  // A step starting exactly at `nowMs` is left to the next frame (avoids emitting twice at a frame boundary).
   if (state.stepStartedMs >= windowStart && state.stepStartedMs < nowMs) {
     enterStep(context, stepAt(script, state.step));
   }
@@ -603,8 +603,8 @@ export function stepBoss(args: StepBossArgs): { state: BossState; events: BossEv
     emitSpiralTicks(context, step, state.stepStartedMs, cursor, chunkEnd);
     cursor = chunkEnd;
 
-    // Biên bước rơi đúng cuối cửa sổ: để frame sau mở bước mới, tránh phát
-    // hành động mở màn hai lần ở hai bên biên frame.
+    // Step boundary lands exactly at the window end: let the next frame open the new step, avoiding
+    // emitting the opening action twice on either side of a frame boundary.
     if (stepEnd >= nowMs) break;
 
     nextStep(state, script);
@@ -616,7 +616,7 @@ export function stepBoss(args: StepBossArgs): { state: BossState; events: BossEv
 }
 
 // ---------------------------------------------------------------------------
-// Nội bộ: chạy bước
+// Internal: run a step
 // ---------------------------------------------------------------------------
 
 interface StepContext {
@@ -626,7 +626,7 @@ interface StepContext {
   readonly events: BossEvent[];
 }
 
-/** Di chuyển đã chốt cho một bước; `target` là đích mà event `move` báo. */
+/** Movement settled for one step; `target` is the destination the `move` event reports. */
 interface MotionPlan {
   readonly motion: BossMotion;
   readonly target: Vec2;
@@ -637,17 +637,17 @@ function stepAt(script: BossPhaseScript, index: number): BossStep {
   const steps = script.steps;
   const length = steps.length;
   if (length === 0) {
-    throw new Error('Script boss phải có ít nhất một bước');
+    throw new Error('Boss script must have at least one step');
   }
 
   const wrapped = ((index % length) + length) % length;
   const step = steps[wrapped];
   if (step === undefined) {
-    throw new Error(`Script boss thiếu bước ${wrapped}/${length}`);
+    throw new Error(`Boss script is missing step ${wrapped}/${length}`);
   }
-  // Bước 0 ms sẽ làm vòng lặp thời gian không tiến — chặn ngay ở dữ liệu.
+  // A 0 ms step would make time stand still — block it at the data level.
   if (!(step.durationMs > 0)) {
-    throw new Error(`Bước ${wrapped} của script boss phải có durationMs > 0`);
+    throw new Error(`Step ${wrapped} of the boss script must have durationMs > 0`);
   }
   return step;
 }
@@ -657,12 +657,12 @@ function nextStep(state: BossState, script: BossPhaseScript): void {
   state.step = next >= script.steps.length ? (script.loopFrom ?? 0) : next;
 }
 
-/** Chạy hành động của một bước vừa bắt đầu. */
+/** Run the opening action of a step that just started. */
 function enterStep(context: StepContext, step: BossStep): void {
   const { state, player, events } = context;
   let plan = planMotion(state, step, player);
 
-  // Dịch chuyển là bước duy nhất cần RNG, và chỉ rút **một lần** lúc vào bước.
+  // Teleport is the only step that needs RNG, and only draws **once** on step entry.
   if (plan !== null && plan.motion.kind === 'teleport') {
     const target = pickTeleportTarget(context.rng, state.position, player, bossRoomBounds(state.id));
     state.position = { x: target.x, y: target.y };
@@ -696,7 +696,7 @@ function enterStep(context: StepContext, step: BossStep): void {
         break;
 
       case 'move':
-        if (plan === null) throw new Error('Bước có move nhưng không lập được kế hoạch di chuyển');
+        if (plan === null) throw new Error('A step has move but no movement plan could be built');
         events.push({
           kind: 'move',
           to: { x: plan.target.x, y: plan.target.y },
@@ -717,15 +717,15 @@ function enterStep(context: StepContext, step: BossStep): void {
         break;
 
       case 'spiral':
-        // Phát dần theo nhịp trong `emitSpiralTicks`, không phải một cục ở đây.
+        // Emitted gradually at the `emitSpiralTicks` cadence, not as one blob here.
         break;
     }
   }
 }
 
 /**
- * Kế hoạch di chuyển của bước — **thuần**, không rút RNG. `teleport` trả về
- * đích tạm là vị trí hiện tại; `enterStep` mới thay bằng điểm RNG chọn.
+ * Movement plan for the step — **pure**, no RNG. `teleport` returns the
+ * current position as a temporary target; `enterStep` replaces it with the RNG-chosen point.
  */
 function planMotion(state: BossState, step: BossStep, player: Vec2): MotionPlan | null {
   const bounds = bossRoomBounds(state.id);
@@ -785,7 +785,7 @@ function planMotion(state: BossState, step: BossStep, player: Vec2): MotionPlan 
   }
 }
 
-/** Tích phân di chuyển trong đoạn `[fromMs, toMs)` của bước hiện tại. */
+/** Integrate movement over `[fromMs, toMs)` of the current step. */
 function advanceMotion(
   context: StepContext,
   step: BossStep,
@@ -806,7 +806,7 @@ function advanceMotion(
 
   switch (motion.kind) {
     case 'teleport':
-      // Đã snap lúc vào bước.
+      // Already snapped on step entry.
       break;
 
     case 'chase': {
@@ -832,7 +832,7 @@ function advanceMotion(
       const hitEdge = nextX <= minX || nextX >= maxX;
       if (hitEdge) {
         state.facing = oppositeFacing(state.facing);
-        // Đổi hướng giữa bước: báo adapter đích mới, nếu không nó đi tiếp về tường.
+        // Direction change mid-step: report the new target to the adapter, otherwise it keeps moving into the wall.
         events.push({
           kind: 'move',
           to: { x: state.facing === 'right' ? maxX : minX, y: state.position.y },
@@ -862,10 +862,10 @@ function advanceMotion(
 }
 
 /**
- * Phát đạn xoắn ốc rơi vào đoạn `[fromMs, toMs)` của bước.
+ * Emit spiral bullets falling inside `[fromMs, toMs)` of the step.
  *
- * Đếm tick theo **thời gian đã trôi** chứ không theo bộ đếm trong state — nhờ
- * vậy state vẫn phẳng và một frame dài (mất frame) không làm mất nhịp.
+ * Ticks are counted by **elapsed time**, not by a counter in state — that keeps
+ * state flat and a long frame (dropped frame) does not lose the rhythm.
  */
 function emitSpiralTicks(
   context: StepContext,
@@ -879,7 +879,7 @@ function emitSpiralTicks(
   );
   if (spiral === undefined || toMs <= fromMs) return;
   if (!(spiral.spiral.intervalMs > 0)) {
-    throw new Error(`spiral.intervalMs phải > 0, nhận ${spiral.spiral.intervalMs}`);
+    throw new Error(`spiral.intervalMs must be > 0, got ${spiral.spiral.intervalMs}`);
   }
 
   const { state, player, events } = context;
@@ -907,9 +907,9 @@ function emitSpiralTicks(
 }
 
 /**
- * Vận tốc thật của một `BulletVerb` — quy ước góc nằm ở đây để game và sim
- * không tự `atan2` khác nhau. `toward !== null` thì bay về đó rồi xoay thêm
- * `angleOffset`; ngược lại `angleOffset` là góc tuyệt đối.
+ * Actual velocity of a `BulletVerb` — the angle convention lives here so game and sim
+ * never `atan2` differently. With `toward !== null` it flies there then adds
+ * `angleOffset`; otherwise `angleOffset` is the absolute angle.
  */
 export function bulletVelocity(verb: BulletVerb): Vec2 {
   const baseAngle =
@@ -924,7 +924,7 @@ export function bulletVelocity(verb: BulletVerb): Vec2 {
 }
 
 // ---------------------------------------------------------------------------
-// Nội bộ: dựng đạn
+// Internal: build bullets
 // ---------------------------------------------------------------------------
 
 function buildVolley(spec: VolleySpec, state: BossState, player: Vec2): BulletVerb[] {
@@ -968,8 +968,8 @@ function buildVolley(spec: VolleySpec, state: BossState, player: Vec2): BulletVe
     }
 
     case 'line': {
-      // Sóng slash: các viên xếp thành hàng **vuông góc** hướng bay, nên cả
-      // hàng càn qua sân như một nhát chém thay vì một chùm toả.
+      // Slash wave: bullets line up **perpendicular** to the flight direction, so the
+      // whole row sweeps the arena like one cut instead of a spread cluster.
       const angle = state.facing === 'right' ? 0 : Math.PI;
       const perpendicular = { x: -Math.sin(angle), y: Math.cos(angle) };
       for (let index = 0; index < spec.count; index += 1) {
@@ -990,7 +990,7 @@ function buildVolley(spec: VolleySpec, state: BossState, player: Vec2): BulletVe
   return bullets;
 }
 
-/** Vệt lửa rải dọc đoạn charge đã đi được (không phải cả đường tới tường). */
+/** Fire trail laid along the charge segment travelled so far (not all the way to the wall). */
 function buildTrail(
   spec: TrailSpec,
   state: BossState,
@@ -998,7 +998,7 @@ function buildTrail(
   step: BossStep,
 ): BulletVerb[] {
   if (plan === null || plan.motion.kind !== 'charge') {
-    throw new Error('trail cần bước hiện tại là một charge');
+    throw new Error('trail needs the current step to be a charge');
   }
 
   const direction = state.chargeDirection ?? directionForFacing(state.facing);
@@ -1025,7 +1025,7 @@ function buildTrail(
 }
 
 // ---------------------------------------------------------------------------
-// Nội bộ: hình học
+// Internal: geometry
 // ---------------------------------------------------------------------------
 
 function copy(point: Vec2): Vec2 {
@@ -1045,16 +1045,16 @@ function clampToRoom(point: Vec2, bounds: RoomBounds): Vec2 {
   };
 }
 
-/** Hướng bay tương ứng `facing`; Samurai chỉ charge ngang (GDD §5). */
+/** Flight direction for `facing`; the Samurai only charges sideways (GDD §5). */
 function directionForFacing(facing: Facing): Vec2 {
   return facing === 'right' ? { x: 1, y: 0 } : { x: -1, y: 0 };
 }
 
 /**
- * Đích **thật** của một bước bơi/charge: đi được bao nhiêu trong `durationMs`
- * thì dừng đúng ở đó, không phải ở tường. Nhờ vậy event `move` và
- * `state.position` không lệch nhau — adapter nội suy theo event cũng đúng, mà
- * đọc state mỗi frame cũng đúng.
+ * **Real** destination of a swim/charge step: it stops exactly where `durationMs` of travel
+ * ends, not at the wall. That keeps the `move` event and
+ * `state.position` consistent — interpolating the event is right, and reading state
+ * each frame is right too.
  */
 function travelTarget(state: BossState, speedTilesPerSecond: number, durationMs: number): Vec2 {
   const sign = state.facing === 'right' ? 1 : -1;
@@ -1071,8 +1071,8 @@ function angleBetween(from: Vec2, to: Vec2): number {
 }
 
 /**
- * Điểm để nhắm: player, hoặc một điểm 1 tile theo `fallbackAngle` khi player
- * đứng đúng chỗ boss (không có hướng xác định).
+ * Aim point: the player, or a point 1 tile along `fallbackAngle` when the player
+ * stands exactly on the boss (no defined direction).
  */
 function aimPoint(from: Vec2, player: Vec2, fallbackAngle: number): Vec2 {
   if (distance(from, player) > 0) return copy(player);
@@ -1088,11 +1088,11 @@ function directionBetween(from: Vec2, to: Vec2): Vec2 {
 }
 
 /**
- * Điểm dịch chuyển ngẫu nhiên trong phòng, ưu tiên xa player.
+ * Random teleport point inside the room, preferring far from the player.
  *
- * Luôn tiêu đúng `TELEPORT_ATTEMPTS` lần rút (2 số mỗi lần) để chuỗi RNG không
- * phụ thuộc việc lần thử nào thành công — nếu không, determinism vẫn đúng
- * nhưng nhịp RNG sẽ nhảy theo vị trí player.
+ * Always spends exactly `TELEPORT_ATTEMPTS` draws (2 numbers each) so the RNG stream does
+ * not depend on which attempt succeeded — otherwise determinism still holds
+ * but RNG rhythm jumps with player position.
  */
 function pickTeleportTarget(
   rng: SeededRng,

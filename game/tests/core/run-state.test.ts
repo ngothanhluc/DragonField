@@ -7,22 +7,22 @@ import {
 } from '../../assets/scripts/core/run/run-state';
 import { loadChapterOne } from '../helpers/tmx-levels';
 
-/** Dọn phòng hiện tại rồi sang phòng kế. */
+/** Clear the current room then advance to the next one. */
 function clearAndAdvance(run: RunState): void {
   run.onRoomCleared();
   run.advanceToNextRoom();
 }
 
-describe('RunState — hằng số', () => {
-  it('khớp GDD: 3 chapter, mỗi chapter 8 phòng thường + 1 boss', () => {
+describe('RunState — constants', () => {
+  it('matches the GDD: 3 chapters, each 8 regular rooms + 1 boss', () => {
     expect(CHAPTERS_PER_RUN).toBe(3);
     expect(NORMAL_ROOMS_PER_CHAPTER).toBe(8);
     expect(ROOMS_PER_CHAPTER).toBe(9);
   });
 });
 
-describe('RunState — trạng thái ban đầu', () => {
-  it('bắt đầu ở chapter được chọn, phòng 1, wave 1', () => {
+describe('RunState — initial state', () => {
+  it('starts at the chosen chapter, room 1, wave 1', () => {
     const run = new RunState();
 
     expect(run.chapter).toBe(1);
@@ -32,20 +32,20 @@ describe('RunState — trạng thái ban đầu', () => {
     expect(run.status).toBe('playing');
   });
 
-  it('nhận chapter bắt đầu hợp lệ', () => {
+  it('accepts a valid starting chapter', () => {
     expect(new RunState(2).chapter).toBe(2);
     expect(new RunState(3).chapter).toBe(3);
   });
 
-  it('từ chối chapter ngoài 1..3', () => {
+  it('rejects a chapter outside 1..3', () => {
     expect(() => new RunState(0)).toThrow(/1\.\.3/);
     expect(() => new RunState(4)).toThrow(/1\.\.3/);
     expect(() => new RunState(1.5)).toThrow(/1\.\.3/);
   });
 });
 
-describe('RunState — đi hết run', () => {
-  it('đi từ chapter 1 phòng 1 qua boss tới chapter 2', () => {
+describe('RunState — playing through a run', () => {
+  it('goes from chapter 1 room 1 through the boss into chapter 2', () => {
     const run = new RunState();
 
     for (let room = 1; room <= NORMAL_ROOMS_PER_CHAPTER; room += 1) {
@@ -58,7 +58,7 @@ describe('RunState — đi hết run', () => {
       expect(run.room).toBe(room + 1);
     }
 
-    // Phòng 9 là boss.
+    // Room 9 is the boss.
     expect(run.isBossRoom).toBe(true);
     expect(run.roomLabel).toBe('9/9');
 
@@ -70,7 +70,7 @@ describe('RunState — đi hết run', () => {
     expect(run.status).toBe('playing');
   });
 
-  it('thắng sau khi dọn boss chapter cuối', () => {
+  it('wins after clearing the final chapter boss', () => {
     const run = new RunState();
 
     while (run.status === 'playing' || run.status === 'room-cleared') {
@@ -87,7 +87,7 @@ describe('RunState — đi hết run', () => {
     expect(run.progress).toBe(1);
   });
 
-  it('boss chapter 2 sang chapter 3 chứ không kết thúc run', () => {
+  it('the chapter 2 boss moves to chapter 3 instead of ending the run', () => {
     const run = new RunState(2);
 
     for (let room = 1; room <= ROOMS_PER_CHAPTER; room += 1) {
@@ -100,8 +100,8 @@ describe('RunState — đi hết run', () => {
   });
 });
 
-describe('RunState — phòng sạch và wave', () => {
-  it('onRoomCleared chỉ đổi trạng thái, không tự sang phòng kế', () => {
+describe('RunState — cleared rooms and waves', () => {
+  it('onRoomCleared only changes status, never advances the room by itself', () => {
     const run = new RunState();
 
     run.onRoomCleared();
@@ -110,7 +110,7 @@ describe('RunState — phòng sạch và wave', () => {
     expect(run.room).toBe(1);
   });
 
-  it('sang phòng mới thì wave về 1', () => {
+  it('a new room starts at wave 1', () => {
     const run = new RunState(2);
 
     run.nextWave(2);
@@ -124,19 +124,19 @@ describe('RunState — phòng sạch và wave', () => {
 });
 
 /**
- * Số wave là dữ liệu của phòng (GDD §8), nên test lấy phòng 1 của chapter 1
- * thật (3 wave) thay vì khẳng định "chapter 1 có 1 wave" như trước.
+ * The wave count is room data (GDD §8), so the test takes room 1 of the real
+ * chapter 1 (3 waves) instead of asserting "chapter 1 has 1 wave" as before.
  */
-describe('RunState — wave theo dữ liệu level', () => {
+describe('RunState — waves come from level data', () => {
   const [roomOne] = loadChapterOne().rooms;
 
-  if (roomOne === undefined) throw new Error('chapter 1 (.tmx) thiếu phòng 1');
+  if (roomOne === undefined) throw new Error('chapter 1 (.tmx) is missing room 1');
 
-  it('phòng 1 có 3 wave trong level data', () => {
+  it('room 1 has 3 waves in the level data', () => {
     expect(roomOne.waves.length).toBe(3);
   });
 
-  it('phòng 3 wave đi hết state machine: 1 → 2 → 3, không sớm hơn không muộn hơn', () => {
+  it('a 3-wave room walks the state machine: 1 → 2 → 3, no earlier and no later', () => {
     const run = new RunState();
     const totalWaves = roomOne.waves.length;
 
@@ -148,18 +148,18 @@ describe('RunState — wave theo dữ liệu level', () => {
     run.nextWave(totalWaves);
     expect(run.wave).toBe(3);
 
-    // Hết wave cuối: không được sang wave 4.
+    // Last wave done: cannot advance to wave 4.
     expect(() => run.nextWave(totalWaves)).toThrow(/3 wave/);
     expect(run.wave).toBe(3);
 
-    // Dọn phòng sau wave cuối rồi sang phòng kế: wave reset về 1.
+    // Clear the room after the last wave then advance: waves reset to 1.
     run.onRoomCleared();
     run.advanceToNextRoom();
     expect(run.room).toBe(2);
     expect(run.wave).toBe(1);
   });
 
-  it('cùng state machine chạy được phòng 1 wave (boss) và phòng 2 wave', () => {
+  it('the same state machine handles a 1-wave room (boss) and a 2-wave room', () => {
     for (const totalWaves of [1, 2, 5]) {
       const run = new RunState();
       for (let wave = 1; wave < totalWaves; wave += 1) run.nextWave(totalWaves);
@@ -169,8 +169,8 @@ describe('RunState — wave theo dữ liệu level', () => {
   });
 });
 
-describe('RunState — nhãn và tiến trình', () => {
-  it('roomLabel có dạng "phòng/tổng"', () => {
+describe('RunState — label and progress', () => {
+  it('roomLabel has the "room/total" form', () => {
     const run = new RunState();
 
     expect(run.roomLabel).toBe('1/9');
@@ -183,7 +183,7 @@ describe('RunState — nhãn và tiến trình', () => {
     expect(run.roomLabel).toBe('3/9');
   });
 
-  it('progress tăng theo phòng đã dọn', () => {
+  it('progress rises with cleared rooms', () => {
     const run = new RunState();
 
     expect(run.progress).toBe(0);
@@ -198,7 +198,7 @@ describe('RunState — nhãn và tiến trình', () => {
     expect(run.progress).toBeCloseTo(2 / 27, 10);
   });
 
-  it('run thua giữ nguyên tiến trình đã đạt', () => {
+  it('a lost run keeps the progress already reached', () => {
     const run = new RunState();
     clearAndAdvance(run);
     clearAndAdvance(run);
@@ -210,8 +210,8 @@ describe('RunState — nhãn và tiến trình', () => {
   });
 });
 
-describe('RunState — tổng phòng lấy từ dữ liệu', () => {
-  it('nhận tổng phòng khác 9 (thêm room-10.tmx là x/10)', () => {
+describe('RunState — room total comes from data', () => {
+  it('accepts a room total other than 9 (adding room-10.tmx makes it x/10)', () => {
     const run = new RunState(1, 10);
 
     expect(run.roomsTotal).toBe(10);
@@ -226,7 +226,7 @@ describe('RunState — tổng phòng lấy từ dữ liệu', () => {
     expect(run.roomLabel).toBe('10/10');
   });
 
-  it('progress dùng tổng phòng của chapter', () => {
+  it('progress uses the chapter room total', () => {
     const run = new RunState(1, 10);
 
     run.onRoomCleared();
@@ -234,15 +234,15 @@ describe('RunState — tổng phòng lấy từ dữ liệu', () => {
     expect(run.progress).toBeCloseTo(1 / (CHAPTERS_PER_RUN * 10), 10);
   });
 
-  it('từ chối tổng phòng không hợp lệ', () => {
-    expect(() => new RunState(1, 0)).toThrow(/số nguyên >= 1/);
-    expect(() => new RunState(1, 2.5)).toThrow(/số nguyên >= 1/);
-    expect(() => new RunState(1, Number.NaN)).toThrow(/số nguyên >= 1/);
+  it('rejects an invalid room total', () => {
+    expect(() => new RunState(1, 0)).toThrow(/integer >= 1/);
+    expect(() => new RunState(1, 2.5)).toThrow(/integer >= 1/);
+    expect(() => new RunState(1, Number.NaN)).toThrow(/integer >= 1/);
   });
 });
 
-describe('RunState — markWon (chapter chơi như một run riêng)', () => {
-  it('dọn boss rồi markWon → won, giữ nguyên phòng', () => {
+describe('RunState — markWon (chapter played as its own run)', () => {
+  it('clearing the boss then markWon → won, keeping the room', () => {
     const run = new RunState(1);
     for (let room = 1; room <= ROOMS_PER_CHAPTER; room += 1) {
       if (room < ROOMS_PER_CHAPTER) {
@@ -258,11 +258,11 @@ describe('RunState — markWon (chapter chơi như một run riêng)', () => {
     expect(run.status).toBe('won');
     expect(run.chapter).toBe(1);
     expect(run.room).toBe(ROOMS_PER_CHAPTER);
-    // progress tính trên cả 3 chapter của run (GDD §1), nên xong chapter 1 = 1/3.
+    // progress is computed over all 3 chapters of the run (GDD §1), so finishing chapter 1 = 1/3.
     expect(run.progress).toBeCloseTo(1 / 3, 10);
   });
 
-  it('markWon từ trạng thái playing cũng hợp lệ', () => {
+  it('markWon from the playing state is valid too', () => {
     const run = new RunState(1);
 
     run.markWon();
@@ -270,7 +270,7 @@ describe('RunState — markWon (chapter chơi như một run riêng)', () => {
     expect(run.status).toBe('won');
   });
 
-  it('không markWon hai lần, không markLost sau markWon', () => {
+  it('cannot markWon twice, nor markLost after markWon', () => {
     const run = new RunState(1);
     run.markWon();
 
@@ -280,22 +280,22 @@ describe('RunState — markWon (chapter chơi như một run riêng)', () => {
   });
 });
 
-describe('RunState — chuyển trạng thái sai đều ném lỗi', () => {
-  it('không sang phòng kế khi phòng chưa dọn', () => {
+describe('RunState — invalid transitions all throw', () => {
+  it('cannot advance the room before it is cleared', () => {
     const run = new RunState();
 
-    expect(() => run.advanceToNextRoom()).toThrow(/dọn phòng/);
+    expect(() => run.advanceToNextRoom()).toThrow(/clearing the room/);
     expect(run.room).toBe(1);
   });
 
-  it('không dọn phòng hai lần', () => {
+  it('cannot clear the room twice', () => {
     const run = new RunState();
     run.onRoomCleared();
 
     expect(() => run.onRoomCleared()).toThrow(/room-cleared/);
   });
 
-  it('không sang phòng kế sau khi đã thắng', () => {
+  it('cannot advance the room after winning', () => {
     const run = new RunState(3);
     for (let room = 1; room <= ROOMS_PER_CHAPTER; room += 1) {
       clearAndAdvance(run);
@@ -305,28 +305,28 @@ describe('RunState — chuyển trạng thái sai đều ném lỗi', () => {
     expect(() => run.advanceToNextRoom()).toThrow(/won/);
   });
 
-  it('không sang phòng kế sau khi đã thua', () => {
+  it('cannot advance the room after losing', () => {
     const run = new RunState();
     run.markLost();
 
     expect(() => run.advanceToNextRoom()).toThrow(/lost/);
   });
 
-  it('không dọn phòng sau khi đã thua', () => {
+  it('cannot clear the room after losing', () => {
     const run = new RunState();
     run.markLost();
 
     expect(() => run.onRoomCleared()).toThrow(/lost/);
   });
 
-  it('không đánh dấu thua hai lần', () => {
+  it('cannot mark lost twice', () => {
     const run = new RunState();
     run.markLost();
 
     expect(() => run.markLost()).toThrow(/lost/);
   });
 
-  it('không đánh dấu thua sau khi đã thắng', () => {
+  it('cannot mark lost after winning', () => {
     const run = new RunState(3);
     for (let room = 1; room <= ROOMS_PER_CHAPTER; room += 1) {
       clearAndAdvance(run);
@@ -335,14 +335,14 @@ describe('RunState — chuyển trạng thái sai đều ném lỗi', () => {
     expect(() => run.markLost()).toThrow(/won/);
   });
 
-  it('không sang wave khi phòng đã dọn', () => {
+  it('cannot advance the wave once the room is cleared', () => {
     const run = new RunState(2);
     run.onRoomCleared();
 
     expect(() => run.nextWave(1)).toThrow(/room-cleared/);
   });
 
-  it('không sang wave vượt số wave của phòng', () => {
+  it('cannot advance past the room wave count', () => {
     const run = new RunState(1);
 
     expect(() => run.nextWave(1)).toThrow(/1 wave/);
@@ -352,12 +352,12 @@ describe('RunState — chuyển trạng thái sai đều ném lỗi', () => {
     expect(() => run3.nextWave(2)).toThrow(/2 wave/);
   });
 
-  it('từ chối tổng số wave không hợp lệ thay vì đoán', () => {
+  it('rejects an invalid wave total instead of guessing', () => {
     const run = new RunState();
 
-    expect(() => run.nextWave(0)).toThrow(/số nguyên >= 1/);
-    expect(() => run.nextWave(1.5)).toThrow(/số nguyên >= 1/);
-    expect(() => run.nextWave(Number.NaN)).toThrow(/số nguyên >= 1/);
+    expect(() => run.nextWave(0)).toThrow(/integer >= 1/);
+    expect(() => run.nextWave(1.5)).toThrow(/integer >= 1/);
+    expect(() => run.nextWave(Number.NaN)).toThrow(/integer >= 1/);
     expect(run.wave).toBe(1);
   });
 });

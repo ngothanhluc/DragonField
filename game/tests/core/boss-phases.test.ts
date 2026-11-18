@@ -4,12 +4,12 @@ import { holdPosition, simulateBossRun } from '../../assets/scripts/core/sim/bos
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
 
 /**
- * "Mỗi phase có ít nhất 1 pattern buộc phải di chuyển" (M4 acceptance) được
- * chứng minh bằng đúng mô phỏng combat: player **đứng yên** ở `playerStart`,
- * boss chạy pattern thật, và phase đó phải gây được ít nhất một hit.
+ * "Every phase has at least 1 pattern that forces movement" (M4 acceptance) is
+ * proven by the real combat simulation: the player **stands still** at `playerStart`,
+ * the boss runs its real pattern, and that phase must land at least one hit.
  *
- * Máu player đặt rất cao và DPS = 0 để boss không chết/không đổi phase giữa
- * phép đo — đây là harness test, không phải balance.
+ * Player health is set very high and DPS = 0 so the boss never dies or changes phase during
+ * the measurement — this is a test harness, not balance.
  */
 interface Arena {
   readonly playerStart: Vec2;
@@ -19,7 +19,7 @@ interface Arena {
 const ARENAS: Readonly<Record<BossId, Arena>> = {
   tengu: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
   squid: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 8 } },
-  // Samurai charge ngang: player đứng cùng hàng, lệch sang phải (arena ch3).
+  // Samurai charges sideways: the player stands on the same row, offset to the right (ch3 arena).
   samurai: { playerStart: { x: 27, y: 6 }, bossStart: { x: 16, y: 6 } },
 };
 
@@ -42,10 +42,10 @@ function hitsWhileStandingStill(id: BossId, phase: BossPhase): number {
   return result.events.filter((event) => event.kind === 'player-hit').length;
 }
 
-describe('boss — mỗi phase buộc phải di chuyển', () => {
+describe('boss — every phase forces movement', () => {
   for (const id of BOSS_IDS) {
     for (const phase of [1, 2, 3] as const) {
-      it(`${id} phase ${phase}: đứng yên ở playerStart vẫn bị trúng đòn`, () => {
+      it(`${id} phase ${phase}: standing still at playerStart still gets hit`, () => {
         expect(hitsWhileStandingStill(id, phase), `${id} p${phase}`).toBeGreaterThan(0);
       });
     }

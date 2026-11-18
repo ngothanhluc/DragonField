@@ -1,33 +1,33 @@
 /**
- * Chữ hiển thị cho skill trong màn chọn 1/3 và HUD.
+ * Display text for skills on the 1/3 pick screen and the HUD.
  *
- * Nội dung suy ra từ `tags` của pool, không viết tay từng skill: thêm skill mới
- * = thêm tag, mô tả tự có. Con số lấy đúng từ tag nên tooltip không thể nói
- * "15% crit" trong khi derived-stats cộng 10%.
+ * Content derives from the pool's `tags`, not hand-written per skill: adding a skill
+ * = adding tags, and the description follows. Numbers come straight from the tag so a tooltip
+ * cannot say "15% crit" while derived-stats adds 10%.
  */
 import type { SkillDef, SkillTag } from './pool';
 
-/** Góc xoè của Twin Shot, độ — khớp `shot-effects.ts`. */
+/** Twin Shot spread angle, degrees — matches `shot-effects.ts`. */
 export const TWIN_SPREAD_DEGREES = 12;
 
 /**
- * Một dòng mô tả **mỗi stack** của skill. Nhiều tag thì nối bằng " · ".
- * Không chứa số stack hiện có — UI tự ghép "×N" để dòng chữ ngắn.
+ * One description line for **each stack** of a skill. Multiple tags join with " · ".
+ * Does not include the current stack count — the UI appends "×N" to keep lines short.
  */
 export function describeSkill(def: SkillDef): string {
   return def.tags.map(describeTag).join(' · ');
 }
 
 /**
- * Chữ ngắn cho HUD (2 ký tự). Lấy từ `SkillDef.short`, viết tay vì initials tự
- * động bị trùng: Sharpen/Shield đều "SH", Swift/Second Wind đều "SW",
- * Explosive/Executioner đều "EX".
+ * Short HUD text (2 characters). Comes from `SkillDef.short`, hand-written because automatic
+ * initials collide: Sharpen/Shield are both "SH", Swift/Second Wind both "SW",
+ * Explosive/Executioner both "EX".
  */
 export function skillAbbreviation(def: SkillDef): string {
   return def.short;
 }
 
-/** Chữ mô tả một tag, tính cho một stack. */
+/** Description text for one tag, computed for one stack. */
 export function describeTag(tag: SkillTag): string {
   switch (tag.kind) {
     case 'damage-add':

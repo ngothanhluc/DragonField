@@ -1,37 +1,37 @@
 /**
- * Loadout của một run: skill nào đang sở hữu và bao nhiêu stack.
+ * A run's loadout: which skills are owned and with how many stacks.
  *
- * Đây là **state duy nhất** của skill trong một run. Cả game adapter và
- * simulation đều đi qua lớp này, nên luật "kẹp theo `maxStacks`" và "chỉ số
- * suy ra từ stack" không thể lệch giữa hai bên.
+ * This is the **only** skill state in a run. Both the game adapter and the
+ * simulation go through this class, so the "clamp by `maxStacks`" and "stats
+ * derive from stacks" rules cannot drift between them.
  *
- * Không import `cc`, không đọc giờ hệ thống: mọi hàm thuần hoặc chỉ sửa state
- * nội bộ của instance.
+ * No `cc` import, no wall-clock read: every function is pure or only mutates
+ * the instance's own state.
  */
 import { DEFAULT_COMBAT } from '../config';
 import { computeDerivedStats, type DerivedStats, type StatsBaseline } from './derived-stats';
 import { getSkill, resolveOwnedSkills, type OwnedSkillStacks, type SkillDef } from './pool';
 
-/** Kết quả một lần nhặt skill — đủ để UI/run quyết âm thanh, hồi máu, log. */
+/** Result of one skill pickup — enough for the UI/run to decide sound, healing, logging. */
 export interface AcquireResult {
-  /** `false` khi skill đã đạt trần (hoặc id lạ) nên không có gì đổi. */
+  /** `false` when the skill is capped (or the id is unknown) so nothing changed. */
   readonly acquired: boolean;
-  /** Số stack vừa cộng thêm (0 khi bị chặn). */
+  /** Stacks just added (0 when blocked). */
   readonly added: number;
-  /** Stack hiện có sau lần nhặt. */
+  /** Stacks held after the pickup. */
   readonly stacks: number;
-  /** Số tim hồi ngay lúc nhặt (GDD §6: Vitality "hồi 1 tim ngay"). */
+  /** Hearts healed at pickup time (GDD §6: Vitality "heal 1 heart now"). */
   readonly healNow: number;
 }
 
 /**
- * Số stack hiện có của mọi skill. Map được giữ **private** để không ai vô tình
- * ghi đè trần; muốn đổi phải đi qua `acquire`.
+ * Current stack count of every skill. The Map is kept **private** so nobody can
+ * accidentally write past the cap; changing it must go through `acquire`.
  */
 export class SkillLoadout {
   private readonly owned = new Map<string, number>();
 
-  /** Dựng loadout từ một map có sẵn (save/debug/sim), đã kẹp theo trần. */
+  /** Build a loadout from an existing map (save/debug/sim), clamped to the cap. */
   static from(entries: ReadonlyMap<string, number>): SkillLoadout {
     const loadout = new SkillLoadout();
     for (const skill of resolveOwnedSkills(entries)) {
@@ -40,12 +40,12 @@ export class SkillLoadout {
     return loadout;
   }
 
-  /** Stack của một skill; 0 nếu chưa sở hữu hoặc id lạ. */
+  /** Stacks of one skill; 0 when not owned or the id is unknown. */
   stacks(id: string): number {
     return this.owned.get(id) ?? 0;
   }
 
-  /** Các skill đang sở hữu, theo thứ tự `SKILLS` (tất định). */
+  /** Owned skills in `SKILLS` order (deterministic). */
   get entries(): OwnedSkillStacks[] {
     return resolveOwnedSkills(this.owned);
   }
@@ -54,17 +54,17 @@ export class SkillLoadout {
     return this.entries.length;
   }
 
-  /** Bản sao chỉ đọc — dùng cho `rollChoices`, HUD, test. */
+  /** Read-only copy — used by `rollChoices`, the HUD and tests. */
   snapshot(): ReadonlyMap<string, number> {
     return new Map(this.owned);
   }
 
   /**
-   * Nhặt `stacks` stack của skill `id`.
+   * Acquire `stacks` stacks of skill `id`.
    *
-   * - Id lạ trả `acquired: false` thay vì ném lỗi: save/debug cũ không làm chết run.
-   * - Kẹp theo `maxStacks`; nhặt khi đã đầy là no-op (UI không nên cho chọn thẻ đã đầy).
-   * - `healNow` lấy từ tag `max-hearts` của **một** stack (Vitality).
+   * - An unknown id returns `acquired: false` instead of throwing: an old save/debug must not kill the run.
+   * - Clamped by `maxStacks`; picking up when full is a no-op (the UI should not offer a full card).
+   * - `healNow` comes from the `max-hearts` tag of **one** stack (Vitality).
    */
   acquire(id: string, stacks = 1): AcquireResult {
     const def = findSkill(id);
@@ -88,13 +88,13 @@ export class SkillLoadout {
     };
   }
 
-  /** Chỉ số cuối của loadout, dùng chung cho game và simulation. */
+  /** Final stats of the loadout, shared by game and simulation. */
   stats(base: StatsBaseline = DEFAULT_COMBAT): DerivedStats {
     return computeDerivedStats(this.owned, base);
   }
 }
 
-/** Tra skill nhưng trả `undefined` thay vì ném — `acquire` phải chịu được id lạ. */
+/** Look up a skill but return `undefined` instead of throwing — `acquire` must tolerate unknown ids. */
 function findSkill(id: string): SkillDef | undefined {
   try {
     return getSkill(id);
@@ -104,10 +104,10 @@ function findSkill(id: string): SkillDef | undefined {
 }
 
 /**
- * Tim hồi ngay khi nhặt một stack: cộng các tag `max-hearts`.
+ * Hearts healed immediately when acquiring one stack: sums the `max-hearts` tags.
  *
- * Tách khỏi `DerivedStats` vì đây là hiệu ứng **một lần lúc nhặt**, không phải
- * chỉ số thường trực — nhặt 2 lần Vitality hồi 2 tim nhưng max chỉ tăng 2.
+ * Split from `DerivedStats` because it is a **one-time pickup effect**, not a
+ * persistent stat — acquiring Vitality twice heals 2 hearts but the max only rises by 2.
  */
 export function pickupHeal(def: SkillDef): number {
   let heal = 0;

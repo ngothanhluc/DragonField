@@ -1,13 +1,13 @@
 /**
- * Hình học letterbox cho màn hình có tỉ lệ bất kỳ.
+ * Letterbox geometry for screens of any aspect ratio.
  *
- * Game chỉ có một "khung" đúng: 512×288 (32×18 tile 16 px). Trên canvas 4:3, 21:9 hay
- * canvas dọc, khung đó phải **vừa khít, canh giữa, scale đều** (pixel vuông), phần thừa
- * là bar tối. `Camera.rect` nhận rect chuẩn hoá theo canvas, nên toàn bộ phần tính toán
- * nằm ở đây (thuần số học, test bằng vitest, không import `cc`).
+ * The game has exactly one correct "frame": 512×288 (32×18 tiles of 16 px). On a 4:3, 21:9 or
+ * portrait canvas that frame must be **exactly fitting, centred, uniformly scaled** (square pixels), with the
+ * remainder as dark bars. `Camera.rect` takes a rect normalised to the canvas, so all the maths
+ * lives here (pure arithmetic, tested with vitest, no `cc` import).
  */
 
-/** Rect chuẩn hoá theo canvas: (0,0) = góc dưới-trái, (1,1) = góc trên-phải. */
+/** Rect normalised to the canvas: (0,0) = bottom-left, (1,1) = top-right. */
 export interface NormalizedRect {
   readonly x: number;
   readonly y: number;
@@ -15,15 +15,15 @@ export interface NormalizedRect {
   readonly height: number;
 }
 
-/** Canvas chưa có kích thước (frame đầu, resize dở) → dùng cả canvas, không letterbox. */
+/** Canvas has no size yet (first frame, resize in progress) → use the whole canvas, no letterbox. */
 const FULL_CANVAS: NormalizedRect = { x: 0, y: 0, width: 1, height: 1 };
 
 /**
- * Rect (chuẩn hoá) mà design resolution chiếm trên canvas: giữ đúng tỉ lệ design,
- * scale đều theo cạnh nhỏ hơn, canh giữa cả hai trục.
+ * Rect (normalised) the design resolution occupies on the canvas: keeps the design ratio,
+ * scales uniformly by the shorter side, centred on both axes.
  *
- * Cùng công thức với `ResolutionPolicy.SHOW_ALL` (`ContentStrategy.ShowAll` trong
- * `cocos/ui/view.ts`), nên camera world dùng rect này sẽ trùng khít band của UI.
+ * Same formula as `ResolutionPolicy.SHOW_ALL` (`ContentStrategy.ShowAll` in
+ * `cocos/ui/view.ts`), so a world camera using this rect lines up exactly with the UI band.
  */
 export function letterboxRect(
   canvasWidth: number,
@@ -43,12 +43,12 @@ export function letterboxRect(
 }
 
 /**
- * Band **pixel-perfect** cho camera world: phóng design lên bội số nguyên lớn nhất
- * còn vừa canvas (512×288 × 2/3/4…), canh giữa, lề làm tròn về pixel nguyên để
- * mỗi texel 16 px luôn thành đúng k×k pixel màn hình (không lệch nửa pixel).
+ * **Pixel-perfect** band for the world camera: scale the design up by the largest integer
+ * multiple that still fits the canvas (512×288 × 2/3/4…), centred, margins rounded to whole
+ * pixels so every 16 px texel maps to exactly k×k screen pixels (never a half pixel).
  *
- * Canvas nhỏ hơn design (k < 1) thì không có bội số nguyên nào vừa: lùi về
- * `letterboxRect` (scale lẻ còn hơn bị cắt).
+ * If the canvas is smaller than the design (k < 1) no integer multiple fits: fall back to
+ * `letterboxRect` (a fractional scale beats cropping).
  */
 export function pixelPerfectRect(
   canvasWidth: number,
@@ -77,10 +77,10 @@ export function pixelPerfectRect(
 }
 
 /**
- * Tỉ lệ band world (pixel-perfect) so với band UI (`SHOW_ALL`), ≤ 1.
+ * Ratio of the world band (pixel-perfect) to the UI band (`SHOW_ALL`), ≤ 1.
  *
- * HUD dựng theo mép design của band UI; nhân node HUD với số này thì mép HUD
- * trùng mép phòng thay vì trôi ra vùng bar khi world nhỏ hơn band UI.
+ * The HUD is built along the design edge of the UI band; multiplying HUD nodes by this makes the HUD
+ * edge follow the room edge instead of drifting into the bar area when the world is smaller than the UI band.
  */
 export function worldToUiScale(
   canvasWidth: number,

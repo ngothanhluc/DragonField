@@ -7,18 +7,18 @@ import {
 const NONE = { up: false, down: false, left: false, right: false };
 
 describe('normalizeMoveInput', () => {
-  it('không bấm phím nào thì vector bằng 0', () => {
+  it('with no key pressed the vector is 0', () => {
     expect(normalizeMoveInput(NONE)).toEqual({ x: 0, y: 0 });
   });
 
-  it('mỗi phím đi theo đúng một trục', () => {
+  it('each key moves along exactly one axis', () => {
     expect(normalizeMoveInput({ ...NONE, up: true })).toEqual({ x: 0, y: 1 });
     expect(normalizeMoveInput({ ...NONE, down: true })).toEqual({ x: 0, y: -1 });
     expect(normalizeMoveInput({ ...NONE, left: true })).toEqual({ x: -1, y: 0 });
     expect(normalizeMoveInput({ ...NONE, right: true })).toEqual({ x: 1, y: 0 });
   });
 
-  it('hai phím đối nhau triệt tiêu nhau', () => {
+  it('two opposite keys cancel each other out', () => {
     expect(normalizeMoveInput({ up: true, down: true, left: false, right: false })).toEqual({
       x: 0,
       y: 0,
@@ -29,7 +29,7 @@ describe('normalizeMoveInput', () => {
     });
   });
 
-  it('chéo có độ dài 1, không phải 1.414', () => {
+  it('a diagonal has length 1, not 1.414', () => {
     const diagonal = normalizeMoveInput({ up: true, down: false, left: false, right: true });
 
     expect(Math.hypot(diagonal.x, diagonal.y)).toBeCloseTo(1, 10);
@@ -37,7 +37,7 @@ describe('normalizeMoveInput', () => {
     expect(diagonal.y).toBeCloseTo(Math.SQRT1_2, 10);
   });
 
-  it('giữ đúng dấu cho cả 4 hướng chéo', () => {
+  it('keeps the right signs for all 4 diagonal directions', () => {
     expect(
       normalizeMoveInput({ up: true, down: false, left: true, right: false }),
     ).toEqual({ x: -Math.SQRT1_2, y: Math.SQRT1_2 });
@@ -48,16 +48,16 @@ describe('normalizeMoveInput', () => {
 });
 
 describe('velocityFromInput', () => {
-  it('nhân vector hướng với tốc độ', () => {
+  it('multiplies the direction vector by speed', () => {
     expect(velocityFromInput({ x: 0, y: 1 }, 4)).toEqual({ x: 0, y: 4 });
     expect(velocityFromInput({ x: -1, y: 0 }, 4)).toEqual({ x: -4, y: 0 });
   });
 
-  it('đứng yên thì vận tốc bằng 0', () => {
+  it('standing still gives zero velocity', () => {
     expect(velocityFromInput({ x: 0, y: 0 }, 4)).toEqual({ x: 0, y: 0 });
   });
 
-  it('đi chéo giữ nguyên độ lớn vận tốc', () => {
+  it('diagonal movement keeps the same velocity magnitude', () => {
     const direction = normalizeMoveInput({ up: true, down: false, left: true, right: false });
     const velocity = velocityFromInput(direction, 5);
 

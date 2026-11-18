@@ -6,7 +6,7 @@ import { SKILLS, getSkill } from '../../assets/scripts/core/skills/pool';
 import { estimateDps } from '../../assets/scripts/core/skills/derived-stats';
 
 describe('SkillLoadout', () => {
-  it('acquire cộng stack và dừng ở maxStacks', () => {
+  it('acquire adds stacks and stops at maxStacks', () => {
     const loadout = new SkillLoadout();
 
     expect(loadout.acquire('sharpen').stacks).toBe(1);
@@ -16,7 +16,7 @@ describe('SkillLoadout', () => {
     expect(loadout.stacks('sharpen')).toBe(5);
   });
 
-  it('id lạ là no-op, không ném', () => {
+  it('an unknown id is a no-op, no throw', () => {
     const loadout = new SkillLoadout();
     expect(loadout.acquire('khong-ton-tai')).toEqual({
       acquired: false,
@@ -27,7 +27,7 @@ describe('SkillLoadout', () => {
     expect(loadout.size).toBe(0);
   });
 
-  it('Vitality hồi 1 tim mỗi stack ngay lúc nhặt, không phải chỉ số thường trực', () => {
+  it('Vitality heals 1 heart per stack at pickup time, not as a persistent stat', () => {
     const loadout = new SkillLoadout();
     expect(loadout.acquire('vitality').healNow).toBe(1);
     expect(loadout.acquire('vitality', 2).healNow).toBe(2);
@@ -35,7 +35,7 @@ describe('SkillLoadout', () => {
     expect(pickupHeal(getSkill('vitality'))).toBe(1);
   });
 
-  it('stats = computeDerivedStats của đúng map đang sở hữu', () => {
+  it('stats = computeDerivedStats of exactly the owned map', () => {
     const loadout = SkillLoadout.from(new Map([['sharpen', 2], ['rapid-fire', 2]]));
     const stats = loadout.stats();
 
@@ -44,14 +44,14 @@ describe('SkillLoadout', () => {
     expect(estimateDps(stats)).toBeCloseTo(3 * 3, 10);
   });
 
-  it('from() kẹp stack hỏng thay vì mang vào run', () => {
+  it('from() clamps broken stacks instead of carrying them into the run', () => {
     const loadout = SkillLoadout.from(new Map([['sharpen', 99], ['twin-shot', -2], ['la', 3]]));
     expect(loadout.stacks('sharpen')).toBe(5);
     expect(loadout.stacks('twin-shot')).toBe(0);
     expect(loadout.stacks('la')).toBe(0);
   });
 
-  it('snapshot là bản sao: sửa bên ngoài không đổi loadout', () => {
+  it('a snapshot is a copy: editing outside does not change the loadout', () => {
     const loadout = SkillLoadout.from(new Map([['sharpen', 1]]));
     const snapshot = loadout.snapshot() as Map<string, number>;
     snapshot.set('sharpen', 5);
@@ -61,15 +61,15 @@ describe('SkillLoadout', () => {
 });
 
 describe('Skill description', () => {
-  it('mọi skill trong pool đều có mô tả và chữ viết tắt', () => {
+  it('every skill in the pool has a description and an abbreviation', () => {
     for (const skill of SKILLS) {
       expect(describeSkill(skill).length, skill.id).toBeGreaterThan(0);
       expect(skillAbbreviation(skill), skill.id).toMatch(/^[A-Z0-9?]{1,2}$/);
     }
   });
 
-  it('mô tả lấy số từ tag, không hardcode', () => {
-    // Sharpen 1 stack = +1 damage; 5 stack vẫn cùng chữ (UI tự thêm ×N).
+  it('descriptions take numbers from tags, not hardcoded', () => {
+    // Sharpen 1 stack = +1 damage; 5 stacks keep the same text (the UI appends ×N).
     expect(describeSkill(getSkill('sharpen'))).toContain('+1 damage');
     expect(describeSkill(getSkill('rapid-fire'))).toContain('+25% fire rate');
     expect(describeSkill(getSkill('twin-shot'))).toContain('±12°');
@@ -78,7 +78,7 @@ describe('Skill description', () => {
     expect(describeSkill(getSkill('poison'))).toContain('3s');
   });
 
-  it('chữ viết tắt HUD dễ đọc và không trùng nhau', () => {
+  it('HUD abbreviations are readable and unique', () => {
     expect(skillAbbreviation(getSkill('rapid-fire'))).toBe('RF');
     expect(skillAbbreviation(getSkill('long-iframe'))).toBe('IF');
     expect(skillAbbreviation(getSkill('crit-eye'))).toBe('CE');

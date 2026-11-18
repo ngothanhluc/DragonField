@@ -1,23 +1,23 @@
 /**
- * Screen shake kiểu trauma (ticket #2).
- * Hợp đồng: xem tests/core/juice.test.ts.
+ * Trauma-based screen shake (ticket #2).
+ * Contract: see tests/core/juice.test.ts.
  */
 import type { Vec2 } from '../math/vec2';
 
-/** 1 texel của pack = 1/16 tile (ACTOR_SCALE). Offset shake luôn là bội số của số này. */
+/** 1 texel of the pack = 1/16 tile (ACTOR_SCALE). Shake offset is always a multiple of this. */
 export const TEXEL_TILES = 1 / 16;
 
 export interface ScreenShakeOptions {
-  /** Biên độ tối đa (tile) khi trauma = 1. */
+  /** Maximum amplitude (tiles) when trauma = 1. */
   readonly maxOffsetTiles: number;
-  /** Trauma giảm bao nhiêu mỗi giây (tuyến tính). */
+  /** How much trauma decays per second (linear). */
   readonly decayPerSecond: number;
 }
 
 const ZERO: Vec2 = { x: 0, y: 0 };
 
 export class ScreenShake {
-  /** Tắt (setting Screen shake = OFF) thì offset luôn 0. */
+  /** When off (Screen shake = OFF setting) the offset is always 0. */
   enabled = true;
 
   private traumaValue = 0;
@@ -33,12 +33,12 @@ export class ScreenShake {
 
   addTrauma(amount: number): void {
     if (!Number.isFinite(amount)) return;
-    // Chỉ cộng: đòn trúng không bao giờ "làm dịu" rung đang có (test nghiệm thu).
+    // Add only: a hit never "soothes" existing shake (acceptance test).
     const added = Math.max(0, amount);
     this.traumaValue = clamp(this.traumaValue + added, 0, 1);
   }
 
-  /** Thời gian thật (ms): shake vẫn tàn trong hitstop, không đứng hình lệch tâm. */
+  /** Real time (ms): shake still decays during hitstop, so it never freezes off-centre. */
   update(deltaMs: number): void {
     if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
     const decayed = (this.options.decayPerSecond * deltaMs) / 1000;
@@ -46,10 +46,10 @@ export class ScreenShake {
   }
 
   /**
-   * Offset của frame này: `trunc(max · trauma² · (2r − 1) / texel) · texel`.
+   * Offset for this frame: `trunc(max · trauma² · (2r − 1) / texel) · texel`.
    *
-   * Làm tròn về bội số nguyên 1 texel, nên camera chỉ nhích theo pixel art —
-   * không nội suy nửa texel làm sprite nhoè. Gọi `random()` cho trục x rồi y.
+   * Rounded to an integer multiple of 1 texel, so the camera only moves by pixel-art pixels —
+   * no half-texel interpolation blurring sprites. Calls `random()` for the x axis then y.
    */
   offset(): Vec2 {
     if (!this.enabled || this.traumaValue <= 0) return { ...ZERO };

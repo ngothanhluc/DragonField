@@ -1,31 +1,31 @@
 /**
- * Quái do boss gọi (GDD §5, phase 3 của SquidGreen: "gọi 2 GreenOctopus").
+ * Enemies summoned by a boss (GDD §5, SquidGreen phase 3: "summon 2 GreenOctopus").
  *
- * Thuần và tất định: cùng boss + cùng role + cùng seed cho đúng cùng danh sách.
- * Vị trí lấy từ một **vòng 8 ô** quanh boss (bán kính
- * `SUMMON_RING_RADIUS_TILES`, góc 45° một ô, bắt đầu từ +x), rồi kẹp vào phòng.
- * Ô nào quá sát boss hoặc đè lên quái vừa gọi thì bỏ, đi tiếp ô kế; hết vòng mà
- * vẫn không có ô hợp lệ thì lấy ô xa boss nhất (thà chồng nhẹ còn hơn không gọi
- * được quái).
+ * Pure and deterministic: same boss + same role + same seed gives exactly the same list.
+ * Positions come from an **8-cell ring** around the boss (radius
+ * `SUMMON_RING_RADIUS_TILES`, 45° per cell, starting at +x), then clamped into the room.
+ * A cell too close to the boss or overlapping an already-summoned enemy is skipped, moving to the next
+ * cell; if the whole ring is invalid, take the cell farthest from the boss (a slight overlap
+ * beats failing to summon).
  *
- * Id tất định: `boss-<bossId>-<role>-<step>-<index>`. Có `step` để hai lần gọi
- * ở hai bước khác nhau không trùng id, và chạy lại cùng seed vẫn ra cùng id.
+ * Deterministic ids: `boss-<bossId>-<role>-<step>-<index>`. `step` keeps two summons
+ * at different steps from colliding, and re-running the same seed gives the same ids.
  */
 import { ROOM_COLS, ROOM_ROWS, type EnemyRole } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
 import type { SeededRng } from '../rng';
 import type { BossState } from './patterns';
 
-/** Bán kính vòng gọi quái quanh boss, tile. */
+/** Radius of the summon ring around the boss, tiles. */
 export const SUMMON_RING_RADIUS_TILES = 4;
 
-/** Số ô trên vòng — 8 hướng, đủ để 2 quái không bao giờ phải chồng nhau. */
+/** Cells on the ring — 8 directions, enough that 2 enemies never have to overlap. */
 export const SUMMON_RING_SLOTS = 8;
 
-/** Khoảng cách tối thiểu giữa quái được gọi với boss và với nhau, tile. */
+/** Minimum distance between a summoned enemy and the boss, and between summoned enemies, tiles. */
 export const SUMMON_MIN_SEPARATION_TILES = 1.5;
 
-/** Chừa 1 tile sát tường, cùng quy ước với boss (`BOSS_EDGE_MARGIN_TILES`). */
+/** Keep 1 tile off the wall, same convention as the boss (`BOSS_EDGE_MARGIN_TILES`). */
 export const SUMMON_EDGE_MARGIN_TILES = 1;
 
 const MIN_X = SUMMON_EDGE_MARGIN_TILES;
@@ -40,9 +40,9 @@ export interface SummonedEnemy {
 }
 
 /**
- * `count` quái quanh boss. `rng` là nguồn duy nhất của ngẫu nhiên: mỗi quái rút
- * đúng một số (`int`) để chọn ô bắt đầu, nên chuỗi RNG không phụ thuộc việc ô
- * đó có hợp lệ hay không.
+ * `count` enemies around the boss. `rng` is the only randomness source: each enemy draws
+ * exactly one number (`int`) to pick a starting cell, so the RNG stream does not depend on
+ * whether that cell was valid.
  */
 export function summonedEnemies(
   boss: BossState,
@@ -51,7 +51,7 @@ export function summonedEnemies(
   rng: SeededRng,
 ): SummonedEnemy[] {
   if (!Number.isInteger(count) || count < 0) {
-    throw new Error(`summonedEnemies cần count là số nguyên >= 0, nhận ${count}`);
+    throw new Error(`summonedEnemies needs count to be an integer >= 0, got ${count}`);
   }
 
   const slots = ringSlots(boss.position);
@@ -73,7 +73,7 @@ export function summonedEnemies(
   return summoned;
 }
 
-/** 8 điểm quanh boss, đã kẹp vào phòng. Thứ tự cố định để test đọc được. */
+/** 8 points around the boss, clamped into the room. Fixed order so tests can read it. */
 function ringSlots(origin: Vec2): Vec2[] {
   const slots: Vec2[] = [];
   for (let slot = 0; slot < SUMMON_RING_SLOTS; slot += 1) {
@@ -89,8 +89,8 @@ function ringSlots(origin: Vec2): Vec2[] {
 }
 
 /**
- * Ô hợp lệ đầu tiên tính từ `start`, đi vòng theo chiều tăng góc. Không có ô
- * nào hợp lệ thì trả ô xa boss nhất (hoà thì lấy ô gần `start` nhất).
+ * First valid cell from `start`, walking in increasing angle. With no valid cell
+ * it returns the cell farthest from the boss (ties go to the cell nearest `start`).
  */
 function pickSlot(
   slots: readonly Vec2[],

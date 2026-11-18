@@ -1,11 +1,11 @@
 /**
- * Pool 20 skill — bản đóng băng v1 (docs/gdd.md §6).
+ * The 20-skill pool — frozen v1 (docs/gdd.md §6).
  *
- * Thẻ skill chỉ là **dữ liệu**: hiệu ứng cơ học nằm trong `tags`, không nằm
- * trong id hay tên. Nhờ vậy `derived-stats.ts` cộng dồn được mọi skill mà không
- * cần bảng `switch` riêng cho từng skill, và thêm skill mới = thêm một entry.
+ * A skill card is only **data**: the mechanical effect lives in `tags`, not in
+ * the id or name. That lets `derived-stats.ts` stack every skill without
+ * a per-skill `switch` table, and adding a skill = adding one entry.
  *
- * Tên file/thư mục: kebab-case; id trùng tên skill đã kebab-case.
+ * File/folder names: kebab-case; the id matches the kebab-cased skill name.
  */
 
 export const RARITIES = ['common', 'rare', 'epic'] as const;
@@ -13,62 +13,62 @@ export const RARITIES = ['common', 'rare', 'epic'] as const;
 export type Rarity = (typeof RARITIES)[number];
 
 /**
- * Một hiệu ứng cơ học của skill. Mọi tag đều là "mỗi stack cộng thêm chừng này";
- * tag nào cộng dồn kiểu nhân thì `derived-stats.ts` ghi rõ công thức ở đó.
+ * One mechanical effect of a skill. Every tag means "each stack adds this much";
+ * tags that stack multiplicatively have their formula documented in `derived-stats.ts`.
  */
 export type SkillTag =
-  /** Cộng thẳng damage mỗi phát. */
+  /** Flat damage added per shot. */
   | { readonly kind: 'damage-add'; readonly amount: number }
-  /** Cộng vào hệ số nhịp bắn: rate = base × (1 + Σ amount × stack). */
+  /** Adds to the fire-rate factor: rate = base × (1 + Σ amount × stack). */
   | { readonly kind: 'fire-rate-mult'; readonly amount: number }
-  /** Cộng thêm viên đạn mỗi phát (bắn chéo ±12°). */
+  /** Adds projectiles per shot (firing at ±12°). */
   | { readonly kind: 'projectile-add'; readonly amount: number }
-  /** Đạn xuyên thêm 1 enemy mỗi stack. */
+  /** Bullets pass through 1 more enemy per stack. */
   | { readonly kind: 'pierce-add' }
-  /** Cộng cơ hội chí mạng; `multiplier` là hệ số damage khi chí mạng. */
+  /** Adds crit chance; `multiplier` is the damage factor on a crit. */
   | { readonly kind: 'crit-chance'; readonly chance: number; readonly multiplier: number }
-  /** Cộng tim tối đa. */
+  /** Adds max hearts. */
   | { readonly kind: 'max-hearts'; readonly amount: number }
-  /** Hồi tim mỗi khi dọn phòng. */
+  /** Heals hearts each time a room is cleared. */
   | { readonly kind: 'heal-per-room'; readonly amount: number }
-  /** Chặn 1 đòn mỗi charge, hồi charge sau `cooldownMs`. */
+  /** Blocks 1 hit per charge, recharging after `cooldownMs`. */
   | { readonly kind: 'shield'; readonly cooldownMs: number }
-  /** Enemy chạm vào player nhận `damage`. */
+  /** Enemies touching the player take `damage`. */
   | { readonly kind: 'thorns'; readonly damage: number }
-  /** Cộng vào hệ số tốc chạy: speed = base × (1 + Σ amount × stack). */
+  /** Adds to the move-speed factor: speed = base × (1 + Σ amount × stack). */
   | { readonly kind: 'move-speed-mult'; readonly amount: number }
-  /** Nhân i-frame mỗi stack: i-frame = base × amount^stack. */
+  /** Multiplies the i-frame per stack: i-frame = base × amount^stack. */
   | { readonly kind: 'iframe-mult'; readonly amount: number }
-  /** Trúng đòn làm chậm enemy. */
+  /** Hits slow the enemy. */
   | { readonly kind: 'slow-on-hit'; readonly factor: number; readonly durationMs: number }
-  /** Gây damage theo thời gian. */
+  /** Deals damage over time. */
   | { readonly kind: 'poison'; readonly dps: number; readonly durationMs: number }
-  /** Hồi máu theo % damage gây ra. */
+  /** Heals a percentage of damage dealt. */
   | { readonly kind: 'lifesteal'; readonly percent: number }
-  /** Cộng vào hệ số vàng nhặt. */
+  /** Adds to the gold pickup factor. */
   | { readonly kind: 'gold-mult'; readonly amount: number }
-  /** Cộng trọng số rarity cao (xem công thức trong `roll.ts`). */
+  /** Adds weight to high rarities (see the formula in `roll.ts`). */
   | { readonly kind: 'luck-add'; readonly amount: number }
-  /** Damage bonus khi enemy dưới `threshold` máu. */
+  /** Damage bonus while the enemy is below `threshold` health. */
   | { readonly kind: 'execute'; readonly threshold: number; readonly bonus: number }
-  /** Đạn nảy sang enemy khác `bounces` lần. */
+  /** The bullet bounces to another enemy `bounces` times. */
   | { readonly kind: 'ricochet-add'; readonly bounces: number }
-  /** Đạn tự bám mục tiêu. */
+  /** The bullet tracks its target. */
   | { readonly kind: 'homing-add' }
-  /** Đạn nổ AoE khi trúng. */
+  /** The bullet explodes in an AoE on hit. */
   | { readonly kind: 'explosive'; readonly radiusTiles: number; readonly damageRatio: number };
 
 export interface SkillDef {
   readonly id: string;
   readonly name: string;
-  /** Chữ tắt 2 ký tự cho HUD. Viết tay vì initials tự động bị trùng (Sharpen/Shield). */
+  /** Two-letter abbreviation for the HUD. Hand-written because automatic initials collide (Sharpen/Shield). */
   readonly short: string;
   readonly rarity: Rarity;
   readonly maxStacks: number;
   readonly tags: readonly SkillTag[];
 }
 
-/** Đúng 20 skill của GDD §6, giữ nguyên thứ tự bảng để dễ đối chiếu. */
+/** Exactly the 20 GDD §6 skills, keeping table order for easy cross-checking. */
 export const SKILLS: readonly SkillDef[] = [
   {
     id: 'sharpen',
@@ -140,8 +140,8 @@ export const SKILLS: readonly SkillDef[] = [
     name: 'Vitality',
     rarity: 'common',
     maxStacks: 5,
-    // GDD còn ghi "hồi 1 tim ngay": đó là hiệu ứng lúc nhặt thẻ, do run xử lý,
-    // không phải chỉ số thường trực nên không biểu diễn được bằng tag.
+    // The GDD also lists "heal 1 heart now": that is a pickup-time effect handled by the run,
+    // not a persistent stat, so tags cannot express it.
     tags: [{ kind: 'max-hearts', amount: 1 }],
   },
   {
@@ -236,11 +236,11 @@ export const SKILLS: readonly SkillDef[] = [
 
 const SKILLS_BY_ID: ReadonlyMap<string, SkillDef> = new Map(SKILLS.map((s) => [s.id, s]));
 
-/** Tra cứu skill theo id. Id lạ là bug (sai chính tả / pool cũ) nên ném lỗi. */
+/** Look up a skill by id. An unknown id is a bug (typo / old pool) so it throws. */
 export function getSkill(id: string): SkillDef {
   const skill = SKILLS_BY_ID.get(id);
   if (skill === undefined) {
-    throw new Error(`Skill không tồn tại trong pool: "${id}"`);
+    throw new Error(`Skill does not exist in the pool: "${id}"`);
   }
   return skill;
 }
@@ -251,12 +251,12 @@ export interface OwnedSkillStacks {
 }
 
 /**
- * Số stack hiệu lực của từng skill đang sở hữu.
+ * Effective stack count of each owned skill.
  *
- * - Làm tròn xuống và kẹp vào [0, maxStacks]: save hỏng hay cộng nhầm không thể
- *   đẩy chỉ số vượt trần.
- * - Bỏ qua id không có trong pool thay vì ném lỗi: save từ pool cũ vẫn mở được run.
- * - Duyệt theo thứ tự `SKILLS`, không theo thứ tự Map, để kết quả tất định.
+ * - Floors and clamps into [0, maxStacks]: a broken save or a double-add cannot
+ *   push stats past the cap.
+ * - Skips ids not in the pool instead of throwing: a save from an old pool must still open a run.
+ * - Iterates in `SKILLS` order, not Map order, so the result is deterministic.
  */
 export function resolveOwnedSkills(owned: ReadonlyMap<string, number>): OwnedSkillStacks[] {
   const result: OwnedSkillStacks[] = [];
@@ -269,7 +269,7 @@ export function resolveOwnedSkills(owned: ReadonlyMap<string, number>): OwnedSki
   return result;
 }
 
-/** Tổng điểm luck đang có (mỗi stack Luck = 0.01 điểm). Dùng cho `rollChoices`. */
+/** Total luck points held (each Luck stack = 0.01 points). Used by `rollChoices`. */
 export function luckPoints(owned: ReadonlyMap<string, number>): number {
   let total = 0;
 

@@ -1,29 +1,29 @@
 /**
- * Số damage bay lên (ticket #2).
- * Hợp đồng: xem tests/core/juice.test.ts.
+ * Damage numbers floating up (ticket #2).
+ * Contract: see tests/core/juice.test.ts.
  */
 
 export interface DamagePopupOptions {
   readonly lifetimeMs: number;
-  /** Bay lên bao nhiêu tile trong cả đời. */
+  /** How many tiles it rises over its whole life. */
   readonly riseTiles: number;
   readonly crit: boolean;
 }
 
 export interface DamagePopupState {
-  /** Đã bay lên bao nhiêu tile (dương = lên). */
+  /** How many tiles it has risen (positive = up). */
   readonly rise: number;
-  /** 1 = rõ, 0 = mất. */
+  /** 1 = visible, 0 = gone. */
   readonly alpha: number;
   readonly scale: number;
 }
 
-/** Crit to hơn số thường để đọc bằng mắt giữa đám đông. */
+/** Crits are bigger than normal numbers so they read at a glance in a crowd. */
 export const CRIT_POPUP_SCALE = 1.4;
 
 /**
- * Trạng thái popup sau `elapsedMs`: bay lên đều theo thời gian, mờ dần tuyến
- * tính, crit to hơn chút. Hết đời (hoặc quá) thì alpha 0, đã bay đủ `riseTiles`.
+ * Popup state after `elapsedMs`: rises steadily over time, fades linearly,
+ * crits slightly bigger. Past its life (or beyond) alpha is 0 and it has risen `riseTiles`.
  */
 export function damagePopupState(
   elapsedMs: number,
@@ -42,7 +42,7 @@ export function damagePopupState(
   };
 }
 
-/** Số hiển thị: làm tròn về số nguyên, crit thêm `!`. */
+/** Display number: rounded to an integer, crits get a `!`. */
 export function formatDamage(amount: number, crit: boolean): string {
   const rounded = Number.isFinite(amount) ? Math.round(amount) : 0;
   return crit ? `${rounded}!` : String(rounded);
