@@ -1,182 +1,182 @@
 # Milestones — Yokai Field v2 (roguelite)
 
-Mỗi mốc phải **chơi được hoặc test được**. Không mốc nào tính là xong chỉ vì "đã viết code".
-Không đặt deadline, nhưng mỗi mốc là một điểm dừng bắt buộc để đánh giá lại scope.
+Every milestone must be **playable or testable**. No milestone counts as done just because "the code is written".
+There are no deadlines, but each milestone is a mandatory stopping point to re-evaluate scope.
 
-Nguồn thiết kế: `docs/gdd.md`. Quyết định kỹ thuật: `docs/tech-decisions.md`.
+Design source: `docs/gdd.md`. Technical decisions: `docs/tech-decisions.md`.
 
 ---
 
 ## M0 — Tooling
 
-**Việc.** Project Cocos Creator 3.8.8 (Empty 2D) tại root. `assets/scripts/{core,game,ui}`, `assets/resources/data/`. `AGENTS.md`. `tsc --noEmit`, vitest, eslint, prettier. GitHub Actions chạy `bun run check`. Script sinh placeholder sprite. Xoá Unity + tag `unity-final` (theo ADR-003, ADR-011).
+**Work.** Cocos Creator 3.8.8 project (Empty 2D) at the root. `assets/scripts/{core,game,ui}`, `assets/resources/data/`. `AGENTS.md`. `tsc --noEmit`, vitest, eslint, prettier. GitHub Actions runs `bun run check`. Script generates placeholder sprites. Remove Unity + tag `unity-final` (per ADR-003, ADR-011).
 
-**Nghiệm thu.** `bun run check` xanh; boot scene rỗng không lỗi console; `docs/` đủ 5 file; repo sạch, không còn `Assets/`.
-
----
-
-## M1 — Core loop bằng hình chữ nhật
-
-**Việc.** WASD 8 hướng. Auto-fire 2 phát/giây vào enemy gần nhất. Đạn là hình tròn 2×2 px. 1 enemy grunt lao vào, chạm gây 1 damage, player i-frame 0.8 s. Máu 6 tim. Dọn sạch phòng → hiện text "room clear". Chết → restart.
-
-**Nghiệm thu.**
-- Test (core, không import `cc`): chọn mục tiêu gần nhất; nhịp bắn; damage + i-frame; knockback; trạng thái room clear.
-- Chơi được 1 phòng trong editor, chết và restart được.
-- Không có `cc` import trong `src/core/`.
-
-**Trạng thái: ✅ Xong (2026-11-16).** 361 test xanh (có `knockback.test.ts`); chơi trên build web: knockback 1.5 tile, "ROOM CLEAR" ~1 s rồi sang 2/9, GAME OVER + R chơi lại. Còn treo: bộ gõ tiếng Việt (Telex) làm kẹt phím WASD — xem `AGENTS.md`; caster chưa bắn đạn (thuộc M3).
+**Acceptance.** `bun run check` green; empty boot scene with no console errors; `docs/` has all 5 files; repo clean, no `Assets/` left.
 
 ---
 
-## M1.5 — Taste test art (bắt buộc)
+## M1 — Core loop with rectangles
 
-**Việc.** Cài pack **Ninja Adventure Update #8** (có `Actor/CharacterAnimated`). Phòng dùng tileset có sẵn của pack (không tự vẽ tile, không làm dungeon — ADR-007). Gắn player + 1 enemy + 1 phòng vào M1.
+**Work.** 8-direction WASD. Auto-fire 2 shots/s at the nearest enemy. Bullets are 2×2 px circles. 1 grunt enemy charges in, contact deals 1 damage, player gets 0.8 s i-frames. 6 hearts of health. Clear the room → show the text "room clear". Death → restart.
 
-**Nghiệm thu.**
-- Ảnh chụp màn hình 512×288 trông như game, không phải prototype.
-- Quyết định: giữ hướng art này / đổi. **Đổi ngay tại đây**, không đổi sau M3.
+**Acceptance.**
+- Tests (core, no `cc` import): pick the nearest target; fire cadence; damage + i-frames; knockback; room clear state.
+- 1 room playable in the editor, can die and restart.
+- No `cc` imports inside `src/core/`.
 
-**Trạng thái: ✅ Xong (2026-11-16).** Giữ tileset của pack, không làm dungeon. Ảnh nghiệm thu: `docs/art/m1.5-taste-test.png` (512×288, build release). Phòng 32×18 letterbox vừa khít mọi tỉ lệ canvas (`core/view/letterbox.ts`), HUD dán đúng mép phòng.
-
----
-
-## M2 — Phòng và run flow
-
-**Việc.** Phòng 32×18 tile, 1 màn hình, không camera follow. Tiled → `.tmx` → `TiledMap` + parse object layer → `LevelData` (collision, spawn, wave). Chuyển phòng, đếm `3/9`, chapter select stub. Không có scroll, không có confiner.
-
-**Nghiệm thu.**
-- Schema `LevelData` có test validate.
-- Thêm 1 phòng mới chỉ bằng sửa `.tmx`, không sửa code.
-- Đi hết 9 phòng của chapter 1 (boss là placeholder) không lỗi.
-
-**Trạng thái: ✅ Xong (2026-11-16).** 427 test xanh (mới: `xml`, `tmx`, `chapter-discovery`, `withBest`, `run-state` data-driven + `markWon`). 9 phòng `chapter-1/room-<n>.tmx` + `field.tsx`; `TiledMap` vẽ tile, object layer parse bằng **một** parser (`core/level/tmx.ts`, không `cc`) thành `LevelData`. Chapter select dựng bằng code (ch1 mở, 2–3 khoá, hiện best từ `localStorage`) → 9 phòng → boss placeholder Tengu 60 HP → CHAPTER CLEAR → về chapter select. Đã thử thả `room-10.tmx`: HUD và flow thành `x/10` không sửa code (file thử đã xoá). Headless Chrome đi trọn `1/9 → 9/9`, không lỗi console. Chưa có: 3 phase/đạn boss (M4), skill pick (M3), font pixel.
+**Status: ✅ Done (2026-11-16).** 361 tests green (including `knockback.test.ts`); played the web build: 1.5-tile knockback, "ROOM CLEAR" for ~1 s then on to 2/9, GAME OVER + R to retry. Still open: the Vietnamese IME (Telex) makes WASD keys stick — see `AGENTS.md`; the caster does not fire bullets yet (that is M3).
 
 ---
 
-## M3 — Độ sâu combat
+## M1.5 — Art taste test (required)
 
-**Việc.** 3 vai trò enemy (grunt/caster/brute) + bullet của caster + charge của brute + telegraph. Elite variant (tint + scale + 1 đòn). Hitstop 70 ms, knockback, stagger. Object pool cho đạn (không `new` mỗi phát).
+**Work.** Install the **Ninja Adventure Update #8** pack (includes `Actor/CharacterAnimated`). The room uses the pack's existing tileset (do not draw tiles yourself, no dungeon — ADR-007). Wire player + 1 enemy + 1 room into M1.
 
-**Nghiệm thu.**
-- Test: telegraph timing, charge hitbox, i-frame khi trúng đạn, pool không rò rỉ sau 1000 phát.
-- 3 enemy phân biệt được khi nhìn 2 giây: khác silhouette, khác cách tấn công, khác cách né.
-- 60 fps với 8 enemy + 40 viên đạn trên màn.
+**Acceptance.**
+- A 512×288 screenshot that looks like a game, not a prototype.
+- Decision: keep this art direction / change it. **Change it here**, not after M3.
 
-**Trạng thái: ✅ Xong (2026-11-16).** 469 test xanh (31 file; mới `hitstop`, `charge-hitbox`, `enemy-fire`, `elite-attacks`, `bullet-pool`, thêm rule boss trong `chapter-discovery`). Vai trò: chaser (dơi xanh, chạm người), caster (octopus xanh lá — đổi từ Eye để không trùng silhouette/màu dơi — đạn chậm owner `enemy` tint cam, dùng chung `BulletPool`), brute/tank (gấu, silhouette ×1.75 qua `enemies.roles.tank.scale`, telegraph 700 ms rồi lao 7 tile/s); telegraph = vòng `fx/telegraph-ring` **màu theo vai trò** (vàng/cyan/cam) + pulse + tint. Elite = tint + scale 1.15 + 1 đòn thêm: chaser elite lao ngắn (300 ms telegraph, 6 tile/s × 300 ms), caster elite bắn loạt 3 viên toả quạt (±0.22 rad), tank elite lao **2 lần** (cú sau chốt hướng mới). Hitstop 70 ms khi đạn player trúng enemy = đóng băng **thời gian mô phỏng** (`HitstopClock`), nên telegraph/i-frame/cooldown/TTL cùng đứng yên — có test; stagger 150 ms là action riêng, không reset cooldown (nếu reset, enemy bị auto-fire 2 phát/s sẽ không bao giờ ra đòn — bug bắt được ở smoke test). Đạn: pool 256 slot + 64 node view dựng sẵn, không `new` mỗi phát. `chapterFromLevels` từ chối boss không phải phòng cuối / >1 boss room (có test). Debug `?debug=1`: `spawn(role, elite, at)`, `stress()`, `fps()`, `godMode(on)` (+ `enemies()`, `bulletCount()`), đã dùng cho acceptance. Headless Chrome (ANGLE Metal, viewport 1280×960): `stress()` giữ **8 enemy + 40–41 đạn**, `fps()` 12 mẫu liên tiếp **~60.0 fps / 16.67 ms** (baseline phòng thường 60); vòng 9 phòng M2 chạy lại `1/9 → 9/9` → CHAPTER CLEAR → về chapter select, **không lỗi console**. Ảnh: `/tmp/yokai-m3/shots/`. Còn thiếu (không thuộc M3): FX chết/impact và palette remap của elite (tint nhân màu hiện tại, gấp ở M6), boss 3 phase (M4), sim headless chưa mô phỏng hitstop/stagger/đòn thêm của elite (chỉ game adapter có).
-
----
-
-## M4 — Skill và boss
-
-**Việc.** 20 skill theo GDD §6, rarity weight, stack, màn hình chọn 1/3. Boss thật của GDD §5 — **TenguBlue / SquidGreen / GiantBlueSamurai**, 60/80/100 máu, 3 phase, pattern đọc được — không còn boss rồng/placeholder hình khối. Chapter 2, 3 với scaling.
-
-**Nghiệm thu.**
-- Test: rarity roll có seed cố định; stack cộng dồn đúng; skill ảnh hưởng DPS đúng công thức.
-- Chơi trọn 1 run 9 phòng + boss ở cả 3 chapter.
-- 3 phase boss khác nhau rõ (tint + màu vòng telegraph + banner riêng), và mỗi phase có ít nhất 1 pattern buộc phải di chuyển (test: player đứng yên tại `playerStart` vẫn trúng đòn ở cả 9 phase).
-
-**Trạng thái: ✅ Xong (2026-11-17).** 538 test xanh (39 file; mới `skills-loadout`, `combat-effects`, `boss-phases`, `chapter-scaling`, `chapter-assets`, `save-unlock`, `integer-damage`). 20 skill sống trong game qua `DerivedStats` + `core/combat/*` (crit, pierce, ricochet, homing, nổ AoE có flash, freeze/poison có tint + DoT, lifesteal, execute, shield 20 s có tint, thorns, Second Wind, Vitality…); sim dùng đúng các helper đó. Màn chọn 1/3 dựng bằng code (`skill-pick.ts`): 3 thẻ có tên/rarity màu/hiệu ứng/stack, chọn bằng chuột **và** phím 1/2/3 (phải nghe `document` capture — xem bẫy AGENTS.md), roll bằng RNG seed của run, tôn trọng max stack. HUD có hàng chữ tắt 2 ký tự + stack (20 mã không trùng) và thanh máu boss. Boss dùng `core/boss/patterns.ts`: Tengu 60 / Squid 80 / Samurai 100 máu, phase 66%/33%, Summon 2 caster của Squid chạy, Samurai line-up theo hàng player trước khi charge ngang (nếu không, player đứng hàng khác không bao giờ bị đe doạ); mỗi phase có tint + màu vòng telegraph + banner `PHASE 2` / `ENRAGE` riêng. Chapter 2–3 author đủ 9 phòng mỗi chapter (5–6 enemy/phòng, brute từ phòng 3; 7–8 enemy + elite), mỗi phòng chia 2–3 wave; scale máu theo `config/tuning.json` (`chapters.enemyHealthMultipliers` 1/1.05/1.05, damage giữ 1/1/1 — độ khó chính đến từ số lượng/elite, đúng tinh thần GDD §4). Thắng chapter ghi `chaptersUnlocked` vào save; chapter select hiện đúng 1 → 2 → 3. Headless Chrome (1280×960): ch1 → ch2 → ch3, mỗi chapter qua 9 phòng + 3 phase boss + unlock, **không lỗi console**; `stress()` giữ 8 enemy + 44 đạn; đo riêng 12 mẫu **60.0 fps** (16.67 ms/frame); run full-flow 3 chapter + 3 boss đo **58.1 fps** trung bình. Sim balance (3 seed, policy né): đứng yên chết phòng 1 sau 8.2–11.2 s; né không skill sống 9.9–121.2 s; né + loadout tiêu biểu **thắng cả 3 chapter** (trung bình 85 / 93 / 135 s). Round 2 thêm test riêng cho chapter 2–3 với run 0 skill: đứng yên thua phòng 1 (14.3 / 13.4 s), né không skill sống **254–256 s** (ch2, dọn 6 phòng) và **187–205 s** (ch3, dọn 3–4 phòng). Ảnh: `/tmp/yokai-m4/shots/`. Còn thiếu: Greed chưa có vàng trong run (M5), Freeze không làm chậm boss (chỉ enemy thường), crit/lifesteal dùng RNG chung với boss pattern, HUD skill dùng chữ tắt vì pack không có icon skill 16×16 phù hợp.
+**Status: ✅ Done (2026-11-16).** Kept the pack's tileset, no dungeon. Acceptance image: `docs/art/m1.5-taste-test.png` (512×288, release build). The 32×18 room letterboxes snugly at every canvas aspect ratio (`core/view/letterbox.ts`), and the HUD sticks to the room edges.
 
 ---
 
-## M5 — Meta và UI
+## M2 — Rooms and run flow
 
-**Việc.** Vàng, meta shop 3 track, save `localStorage` (schema ở GDD §10), title, chapter select, pause, kết quả run, settings, credits. Toàn bộ bằng chuột + phím.
+**Work.** 32×18 tile room, single screen, no camera follow. Tiled → `.tmx` → `TiledMap` + parse the object layer → `LevelData` (collision, spawn, wave). Room transitions, `3/9` counter, chapter select stub. No scrolling, no confiner.
 
-**Nghiệm thu.**
-- Test: save/load round-trip, giá upgrade, chặn mua khi thiếu vàng, chặn chapter chưa mở.
-- Mọi màn hình vào/ra được, không ngõ cụt.
-- Không có text bị cắt ở 16:9, 16:10, 4:3.
+**Acceptance.**
+- The `LevelData` schema has validation tests.
+- Adding a new room only touches the `.tmx`, not code.
+- Walk all 9 rooms of chapter 1 (boss is a placeholder) with no errors.
 
-**Trạng thái: ✅ Xong (2026-11-17).** 562 test xanh (43 file; mới `run-stats`, `run-rewards`, `chapter-gate`, `settings`; `save.test` đã có round-trip/giá/chặn mua/migrate key cũ `hp`/`firerate`). Vàng: kill trả `goldForKill` (elite ×3) qua `RunRewards`, Greed nhân rồi **làm tròn** (tank 3 × 1.5 = 5), dọn phòng +5 / boss +50, HUD hiện sống; chỉ ghi vào save một lần ở cuối run (`game/run-end.ts`: chết/thắng, restart/thoát giữa run cũng giữ vàng). Meta: `core/meta/run-stats.ts` áp cấp đã mua vào baseline trước skill (tim +1/cấp, damage +5%/cấp, nhịp +3%/cấp); đã kiểm trong browser: mua damage 1 + hearts 1 → run mới có `damage 1.05`, `maxHearts 7` và đầy 7 tim. Màn: title / chapter select (+Back, keyboard focus) / pause (Resume, Restart, Quit, volume; **sim clock đứng yên** — enemy không nhích 0.000 tile sau 1.5 s) / result (chết + thắng; rooms, vàng, thời gian, kills, Shop/Chapter select/Title) / shop 3 track (level, giá, vàng, lý do disabled) / settings (volume 10% bước, fullscreen thật, keybind read-only) / credits (Pixel-boy & AAA, CC0) / skill-pick (thêm ←/→ + Enter, vẫn 1/2/3). Mọi màn dùng `game/screens/menu.ts`: click chuột thật, hover/focus, ↑/↓/←/→, Enter/Space, Esc; focus có viền vàng. Locked chapter bị chặn ở **core** (`chapterGate`, test) chứ không chỉ nút disabled — click Chapter 2 ở browser không vào run. Save schema giữ `version: 1`, key `hearts/damage/fireRate` (GDD §10 đã sửa theo code; migrate đọc tên nháp cũ); `localStorage` hỏng → save mặc định, không crash (test + browser). Debug `?debug=1`: thêm `screen()`, `save()`, `setGold(n)`, `uiText()` (rect label trong canvas + `insideCanvas`), giữ nguyên hook cũ. Canvas: `applyCanvasSize` gán `screen.windowSize` lúc boot + resize, bỏ border/header/footer của template → canvas đúng `innerWidth×innerHeight`; world vẫn letterbox 16:9. Headless Chrome đi đủ flow (title → chapter → run → pause/resume/restart/quit; chết → result → shop → mua → back; thắng chapter 1 → mở chapter 2 → chơi chapter 2; credits/settings; 54 lượt audit UI ở 6 viewport 1280×720, 1920×1080, 1280×800, 1440×900, 1024×768, 1280×960, **0 label bị cắt**, 0 lỗi console). `stress()` 8 enemy + 44 đạn: **58.5–60.1 fps** (mẫu 120 frame; 1280×720/960/1024×768/1920×1080). Ảnh: `/tmp/yokai-m5/shots/` (mỗi màn ở 16:9 và 4:3, cộng result-win/stress). Còn thiếu: volume chỉ lưu, chưa có audio (M6); font hệ thống thay vì `NormalFont.ttf` của pack (M6); Esc trong fullscreen bị trình duyệt dùng để thoát fullscreen nên phải bấm lần nữa hoặc dùng nút Back; không rebind phím (đúng v1).
+**Status: ✅ Done (2026-11-16).** 427 tests green (new: `xml`, `tmx`, `chapter-discovery`, `withBest`, `run-state` data-driven + `markWon`). 9 rooms `chapter-1/room-<n>.tmx` + `field.tsx`; `TiledMap` draws the tiles, and the object layer is parsed by **one** parser (`core/level/tmx.ts`, no `cc`) into `LevelData`. Chapter select is built in code (ch1 unlocked, 2–3 locked, shows the best from `localStorage`) → 9 rooms → Tengu 60 HP placeholder boss → CHAPTER CLEAR → back to chapter select. Tried dropping in `room-10.tmx`: HUD and flow become `x/10` with no code change (test file deleted). Headless Chrome walks the whole `1/9 → 9/9` with no console errors. Not yet: 3 boss phases/bullets (M4), skill pick (M3), pixel font.
 
 ---
 
-## M6 — Tích hợp art
+## M3 — Combat depth
 
-**Việc.** Trang trí đủ 27 phòng bằng tileset **có thật trong pack** theo bảng GDD §8 — ch1 Nature/Relief/Element/Field, ch2 Water + thác/nước + bờ Nature, ch3 VillageAbandoned/House/Towers/Hole, arena boss + 4 cột đá. Trang trí không được mâu thuẫn va chạm: thứ trông đặc phải là obstacle trong object layer, sàn trông đi được thì vẫn đi được. Animation thật qua `animations.json` cho player (NinjaGreen: idle/walk scale theo vận tốc, hurt, death), 3 vai trò enemy + elite (idle/walk; hurt = flash/tint, death = FX — GDD §12.3), và 3 boss TenguBlue/SquidGreen/GiantBlueSamurai (attack/Trans/AttackLoop/Shoot/charge/hit gắn với pattern event). Pivot theo chân, không giật khi đổi anim khác kích thước. Bullet/VFX/impact từ `FX/` của pack (shuriken, energy ball, spark, explosion, smoke, shield, freeze/poison, gold sparkle), tất cả pool sẵn. Audio: nhạc title/chapter/boss + SFX hành động, master volume theo save, mở khoá autoplay ở input đầu. Font pixel của pack cho mọi label. UI dùng nine-slice thật. Credits trong game + `README.md`. **Không** có rồng, **không** có dungeon (ADR-007).
+**Work.** 3 enemy roles (grunt/caster/brute) + caster bullets + brute charge + telegraph. Elite variant (tint + scale + 1 extra attack). 70 ms hitstop, knockback, stagger. Object pool for bullets (no `new` per shot).
 
-**Nghiệm thu.**
-- Không còn placeholder nào hiển thị.
-- Mọi key trong manifest có sprite thật hoặc fallback.
-- 4 animation bắt buộc cho mỗi actor; không có frame nào lệch pivot.
-- Credit trong game + `README`.
+**Acceptance.**
+- Tests: telegraph timing, charge hitbox, i-frames when hit by a bullet, pool does not leak after 1000 shots.
+- The 3 enemies are distinguishable at a glance for 2 seconds: different silhouette, different attack, different dodge.
+- 60 fps with 8 enemies + 40 bullets on screen.
 
-**Trạng thái: ✅ Xong (2026-11-17).** 576 test xanh (45 file; mới `art-files` 9 test + `water-layout` 5 test). **Manifest**: 119 key; `art-files.test` đọc PNG thật bằng decoder nội bộ (`scripts/lib/png.ts`), kiểm file tồn tại, grid chia hết sheet, và `footPx` = đáy pixel đặc của sheet (test pivot); thêm idle cho 9 monster + 8 key FX. `SpriteEntry` có `anchor`/`footPx`; `SpriteAnimator` đặt anchor theo chân, `contentSize` theo frame, walk scale theo vận tốc (GDD §12.2). **Phòng**: `scripts/dress-rooms.ts` phủ decor layer cho 27 `.tmx` (ch1 Nature cỏ/hoa/sỏi + hedge/barrel hàng 0; ch2 cỏ + `water-layout.json`; ch3 Desert props + mái nhà/hàng rào Village hàng 0/17 + Houses/Towers/Hole trong boss arena). Nước ch2 là sprite strip `Backgrounds/Animated` (ripple + thác 3 phần) vẽ bởi `room-water.ts` trên nền `Graphics` xanh — `TilesetWater` là autotile kênh, stamp khối ra hình ống nên không dùng làm sông. Không thêm obstacle mới: props đặc chỉ nằm ở hàng/cột 0/31 bị clamp 1 tile, nên collision/balance giữ nguyên (`run-simulation` vẫn xanh). **Actor**: enemy idle/walk, hurt tint/flash, death = smoke+impact; boss dùng attack/Trans/AttackLoop/Shoot/charge/hit theo event và về idle khi clip xong; player death FX 1.4 s rồi result. **FX**: pool 32 slot tự slice frame từ manifest + một clock chung (bản đầu dùng `SpriteAnimator`/slot làm stress tụt 40 fps); impact/explosion/smoke/shield/ice/poison/gold sparkle; đạn shuriken 15 frame + energy ball 4 frame. **Audio**: 5 track (title/ch1/ch2/ch3/boss) + 15 SFX mp3 (2.2 MB), autoplay unlock ở input đầu, volume save áp live; debug `audio()` thấy track + SFX. **UI**: `NormalFont.ttf` cho mọi label, nine-slice panel/nút/thẻ skill (có inset), credits cập nhật + `README.md`. Build `du -sh` **7.9 MB**. Headless 1280×720 và 1024×768: mọi màn (title/chapter/shop/settings/credits/skill-pick/pause/result) `uiText` clipped=0 overflow=0; ch1→ch3 đủ 9 phòng + 3 phase mỗi boss; `placeholders()` rỗng ở mọi màn; `stress()` 59.5–60.1 fps với 8 enemy + 44 đạn + FX; 0 lỗi console. Ảnh: `/tmp/yokai-m6/shots/`. Hạn chế trung thực: ch3 nội ô khá trống (VillageAbandoned toàn mảnh autotile có góc trong suốt, đặt lẻ thành “giấy rách”); `TilesetElement` không có cột đá nên boss arena dùng boulder Nature; nước/sông đi qua được (sông nông); boss Samurai có thể chạm mép arena và bị cắt một phần sprite; monster vẫn không có frame attack/hurt/death (FX + tint theo GDD §12.3).
+**Status: ✅ Done (2026-11-16).** 469 tests green (31 files; new `hitstop`, `charge-hitbox`, `enemy-fire`, `elite-attacks`, `bullet-pool`, plus boss rules in `chapter-discovery`). Roles: chaser (blue bat, contact damage), caster (green octopus — swapped from Eye so it does not match the bat's silhouette/color — slow bullets with owner `enemy`, orange tint, sharing `BulletPool`), brute/tank (bear, silhouette ×1.75 via `enemies.roles.tank.scale`, 700 ms telegraph then a 7 tile/s charge); the telegraph is an `fx/telegraph-ring` circle **colored by role** (yellow/cyan/orange) + pulse + tint. Elite = tint + 1.15 scale + 1 extra attack: elite chaser does a short dash (300 ms telegraph, 6 tiles/s × 300 ms), elite caster fires a 3-bullet fan (±0.22 rad), elite tank charges **twice** (the second locks a new direction). 70 ms hitstop when a player bullet hits an enemy = freezes **simulation time** (`HitstopClock`), so telegraph/i-frames/cooldown/TTL all stand still — tested; the 150 ms stagger is a separate action and does not reset cooldowns (if it did, an enemy facing 2 shots/s auto-fire would never get an attack out — a bug caught in smoke testing). Bullets: 256-slot pool + 64 prebuilt view nodes, no `new` per shot. `chapterFromLevels` rejects a boss that is not the last room / >1 boss room (tested). Debug `?debug=1`: `spawn(role, elite, at)`, `stress()`, `fps()`, `godMode(on)` (+ `enemies()`, `bulletCount()`), used for acceptance. Headless Chrome (ANGLE Metal, 1280×960 viewport): `stress()` holds **8 enemies + 40–41 bullets**, `fps()` 12 consecutive samples **~60.0 fps / 16.67 ms** (normal-room baseline 60); the M2 9-room loop re-runs `1/9 → 9/9` → CHAPTER CLEAR → back to chapter select, **no console errors**. Shots: `/tmp/yokai-m3/shots/`. Still missing (not part of M3): death/impact FX and the elite palette remap (tint multiplies the current color, deferred to M6), 3-phase bosses (M4), headless sim does not model hitstop/stagger or the elite extra attacks (only the game adapter does).
+
+---
+
+## M4 — Skills and bosses
+
+**Work.** 20 skills per GDD §6, rarity weight, stacking, 1-of-3 pick screen. Real bosses from GDD §5 — **TenguBlue / SquidGreen / GiantBlueSamurai**, 60/80/100 HP, 3 phases, readable patterns — no more dragon/blocky-placeholder boss. Chapters 2 and 3 with scaling.
+
+**Acceptance.**
+- Tests: rarity roll is deterministic with a fixed seed; stacking adds up correctly; skills affect DPS by the right formula.
+- Play one full 9-room run + boss in all 3 chapters.
+- The 3 boss phases are clearly different (tint + telegraph ring color + separate banner), and each phase has at least 1 pattern that forces movement (test: a player standing still at `playerStart` still gets hit in all 9 phases).
+
+**Status: ✅ Done (2026-11-17).** 538 tests green (39 files; new `skills-loadout`, `combat-effects`, `boss-phases`, `chapter-scaling`, `chapter-assets`, `save-unlock`, `integer-damage`). All 20 skills live in the game through `DerivedStats` + `core/combat/*` (crit, pierce, ricochet, homing, AoE explosion with flash, freeze/poison with tint + DoT, lifesteal, execute, 20 s shield with tint, thorns, Second Wind, Vitality…); the sim uses those same helpers. The 1-of-3 pick screen is built in code (`skill-pick.ts`): 3 cards with name/rarity color/effect/stack, picked with the mouse **and** keys 1/2/3 (must listen on `document` capture — see the AGENTS.md traps), rolled with the run's seeded RNG, respecting max stacks. The HUD has a 2-character abbreviation row + stack count (20 distinct codes) and a boss health bar. Bosses use `core/boss/patterns.ts`: Tengu 60 / Squid 80 / Samurai 100 HP, phases at 66%/33%, Summon runs Squid's 2 casters, Samurai lineups with the player's row before charging sideways (otherwise a player in another row is never threatened); each phase has its own tint + telegraph ring color + `PHASE 2` / `ENRAGE` banner. Chapters 2–3 are authored with all 9 rooms each (5–6 enemies/room, brute from room 3; 7–8 enemies + elite), each room split into 2–3 waves; health scales via `config/tuning.json` (`chapters.enemyHealthMultipliers` 1/1.05/1.05, damage stays 1/1/1 — the real difficulty comes from count/elites, true to the spirit of GDD §4). Winning a chapter writes `chaptersUnlocked` to the save; chapter select shows exactly 1 → 2 → 3. Headless Chrome (1280×960): ch1 → ch2 → ch3, each chapter through 9 rooms + 3 boss phases + unlock, **no console errors**; `stress()` holds 8 enemies + 44 bullets; 12 separate samples at **60.0 fps** (16.67 ms/frame); a full-flow run of 3 chapters + 3 bosses averages **58.1 fps**. Balance sim (3 seeds, dodge policy): standing still dies in room 1 after 8.2–11.2 s; dodging with no skills survives 9.9–121.2 s; dodging + a typical loadout **wins all 3 chapters** (average 85 / 93 / 135 s). Round 2 added separate tests for chapters 2–3 with a 0-skill run: standing still loses room 1 (14.3 / 13.4 s), dodging with no skills survives **254–256 s** (ch2, clearing 6 rooms) and **187–205 s** (ch3, clearing 3–4 rooms). Shots: `/tmp/yokai-m4/shots/`. Still missing: Greed gives no gold during a run (M5), Freeze does not slow bosses (normal enemies only), crit/lifesteal share an RNG with boss patterns, the skill HUD uses abbreviations because the pack has no fitting 16×16 skill icons.
+
+---
+
+## M5 — Meta and UI
+
+**Work.** Gold, 3-track meta shop, `localStorage` save (schema in GDD §10), title, chapter select, pause, run results, settings, credits. Entirely mouse + keyboard.
+
+**Acceptance.**
+- Tests: save/load round-trip, upgrade prices, purchase blocked when short on gold, chapter locked until unlocked.
+- Every screen can be entered and left, no dead ends.
+- No clipped text at 16:9, 16:10, 4:3.
+
+**Status: ✅ Done (2026-11-17).** 562 tests green (43 files; new `run-stats`, `run-rewards`, `chapter-gate`, `settings`; `save.test` already covered round-trip/price/purchase blocking/migrating the old `hp`/`firerate` keys). Gold: a kill pays `goldForKill` (elite ×3) via `RunRewards`, Greed multiplies then **rounds** (tank 3 × 1.5 = 5), room clear +5 / boss +50, the HUD shows it live; written to the save only once at the end of the run (`game/run-end.ts`: death/win, restart/quit mid-run also keep gold). Meta: `core/meta/run-stats.ts` applies purchased levels to the baseline before skills (heart +1/level, damage +5%/level, fire rate +3%/level); checked in the browser: buying damage 1 + hearts 1 → a new run has `damage 1.05`, `maxHearts 7` and 7 full hearts. Screens: title / chapter select (+Back, keyboard focus) / pause (Resume, Restart, Quit, volume; **sim clock stands still** — enemies move 0.000 tiles after 1.5 s) / result (death + win; rooms, gold, time, kills, Shop/Chapter select/Title) / shop with 3 tracks (level, price, gold, disabled reason) / settings (volume in 10% steps, real fullscreen, read-only keybinds) / credits (Pixel-boy & AAA, CC0) / skill-pick (adds ←/→ + Enter, still 1/2/3). Every screen uses `game/screens/menu.ts`: real mouse clicks, hover/focus, ↑/↓/←/→, Enter/Space, Esc; focus has a yellow outline. Locked chapters are blocked in **core** (`chapterGate`, tested), not just by a disabled button — clicking Chapter 2 in the browser does not enter the run. The save schema keeps `version: 1`, keys `hearts/damage/fireRate` (GDD §10 was corrected to match the code; migration reads the old draft names); a corrupt `localStorage` → default save, no crash (test + browser). Debug `?debug=1`: adds `screen()`, `save()`, `setGold(n)`, `uiText()` (label rect in canvas + `insideCanvas`), keeps the old hooks. Canvas: `applyCanvasSize` sets `screen.windowSize` at boot + on resize, drops the template's border/header/footer → canvas is exactly `innerWidth×innerHeight`; the world still letterboxes to 16:9. Headless Chrome walks the full flow (title → chapter → run → pause/resume/restart/quit; death → result → shop → buy → back; win chapter 1 → unlock chapter 2 → play chapter 2; credits/settings; 54 UI audits across 6 viewports 1280×720, 1920×1080, 1280×800, 1440×900, 1024×768, 1280×960, **0 clipped labels**, 0 console errors). `stress()` 8 enemies + 44 bullets: **58.5–60.1 fps** (120-frame samples; 1280×720/960/1024×768/1920×1080). Shots: `/tmp/yokai-m5/shots/` (every screen at 16:9 and 4:3, plus result-win/stress). Still missing: volume is only stored, no audio yet (M6); system font instead of the pack's `NormalFont.ttf` (M6); Esc inside fullscreen is used by the browser to exit fullscreen, so you must press it again or use the Back button; no key rebinding (as in v1).
+
+---
+
+## M6 — Art integration
+
+**Work.** Decorate all 27 rooms with tilesets that **actually exist in the pack** per the GDD §8 table — ch1 Nature/Relief/Element/Field, ch2 Water + waterfall/water + Nature banks, ch3 VillageAbandoned/House/Towers/Hole, boss arena + 4 stone pillars. Decoration must not contradict collision: anything that looks solid must be an obstacle in the object layer, and floor that looks walkable must stay walkable. Real animation via `animations.json` for the player (NinjaGreen: idle/walk scaled by velocity, hurt, death), the 3 enemy roles + elite (idle/walk; hurt = flash/tint, death = FX — GDD §12.3), and the 3 bosses TenguBlue/SquidGreen/GiantBlueSamurai (attack/Trans/AttackLoop/Shoot/charge/hit tied to pattern events). Foot pivot, no jitter when switching between animations of different sizes. Bullets/VFX/impact from the pack's `FX/` (shuriken, energy ball, spark, explosion, smoke, shield, freeze/poison, gold sparkle), all pooled. Audio: title/chapter/boss music + action SFX, master volume from the save, autoplay unlocked on first input. Pack pixel font for every label. UI uses real nine-slice. In-game credits + `README.md`. **No** dragons, **no** dungeon (ADR-007).
+
+**Acceptance.**
+- No placeholders left on screen.
+- Every manifest key has a real sprite or a fallback.
+- 4 required animations per actor; no frame drifts off pivot.
+- Credits in game + `README`.
+
+**Status: ✅ Done (2026-11-17).** 576 tests green (45 files; new `art-files` 9 tests + `water-layout` 5 tests). **Manifest**: 119 keys; `art-files.test` reads the real PNGs with an in-repo decoder (`scripts/lib/png.ts`), checks that files exist, that the grid divides the sheet evenly, and that `footPx` = the sheet's lowest opaque pixel row (pivot test); adds idle for 9 monsters + 8 FX keys. `SpriteEntry` has `anchor`/`footPx`; `SpriteAnimator` anchors at the feet, `contentSize` from the frame, walk scale from velocity (GDD §12.2). **Rooms**: `scripts/dress-rooms.ts` covers 27 `.tmx` with a decor layer (ch1 Nature grass/flowers/pebbles + hedge/barrel on row 0; ch2 grass + `water-layout.json`; ch3 Desert props + Village roofs/fences on rows 0/17 + Houses/Towers/Hole in the boss arena). ch2 water is the `Backgrounds/Animated` sprite strip (ripple + 3-part waterfall) drawn by `room-water.ts` over a blue `Graphics` backdrop — `TilesetWater` is an irrigation-channel autotile that turns stamped blocks into a pipe shape, so it is not used as a river. No new obstacles: solid props only sit on row/column 0/31 and are clamped 1 tile, so collision/balance is unchanged (`run-simulation` still green). **Actors**: enemy idle/walk, hurt tint/flash, death = smoke+impact; bosses use attack/Trans/AttackLoop/Shoot/charge/hit on events and return to idle when the clip ends; player death FX 1.4 s then result. **FX**: 32-slot pool slices frames from the manifest + one shared clock (the first version used one `SpriteAnimator`/slot and dragged stress down to 40 fps); impact/explosion/smoke/shield/ice/poison/gold sparkle; shuriken bullet 15 frames + energy ball 4 frames. **Audio**: 5 tracks (title/ch1/ch2/ch3/boss) + 15 SFX mp3 (2.2 MB), autoplay unlock on first input, saved volume applied live; debug `audio()` shows track + SFX. **UI**: `NormalFont.ttf` for every label, nine-slice panels/buttons/skill cards (with insets), credits updated + `README.md`. Build `du -sh` **7.9 MB**. Headless 1280×720 and 1024×768: every screen (title/chapter/shop/settings/credits/skill-pick/pause/result) `uiText` clipped=0 overflow=0; ch1→ch3 all 9 rooms + 3 phases per boss; `placeholders()` empty on every screen; `stress()` 59.5–60.1 fps with 8 enemies + 44 bullets + FX; 0 console errors. Shots: `/tmp/yokai-m6/shots/`. Honest limitations: ch3 interiors are fairly empty (VillageAbandoned is all autotile fragments with transparent corners, so placing them individually looks like "torn paper"); `TilesetElement` has no stone pillar so the boss arena uses a Nature boulder; water/river is walkable (shallow river); the Samurai boss can touch the arena edge and have part of its sprite cut off; monsters still have no attack/hurt/death frames (FX + tint per GDD §12.3).
 
 ---
 
 ## M7 — Ship
 
-**Việc.** Build web, host **Cloudflare** (Worker chỉ file tĩnh `yokai-field`, custom domain `yokai.lukeinc.tech`; bỏ itch.io và GitHub Pages), pixel-perfect integer scaling (512×288 × 2/3/4), kiểm performance, trang giới thiệu = trang dự án trên portfolio `lukeinc.tech/projects/dragon-field` (kể bản Unity 2023 → bản này). Sửa trước khi ship: Samurai bị cắt sprite ở mép arena, WASD kẹt khi bật bộ gõ tiếng Việt.
+**Work.** Web build, host on **Cloudflare** (Worker serving static files only, `yokai-field`, custom domain `yokai.lukeinc.tech`; drop itch.io and GitHub Pages), pixel-perfect integer scaling (512×288 × 2/3/4), performance check, showcase page = the portfolio project page `lukeinc.tech/projects/dragon-field` (covering the Unity 2023 version → this one). Fix before shipping: Samurai sprite clipped at the arena edge, WASD stuck when the Vietnamese IME is enabled.
 
-**Nghiệm thu.**
-- Link mở được trên Chrome/Safari/Firefox.
-- 60 fps ở 1920×1080 trên laptop tầm trung.
-- Build < 15 MB (audio stream riêng nếu cần).
-- Không lỗi console ở lần chơi đầu.
+**Acceptance.**
+- Link opens in Chrome/Safari/Firefox.
+- 60 fps at 1920×1080 on a mid-range laptop.
+- Build < 15 MB (audio streamed separately if needed).
+- No console errors on the first play.
 
-**Trạng thái: ✅ Xong (2026-11-18).** 598 test xanh (mới: `move-keys`, `deploy-html`, bound boss trong `boss.test`, extent sprite trong `art-files`, `pixelPerfectRect`/`worldToUiScale` trong `letterbox`). World vẽ ở bội số nguyên (1920×1080 → 1536×864 ×3, lề pixel nguyên), HUD thu theo `hudScale` để bám mép phòng, menu vẫn `SHOW_ALL`. Boss đứng trong `bossRoomBounds` theo extent sprite đo từ PNG — Samurai charge sát tường không còn bị cắt (đã xem ở 1920×1080). WASD đọc `event.code` trên `document` — event giả lập `key: 'đ'`, `keyCode: 229` vẫn đi đúng; **chờ thử bằng Telex thật** (`?debug=1` → `__yokai.keyLog()`). Panel/thẻ skill đổi sang `nine_path_panel_interior` (hết khung chồng lệch từ M6). `bun run deploy:prepare`: 431 file, 6.66 MB, file lớn nhất 2.42 MB. Local 1920×1080: `stress()` 8 enemy + 44 đạn **60.0 fps** (6 mẫu × 120 frame). **Deploy thật ✅** (Cloudflare Workers Builds, `yokai.lukeinc.tech` trả 200). **Chrome trên domain ✅ (2026-11-18)**: `?debug=1`, viewport 1920×876, canvas khớp đúng `innerWidth×innerHeight`, title → ch1, `stress()` 8 enemy + 44 đạn **60.0 fps** (4 mẫu × 120 frame), `placeholders()` rỗng, 0 error console (warning duy nhất do gọi `stress()` khi phòng còn đang load). Chủ dự án quyết định **bỏ qua** kiểm Safari/Firefox và thử Telex thật (2026-11-18) — nghiệm thu “Chrome/Safari/Firefox” chỉ xác nhận trên Chrome; fix WASD theo `event.code` giữ nguyên nhưng chưa thử bằng bộ gõ thật.
-
----
-
-## M8 — Hình ảnh và juice
-
-Chốt qua buổi grill 2026-11-18 (xem GDD §13, ADR-014…017). **Không đổi số balance**: hitbox, damage, AI, spawn giữ nguyên; `run-simulation` phải xanh không cần retune. Nhánh `m8-visuals`, merge `master` (= deploy) khi đạt nghiệm thu. Skill dùng: `game-feel`, `game-ui-ux`, `level-design`, `performance-optimization` (engine-neutral — tự map sang Cocos).
-
-**Việc (theo thứ tự).**
-1. **Juice.** Rung màn khi trúng đòn / boss slam, biên độ là bội số nguyên texel (giữ integer scaling M7); squash/stretch player (đổi hướng, trúng đòn) và enemy (trúng đạn); muzzle flash; coin bay về HUD khi nhặt vàng; số damage bằng font pixel. Settings: **Screen shake** bật/tắt (mặc định bật), **Damage numbers** bật/tắt (mặc định tắt).
-2. **VFX vũ khí.**
-   - Sprite đạn player theo nguyên tố mạnh nhất (ưu tiên): Explosive → BigEnergyBall tint cam, Freeze → IceSpike, Poison → PlantSpike, Homing → ShurikenMagic, Piercing → Kunai, mặc định Shuriken. Sharpen ≥ 3 → bản Big (BigShuriken/BigKunai).
-   - Vệt bay 2–3 ghost (pool riêng), màu theo nguyên tố: lửa cam, băng cyan, độc xanh lá, homing tím, crit vàng. Tụt fps → 1 ghost.
-   - Impact riêng: crit (Spark lớn + flash trắng + hitstop dài hơn), freeze (`Elemental/Ice`), poison (`Elemental/Plant` + bong bóng), explosive (Explosion + SmokeCircular + shake), pierce (`Attack/Cut` nhỏ), ricochet (Spark ở điểm bật + tia nối mục tiêu mới), execute (`Slash/Arc` + flash đỏ), lifesteal (hạt đỏ bay về player).
-   - Player phát `Attack` 4 hướng khi **đứng yên** và bắn; đang chạy giữ walk + muzzle flash.
-   - `Magic/Boost` khi nhận skill; `Magic/Aura` dưới chân khi ≥ 8 stack hoặc có skill Epic+, màu theo nguyên tố mạnh nhất.
-   - **Ngôn ngữ hình dạng:** đạn player nhọn (shuriken/kunai/spike), đạn địch tròn + viền tối, theo chapter: ch1 EnergyBall, ch2 bong bóng nước, ch3 CanonBall/Rock, ch4 Fireball (ADR-016).
-   - Settings **Effects: Full / Reduced** — Reduced tắt trail, aura, particle phụ; giữ impact và telegraph.
-3. **Elite palette remap.** Script lúc build sinh PNG biến thể elite, remap theo index `Palette.png` (53 màu) — thay tint nhân màu từ M3 (ADR-015).
-4. **Icon skill.** 20 skill → icon 24×24 trong `Ui/Skill Icon` (+ bản Disabled) cho HUD, thẻ chọn skill, shop giữa run, icon cửa. Ánh xạ là data, có test không trùng.
-5. **Không khí theo chapter** bằng sprite + `Graphics` (không shader custom — ADR-017): ch1 Raylight + lá bay, ch2 Fog + gợn nước, ch3 tro + vignette, ch4 hơi nóng/cát. **Decor sống** không collider, không che đạn/telegraph: thú `Animal/`, cờ/cây/hoa animated.
-6. **Dress lại ch3** (hết “giấy rách”) và boss arena.
-7. **Menu sống.** Title + chapter select vẽ phòng thật của chapter, NinjaGreen idle, thú, lớp không khí.
-8. **Âm thanh nhỏ.** Biến thể SFX (không lặp một file) + jingle room clear / nhận skill.
-
-**Nghiệm thu.**
-- `bun run check` xanh; test mới cho: chọn sprite đạn theo loadout, shake bội số texel, ánh xạ icon, palette remap (màu output ⊂ palette), settings mới round-trip save.
-- `run-simulation` xanh **không đổi `tuning.json`**.
-- `stress()` **60 fps ở 1920×1080** với Effects Full, loadout có trail + aura; không file deploy > 25 MiB (bỏ trần 15 MB của M7).
-- Đọc được: ảnh chụp màn hình đầy đạn — đạn địch phân biệt được với đạn player ở mọi loadout; telegraph không bị decor/FX che.
-- 0 lỗi console ở luồng title → ch1 → boss → result.
-
-**Trạng thái: ⏳ Chưa bắt đầu.**
+**Status: ✅ Done (2026-11-18).** 598 tests green (new: `move-keys`, `deploy-html`, boss bounds in `boss.test`, sprite extent in `art-files`, `pixelPerfectRect`/`worldToUiScale` in `letterbox`). The world draws at integer multiples (1920×1080 → 1536×864 ×3, integer-pixel margins), the HUD shrinks by `hudScale` to hug the room edges, menus still use `SHOW_ALL`. Bosses stay inside `bossRoomBounds` based on the sprite extent measured from the PNG — a Samurai charging near the wall is no longer clipped (verified at 1920×1080). WASD reads `event.code` on `document` — a synthetic event with `key: 'đ'`, `keyCode: 229` still moves correctly <!-- i18n-allow: IME key value -->; **still waiting for a real Telex test** (`?debug=1` → `__yokai.keyLog()`). Panels/skill cards moved to `nine_path_panel_interior` (no more offset double frame from M6). `bun run deploy:prepare`: 431 files, 6.66 MB, largest file 2.42 MB. Local 1920×1080: `stress()` 8 enemies + 44 bullets **60.0 fps** (6 samples × 120 frames). **Real deploy ✅** (Cloudflare Workers Builds, `yokai.lukeinc.tech` returns 200). **Chrome on the domain ✅ (2026-11-18)**: `?debug=1`, viewport 1920×876, canvas matches exactly `innerWidth×innerHeight`, title → ch1, `stress()` 8 enemies + 44 bullets **60.0 fps** (4 samples × 120 frames), `placeholders()` empty, 0 console errors (the only warning came from calling `stress()` while the room was still loading). The project owner decided to **skip** the Safari/Firefox check and the real Telex test (2026-11-18) — the "Chrome/Safari/Firefox" acceptance is confirmed on Chrome only; the `event.code` WASD fix stays but has not been tested with a real IME.
 
 ---
 
-## M9 — Nội dung
+## M8 — Visuals and juice
 
-Nhánh `m9-content`. Skill dùng: thêm `game-ai`, `roguelike`, `game-docs`. Số liệu mới đặt trong `tuning.json` và chỉnh bằng sim (ADR-013); người duyệt bảng sim, không duyệt từng số.
+Agreed in the 2026-11-18 grill session (see GDD §13, ADR-014…017). **Do not change balance numbers**: hitbox, damage, AI, spawn stay the same; `run-simulation` must stay green without retuning. Branch `m8-visuals`, merge `master` (= deploy) when acceptance is met. Skills used: `game-feel`, `game-ui-ux`, `level-design`, `performance-optimization` (engine-neutral — map them to Cocos yourself).
 
-**Việc.**
-1. **Pool phòng.** Mỗi chapter 15–18 phòng, mỗi run bốc 9 theo seed run. Phòng sinh bằng script `.tmx` từ template gọn + script dress (mở rộng `scripts/dress-rooms.ts`); người duyệt qua ảnh chụp.
-2. **Chọn cửa.** Sau mỗi phòng thường: 2 cửa, mỗi cửa có icon phần thưởng (skill / vàng / hồi máu / shop / rương). Phòng boss luôn cuối (ADR-014).
-3. **Phòng đặc biệt.** Hồi máu (NPC), shop giữa run (NPC, **chung vàng meta** — tiêu trong run thì về ít hơn), rương (`Items/Treasure`). NPC lấy từ `Actor/Character/`, chỉ làm NPC, không làm skin player.
-4. **Vai trò enemy mới**, có ở cả ch1–4, sprite theo chapter từ monster chưa dùng: **Sniper** (đứng xa, telegraph đường thẳng ~800 ms, 1 viên nhanh), **Splitter** (chết tách 2–3 con nhỏ hơn, tint).
-5. **Boss pool** (random 1/2 theo seed), nhạc riêng mỗi boss: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / GiantBamboo · ch4 GiantRacoon / Tengu biến thể màu (pattern mạnh hơn). Boss mới theo chuẩn M4: 3 phase, tint + màu telegraph + banner, mỗi phase ≥ 1 pattern buộc di chuyển.
-6. **Chapter 4 — sa mạc** (`TilesetDesert` + `tileset_camp`), mở sau ch3. Save bump `version` + migrate.
+**Work (in order).**
+1. **Juice.** Screen shake on hit taken / boss slam, amplitude in whole texel multiples (keeps M7 integer scaling); squash/stretch for the player (direction change, hit taken) and enemies (hit by a bullet); muzzle flash; coins fly to the HUD when gold is picked up; damage numbers in the pixel font. Settings: **Screen shake** on/off (on by default), **Damage numbers** on/off (off by default).
+2. **Weapon VFX.**
+   - Player bullet sprite by strongest element (priority): Explosive → BigEnergyBall with orange tint, Freeze → IceSpike, Poison → PlantSpike, Homing → ShurikenMagic, Piercing → Kunai, default Shuriken. Sharpen ≥ 3 → Big variant (BigShuriken/BigKunai).
+   - Trail of 2–3 ghosts (own pool), colored by element: fire orange, ice cyan, poison green, homing purple, crit yellow. Fps drops → 1 ghost.
+   - Dedicated impact: crit (large Spark + white flash + longer hitstop), freeze (`Elemental/Ice`), poison (`Elemental/Plant` + bubbles), explosive (Explosion + SmokeCircular + shake), pierce (small `Attack/Cut`), ricochet (Spark at the bounce point + a tracer to the new target), execute (`Slash/Arc` + red flash), lifesteal (red particles flying back to the player).
+   - The player plays `Attack` in 4 directions when **standing still** and firing; while running, keep walk + muzzle flash.
+   - `Magic/Boost` on receiving a skill; `Magic/Aura` under the feet at ≥ 8 stacks or with an Epic+ skill, colored by strongest element.
+   - **Shape language:** player bullets are pointed (shuriken/kunai/spike), enemy bullets round + dark outline, per chapter: ch1 EnergyBall, ch2 water bubble, ch3 CanonBall/Rock, ch4 Fireball (ADR-016).
+   - Settings **Effects: Full / Reduced** — Reduced drops trails, auras, secondary particles; keeps impacts and telegraphs.
+3. **Elite palette remap.** A build-time script generates elite PNG variants, remapped by index through `Palette.png` (53 colors) — replaces the M3 tint multiply (ADR-015).
+4. **Skill icons.** 20 skills → 24×24 icons in `Ui/Skill Icon` (+ Disabled variant) for the HUD, skill pick cards, mid-run shop, door icons. The mapping is data, with a test for duplicates.
+5. **Per-chapter atmosphere** with sprites + `Graphics` (no custom shaders — ADR-017): ch1 Raylight + flying leaves, ch2 Fog + water ripples, ch3 ash + vignette, ch4 heat/sand. **Living decor** with no collider, not covering bullets/telegraphs: `Animal/` critters, animated flags/trees/flowers.
+6. **Re-dress ch3** (no more "torn paper") and the boss arena.
+7. **Living menus.** Title + chapter select draw a real room from the chapter, NinjaGreen idle, critters, atmosphere layer.
+8. **Small audio.** SFX variants (do not loop a single file) + room clear / skill received jingle.
 
-**Nghiệm thu.**
-- Test: bốc phòng theo seed tất định và không trùng trong run; mọi phòng sinh ra đi được từ spawn tới cửa, prop đặc là obstacle, spawn không đè obstacle; phần thưởng cửa theo seed; shop trừ vàng đúng + chặn khi thiếu; splitter tách đúng số con; sniper telegraph trước khi bắn; boss mới đứng yên tại `playerStart` vẫn trúng đòn ở mọi phase; save v1 → v2 migrate.
-- Sim (nhiều seed, cả 2 boss mỗi chapter): đứng yên thua phòng 1; né + loadout tiêu biểu thắng cả 4 chapter.
-- Chơi trọn ch1 → ch4 trong browser, 0 lỗi console; 60 fps `stress()` 1920×1080.
+**Acceptance.**
+- `bun run check` green; new tests for: bullet sprite selection by loadout, shake in texel multiples, icon mapping, palette remap (output colors ⊂ palette), new settings round-trip through the save.
+- `run-simulation` green **without changing `tuning.json`**.
+- `stress()` **60 fps at 1920×1080** with Effects Full, a loadout with trail + aura; no deploy file > 25 MiB (drops M7's 15 MB ceiling).
+- Readable: a bullet-filled screenshot — enemy bullets distinguishable from player bullets in every loadout; telegraphs not covered by decor/FX.
+- 0 console errors on the title → ch1 → boss → result flow.
 
-**Trạng thái: ⏳ Chưa bắt đầu** (chờ M8).
+**Status: ⏳ Not started.**
 
 ---
 
-## Phụ thuộc
+## M9 — Content
+
+Branch `m9-content`. Skills used: add `game-ai`, `roguelike`, `game-docs`. New numbers go in `tuning.json` and are tuned by sim (ADR-013); a human approves the sim table, not each number.
+
+**Work.**
+1. **Room pool.** 15–18 rooms per chapter, each run draws 9 by run seed. Rooms generated by a `.tmx` script from a lean template + the dress script (extends `scripts/dress-rooms.ts`); a human approves via screenshots.
+2. **Door choice.** After each normal room: 2 doors, each with a reward icon (skill / gold / heal / shop / chest). Boss room always last (ADR-014).
+3. **Special rooms.** Heal (NPC), mid-run shop (NPC, **shares meta gold** — spend it in a run and you return with less), chest (`Items/Treasure`). NPCs come from `Actor/Character/`; NPCs only, never a player skin.
+4. **New enemy roles**, present in ch1–4, sprites per chapter from unused monsters: **Sniper** (stands far away, ~800 ms line telegraph, 1 fast shot), **Splitter** (on death splits into 2–3 smaller ones, tinted).
+5. **Boss pool** (random 1 of 2 by seed), unique music per boss: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / GiantBamboo · ch4 GiantRacoon / color-variant Tengu (stronger pattern). New bosses follow the M4 bar: 3 phases, tint + telegraph color + banner, each phase ≥ 1 pattern that forces movement.
+6. **Chapter 4 — desert** (`TilesetDesert` + `tileset_camp`), unlocked after ch3. Save bumps `version` + migration.
+
+**Acceptance.**
+- Tests: room draw is deterministic per seed and has no duplicates within a run; every generated room is traversable from spawn to door, solid props are obstacles, spawns do not overlap obstacles; door rewards follow the seed; shop deducts gold correctly + blocks when short; splitter splits into the right count; sniper telegraphs before firing; new bosses still hit a player standing at `playerStart` in every phase; save v1 → v2 migration.
+- Sim (multiple seeds, both bosses per chapter): standing still loses room 1; dodging + a typical loadout wins all 4 chapters.
+- Play ch1 → ch4 fully in the browser, 0 console errors; 60 fps `stress()` at 1920×1080.
+
+**Status: ⏳ Not started** (waiting on M8).
+
+---
+
+## Dependencies
 
 ```text
 M0 → M1 → M1.5 → M2 → M3 → M4 → M5 → M6 → M7 → M8 → M9
 ```
 
-Không mốc nào bắt đầu khi mốc trước chưa đạt nghiệm thu. Ngoại lệ: tải pack Update #8 và dựng bộ tile dungeon có thể chạy song song M0–M1.
+No milestone starts before the previous one meets acceptance. Exception: downloading the Update #8 pack and building the dungeon tile set can run in parallel with M0–M1.
