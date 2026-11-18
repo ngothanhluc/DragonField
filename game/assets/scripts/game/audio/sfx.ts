@@ -4,42 +4,19 @@
  * `AudioManager` (game/audio/audio-manager.ts) registers as the sink at boot. Before a sink
  * exists (menu/title while boot is unfinished) every sound is silently dropped — no unbounded
  * queue and no error.
+ *
+ * The ids and their files live in `core/audio/sfx-bank.ts` (`SFX_BANK`), the single source.
  */
+import { SFX_BANK, type SfxId } from '../../core/audio/sfx-bank';
 
-export type SfxId =
-  | 'shoot'
-  | 'enemy-hit'
-  | 'player-hurt'
-  | 'enemy-death'
-  | 'explosion'
-  | 'boss-phase'
-  | 'skill-pick'
-  | 'ui-move'
-  | 'ui-confirm'
-  | 'gold'
-  | 'chapter-clear'
-  | 'game-over'
-  | 'shield'
-  | 'freeze'
-  | 'poison';
+export type { SfxId };
 
-export const SFX_IDS: readonly SfxId[] = [
-  'shoot',
-  'enemy-hit',
-  'player-hurt',
-  'enemy-death',
-  'explosion',
-  'boss-phase',
-  'skill-pick',
-  'ui-move',
-  'ui-confirm',
-  'gold',
-  'chapter-clear',
-  'game-over',
-  'shield',
-  'freeze',
-  'poison',
-];
+/** `Object.keys` typed as ids — no spread of iterators (the build flattens `[...keys]` wrongly). */
+function bankIds(bank: Readonly<Record<string, readonly string[]>>): SfxId[] {
+  return Object.keys(bank) as SfxId[];
+}
+
+export const SFX_IDS: readonly SfxId[] = bankIds(SFX_BANK);
 
 export type SfxSink = (id: SfxId) => void;
 

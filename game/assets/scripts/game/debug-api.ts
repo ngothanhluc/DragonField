@@ -73,6 +73,10 @@ export interface DebugAudioSnapshot {
   readonly volume: number;
   readonly music: string | null;
   readonly lastSfx: readonly string[];
+  /** Every SFX event → its resource paths (the bank is the single source in core). */
+  readonly bank: Readonly<Record<string, readonly string[]>>;
+  /** Resource path chosen for each entry of `lastSfx`, same order and cap. */
+  readonly lastClips: readonly string[];
 }
 
 /** Currently playing animation of each actor (manifest key). */
