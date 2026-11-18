@@ -4,7 +4,11 @@
  *
  * The last two fields are accessibility (ticket #2): motion-sensitive players can turn off
  * shake, and damage numbers are off by default until the player enables them.
+ * `effects` (ticket #3) is the Full/Reduced VFX switch: Reduced drops trails, auras and
+ * secondary particles, but keeps impacts and telegraphs.
  */
+import type { EffectsMode } from '../vfx/weapon-vfx';
+
 export interface Settings {
   /** Master volume 0..1. */
   readonly volume: number;
@@ -13,6 +17,8 @@ export interface Settings {
   readonly screenShake: boolean;
   /** Damage numbers floating up on hit (off by default). */
   readonly damageNumbers: boolean;
+  /** VFX level: `full` (default) or `reduced`. */
+  readonly effects: EffectsMode;
 }
 
 /** GDD §10 uses 0.8 as the default. */
@@ -26,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fullscreen: false,
   screenShake: true,
   damageNumbers: false,
+  effects: 'full',
 };
 
 /**
@@ -51,8 +58,8 @@ export function stepVolume(volume: number, steps: number): number {
  * Normalised settings: volume clamped, missing/mistyped fields take defaults.
  * Takes `Partial` because data from an old save may lack fields.
  *
- * Returns a **plain object** with all 4 own keys in serialize order (volume, fullscreen,
- * screenShake, damageNumbers) — spread/JSON.stringify/direct reads all behave correctly.
+ * Returns a **plain object** with all 5 own keys in serialize order (volume, fullscreen,
+ * screenShake, damageNumbers, effects) — spread/JSON.stringify/direct reads all behave correctly.
  */
 export function applySettings(settings: Partial<Settings> = {}): Settings {
   const volume = settings.volume === undefined ? DEFAULT_VOLUME : settings.volume;
@@ -65,5 +72,6 @@ export function applySettings(settings: Partial<Settings> = {}): Settings {
       typeof settings.damageNumbers === 'boolean'
         ? settings.damageNumbers
         : DEFAULT_SETTINGS.damageNumbers,
+    effects: settings.effects === 'reduced' ? 'reduced' : DEFAULT_SETTINGS.effects,
   };
 }

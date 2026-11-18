@@ -51,6 +51,8 @@ export interface Bullet {
   explosiveRadiusTiles: number;
   /** Explosion damage, crit + ratio already applied. */
   explosiveDamage: number;
+  /** Rolled at fire time (crit chance lives in `shot-effects.ts`); drives the VFX trail colour. */
+  crit: boolean;
   /** Actor ids already hit — a piercing/ricocheting bullet never hits the same target twice. */
   hitIds: string[];
 }
@@ -72,6 +74,7 @@ export interface BulletSpawnArgs {
   readonly homing?: boolean;
   readonly explosiveRadiusTiles?: number;
   readonly explosiveDamage?: number;
+  readonly crit?: boolean;
 }
 
 /** Default capacity: more than 5× the M3 target of max on-screen bullets (40). */
@@ -178,6 +181,7 @@ export class BulletPool {
     bullet.homing = args.homing === true;
     bullet.explosiveRadiusTiles = Math.max(0, args.explosiveRadiusTiles ?? 0);
     bullet.explosiveDamage = Math.max(0, args.explosiveDamage ?? 0);
+    bullet.crit = args.crit === true;
     bullet.hitIds.length = 0;
 
     this.live.push(bullet);
@@ -290,6 +294,7 @@ export class BulletPool {
       homing: bullet.homing,
       explosiveRadiusTiles: bullet.explosiveRadiusTiles,
       explosiveDamage: bullet.explosiveDamage,
+      crit: bullet.crit,
       hitIds: bullet.hitIds.slice(),
     }));
   }
@@ -339,6 +344,7 @@ export class BulletPool {
       homing: false,
       explosiveRadiusTiles: 0,
       explosiveDamage: 0,
+      crit: false,
       hitIds: [],
     };
   }

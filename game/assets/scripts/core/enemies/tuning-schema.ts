@@ -218,13 +218,36 @@ export interface MuzzleTuning {
   readonly offsetTiles: number;
 }
 
-/** All juice numbers (ticket #2). */
+/** Weapon VFX (ticket #3): bullet trail, crit hitstop, impact sizes, aura. */
+export interface VfxTuning {
+  /** Ghosts visible behind one player bullet (2–3 reads as a trail; 1 is the low-fps fallback). */
+  readonly trailGhosts: number;
+  /** Milliseconds between two ghosts of the same bullet. */
+  readonly trailSpawnMs: number;
+  /** Ghost lifetime, ms (ghosts × spawnMs ≈ lifetime keeps the count steady). */
+  readonly trailLifetimeMs: number;
+  /** Ghost nodes pre-built once (no node per frame). */
+  readonly trailPoolSize: number;
+  /** Hitstop on a crit, ms — slightly longer than `combat.enemyHitstopMs`, damage unchanged. */
+  readonly critHitstopMs: number;
+  /** Width of a normal hit impact, world units. */
+  readonly impactDrawUnits: number;
+  /** Width of a crit impact, world units. */
+  readonly critImpactDrawUnits: number;
+  /** Aura ring width at the player's feet, world units. */
+  readonly auraDrawUnits: number;
+  /** How far below the player centre the aura sits, tiles. */
+  readonly auraOffsetTiles: number;
+}
+
+/** All juice numbers (ticket #2) + weapon VFX (#3). */
 export interface FeelTuning {
   readonly shake: ShakeTuning;
   readonly squash: SquashTuning;
   readonly damageNumbers: DamageNumberTuning;
   readonly coin: CoinTuning;
   readonly muzzle: MuzzleTuning;
+  readonly vfx: VfxTuning;
 }
 
 /**
@@ -293,7 +316,7 @@ const ROLE_FIELDS = [
   'scale',
 ] as const;
 
-const FEEL_FIELDS = ['shake', 'squash', 'damageNumbers', 'coin', 'muzzle'] as const;
+const FEEL_FIELDS = ['shake', 'squash', 'damageNumbers', 'coin', 'muzzle', 'vfx'] as const;
 
 const SHAKE_FIELDS = [
   'maxOffsetTiles',
@@ -325,6 +348,18 @@ const COIN_FIELDS = [
 ] as const;
 
 const MUZZLE_FIELDS = ['drawUnits', 'lifetimeMs', 'offsetTiles'] as const;
+
+const VFX_FIELDS = [
+  'trailGhosts',
+  'trailSpawnMs',
+  'trailLifetimeMs',
+  'trailPoolSize',
+  'critHitstopMs',
+  'impactDrawUnits',
+  'critImpactDrawUnits',
+  'auraDrawUnits',
+  'auraOffsetTiles',
+] as const;
 
 /** Collect every problem then throw a single `Error` (same shape as `level-data.ts`). */
 class ProblemList {
@@ -782,6 +817,17 @@ function zeroFeel(): FeelTuning {
     damageNumbers: { lifetimeMs: 0, riseTiles: 0, poolSize: 1 },
     coin: { coinsPerPickup: 1, durationMs: 0, staggerMs: 0, arcHeightTiles: 0, poolSize: 1 },
     muzzle: { drawUnits: 0, lifetimeMs: 0, offsetTiles: 0 },
+    vfx: {
+      trailGhosts: 1,
+      trailSpawnMs: 1,
+      trailLifetimeMs: 1,
+      trailPoolSize: 1,
+      critHitstopMs: 0,
+      impactDrawUnits: 0,
+      critImpactDrawUnits: 0,
+      auraDrawUnits: 0,
+      auraOffsetTiles: 0,
+    },
   };
 }
 
@@ -795,6 +841,7 @@ function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTun
     readObject(source, 'damageNumbers', 'feel', problems, DAMAGE_NUMBER_FIELDS) ?? {};
   const coinSource = readObject(source, 'coin', 'feel', problems, COIN_FIELDS) ?? {};
   const muzzleSource = readObject(source, 'muzzle', 'feel', problems, MUZZLE_FIELDS) ?? {};
+  const vfxSource = readObject(source, 'vfx', 'feel', problems, VFX_FIELDS) ?? {};
 
   const shakePath = 'feel.shake';
   const shake: ShakeTuning = {
@@ -856,7 +903,34 @@ function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTun
     offsetTiles: readNumber(muzzleSource, 'offsetTiles', muzzlePath, problems) ?? 0,
   };
 
-  return { shake, squash, damageNumbers, coin, muzzle };
+  const vfxPath = 'feel.vfx';
+  const vfx: VfxTuning = {
+    trailGhosts:
+      readNumber(vfxSource, 'trailGhosts', vfxPath, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    trailSpawnMs:
+      readNumber(vfxSource, 'trailSpawnMs', vfxPath, problems, { positive: true }) ?? 1,
+    trailLifetimeMs:
+      readNumber(vfxSource, 'trailLifetimeMs', vfxPath, problems, { positive: true }) ?? 1,
+    trailPoolSize:
+      readNumber(vfxSource, 'trailPoolSize', vfxPath, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    critHitstopMs:
+      readNumber(vfxSource, 'critHitstopMs', vfxPath, problems, { positive: true }) ?? 0,
+    impactDrawUnits:
+      readNumber(vfxSource, 'impactDrawUnits', vfxPath, problems, { positive: true }) ?? 0,
+    critImpactDrawUnits:
+      readNumber(vfxSource, 'critImpactDrawUnits', vfxPath, problems, { positive: true }) ?? 0,
+    auraDrawUnits:
+      readNumber(vfxSource, 'auraDrawUnits', vfxPath, problems, { positive: true }) ?? 0,
+    auraOffsetTiles: readNumber(vfxSource, 'auraOffsetTiles', vfxPath, problems) ?? 0,
+  };
+
+  return { shake, squash, damageNumbers, coin, muzzle, vfx };
 }
 
 /** Deep freeze so nobody can accidentally change tuned numbers at runtime. */

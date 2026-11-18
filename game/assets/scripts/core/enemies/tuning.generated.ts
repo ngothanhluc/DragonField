@@ -129,5 +129,16 @@ export const TUNING_DATA = {
       lifetimeMs: 140,
       offsetTiles: 0.45,
     },
+    vfx: {
+      trailGhosts: 3,
+      trailSpawnMs: 45,
+      trailLifetimeMs: 140,
+      trailPoolSize: 96,
+      critHitstopMs: 110,
+      impactDrawUnits: 1.4,
+      critImpactDrawUnits: 2.6,
+      auraDrawUnits: 2.2,
+      auraOffsetTiles: 0.35,
+    },
   },
 } as const;

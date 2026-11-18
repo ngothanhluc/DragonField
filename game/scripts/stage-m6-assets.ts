@@ -9,8 +9,9 @@
  * - Font: copy `NormalFont.ttf`.
  * - Emits minimal `.meta` files; the editor's first build fills in sub-meta.
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { SKILL_ICONS } from '../assets/scripts/core/skills/icons';
@@ -19,8 +20,36 @@ import { fixFontSpacing } from './lib/font-spacing';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT = join(HERE, '..');
-const PACK = join(PROJECT, '..', 'art-source', 'ninja-adventure');
 const RES = join(PROJECT, 'assets', 'resources');
+
+/**
+ * The pack is gitignored, so it lives once in the **main checkout**. In a git worktree
+ * `PROJECT/../art-source` does not exist; ask git where the shared `.git` is and look there.
+ */
+function packPath(): string {
+  const override = process.env['ART_SOURCE'];
+  const candidates = [
+    ...(override === undefined ? [] : [join(override, 'ninja-adventure')]),
+    join(PROJECT, '..', 'art-source', 'ninja-adventure'),
+  ];
+  try {
+    const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: PROJECT,
+      encoding: 'utf8',
+    }).trim();
+    candidates.push(join(dirname(resolve(PROJECT, common)), 'art-source', 'ninja-adventure'));
+  } catch {
+    // Not a git checkout: the candidates above are all we can try.
+  }
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (found === undefined) {
+    throw new Error(`cannot find the art pack; tried: ${candidates.join(', ')}`);
+  }
+  return found;
+}
+
+const PACK = packPath();
+console.log(`pack ${PACK}`);
 
 function pngSize(path: string): { readonly width: number; readonly height: number } {
   const buffer = readFileSync(path);
@@ -162,17 +191,54 @@ if (process.argv.includes('--skill-icons-disabled')) {
   process.exit(0);
 }
 
+/**
+ * `--fx-only` stages just the weapon-VFX sprites (ticket #3): re-running the whole script
+ * would re-encode every audio file and write fresh uuids into folders that did not change.
+ */
+const fxOnly = process.argv.includes('--fx-only');
+
 ensureDirMeta('audio');
 ensureDirMeta('audio/music');
 ensureDirMeta('audio/sfx');
 ensureDirMeta('art/ui/fonts');
 
 // Missing FX
-copyPng('FX/Smoke/Smoke/SpriteSheet.png', 'art/fx/smoke/SpriteSheet.png');
-copyPng('FX/Magic/Shield/SpriteSheetBlue.png', 'art/fx/shield/SpriteSheetBlue.png');
-copyPng('FX/Elemental/Ice/SpriteSheet.png', 'art/fx/ice/SpriteSheet.png');
-copyPng('FX/Elemental/Plant/SpriteSheet.png', 'art/fx/poison/SpriteSheet.png');
-copyPng('Items/Treasure/Coin2.png', 'art/ui/coin/Coin2.png'); // #2 coin flying to the HUD (4 frames 10×10)
+if (!fxOnly) {
+  copyPng('FX/Smoke/Smoke/SpriteSheet.png', 'art/fx/smoke/SpriteSheet.png');
+  copyPng('FX/Magic/Shield/SpriteSheetBlue.png', 'art/fx/shield/SpriteSheetBlue.png');
+  copyPng('FX/Elemental/Ice/SpriteSheet.png', 'art/fx/ice/SpriteSheet.png');
+  copyPng('FX/Elemental/Plant/SpriteSheet.png', 'art/fx/poison/SpriteSheet.png');
+  copyPng('Items/Treasure/Coin2.png', 'art/ui/coin/Coin2.png'); // #2 coin flying to the HUD (4 frames 10×10)
+}
+
+// Weapon VFX (#3): player projectiles by loadout, one round enemy ball per chapter, impacts and aura.
+const WEAPON_FX: readonly (readonly [string, string])[] = [
+  ['FX/Projectile/BigEnergyBall.png', 'art/fx/big-energy-ball/BigEnergyBall.png'],
+  ['FX/Projectile/IceSpike.png', 'art/fx/ice-spike/IceSpike.png'],
+  ['FX/Projectile/PlantSpike.png', 'art/fx/plant-spike/PlantSpike.png'],
+  ['FX/Projectile/ShurikenMagic.png', 'art/fx/shuriken-magic/ShurikenMagic.png'],
+  ['FX/Projectile/Kunai.png', 'art/fx/kunai/Kunai.png'],
+  ['FX/Projectile/BigShuriken.png', 'art/fx/big-shuriken/BigShuriken.png'],
+  ['FX/Projectile/BigKunai.png', 'art/fx/big-kunai/BigKunai.png'],
+  // No bubble sprite in the pack: the blue EnergyBall, untinted, is the ch2 water ball.
+  ['FX/Projectile/EnergyBall.png', 'art/fx/bubble/EnergyBall.png'],
+  ['FX/Projectile/CanonBall.png', 'art/fx/canon-ball/CanonBall.png'],
+  ['FX/Projectile/Fireball.png', 'art/fx/fireball/Fireball.png'],
+  ['FX/Magic/Aura/SpriteSheet.png', 'art/fx/aura/SpriteSheet.png'],
+  ['FX/Particle/Spark.png', 'art/fx/particle-spark/Spark.png'],
+  ['FX/Attack/Cut/SpriteSheet.png', 'art/fx/cut/SpriteSheet.png'],
+  ['FX/Magic/Boost/SpriteSheet.png', 'art/fx/boost/SpriteSheet.png'],
+  ['FX/Smoke/SmokeCircular/SpriteSheet.png', 'art/fx/smoke-circular/SpriteSheet.png'],
+];
+for (const [source, target] of WEAPON_FX) {
+  ensureDirMeta(dirname(target));
+  copyPng(source, target);
+}
+
+if (fxOnly) {
+  console.log('fx-only: weapon VFX staged; audio/font untouched.');
+  process.exit(0);
+}
 
 // Music — 5 tracks chosen, one per group
 convertAudio('Audio/Musics/38 - Intro.ogg', 'audio/music/title.mp3', '64k', 2);
