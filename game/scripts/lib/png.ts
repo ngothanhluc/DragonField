@@ -1,9 +1,12 @@
 /**
- * Minimal PNG reader (8-bit, RGB/RGBA, no interlace) for the manifest generation script
- * and the pivot test. Not a full decoder — just enough for the pack's 16 px pixel art.
+ * Minimal PNG reader/writer (8-bit, RGB/RGBA, no interlace) for the generation scripts
+ * and the pivot test. Not a full codec — just enough for the pack's 16 px pixel art.
+ *
+ * The writer always emits 8-bit RGBA (colour type 6) with filter 0 on every row, so the
+ * generated elite sheets round-trip through `readPng` exactly (see `png-encode.test.ts`).
  */
-import { readFileSync } from 'node:fs';
-import { inflateSync } from 'node:zlib';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { deflateSync, inflateSync } from 'node:zlib';
 
 export interface PngImage {
   readonly width: number;
@@ -128,6 +131,77 @@ function paeth(a: number, b: number, c: number): number {
   if (pa <= pb && pa <= pc) return a;
   if (pb <= pc) return b;
   return c;
+}
+
+/** CRC32 table for PNG chunk checksums (ISO 3309 / the polynomial PNG mandates). */
+const CRC_TABLE: Uint32Array = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) {
+      c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(parts: readonly Buffer[]): number {
+  let crc = 0xffffffff;
+  for (const part of parts) {
+    for (const byte of part) {
+      crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** length + type + data + CRC32(type + data). */
+function chunk(type: string, data: Buffer): Buffer {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(data.length, 0);
+  head.write(type, 4, 'ascii');
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32([head.subarray(4), data]), 0);
+  return Buffer.concat([head, data, crc]);
+}
+
+/** Encode any RGBA image as an 8-bit RGBA PNG (colour type 6, filter 0, zlib `deflateSync`). */
+export function encodePng(image: PngImage): Buffer {
+  const expected = image.width * image.height * 4;
+  if (image.data.length !== expected) {
+    throw new Error(
+      `encodePng: data must hold ${expected} bytes for ${image.width}×${image.height} RGBA, got ${image.data.length}`,
+    );
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(image.width, 0);
+  ihdr.writeUInt32BE(image.height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // colour type: RGBA
+  ihdr[10] = 0; // compression: deflate
+  ihdr[11] = 0; // filter method: adaptive
+  ihdr[12] = 0; // interlace: none
+
+  const stride = image.width * 4;
+  const raw = Buffer.alloc((stride + 1) * image.height);
+  for (let y = 0; y < image.height; y += 1) {
+    raw[y * (stride + 1)] = 0; // filter type 0 (None) per row
+    image.data.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
+  }
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** Encode and write in one step (the generation scripts only ever need the file). */
+export function writePng(path: string, image: PngImage): void {
+  writeFileSync(path, encodePng(image));
 }
 
 /** Transparent pixels from the image bottom to the lowest solid pixel. */
