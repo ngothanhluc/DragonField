@@ -58,14 +58,14 @@ interface RawChapter {
 }
 
 const chapter: ChapterData = loadChapterOne();
-// Bản JSON thuần để mutate trong test validation: parser TMX trả object readonly nhưng
-// schema `parseLevelData` nhận dữ liệu thô, nên test được đúng đường validate.
+// Plain JSON to mutate in validation tests: the TMX parser returns readonly objects but
+// `parseLevelData` takes raw data, so the test can exercise the real validation path.
 const rawChapter = JSON.parse(JSON.stringify(chapter)) as RawChapter;
 
 function at<T>(items: readonly T[], index: number): T {
   const value = items[index];
   if (value === undefined) {
-    throw new Error(`Fixture thiếu phần tử index ${index}`);
+    throw new Error(`Fixture is missing element at index ${index}`);
   }
   return value;
 }
@@ -73,7 +73,7 @@ function at<T>(items: readonly T[], index: number): T {
 function room(number: number): LevelData {
   const found = chapter.rooms.find((candidate) => candidate.room === number);
   if (found === undefined) {
-    throw new Error(`chapter 1 thiếu phòng ${number}`);
+    throw new Error(`chapter 1 is missing room ${number}`);
   }
   return found;
 }
@@ -89,20 +89,20 @@ function expectChapterError(mutate: (chapter: RawChapter) => void, pattern: RegE
 }
 
 describe('chapter 1 (.tmx → LevelData)', () => {
-  it('parse được đủ 9 phòng, đúng thứ tự', () => {
+  it('parses all 9 rooms in order', () => {
     expect(chapter.chapter).toBe(1);
     expect(chapter.rooms).toHaveLength(9);
     expect(chapter.rooms.map((level) => level.room)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
-  it('parseLevelData nhận file chapter và trả về phòng đầu tiên', () => {
+  it('parseLevelData accepts a chapter file and returns the first room', () => {
     const first = parseLevelData(rawChapter);
 
     expect(first.room).toBe(1);
     expect(first.id).toBe('ch1-r1');
   });
 
-  it('phòng 1 có 3 wave, đủ chaser + caster, 4 cột và player start ở đáy giữa', () => {
+  it('room 1 has 3 waves, both chaser + caster, 4 pillars, and the player start at bottom centre', () => {
     const room1 = room(1);
 
     expect(room1.isBossRoom).toBe(false);
@@ -118,7 +118,7 @@ describe('chapter 1 (.tmx → LevelData)', () => {
     expect(room1.doors).toHaveLength(1);
   });
 
-  it('phòng 9 là boss room có boss name, bossStart và 4 cột', () => {
+  it('room 9 is a boss room with a boss name, bossStart and 4 pillars', () => {
     const bossRoom = room(9);
 
     expect(bossRoom.isBossRoom).toBe(true);
@@ -127,7 +127,7 @@ describe('chapter 1 (.tmx → LevelData)', () => {
     expect(bossRoom.obstacles.filter((obstacle) => obstacle.kind === 'pillar')).toHaveLength(4);
   });
 
-  it('mọi door trỏ tới phòng có thật (hoặc null)', () => {
+  it('every door points at a real room (or null)', () => {
     const roomNumbers = new Set(chapter.rooms.map((level) => level.room));
 
     for (const level of chapter.rooms) {
@@ -141,7 +141,7 @@ describe('chapter 1 (.tmx → LevelData)', () => {
 });
 
 describe('isInsideRoom', () => {
-  it('nhận điểm trong phòng và trên biên', () => {
+  it('accepts points inside the room and on the boundary', () => {
     const room1 = room(1);
 
     expect(isInsideRoom(room1, { x: 16, y: 9 })).toBe(true);
@@ -149,7 +149,7 @@ describe('isInsideRoom', () => {
     expect(isInsideRoom(room1, { x: 32, y: 18 })).toBe(true);
   });
 
-  it('từ chối điểm ngoài phòng', () => {
+  it('rejects points outside the room', () => {
     const room1 = room(1);
 
     expect(isInsideRoom(room1, { x: -0.01, y: 9 })).toBe(false);
@@ -158,7 +158,7 @@ describe('isInsideRoom', () => {
 });
 
 describe('obstacleAt', () => {
-  it('trả về cột khi điểm nằm trong', () => {
+  it('returns the pillar when the point is inside it', () => {
     const room1 = room(1);
 
     expect(obstacleAt(room1, { x: 8, y: 6 })).toEqual({
@@ -171,7 +171,7 @@ describe('obstacleAt', () => {
     expect(obstacleAt(room1, { x: 9.99, y: 7.99 })?.kind).toBe('pillar');
   });
 
-  it('trả về null khi điểm ở khoảng trống', () => {
+  it('returns null when the point is in open space', () => {
     const room1 = room(1);
 
     expect(obstacleAt(room1, { x: 16, y: 9 })).toBeNull();
@@ -180,9 +180,9 @@ describe('obstacleAt', () => {
 });
 
 describe('parseLevelData — validation', () => {
-  it('gom nhiều lỗi vào một Error duy nhất', () => {
+  it('collects multiple problems into a single Error', () => {
     const broken = cloneChapter();
-    // Thêm bản sao phòng 1: trùng số phòng nhưng không làm gãy door nào khác.
+    // Add a copy of room 1: duplicates the room number without breaking any other door.
     broken.rooms.push(structuredClone(at(broken.rooms, 0)));
     at(broken.rooms, 0).size.rows = 17;
 
@@ -194,154 +194,154 @@ describe('parseLevelData — validation', () => {
     }
 
     expect(message).toMatch(/rooms\[0\]\.size\.rows/);
-    expect(message).toMatch(/số phòng 1 bị trùng/);
-    expect(message).toMatch(/2 lỗi/);
+    expect(message).toMatch(/room number 1 is duplicated/);
+    expect(message).toMatch(/2 problem/);
   });
 
-  it('parse được một phòng lẻ', () => {
+  it('parses a single room', () => {
     const single = parseLevelData(structuredClone(at(rawChapter.rooms, 0)));
 
     expect(single.room).toBe(1);
     expect(single.waves).toHaveLength(3);
   });
 
-  it('từ chối phòng lẻ có spawn ngoài phòng', () => {
+  it('rejects a single room with a spawn outside the room', () => {
     const single = structuredClone(at(rawChapter.rooms, 0));
     const enemy = at(at(single.waves, 0).enemies, 0);
     enemy.at.y = 19;
 
     expect(() => parseLevelData(single)).toThrow(
-      /level\.waves\[0\]\.enemies\[0\]\.at.*ngoài phòng/,
+      /level\.waves\[0\]\.enemies\[0\]\.at.*outside the room/,
     );
   });
 
-  it('từ chối sai kích thước phòng', () => {
+  it('rejects a wrong room size', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 0).size.cols = 31;
     }, /rooms\[0\]\.size\.cols/);
   });
 
-  it('từ chối tileSizePx khác 16', () => {
+  it('rejects a tileSizePx other than 16', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 0).tileSizePx = 32;
     }, /rooms\[0\]\.tileSizePx/);
   });
 
-  it('từ chối player start ngoài phòng', () => {
+  it('rejects a player start outside the room', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 0).playerStart.y = -1;
-    }, /rooms\[0\]\.playerStart.*ngoài phòng/);
+    }, /rooms\[0\]\.playerStart.*outside the room/);
   });
 
-  it('từ chối spawn ngoài phòng', () => {
+  it('rejects a spawn outside the room', () => {
     expectChapterError((broken) => {
       at(at(at(broken.rooms, 0).waves, 0).enemies, 0).at.x = 33;
-    }, /rooms\[0\]\.waves\[0\]\.enemies\[0\]\.at.*ngoài phòng/);
+    }, /rooms\[0\]\.waves\[0\]\.enemies\[0\]\.at.*outside the room/);
   });
 
-  it('từ chối waves rỗng', () => {
+  it('rejects empty waves', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 0).waves = [];
-    }, /rooms\[0\]\.waves.*ít nhất 1 wave/);
+    }, /rooms\[0\]\.waves.*at least 1 wave/);
   });
 
-  it('từ chối wave không có enemy', () => {
+  it('rejects a wave without enemies', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 0).waves = [{ enemies: [] }];
-    }, /rooms\[0\]\.waves\[0\]\.enemies.*rỗng/);
+    }, /rooms\[0\]\.waves\[0\]\.enemies.*must not be empty/);
   });
 
-  it('từ chối role không nằm trong chaser/caster/tank', () => {
+  it('rejects a role outside chaser/caster/tank', () => {
     expectChapterError((broken) => {
       at(at(at(broken.rooms, 0).waves, 0).enemies, 0).role = 'brute';
     }, /rooms\[0\]\.waves\[0\]\.enemies\[0\]\.role.*chaser, caster, tank/);
   });
 
-  it('từ chối obstacle vượt ra ngoài phòng', () => {
+  it('rejects an obstacle that extends outside the room', () => {
     expectChapterError((broken) => {
       at(at(broken.rooms, 0).obstacles, 0).width = 30;
-    }, /rooms\[0\]\.obstacles\[0\].*vượt ra ngoài phòng/);
+    }, /rooms\[0\]\.obstacles\[0\].*extends outside the room/);
   });
 
-  it('từ chối obstacle có kích thước <= 0', () => {
+  it('rejects an obstacle with size <= 0', () => {
     expectChapterError((broken) => {
       at(at(broken.rooms, 0).obstacles, 0).height = 0;
     }, /rooms\[0\]\.obstacles\[0\]\.height.*> 0/);
   });
 
-  it('từ chối boss room thiếu boss marker', () => {
+  it('rejects a boss room without a boss marker', () => {
     expectChapterError((broken) => {
       delete at(broken.rooms, 8).boss;
-    }, /rooms\[8\]\.boss.*bắt buộc/);
+    }, /rooms\[8\]\.boss.*requires a boss/);
   });
 
-  it('từ chối boss marker ở phòng thường', () => {
+  it('rejects a boss marker in a regular room', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 0).boss = { name: 'TenguBlue' };
-    }, /rooms\[0\]\.boss.*chỉ phòng boss/);
+    }, /rooms\[0\]\.boss.*only a boss room/);
   });
 
-  it('từ chối boss name rỗng', () => {
+  it('rejects an empty boss name', () => {
     expectChapterError((broken) => {
       const bossRoom = at(broken.rooms, 8);
-      if (bossRoom.boss === undefined) throw new Error('fixture thiếu boss');
+      if (bossRoom.boss === undefined) throw new Error('fixture is missing boss');
       bossRoom.boss.name = '   ';
     }, /rooms\[8\]\.boss\.name/);
   });
 
-  it('từ chối số phòng trùng', () => {
+  it('rejects a duplicate room number', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 1).room = 1;
-    }, /số phòng 1 bị trùng/);
+    }, /room number 1 is duplicated/);
   });
 
-  it('nhận số phòng 10 — tổng phòng là dữ liệu, không phải hằng số', () => {
+  it('accepts room number 10 — the room total is data, not a constant', () => {
     const broken = cloneChapter();
     at(broken.rooms, 0).room = 10;
 
     expect(parseLevelData(broken).room).toBe(10);
   });
 
-  it('từ chối số phòng 0 hoặc âm', () => {
+  it('rejects room number 0 or negative', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 0).room = 0;
     }, /rooms\[0\]\.room.*>= 1/);
   });
 
-  it('từ chối bossStart ở phòng thường', () => {
+  it('rejects bossStart in a regular room', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 0).bossStart = { x: 16, y: 5 };
-    }, /rooms\[0\]\.bossStart.*chỉ phòng boss/);
+    }, /rooms\[0\]\.bossStart.*only a boss room/);
   });
 
-  it('từ chối bossStart ngoài phòng', () => {
+  it('rejects bossStart outside the room', () => {
     expectChapterError((broken) => {
       const bossRoom = at(broken.rooms, 8);
       bossRoom.bossStart = { x: 16, y: 19 };
-    }, /rooms\[8\]\.bossStart.*ngoài phòng/);
+    }, /rooms\[8\]\.bossStart.*outside the room/);
   });
 
-  it('từ chối door trỏ tới phòng không tồn tại', () => {
+  it('rejects a door pointing at a room that does not exist', () => {
     expectChapterError((broken) => {
       at(at(broken.rooms, 0).doors, 0).toRoom = 99;
-    }, /rooms\[0\]\.doors\[0\]\.toRoom.*99.*không tồn tại/);
+    }, /rooms\[0\]\.doors\[0\]\.toRoom.*99.*does not exist/);
   });
 
-  it('từ chối chapter của phòng khác chapter của file', () => {
+  it('rejects a room chapter different from the file chapter', () => {
     expectChapterError((broken) => {
       at(broken.rooms, 2).chapter = 2;
-    }, /rooms\[2\]\.chapter.*chapter của file/);
+    }, /rooms\[2\]\.chapter.*file chapter/);
   });
 
-  it('từ chối file chapter không có phòng', () => {
+  it('rejects a chapter file with no rooms', () => {
     expectChapterError((broken) => {
       broken.rooms = [];
-    }, /rooms.*ít nhất 1 phòng/);
+    }, /rooms.*at least 1 room/);
   });
 });
 
 describe('parseTileRows', () => {
-  it('đọc legend thành ma trận solid', () => {
+  it('reads the legend into a solid matrix', () => {
     const parsed = parseTileRows(['###', '#.#', '#o#', '#~#']);
 
     expect(parsed.cols).toBe(3);
@@ -354,20 +354,20 @@ describe('parseTileRows', () => {
     ]);
   });
 
-  it('từ chối các hàng lệch độ dài', () => {
-    expect(() => parseTileRows(['###', '##'])).toThrow(/hàng 1.*hình chữ nhật/);
+  it('rejects rows of different lengths', () => {
+    expect(() => parseTileRows(['###', '##'])).toThrow(/row 1.*rectangular/);
   });
 
-  it('từ chối ký tự không có trong legend', () => {
-    expect(() => parseTileRows(['#x#'])).toThrow(/ký tự không rõ "x"/);
+  it('rejects a character not in the legend', () => {
+    expect(() => parseTileRows(['#x#'])).toThrow(/unknown character "x"/);
   });
 
-  it('từ chối danh sách rỗng và hàng rỗng', () => {
-    expect(() => parseTileRows([])).toThrow(/ít nhất 1 hàng/);
-    expect(() => parseTileRows([''])).toThrow(/hàng đầu tiên rỗng/);
+  it('rejects an empty list and an empty row', () => {
+    expect(() => parseTileRows([])).toThrow(/at least 1 row/);
+    expect(() => parseTileRows([''])).toThrow(/first row is empty/);
   });
 
-  it('gom lỗi của nhiều hàng vào một Error', () => {
+  it('collects problems from several rows into one Error', () => {
     let message = '';
     try {
       parseTileRows(['###', '#x', '###']);
@@ -375,7 +375,7 @@ describe('parseTileRows', () => {
       message = error instanceof Error ? error.message : String(error);
     }
 
-    expect(message).toMatch(/hàng 1 có 2 cột/);
-    expect(message).toMatch(/hàng 1, cột 1: ký tự không rõ "x"/);
+    expect(message).toMatch(/row 1 has 2 columns/);
+    expect(message).toMatch(/row 1, column 1: unknown character "x"/);
   });
 });

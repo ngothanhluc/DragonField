@@ -26,16 +26,16 @@ import { isTelegraphElapsed } from '../../assets/scripts/core/combat/telegraph';
 import { parseLevelData, type EnemyRole } from '../../assets/scripts/core/level/level-data';
 
 /**
- * `game/config/tuning.json` là nguồn duy nhất của số liệu balance (AGENTS rule 3).
- * Generated module `enemies/tuning.generated.ts` là bản in của nó; `tuning-sync.test.ts`
- * khoá hai bên khớp nhau, còn bộ test này khoá hai chiều:
+ * `game/config/tuning.json` is the single source of balance numbers (AGENTS rule 3).
+ * The generated module `enemies/tuning.generated.ts` is a print of it; `tuning-sync.test.ts`
+ * locks the two together, while this suite locks both directions:
  *
- * 1. JSON → code: mọi hàm của `behaviours` trả đúng số trong JSON.
- * 2. Đổi JSON → đổi hành vi: bơm một bản copy đã sửa vào `decideAction` và
- *    thấy hành vi khác đi. Nếu ai hardcode lại số trong code, test 2 đỏ.
+ * 1. JSON → code: every `behaviours` function returns the number from the JSON.
+ * 2. Change JSON → change behaviour: feed a mutated copy into `decideAction` and
+ *    see the behaviour differ. If anyone hardcodes the numbers again, test 2 goes red.
  */
 
-/** Bản copy sâu của JSON gốc để mutate mà không đụng object đã export. */
+/** Deep copy of the source JSON to mutate without touching the exported object. */
 function cloneSource(): Record<string, unknown> {
   return structuredClone(TUNING_SOURCE) as Record<string, unknown>;
 }
@@ -49,14 +49,14 @@ function roleOf(raw: Record<string, unknown>, role: EnemyRole): Record<string, u
   return rolesOf(raw)[role] as Record<string, unknown>;
 }
 
-/** Đọc một field số từ JSON thô, để test không phải cast cả object. */
+/** Read one number field from the raw JSON, so tests need not cast the whole object. */
 function numberAt(source: Record<string, unknown>, field: string): number {
   const value = source[field];
-  if (typeof value !== 'number') throw new Error(`config/tuning.json: ${field} phải là số`);
+  if (typeof value !== 'number') throw new Error(`config/tuning.json: ${field} must be a number`);
   return value;
 }
 
-/** Bộ tune thay thế: parse từ bản copy đã sửa, đúng đường đi của game. */
+/** Replacement tuning set: parsed from a mutated copy, along the game's own path. */
 function tuningWith(mutate: (raw: Record<string, unknown>) => void): EnemiesTuning {
   const raw = cloneSource();
   mutate(raw);
@@ -94,51 +94,51 @@ function enemyState(
   };
 }
 
-describe('tuning — config/tuning.json là nguồn duy nhất', () => {
-  it('parse lại JSON gốc cho đúng object đang dùng', () => {
+describe('tuning — config/tuning.json is the single source', () => {
+  it('re-parsing the source JSON gives the same object in use', () => {
     expect(parseTuning(TUNING_SOURCE)).toEqual(TUNING);
   });
 
-  it('DEFAULT_COMBAT là chính object combat của config, không phải bản chép', () => {
+  it('DEFAULT_COMBAT is the config combat object itself, not a copy', () => {
     expect(DEFAULT_COMBAT).toBe(COMBAT_TUNING);
     expect(DEFAULT_COMBAT.fireRatePerSecond).toBe(
       (cloneSource().combat as { fireRatePerSecond: number }).fireRatePerSecond,
     );
   });
 
-  it('thiếu field thì ném lỗi chỉ đúng đường dẫn, không im lặng dùng 0', () => {
+  it('a missing field throws naming the exact path, instead of silently using 0', () => {
     const raw = cloneSource();
     delete roleOf(raw, 'caster').health;
 
-    expect(() => parseTuning(raw)).toThrowError(/enemies\.roles\.caster\.health.*thiếu field/);
+    expect(() => parseTuning(raw)).toThrowError(/enemies\.roles\.caster\.health.*missing field/);
   });
 
-  it('field sai kiểu hoặc giá trị âm cũng bị bắt', () => {
+  it('a mistyped or negative field is caught too', () => {
     const wrongType = cloneSource();
     roleOf(wrongType, 'chaser').speedTilesPerSecond = 'nhanh';
-    expect(() => parseTuning(wrongType)).toThrowError(/phải là số hữu hạn/);
+    expect(() => parseTuning(wrongType)).toThrowError(/must be a finite number/);
 
     const negative = cloneSource();
     (negative.combat as Record<string, unknown>).damage = -1;
-    expect(() => parseTuning(negative)).toThrowError(/không được âm/);
+    expect(() => parseTuning(negative)).toThrowError(/must not be negative/);
 
     const zeroRate = cloneSource();
     (zeroRate.combat as Record<string, unknown>).fireRatePerSecond = 0;
-    expect(() => parseTuning(zeroRate)).toThrowError(/phải > 0/);
+    expect(() => parseTuning(zeroRate)).toThrowError(/must be > 0/);
   });
 
-  it('dải khoảng cách ngược bị bắt', () => {
+  it('an inverted range is caught', () => {
     const raw = cloneSource();
     roleOf(raw, 'caster').preferredRangeMinTiles = 9;
-    expect(() => parseTuning(raw)).toThrowError(/preferredRangeMaxTiles.*phải >=/);
+    expect(() => parseTuning(raw)).toThrowError(/preferredRangeMaxTiles.*must be >=/);
   });
 
-  it('mọi số behaviours dùng đều khớp JSON', () => {
+  it('every number behaviours uses matches the JSON', () => {
     for (const role of ['chaser', 'caster', 'tank'] as const) {
       const raw = roleOf(cloneSource(), role);
       const tuning = ENEMY_TUNING.roles[role];
 
-      // `parse` không được đổi số nào của JSON.
+      // `parse` must not change any number from the JSON.
       expect(tuning).toEqual(raw);
 
       expect(maxHealthFor(role, false)).toBe(numberAt(raw, 'health'));
@@ -165,8 +165,8 @@ describe('tuning — config/tuning.json là nguồn duy nhất', () => {
   });
 });
 
-describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => {
-  it('máu và tốc độ enemy lấy từ bộ tune được bơm vào', () => {
+describe('tuning — changing the JSON changes behaviour (no hardcoding)', () => {
+  it('enemy health and speed come from the injected tuning set', () => {
     const tuning = tuningWith((raw) => {
       roleOf(raw, 'chaser').health = 99;
       roleOf(raw, 'chaser').speedTilesPerSecond = 0.5;
@@ -174,11 +174,11 @@ describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => 
 
     expect(maxHealthFor('chaser', false, tuning)).toBe(99);
     expect(speedFor('chaser', false, tuning)).toBe(0.5);
-    // Bộ mặc định không đổi: không có state ẩn nào bị ghi.
+    // The default set is unchanged: no hidden state was written.
     expect(maxHealthFor('chaser', false)).toBe(ENEMY_TUNING.roles.chaser.health);
   });
 
-  it('sát thương chạm và hệ số elite lấy từ bộ tune', () => {
+  it('contact damage and elite multipliers come from the tuning set', () => {
     const tuning = tuningWith((raw) => {
       roleOf(raw, 'tank').contactDamage = 3;
       (raw.enemies as Record<string, unknown>).eliteDamageMultiplier = 4;
@@ -188,7 +188,7 @@ describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => 
     expect(contactDamageFor('tank', true, tuning)).toBe(12);
   });
 
-  it('caster giữ đúng dải khoảng cách trong bộ tune', () => {
+  it('caster keeps exactly the spacing band from the tuning set', () => {
     const tuning = tuningWith((raw) => {
       roleOf(raw, 'caster').preferredRangeMinTiles = 2;
       roleOf(raw, 'caster').preferredRangeMaxTiles = 3;
@@ -202,7 +202,7 @@ describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => 
     expect(action.target.x - 5).toBeCloseTo(3);
   });
 
-  it('caster dùng cooldown và telegraph trong bộ tune', () => {
+  it('caster uses the cooldown and telegraph from the tuning set', () => {
     const tuning = tuningWith((raw) => {
       roleOf(raw, 'caster').attackCooldownMs = 100;
       roleOf(raw, 'caster').telegraphMs = 2000;
@@ -224,7 +224,7 @@ describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => 
     ).toEqual({ kind: 'idle' });
   });
 
-  it('tank dùng tầm ra đòn và thời gian lao trong bộ tune', () => {
+  it('tank uses the strike range and charge time from the tuning set', () => {
     const tuning = tuningWith((raw) => {
       roleOf(raw, 'tank').preferredRangeMaxTiles = 2;
       roleOf(raw, 'tank').attackCooldownMs = 0;
@@ -233,7 +233,7 @@ describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => 
     });
 
     const far = enemyState('tank', { x: 10, y: 14 }, tuning);
-    // Cách player 10 tile > 2 → đi bộ, không ra đòn.
+    // Player 10 tiles away > 2 → walks, no attack.
     expect(decideAction({ state: far, player: { x: 10, y: 4 }, nowMs: 1000, level, tuning })).toMatchObject(
       { kind: 'walk' },
     );
@@ -249,7 +249,7 @@ describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => 
     expect(charge.untilMs).toBe(1100 + 250);
   });
 
-  it('chaser đứng lại ở khoảng cách chạm trong bộ tune', () => {
+  it('chaser stops at the contact distance from the tuning set', () => {
     const tuning = tuningWith((raw) => {
       roleOf(raw, 'chaser').preferredRangeMinTiles = 3;
       roleOf(raw, 'chaser').preferredRangeMaxTiles = 3;
@@ -261,15 +261,15 @@ describe('tuning — đổi JSON thì hành vi đổi (không hardcode)', () => 
     expect(action).toEqual({ kind: 'idle' });
   });
 
-  it('telegraph của behaviours so bằng duration trong bộ tune', () => {
-    // `isTelegraphElapsed` là hàm thuần nhận duration, nên cùng một số với JSON.
+  it('behaviours telegraph equals the duration from the tuning set', () => {
+    // `isTelegraphElapsed` is a pure function taking a duration, so the same number as the JSON.
     expect(isTelegraphElapsed(0, ENEMY_TUNING.roles.caster.telegraphMs - 1, ENEMY_TUNING.roles.caster.telegraphMs)).toBe(false);
     expect(isTelegraphElapsed(0, ENEMY_TUNING.roles.caster.telegraphMs, ENEMY_TUNING.roles.caster.telegraphMs)).toBe(true);
   });
 });
 
-describe('tuning — M3: hitstop, stagger, đòn thêm của elite', () => {
-  it('hitstop 70 ms và stagger 150 ms đọc từ JSON, không hardcode', () => {
+describe('tuning — M3: hitstop, stagger, elite extra attacks', () => {
+  it('70 ms hitstop and 150 ms stagger come from the JSON, not hardcoded', () => {
     const rawCombat = (cloneSource().combat as Record<string, unknown>);
     expect(DEFAULT_COMBAT.enemyHitstopMs).toBe(70);
     expect(DEFAULT_COMBAT.enemyStaggerMs).toBe(150);
@@ -281,7 +281,7 @@ describe('tuning — M3: hitstop, stagger, đòn thêm của elite', () => {
     expect(parseTuning(changed).combat.enemyStaggerMs).toBe(400);
   });
 
-  it('elite scale / volley / extraCharges đọc từ JSON', () => {
+  it('elite scale / volley / extraCharges come from the JSON', () => {
     const elite = (cloneSource().enemies as { elite: Record<string, unknown> }).elite;
     expect(ENEMY_TUNING.elite.scale).toBe(elite.scale);
     expect(ENEMY_TUNING.elite.caster).toEqual(elite.caster);
@@ -289,7 +289,7 @@ describe('tuning — M3: hitstop, stagger, đòn thêm của elite', () => {
     expect(ENEMY_TUNING.elite.chaser).toEqual(elite.chaser);
   });
 
-  it('elite sai kiểu/âm bị bắt ngay lúc parse, kèm đường dẫn', () => {
+  it('a mistyped/negative elite value is caught at parse time, with the path', () => {
     const negativeCharges = cloneSource();
     const tank = (
       (negativeCharges.enemies as { elite: { tank: Record<string, unknown> } }).elite
@@ -302,16 +302,16 @@ describe('tuning — M3: hitstop, stagger, đòn thêm của elite', () => {
       (fractionalShots.enemies as { elite: { caster: Record<string, unknown> } }).elite
     ).caster;
     caster.volleyShots = 2.5;
-    expect(() => parseTuning(fractionalShots)).toThrowError(/phải là số nguyên/);
+    expect(() => parseTuning(fractionalShots)).toThrowError(/must be an integer/);
 
     const missingElite = cloneSource();
     delete (missingElite.enemies as Record<string, unknown>).elite;
-    expect(() => parseTuning(missingElite)).toThrowError(/enemies\.elite.*thiếu field/);
+    expect(() => parseTuning(missingElite)).toThrowError(/enemies\.elite.*missing field/);
   });
 });
 
-describe('tuning — M3 round 2: silhouette theo vai trò', () => {
-  it('scale của brute lớn hơn hẳn chaser/caster, đọc từ JSON', () => {
+describe('tuning — M3 round 2: silhouette per role', () => {
+  it('brute scale is clearly larger than chaser/caster, read from the JSON', () => {
     const roles = (cloneSource().enemies as Record<string, unknown>).roles as Record<
       string,
       Record<string, unknown>
@@ -323,18 +323,18 @@ describe('tuning — M3 round 2: silhouette theo vai trò', () => {
     expect(visualScaleFor('caster')).toBe(1);
   });
 
-  it('đổi scale trong JSON thì helper đổi theo, không hardcode', () => {
+  it('changing the scale in the JSON changes the helper, no hardcoding', () => {
     const tuning = tuningWith((raw) => {
       roleOf(raw, 'tank').scale = 2.25;
     });
     expect(visualScaleFor('tank', tuning)).toBe(2.25);
-    // Bộ mặc định không bị ghi.
+    // The default set is not written.
     expect(visualScaleFor('tank')).toBe(ENEMY_TUNING.roles.tank.scale);
   });
 
-  it('scale <= 0 bị từ chối', () => {
+  it('scale <= 0 is rejected', () => {
     const raw = cloneSource();
     roleOf(raw, 'tank').scale = 0;
-    expect(() => parseTuning(raw)).toThrowError(/enemies\.roles\.tank\.scale.*phải > 0/);
+    expect(() => parseTuning(raw)).toThrowError(/enemies\.roles\.tank\.scale.*must be > 0/);
   });
 });

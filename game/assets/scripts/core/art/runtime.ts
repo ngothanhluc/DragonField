@@ -1,8 +1,8 @@
 /**
- * Toán chạy animation — thuần TS, không import `cc`, test được bằng vitest.
+ * Animation playback maths — pure TS, no `cc` import, testable with vitest.
  *
- * Adapter Cocos (`game/`) chỉ được gọi các hàm ở đây để quyết định *frame nào* và *hướng nào*;
- * bản thân module này không biết gì về texture hay node.
+ * The Cocos adapter (`game/`) may only call these functions to decide *which frame* and *which
+ * direction*; this module itself knows nothing about textures or nodes.
  */
 import type { Vec2 } from '../math/vec2';
 import type { Direction, SpriteEntry } from './manifest';
@@ -11,26 +11,26 @@ const RESOURCES_PREFIX = 'resources/';
 const PNG_EXTENSION = '.png';
 
 /**
- * Đổi đường dẫn trong manifest (`resources/art/x/Idle.png`) thành path của resources bundle
- * (`art/x/Idle`). Ném lỗi nếu path không nằm trong `resources/` hoặc không phải file png — cả hai
- * trường hợp đều là manifest hỏng, không phải "pack thiếu".
+ * Turn a manifest path (`resources/art/x/Idle.png`) into a resources bundle path
+ * (`art/x/Idle`). Throws if the path is not under `resources/` or is not a png — both are a broken
+ * manifest, not "the pack is missing art".
  */
 export function toResourcesPath(sheet: string): string {
   if (!sheet.startsWith(RESOURCES_PREFIX)) {
-    throw new Error(`sheet phải bắt đầu bằng "${RESOURCES_PREFIX}", nhận "${sheet}"`);
+    throw new Error(`sheet must start with "${RESOURCES_PREFIX}", got "${sheet}"`);
   }
   if (!sheet.endsWith(PNG_EXTENSION)) {
-    throw new Error(`sheet phải kết thúc bằng "${PNG_EXTENSION}", nhận "${sheet}"`);
+    throw new Error(`sheet must end with "${PNG_EXTENSION}", got "${sheet}"`);
   }
 
   const path = sheet.slice(RESOURCES_PREFIX.length, -PNG_EXTENSION.length);
   if (path.length === 0) {
-    throw new Error(`sheet không trỏ tới file nào: "${sheet}"`);
+    throw new Error(`sheet does not point at any file: "${sheet}"`);
   }
   return path;
 }
 
-/** Độ dài một vòng clip, ms. fps hoặc frames không hợp lệ ⇒ 0 (không có gì để chạy). */
+/** Length of one clip loop, ms. Invalid fps or frames ⇒ 0 (nothing to play). */
 export function loopDurationMs(entry: SpriteEntry): number {
   if (entry.fps <= 0 || entry.frames <= 0) {
     return 0;
@@ -39,8 +39,8 @@ export function loopDurationMs(entry: SpriteEntry): number {
 }
 
 /**
- * Anchor dọc (0..1, tính từ đáy frame) để giữ pivot nhất quán giữa các anim
- * khác kích thước. Actor đứng bằng chân tại `footPx`; FX neo giữa frame.
+ * Vertical anchor (0..1, measured from the bottom of the frame) that keeps the pivot consistent
+ * across animations of different sizes. Actors stand on their feet at `footPx`; FX anchor at the frame centre.
  */
 export function entryAnchorY(entry: SpriteEntry): number {
   if (entry.anchor === 'center') return 0.5;
@@ -49,11 +49,11 @@ export function entryAnchorY(entry: SpriteEntry): number {
 }
 
 /**
- * Frame đang hiển thị tại thời điểm `elapsedMs` kể từ lúc `play`.
+ * The frame shown at `elapsedMs` since `play`.
  *
- * - `loop`: quay vòng; thời gian đúng bằng một vòng trở về frame 0.
- * - không `loop`: giữ frame cuối, không bao giờ vượt `frames - 1`.
- * - `elapsedMs` âm hoặc không hữu hạn ⇒ frame 0. `fps <= 0` ⇒ frame 0 (không thể suy ra frame).
+ * - `loop`: wraps around; exactly one loop of time returns to frame 0.
+ * - not `loop`: holds the last frame, never goes past `frames - 1`.
+ * - negative or non-finite `elapsedMs` ⇒ frame 0. `fps <= 0` ⇒ frame 0 (no frame can be derived).
  */
 export function frameIndexAt(entry: SpriteEntry, elapsedMs: number): number {
   if (entry.fps <= 0 || entry.frames <= 0) {
@@ -70,10 +70,10 @@ export function frameIndexAt(entry: SpriteEntry, elapsedMs: number): number {
 }
 
 /**
- * Hướng nhìn từ vector di chuyển: lấy trục trội.
+ * Facing direction from a movement vector: the dominant axis wins.
  *
- * Khi `|x| == |y|` (kể cả vector 0) trả `fallback` thay vì chọn bừa một trục — nếu không, đứng yên
- * sẽ làm sprite nhảy hướng liên tục.
+ * When `|x| == |y|` (including the zero vector) it returns `fallback` instead of arbitrarily
+ * picking an axis — otherwise standing still would make the sprite flip direction constantly.
  */
 export function directionFromVector(v: Vec2, fallback: Direction): Direction {
   const ax = Math.abs(v.x);

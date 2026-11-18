@@ -1,27 +1,27 @@
 /**
- * Sinh enemy theo wave từ dữ liệu phòng (GDD §8: wave nằm trong `LevelData`).
+ * Spawn enemies per wave from room data (GDD §8: waves live in `LevelData`).
  *
- * `waveIndex` là **index 0-based** trong `level.waves`, khớp với
- * `nextWaveIndex`. Id enemy tất định — `r<room>-w<wave>-e<n>` — nên test,
- * log và save/replay đều so sánh được mà không cần thứ tự spawn.
+ * `waveIndex` is a **0-based index** into `level.waves`, matching
+ * `nextWaveIndex`. Enemy ids are deterministic — `r<room>-w<wave>-e<n>` — so tests,
+ * logs and save/replay can compare without relying on spawn order.
  */
 import type { LevelData } from '../level/level-data';
 import { maxHealthFor, type EnemyState } from './behaviours';
 
-/** Id tất định của một enemy trong wave. */
+/** Deterministic id of one enemy inside a wave. */
 export function enemyId(room: number, waveIndex: number, enemyIndex: number): string {
   return `r${room}-w${waveIndex}-e${enemyIndex}`;
 }
 
 /**
- * Enemy của wave `waveIndex`, đã tính scale elite. Enemy mới đứng yên
- * (`idle`) và chờ hết cooldown trước đòn đầu — xem `behaviours.ts`.
+ * Enemies of wave `waveIndex`, with elite scaling already applied. New enemies stand still
+ * (`idle`) and wait out the cooldown before their first attack — see `behaviours.ts`.
  */
 export function spawnWave(level: LevelData, waveIndex: number): EnemyState[] {
   const wave = level.waves[waveIndex];
   if (wave === undefined) {
     throw new Error(
-      `Phòng ${level.id} không có wave ${waveIndex} (chỉ có ${level.waves.length} wave)`,
+      `Room ${level.id} has no wave ${waveIndex} (only ${level.waves.length} wave(s))`,
     );
   }
 
@@ -40,15 +40,15 @@ export function spawnWave(level: LevelData, waveIndex: number): EnemyState[] {
   });
 }
 
-/** Wave sạch khi mọi enemy đã chết (máu <= 0 hoặc action `dead`). */
+/** A wave is clear when every enemy is dead (health <= 0 or action `dead`). */
 export function isWaveCleared(states: readonly EnemyState[]): boolean {
   return states.every((state) => state.health <= 0 || state.action.kind === 'dead');
 }
 
-/** Index wave kế tiếp, hoặc `null` khi đã hết wave cuối của phòng. */
+/** Index of the next wave, or `null` when the room's last wave is done. */
 export function nextWaveIndex(current: number, level: LevelData): number | null {
   if (!Number.isInteger(current) || current < 0) {
-    throw new Error(`waveIndex phải là số nguyên >= 0, nhận ${current}`);
+    throw new Error(`waveIndex must be an integer >= 0, got ${current}`);
   }
 
   const next = current + 1;

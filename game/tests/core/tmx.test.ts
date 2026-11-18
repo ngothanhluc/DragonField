@@ -48,8 +48,8 @@ function parse(xml: string) {
   return parseTmxLevel(xml, { source: 'fixture.tmx' });
 }
 
-describe('parseTmxLevel — hợp đồng object layer', () => {
-  it('map hợp lệ → LevelData đầy đủ', () => {
+describe('parseTmxLevel — object layer contract', () => {
+  it('valid map → full LevelData', () => {
     const level = parse(validTmx());
 
     expect(level.id).toBe('ch1-r1');
@@ -68,7 +68,7 @@ describe('parseTmxLevel — hợp đồng object layer', () => {
     expect(level.bossStart).toBeUndefined();
   });
 
-  it('gộp spawn theo wave và giữ elite', () => {
+  it('groups spawns by wave and keeps elite', () => {
     const xml = validTmx().replace(
       '</objectgroup>',
       `<object id="5" name="spawn" x="160" y="64">
@@ -97,7 +97,7 @@ describe('parseTmxLevel — hợp đồng object layer', () => {
     expect(level.waves[1]?.enemies[0]?.elite).toBe(true);
   });
 
-  it('door không có toRoom = cửa cuối chapter (null)', () => {
+  it('a door without toRoom = chapter exit (null)', () => {
     const xml = validTmx().replace(
       `<properties>
     <property name="toRoom" type="int" value="2"/>
@@ -109,7 +109,7 @@ describe('parseTmxLevel — hợp đồng object layer', () => {
     expect(level.doors).toEqual([{ at: { x: 16, y: 0.5 }, toRoom: null }]);
   });
 
-  it('phòng boss đọc boss + bossStart', () => {
+  it('a boss room reads boss + bossStart', () => {
     const xml = validTmx()
       .replace(
         '<property name="room" type="int" value="1"/>',
@@ -129,7 +129,7 @@ describe('parseTmxLevel — hợp đồng object layer', () => {
     expect(level.bossStart).toEqual({ x: 16, y: 5 });
   });
 
-  it('nhận room >= 10 (thêm phòng chỉ bằng .tmx)', () => {
+  it('accepts room >= 10 (adding a room means adding only a .tmx)', () => {
     const xml = validTmx().replace('name="room" type="int" value="1"', 'name="room" type="int" value="10"');
     const level = parse(xml);
 
@@ -138,26 +138,26 @@ describe('parseTmxLevel — hợp đồng object layer', () => {
   });
 });
 
-describe('parseTmxLevel — lỗi quy ước', () => {
+describe('parseTmxLevel — convention errors', () => {
   function expectError(xml: string, pattern: RegExp): void {
     expect(() => parse(xml)).toThrow(pattern);
   }
 
-  it('từ chối object tên lạ (typo không được bỏ qua)', () => {
-    expectError(validTmx().replace('name="spawn"', 'name="mob"'), /"mob".*quy ước/);
+  it('rejects an unknown object name (a typo must not be ignored)', () => {
+    expectError(validTmx().replace('name="spawn"', 'name="mob"'), /"mob".*convention/);
   });
 
-  it('từ chối thiếu playerStart hoặc có hai playerStart', () => {
-    expectError(validTmx().replace('name="playerStart"', 'name="bossStart"'), /thiếu object "playerStart"/);
+  it('rejects a missing or duplicate playerStart', () => {
+    expectError(validTmx().replace('name="playerStart"', 'name="bossStart"'), /missing object "playerStart"/);
 
     const twice = validTmx().replace(
       '</objectgroup>',
       '<object id="8" name="playerStart" x="32" y="32"><point/></object></objectgroup>',
     );
-    expectError(twice, /đúng một playerStart/);
+    expectError(twice, /exactly one playerStart/);
   });
 
-  it('từ chối wave đứt quãng', () => {
+  it('rejects a non-contiguous wave sequence', () => {
     const xml = validTmx().replace(
       '</objectgroup>',
       `<object id="9" name="spawn" x="96" y="96">
@@ -169,34 +169,34 @@ describe('parseTmxLevel — lỗi quy ước', () => {
        </object></objectgroup>`,
     );
 
-    expectError(xml, /thiếu wave 2/);
+    expectError(xml, /missing wave 2/);
   });
 
-  it('từ chối wave thiếu hoặc sai kiểu', () => {
-    expectError(validTmx().replace('<property name="wave" type="int" value="1"/>', ''), /thiếu property "wave"/);
+  it('rejects a missing or mistyped wave', () => {
+    expectError(validTmx().replace('<property name="wave" type="int" value="1"/>', ''), /missing property "wave"/);
     expectError(
       validTmx().replace('name="wave" type="int"', 'name="wave" type="string"'),
-      /phải là int/,
+      /must be an int/,
     );
   });
 
-  it('từ chối role/kind không hợp lệ', () => {
-    expectError(validTmx().replace('value="chaser"', 'value="brute"'), /role không hợp lệ/);
-    expectError(validTmx().replace('value="pillar"', 'value="rock"'), /kind không hợp lệ/);
+  it('rejects an invalid role/kind', () => {
+    expectError(validTmx().replace('value="chaser"', 'value="brute"'), /invalid role/);
+    expectError(validTmx().replace('value="pillar"', 'value="rock"'), /invalid kind/);
   });
 
-  it('từ chối rotation khác 0', () => {
+  it('rejects a non-zero rotation', () => {
     expectError(validTmx().replace('name="obstacle" x=', 'name="obstacle" rotation="90" x='), /rotation/);
   });
 
-  it('từ chối boss/bossStart ở phòng thường', () => {
+  it('rejects boss/bossStart in a regular room', () => {
     expectError(
       validTmx().replace(
         '<property name="room" type="int" value="1"/>',
         `<property name="room" type="int" value="1"/>
   <property name="boss" value="TenguBlue"/>`,
       ),
-      /chỉ phòng boss mới được khai báo boss/,
+      /only a boss room may declare boss/,
     );
 
     expectError(
@@ -204,51 +204,51 @@ describe('parseTmxLevel — lỗi quy ước', () => {
         '</objectgroup>',
         '<object id="10" name="bossStart" x="256" y="80"><point/></object></objectgroup>',
       ),
-      /chỉ phòng boss mới được khai báo bossStart/,
+      /only a boss room may declare bossStart/,
     );
   });
 
-  it('phòng boss thiếu boss name', () => {
+  it('a boss room without a boss name', () => {
     expectError(
       validTmx().replace(
         '<property name="room" type="int" value="1"/>',
         `<property name="room" type="int" value="1"/>
   <property name="isBossRoom" type="bool" value="true"/>`,
       ),
-      /phòng boss bắt buộc có boss/,
+      /a boss room requires a boss/,
     );
   });
 
-  it('từ chối obstacle vượt ra ngoài phòng (validation LevelData)', () => {
-    expectError(validTmx().replace('width="32" height="32"', 'width="640" height="32"'), /vượt ra ngoài phòng/);
+  it('rejects an obstacle outside the room (LevelData validation)', () => {
+    expectError(validTmx().replace('width="32" height="32"', 'width="640" height="32"'), /extends outside the room/);
   });
 
-  it('từ chối kích thước map/tile sai', () => {
-    expectError(validTmx().replace('width="32" height="18"', 'width="31" height="18"'), /width phải bằng 32/);
-    expectError(validTmx().replace('tilewidth="16"', 'tilewidth="32"'), /tilewidth phải bằng 16/);
+  it('rejects a wrong map/tile size', () => {
+    expectError(validTmx().replace('width="32" height="18"', 'width="31" height="18"'), /width must equal 32/);
+    expectError(validTmx().replace('tilewidth="16"', 'tilewidth="32"'), /tilewidth must equal 16/);
     expectError(validTmx().replace('orientation="orthogonal"', 'orientation="isometric"'), /orthogonal/);
   });
 
-  it('từ chối layer sai kích thước hoặc CSV thiếu ô', () => {
-    expectError(validTmx().replace('name="floor" width="32"', 'name="floor" width="16"'), /width phải bằng 32/);
-    expectError(validTmx().replace(FLOOR_CSV, '22,22'), /CSV có 2 ô/);
+  it('rejects a layer of the wrong size or CSV with too few cells', () => {
+    expectError(validTmx().replace('name="floor" width="32"', 'name="floor" width="16"'), /width must equal 32/);
+    expectError(validTmx().replace(FLOOR_CSV, '22,22'), /CSV has 2 cells/);
   });
 
-  it('từ chối thiếu layer hoặc objectgroup', () => {
+  it('rejects a missing layer or objectgroup', () => {
     const withoutLayer = validTmx().replace(
       /<layer[\s\S]*?<\/layer>/,
       '',
     );
-    expectError(withoutLayer, /ít nhất một <layer>/);
+    expectError(withoutLayer, /at least one <layer>/);
 
     const withoutObjects = validTmx().replace(/<objectgroup[\s\S]*?<\/objectgroup>/, '');
-    expectError(withoutObjects, /ít nhất một <objectgroup>/);
+    expectError(withoutObjects, /at least one <objectgroup>/);
   });
 
-  it('từ chối chapter/room thiếu hoặc sai miền', () => {
+  it('rejects a missing or out-of-range chapter/room', () => {
     expectError(
       validTmx().replace('<property name="chapter" type="int" value="1"/>', ''),
-      /thiếu property "chapter"/,
+      /missing property "chapter"/,
     );
     expectError(
       validTmx().replace('name="chapter" type="int" value="1"', 'name="chapter" type="int" value="4"'),
@@ -260,23 +260,23 @@ describe('parseTmxLevel — lỗi quy ước', () => {
     );
   });
 
-  it('lỗi XML nêu tên file nguồn', () => {
-    expect(() => parseTmxLevel('<map>', { source: 'room-1.tmx' })).toThrow(/room-1\.tmx: .*chưa được đóng/);
+  it('an XML error names the source file', () => {
+    expect(() => parseTmxLevel('<map>', { source: 'room-1.tmx' })).toThrow(/room-1\.tmx: .*never closed/);
     expect(() => parseTmxLevel('<scene/>', { source: 'room-1.tmx' })).toThrow(
       /room-1\.tmx:[\s\S]*<map>/,
     );
   });
 });
 
-describe('assets/resources/data/levels — mọi file .tmx thật', () => {
+describe('assets/resources/data/levels — every real .tmx file', () => {
   const files = findTmxFiles();
 
-  it('có đúng 9 phòng chapter 1', () => {
+  it('has exactly 9 rooms in chapter 1', () => {
     const chapterOne = files.filter((file) => file.name.startsWith('chapter-1/'));
     expect(chapterOne).toHaveLength(9);
   });
 
-  it('mỗi file parse và validate được bằng cùng parser của runtime', () => {
+  it('every file parses and validates with the same runtime parser', () => {
     for (const file of files) {
       expect(
         () => parseTmxLevel(file.xml, { source: file.name }),
@@ -285,7 +285,7 @@ describe('assets/resources/data/levels — mọi file .tmx thật', () => {
     }
   });
 
-  it('gom thành chapter 1: 9 phòng đúng thứ tự, door trỏ tới phòng có thật, boss ở phòng 9', () => {
+  it('groups into chapter 1: 9 rooms in order, doors point at real rooms, boss in room 9', () => {
     const chapter = loadChapterOne();
 
     expect(chapter.chapter).toBe(1);
@@ -299,26 +299,26 @@ describe('assets/resources/data/levels — mọi file .tmx thật', () => {
     expect(bossRoom?.bossStart).toEqual({ x: 16, y: 5 });
   });
 
-  it('mỗi .tmx trỏ tới .tsx có thật, và .tsx trỏ tới PNG có thật', () => {
+  it('every .tmx points at a real .tsx, and the .tsx points at a real PNG', () => {
     for (const file of files) {
       const root = parseXml(file.xml);
       const tileset = firstChild(root, 'tileset');
       const source = tileset?.attributes['source'];
-      expect(source, `${file.name} thiếu <tileset source>`).toBeDefined();
+      expect(source, `${file.name} is missing <tileset source>`).toBeDefined();
       if (source === undefined) continue;
 
       const tsxPath = resolve(dirname(file.path), source);
-      expect(existsSync(tsxPath), `${file.name}: không thấy ${tsxPath}`).toBe(true);
+      expect(existsSync(tsxPath), `${file.name}: cannot find ${tsxPath}`).toBe(true);
 
       const tsx = parseXml(readFileSync(tsxPath, 'utf8'));
       const image = firstChild(tsx, 'image');
       const imageSource = image?.attributes['source'];
-      expect(imageSource, `${tsxPath} thiếu <image source>`).toBeDefined();
+      expect(imageSource, `${tsxPath} is missing <image source>`).toBeDefined();
       if (imageSource === undefined) continue;
 
       const pngPath = resolve(dirname(tsxPath), imageSource);
-      expect(existsSync(pngPath), `${tsxPath}: không thấy ${pngPath}`).toBe(true);
-      // Tileset phải nằm trong asset DB (`game/assets/...`), nếu không build không import.
+      expect(existsSync(pngPath), `${tsxPath}: cannot find ${pngPath}`).toBe(true);
+      // A tileset must live inside the asset DB (`game/assets/...`), otherwise the build does not import it.
       expect(pngPath.startsWith(resolve(CHAPTER_ONE_DIR, '../../../..'))).toBe(true);
     }
   });

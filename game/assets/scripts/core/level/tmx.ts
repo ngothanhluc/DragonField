@@ -1,41 +1,41 @@
 /**
- * `.tmx` → `LevelData`. **Một** parser cho cả vitest (Node) và runtime Cocos:
- * bootstrap lấy XML từ `TiledMapAsset.tmxXmlStr` rồi gọi đúng hàm này, và test
- * đọc file `.tmx` thật trên đĩa. Không có đường parse thứ hai để lệch nhau.
+ * `.tmx` → `LevelData`. **One** parser for both vitest (Node) and the Cocos runtime:
+ * bootstrap takes the XML from `TiledMapAsset.tmxXmlStr` and calls this same function, and tests
+ * read real `.tmx` files from disk. There is no second parse path to drift.
  *
- * ## Quy ước file phòng (`assets/resources/data/levels/chapter-<n>/room-<r>.tmx`)
+ * ## Room file convention (`assets/resources/data/levels/chapter-<n>/room-<r>.tmx`)
  *
  * - Map: `orientation="orthogonal"`, `width=32`, `height=18`, `tilewidth=16`,
- *   `tileheight=16`. Sai kích thước là lỗi: mỗi phòng đúng 1 màn hình 512×288.
- * - Tile layer: các `<layer>` (thường chỉ 1 layer `floor`) do component
- *   `TiledMap` vẽ. Parser **không** suy ra va chạm từ tile; dữ liệu va chạm nằm
- *   ở object layer. Data layer nên là `encoding="csv"` (parser kiểm tra đủ ô khi
- *   gặp CSV, còn base64/gzip thì để engine lo — không phải định dạng ta author).
- * - Object layer (tên gì cũng được, thường `objects`): mỗi object nhận diện bằng
- *   **`name`**, toạ độ tính bằng pixel của Tiled (16 px = 1 tile):
+ *   `tileheight=16`. Wrong dimensions are an error: each room is exactly one 512×288 screen.
+ * - Tile layers: the `<layer>`s (usually just one `floor` layer) are drawn by the
+ *   `TiledMap` component. The parser does **not** infer collision from tiles; collision data lives
+ *   in the object layer. The data layer should be `encoding="csv"` (the parser checks the cell count when it
+ *   sees CSV; base64/gzip is left to the engine — not a format we author).
+ * - Object layers (any name, usually `objects`): each object is identified by
+ *   **`name`**, coordinates are Tiled pixels (16 px = 1 tile):
  *
- *   | name         | kiểu     | thuộc tính bắt buộc                 | ý nghĩa |
+ *   | name         | type     | required properties                 | meaning |
  *   |--------------|----------|-------------------------------------|---------|
- *   | `playerStart`| point    | —                                   | vị trí player, đúng 1 object |
- *   | `spawn`      | point    | `role`, `wave` (int ≥ 1); `elite` (bool, mặc định false) | 1 enemy; `role` ∈ chaser/caster/tank |
- *   | `obstacle`   | rect     | `kind` ∈ pillar/wall/pit            | vật cản: x/y/width/height là pixel |
- *   | `door`       | point    | `toRoom` (int ≥ 1) hoặc không có    | không có `toRoom` = cửa cuối chapter (`null`) |
- *   | `bossStart`  | point    | — (chỉ phòng boss)                  | chỗ đứng của boss; mặc định (16, 5) |
+ *   | `playerStart`| point    | —                                   | player position, exactly 1 object |
+ *   | `spawn`      | point    | `role`, `wave` (int ≥ 1); `elite` (bool, default false) | 1 enemy; `role` ∈ chaser/caster/tank |
+ *   | `obstacle`   | rect     | `kind` ∈ pillar/wall/pit            | obstacle: x/y/width/height are pixels |
+ *   | `door`       | point    | `toRoom` (int ≥ 1) or absent        | no `toRoom` = chapter exit door (`null`) |
+ *   | `bossStart`  | point    | — (boss room only)                  | where the boss stands; default (16, 5) |
  *
- *   Object tên khác ⇒ **lỗi**, để typo không âm thầm thành object bị bỏ qua.
- *   `rotation` phải bằng 0 (collision là hình chữ nhật trục song song).
+ *   An object with any other name ⇒ **error**, so a typo cannot silently become a skipped object.
+ *   `rotation` must be 0 (collisions are axis-aligned rectangles).
  * - Map properties:
  *
- *   | tên          | kiểu   | bắt buộc | ý nghĩa |
+ *   | name         | type   | required | meaning |
  *   |--------------|--------|----------|---------|
- *   | `chapter`    | int    | có       | 1..3 |
- *   | `room`       | int    | có       | ≥ 1, không trùng trong cùng thư mục |
- *   | `isBossRoom` | bool   | không    | mặc định false |
- *   | `boss`       | string | khi boss | tên sprite trong `BOSSES` (vd `TenguBlue`) |
+ *   | `chapter`    | int    | yes      | 1..3 |
+ *   | `room`       | int    | yes      | ≥ 1, unique within the same folder |
+ *   | `isBossRoom` | bool   | no       | defaults to false |
+ *   | `boss`       | string | for boss | sprite name in `BOSSES` (e.g. `TenguBlue`) |
  *
- * - Wave: các `spawn` có cùng `wave` gộp thành một wave; chỉ số phải liền mạch
- *   `1..N` (thiếu wave 2 mà có wave 3 là lỗi). Thêm phòng = thêm file `.tmx`,
- *   không sửa code; tổng số phòng suy ra từ số file (`chapterFromLevels`).
+ * - Waves: `spawn`s sharing the same `wave` merge into one wave; the indices must be contiguous
+ *   `1..N` (wave 3 without wave 2 is an error). Adding a room = adding a `.tmx` file,
+ *   no code change; the total room count is derived from the file count (`chapterFromLevels`).
  */
 import type { Vec2 } from '../math/vec2';
 import {
@@ -50,7 +50,7 @@ import type { BossInfo, Door, EnemyRole, EnemySpawn, LevelData, ObstacleKind, Wa
 import { childrenNamed, elementText, firstChild, parseXml } from './xml';
 import type { XmlElement } from './xml';
 
-/** Tên object trong object layer — xem bảng quy ước ở đầu file. */
+/** Object names in the object layer — see the convention table at the top of the file. */
 export const TMX_OBJECTS = {
   playerStart: 'playerStart',
   spawn: 'spawn',
@@ -59,7 +59,7 @@ export const TMX_OBJECTS = {
   bossStart: 'bossStart',
 } as const;
 
-/** Gom toàn bộ lỗi rồi ném một `Error` duy nhất (cùng kiểu `level-data.ts`). */
+/** Collect every problem then throw a single `Error` (same shape as `level-data.ts`). */
 class ProblemList {
   private readonly items: string[] = [];
 
@@ -75,7 +75,7 @@ class ProblemList {
     if (this.items.length === 0) return;
 
     const details = this.items.map((item) => `  - ${item}`).join('\n');
-    throw new Error(`${source}: TMX không hợp lệ (${this.items.length} lỗi)\n${details}`);
+    throw new Error(`${source}: invalid TMX (${this.items.length} problem(s))\n${details}`);
   }
 }
 
@@ -87,10 +87,10 @@ interface TmxProperty {
 }
 
 function describe(value: string | undefined): string {
-  return value === undefined ? 'thiếu' : JSON.stringify(value);
+  return value === undefined ? 'missing' : JSON.stringify(value);
 }
 
-/** Thuộc tính dạng chuỗi, bắt buộc. */
+/** String attribute, required. */
 function requiredAttribute(
   element: XmlElement,
   name: string,
@@ -99,13 +99,13 @@ function requiredAttribute(
 ): string | null {
   const value = element.attributes[name];
   if (value === undefined || value.trim() === '') {
-    problems.add(path, `thiếu thuộc tính "${name}"`);
+    problems.add(path, `missing attribute "${name}"`);
     return null;
   }
   return value;
 }
 
-/** Thuộc tính dạng số (hữu hạn), bắt buộc. */
+/** Numeric attribute (finite), required. */
 function requiredNumber(
   element: XmlElement,
   name: string,
@@ -117,13 +117,13 @@ function requiredNumber(
 
   const value = Number(raw);
   if (!Number.isFinite(value)) {
-    problems.add(path, `thuộc tính "${name}" phải là số, nhận ${JSON.stringify(raw)}`);
+    problems.add(path, `attribute "${name}" must be a number, got ${JSON.stringify(raw)}`);
     return null;
   }
   return value;
 }
 
-/** Thuộc tính dạng số, có giá trị mặc định khi vắng mặt. */
+/** Numeric attribute, with a default when absent. */
 function optionalNumber(
   element: XmlElement,
   name: string,
@@ -136,15 +136,15 @@ function optionalNumber(
 
   const value = Number(raw);
   if (!Number.isFinite(value)) {
-    problems.add(path, `thuộc tính "${name}" phải là số, nhận ${JSON.stringify(raw)}`);
+    problems.add(path, `attribute "${name}" must be a number, got ${JSON.stringify(raw)}`);
     return fallback;
   }
   return value;
 }
 
 /**
- * `<properties>` trực tiếp của `element` → map tên → property thô.
- * Property trùng tên là lỗi: `get` sẽ chỉ trả một cái, còn cái kia im lặng mất.
+ * Direct `<properties>` of `element` → map name → raw property.
+ * Duplicate property names are an error: `get` would return one and silently drop the other.
  */
 function readProperties(
   element: XmlElement,
@@ -157,7 +157,7 @@ function readProperties(
 
   container.children.forEach((property, index) => {
     if (property.name !== 'property') {
-      problems.add(`${path}.properties[${index}]`, `chỉ nhận <property>, gặp <${property.name}>`);
+      problems.add(`${path}.properties[${index}]`, `only <property> allowed, found <${property.name}>`);
       return;
     }
 
@@ -166,11 +166,11 @@ function readProperties(
     if (name === null) return;
 
     if (result.has(name)) {
-      problems.add(propertyPath, `property "${name}" bị khai báo trùng`);
+      problems.add(propertyPath, `property "${name}" is declared more than once`);
       return;
     }
 
-    // Tiled lưu bool/int dưới dạng attribute `value`; kiểu nằm ở `type`.
+    // Tiled stores bool/int as a `value` attribute; the type lives in `type`.
     result.set(name, {
       name,
       raw: property.attributes['value'] ?? '',
@@ -191,13 +191,13 @@ function readIntegerProperty(
 ): number | null {
   const property = properties.get(name);
   if (property === undefined) {
-    if (required) problems.add(namePath, `thiếu property "${name}"`);
+    if (required) problems.add(namePath, `missing property "${name}"`);
     return null;
   }
 
   const raw = property.raw.trim();
   if (property.type !== 'int' || !/^-?\d+$/.test(raw)) {
-    problems.add(property.path, `phải là int, nhận type=${JSON.stringify(property.type)} value=${JSON.stringify(property.raw)}`);
+    problems.add(property.path, `must be an int, got type=${JSON.stringify(property.type)} value=${JSON.stringify(property.raw)}`);
     return null;
   }
 
@@ -217,7 +217,7 @@ function readBooleanProperty(
   if (property.type !== 'bool' || (raw !== 'true' && raw !== 'false')) {
     problems.add(
       property.path,
-      `phải là bool, nhận type=${JSON.stringify(property.type)} value=${JSON.stringify(property.raw)}`,
+      `must be a bool, got type=${JSON.stringify(property.type)} value=${JSON.stringify(property.raw)}`,
     );
     return fallback;
   }
@@ -234,7 +234,7 @@ function readStringProperty(
   if (property === undefined) return null;
 
   if (property.type !== 'string') {
-    problems.add(property.path, `phải là string, nhận type=${JSON.stringify(property.type)}`);
+    problems.add(property.path, `must be a string, got type=${JSON.stringify(property.type)}`);
     return null;
   }
 
@@ -249,7 +249,7 @@ function isObstacleKind(value: string): value is ObstacleKind {
   return (OBSTACLE_KINDS as readonly string[]).includes(value);
 }
 
-/** Toạ độ pixel Tiled → tile unit. Không làm tròn: Tiled cho phép nửa tile. */
+/** Tiled pixel coordinates → tile units. No rounding: Tiled allows half tiles. */
 function pixelsToTiles(value: number): number {
   return value / TILE_SIZE_PX;
 }
@@ -275,14 +275,14 @@ function readObjects(
 
   const groups = childrenNamed(map, 'objectgroup');
   if (groups.length === 0) {
-    problems.add('map', 'cần ít nhất một <objectgroup> (playerStart, spawn, obstacle, door)');
+    problems.add('map', 'at least one <objectgroup> is required (playerStart, spawn, obstacle, door)');
     return result;
   }
 
-  // `<group>` lồng nhau không được hỗ trợ: object bên trong sẽ bị bỏ qua im lặng.
+  // Nested `<group>` is not supported: objects inside would be silently skipped.
   for (const child of map.children) {
     if (child.name === 'group') {
-      problems.add('map', 'không hỗ trợ <group> lồng nhau; để objectgroup ở cấp map');
+      problems.add('map', 'nested <group> is not supported; put objectgroup at the map level');
     }
   }
 
@@ -292,13 +292,13 @@ function readObjects(
     const groupPath = `objectgroup[${groupIndex}](${groupName})`;
     const groupProperties = readProperties(group, groupPath, problems);
     if (groupProperties.size > 0) {
-      problems.add(groupPath, 'objectgroup không dùng property; khai báo trên từng object');
+      problems.add(groupPath, 'objectgroups do not take properties; declare them on each object');
     }
 
     group.children.forEach((element, objectIndex) => {
       if (element.name !== 'object') {
         const path = `${groupPath}.children[${objectIndex}]`;
-        problems.add(path, `chỉ nhận <object>, gặp <${element.name}>`);
+        problems.add(path, `only <object> allowed, found <${element.name}>`);
         return;
       }
 
@@ -308,7 +308,7 @@ function readObjects(
 
       const rotation = optionalNumber(element, 'rotation', 0, path, problems);
       if (rotation !== 0) {
-        problems.add(path, `rotation phải bằng 0 (collision là hình chữ nhật), nhận ${rotation}`);
+        problems.add(path, `rotation must be 0 (collisions are rectangles), got ${rotation}`);
         return;
       }
 
@@ -327,7 +327,7 @@ function readObjects(
     switch (name) {
       case TMX_OBJECTS.playerStart: {
         if (result.playerStart !== null) {
-          problems.add(path, 'chỉ được có đúng một playerStart');
+          problems.add(path, 'exactly one playerStart is allowed');
           break;
         }
         result.playerStart = { x: pixelsToTiles(x), y: pixelsToTiles(y) };
@@ -336,7 +336,7 @@ function readObjects(
 
       case TMX_OBJECTS.bossStart: {
         if (result.bossStart !== null) {
-          problems.add(path, 'chỉ được có tối đa một bossStart');
+          problems.add(path, 'at most one bossStart is allowed');
           break;
         }
         result.bossStart = { x: pixelsToTiles(x), y: pixelsToTiles(y) };
@@ -346,18 +346,18 @@ function readObjects(
       case TMX_OBJECTS.spawn: {
         const role = readStringProperty(properties, 'role', problems);
         if (role === null) {
-          problems.add(path, 'spawn cần property "role" (chaser|caster|tank)');
+          problems.add(path, 'spawn requires the "role" property (chaser|caster|tank)');
           break;
         }
         if (!isEnemyRole(role)) {
-          problems.add(path, `role không hợp lệ ${JSON.stringify(role)}; chỉ nhận ${ENEMY_ROLES.join(', ')}`);
+          problems.add(path, `invalid role ${JSON.stringify(role)}; expected one of ${ENEMY_ROLES.join(', ')}`);
           break;
         }
 
         const wave = readIntegerProperty(properties, 'wave', path, true, problems);
         if (wave === null) break;
         if (wave < 1) {
-          problems.add(path, `wave phải >= 1, nhận ${wave}`);
+          problems.add(path, `wave must be >= 1, got ${wave}`);
           break;
         }
 
@@ -371,11 +371,11 @@ function readObjects(
       case TMX_OBJECTS.obstacle: {
         const kind = readStringProperty(properties, 'kind', problems);
         if (kind === null) {
-          problems.add(path, `obstacle cần property "kind" (${OBSTACLE_KINDS.join('|')})`);
+          problems.add(path, `obstacle requires the "kind" property (${OBSTACLE_KINDS.join('|')})`);
           break;
         }
         if (!isObstacleKind(kind)) {
-          problems.add(path, `kind không hợp lệ ${JSON.stringify(kind)}; chỉ nhận ${OBSTACLE_KINDS.join(', ')}`);
+          problems.add(path, `invalid kind ${JSON.stringify(kind)}; expected one of ${OBSTACLE_KINDS.join(', ')}`);
           break;
         }
 
@@ -403,23 +403,23 @@ function readObjects(
       default:
         problems.add(
           path,
-          `object tên ${JSON.stringify(name)} không có trong quy ước ` +
+          `object name ${JSON.stringify(name)} is not in the convention ` +
             `(${Object.values(TMX_OBJECTS).join(', ')})`,
         );
     }
   }
 
   if (result.playerStart === null) {
-    problems.add('map', 'thiếu object "playerStart"');
+    problems.add('map', 'missing object "playerStart"');
   }
 
-  // Wave phải liền mạch 1..N: đứt quãng nghĩa là có spawn bị gán nhầm wave.
+  // Waves must be contiguous 1..N: a gap means some spawn got the wrong wave.
   const indices = Array.from(waveIndices.keys()).sort((a, b) => a - b);
   indices.forEach((index, position) => {
     if (index !== position + 1) {
       problems.add(
         'map',
-        `wave phải liền mạch từ 1; thiếu wave ${position + 1} (đang có ${indices.join(', ')})`,
+        `wave must be contiguous from 1; missing wave ${position + 1} (have ${indices.join(', ')})`,
       );
     }
     const enemies = waveIndices.get(index);
@@ -427,17 +427,17 @@ function readObjects(
   });
 
   if (result.waves.length === 0) {
-    problems.add('map', 'cần ít nhất một object "spawn"');
+    problems.add('map', 'at least one "spawn" object is required');
   }
 
   return result;
 }
 
-/** Kiểm tra tile layer: đúng kích thước map, CSV thì đủ ô. */
+/** Check the tile layer: correct map size, and enough cells for CSV. */
 function checkTileLayers(map: XmlElement, problems: ProblemList): void {
   const layers = childrenNamed(map, 'layer');
   if (layers.length === 0) {
-    problems.add('map', 'cần ít nhất một <layer> sàn để TiledMap vẽ phòng');
+    problems.add('map', 'at least one <layer> floor is required for TiledMap to draw the room');
     return;
   }
 
@@ -448,15 +448,15 @@ function checkTileLayers(map: XmlElement, problems: ProblemList): void {
     const width = requiredNumber(layer, 'width', path, problems);
     const height = requiredNumber(layer, 'height', path, problems);
     if (width !== null && width !== ROOM_COLS) {
-      problems.add(path, `width phải bằng ${ROOM_COLS}, nhận ${width}`);
+      problems.add(path, `width must equal ${ROOM_COLS}, got ${width}`);
     }
     if (height !== null && height !== ROOM_ROWS) {
-      problems.add(path, `height phải bằng ${ROOM_ROWS}, nhận ${height}`);
+      problems.add(path, `height must equal ${ROOM_ROWS}, got ${height}`);
     }
 
     const data = firstChild(layer, 'data');
     if (data === null) {
-      problems.add(path, 'thiếu <data>');
+      problems.add(path, 'missing <data>');
       return;
     }
 
@@ -466,28 +466,28 @@ function checkTileLayers(map: XmlElement, problems: ProblemList): void {
     if (values.length !== ROOM_COLS * ROOM_ROWS) {
       problems.add(
         path,
-        `CSV có ${values.length} ô, cần ${ROOM_COLS * ROOM_ROWS} (${ROOM_COLS}×${ROOM_ROWS})`,
+        `CSV has ${values.length} cells, expected ${ROOM_COLS * ROOM_ROWS} (${ROOM_COLS}×${ROOM_ROWS})`,
       );
       return;
     }
 
     const invalid = values.find((value) => !/^\d+$/.test(value.trim()));
     if (invalid !== undefined) {
-      problems.add(path, `CSV có giá trị không phải số nguyên không âm: ${JSON.stringify(invalid)}`);
+      problems.add(path, `CSV has a value that is not a non-negative integer: ${JSON.stringify(invalid)}`);
     }
   });
 }
 
 export interface ParseTmxOptions {
-  /** Tên file/asset để message lỗi chỉ đúng chỗ. */
+  /** File/asset name so error messages point at the right place. */
   readonly source?: string;
 }
 
 /**
- * Parse một file `.tmx` thành `LevelData` đã validate.
+ * Parse one `.tmx` file into a validated `LevelData`.
  *
- * Ném `Error` gồm **mọi** lỗi tìm thấy (cú pháp XML, quy ước TMX, rồi schema
- * `LevelData`), để sửa một lần thay vì mò từng lỗi.
+ * Throws an `Error` with **every** problem found (XML syntax, TMX convention, then the
+ * `LevelData` schema) so you can fix all at once instead of hunting one at a time.
  */
 export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): LevelData {
   const source = options.source ?? 'tmx';
@@ -502,13 +502,13 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
   }
 
   if (root.name !== 'map') {
-    problems.add('map', `phần tử gốc phải là <map>, nhận <${root.name}>`);
+    problems.add('map', `root element must be <map>, got <${root.name}>`);
     problems.throwIfAny(source);
   }
 
   const orientation = root.attributes['orientation'];
   if (orientation !== 'orthogonal') {
-    problems.add('map', `orientation phải là "orthogonal", nhận ${describe(orientation)}`);
+    problems.add('map', `orientation must be "orthogonal", got ${describe(orientation)}`);
   }
 
   const width = requiredNumber(root, 'width', 'map', problems);
@@ -517,16 +517,16 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
   const tileHeight = requiredNumber(root, 'tileheight', 'map', problems);
 
   if (width !== null && width !== ROOM_COLS) {
-    problems.add('map', `width phải bằng ${ROOM_COLS}, nhận ${width}`);
+    problems.add('map', `width must equal ${ROOM_COLS}, got ${width}`);
   }
   if (height !== null && height !== ROOM_ROWS) {
-    problems.add('map', `height phải bằng ${ROOM_ROWS}, nhận ${height}`);
+    problems.add('map', `height must equal ${ROOM_ROWS}, got ${height}`);
   }
   if (tileWidth !== null && tileWidth !== TILE_SIZE_PX) {
-    problems.add('map', `tilewidth phải bằng ${TILE_SIZE_PX}, nhận ${tileWidth}`);
+    problems.add('map', `tilewidth must equal ${TILE_SIZE_PX}, got ${tileWidth}`);
   }
   if (tileHeight !== null && tileHeight !== TILE_SIZE_PX) {
-    problems.add('map', `tileheight phải bằng ${TILE_SIZE_PX}, nhận ${tileHeight}`);
+    problems.add('map', `tileheight must equal ${TILE_SIZE_PX}, got ${tileHeight}`);
   }
 
   checkTileLayers(root, problems);
@@ -538,10 +538,10 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
   const bossName = readStringProperty(mapProperties, 'boss', problems);
 
   if (chapter !== null && (chapter < 1 || chapter > 3)) {
-    problems.add('map.properties.chapter', `phải là số nguyên 1..3, nhận ${chapter}`);
+    problems.add('map.properties.chapter', `must be an integer 1..3, got ${chapter}`);
   }
   if (room !== null && room < 1) {
-    problems.add('map.properties.room', `phải là số nguyên >= 1, nhận ${room}`);
+    problems.add('map.properties.room', `must be an integer >= 1, got ${room}`);
   }
 
   const objects = readObjects(root, problems);

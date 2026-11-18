@@ -14,30 +14,30 @@ const charge: EnemyAction = {
 };
 const stagger: EnemyAction = { kind: 'stagger', untilMs: 1200 };
 
-describe('nextActionStartedMs — mốc chu kỳ đòn', () => {
-  it('telegraph bắt đầu và đòn được thả đều đặt mốc mới', () => {
+describe('nextActionStartedMs — attack cycle timestamp', () => {
+  it('starting a telegraph and releasing an attack both set a new timestamp', () => {
     expect(nextActionStartedMs(idle, telegraph, 5000, 1000)).toBe(5000);
     expect(nextActionStartedMs(walk, telegraph, 5000, 1000)).toBe(5000);
     expect(nextActionStartedMs(telegraph, idle, 5500, 1000)).toBe(5500);
     expect(nextActionStartedMs(telegraph, charge, 5500, 1000)).toBe(5500);
   });
 
-  it('stagger KHÔNG reset cooldown (bug: bị bắn liên tục là enemy không ra đòn)', () => {
-    // Đang đi bộ (mốc 1000), trúng đạn ở 1100 và 1250, hết choáng ở 1250/1400.
+  it('stagger does NOT reset the cooldown (bug: under fire the enemy never attacks)', () => {
+    // Walking (timestamp 1000), hit at 1100 and 1250, stun over at 1250/1400.
     expect(nextActionStartedMs(walk, stagger, 1100, 1000)).toBe(1000);
     expect(nextActionStartedMs(stagger, walk, 1250, 1000)).toBe(1000);
     expect(nextActionStartedMs(walk, stagger, 1400, 1000)).toBe(1000);
-    // Sau 900 ms kể từ mốc cũ, cooldown đã hết dù bị choáng nhiều lần.
+    // 900 ms after the old timestamp the cooldown has elapsed despite repeated stuns.
     expect(1900 - 1000).toBeGreaterThanOrEqual(900);
   });
 
-  it('stagger cắt ngang telegraph thì lần ra đòn kế tính từ mốc cũ', () => {
-    // Telegraph bắt đầu 1000; trúng đạn ở 1200 rồi choáng tới 1350.
+  it('a stagger crossing a telegraph makes the next attack count from the old timestamp', () => {
+    // Telegraph starts at 1000; hit at 1200, stun lasts until 1350.
     expect(nextActionStartedMs(telegraph, stagger, 1200, 1000)).toBe(1000);
     expect(nextActionStartedMs(stagger, idle, 1350, 1000)).toBe(1000);
   });
 
-  it('các chuyển đổi thường (walk ↔ idle, charge → idle) giữ nguyên mốc', () => {
+  it('ordinary transitions (walk ↔ idle, charge → idle) keep the timestamp', () => {
     expect(nextActionStartedMs(walk, idle, 5000, 1000)).toBe(1000);
     expect(nextActionStartedMs(idle, walk, 5000, 1000)).toBe(1000);
     expect(nextActionStartedMs(charge, idle, 5000, 1000)).toBe(1000);

@@ -15,12 +15,12 @@ const MANIFEST = join(HERE, '..', '..', 'assets', 'resources', 'data', 'water-la
 const layout = parseWaterLayout(JSON.parse(readFileSync(MANIFEST, 'utf8')) as unknown);
 
 describe('water-layout.json', () => {
-  it('chỉ có chapter 2 và đúng 9 phòng', () => {
+  it('has only chapter 2 and exactly 9 rooms', () => {
     expect(Object.keys(layout.rooms)).toEqual(['2']);
     expect(Object.keys(layout.rooms['2'] ?? {})).toHaveLength(9);
   });
 
-  it('mọi area nằm trong phòng, kích thước dương và kind hợp lệ', () => {
+  it('every area is inside the room, has a positive size and a valid kind', () => {
     for (const [chapter, byRoom] of Object.entries(layout.rooms)) {
       for (const [room, areas] of Object.entries(byRoom)) {
         for (const area of areas) {
@@ -34,22 +34,22 @@ describe('water-layout.json', () => {
     }
   });
 
-  it('mỗi phòng có sông và thác (theme sông/thác GDD §8)', () => {
+  it('every room has a river and a waterfall (river/waterfall theme, GDD §8)', () => {
     for (const [room, areas] of Object.entries(layout.rooms['2'] ?? {})) {
-      expect(areas.some((area) => area.kind === 'river'), `room ${room} thiếu sông`).toBe(true);
+      expect(areas.some((area) => area.kind === 'river'), `room ${room} is missing a river`).toBe(true);
     }
     const waterfalls = Object.values(layout.rooms['2'] ?? {}).flat();
     expect(waterfalls.filter((area) => area.kind === 'waterfall').length).toBeGreaterThan(2);
   });
 
-  it('waterAreasFor trả đúng phòng và rỗng cho chapter 1/3', () => {
+  it('waterAreasFor returns the right room and is empty for chapters 1/3', () => {
     expect(waterAreasFor(layout, 1, 1)).toEqual([]);
     expect(waterAreasFor(layout, 3, 1)).toEqual([]);
     expect(waterAreasFor(layout, 2, 1).length).toBeGreaterThan(0);
     expect(waterAreasFor(layout, 2, 99)).toEqual([]);
   });
 
-  it('areaContains đúng biên', () => {
+  it('areaContains respects the boundary', () => {
     const area = { kind: 'river' as const, x: 4, y: 5, width: 3, height: 2 };
     expect(areaContains(area, 4, 5)).toBe(true);
     expect(areaContains(area, 6, 6)).toBe(true);

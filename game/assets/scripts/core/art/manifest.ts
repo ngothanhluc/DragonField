@@ -1,82 +1,82 @@
 /**
- * Manifest animation — nguồn duy nhất cho đường dẫn sprite.
+ * Animation manifest — the single source of sprite paths.
  *
- * Code game chỉ tham chiếu animation bằng key logic (`player.idle.down`), không bao giờ ghép
- * đường dẫn file. Dữ liệu thật nằm ở `assets/resources/data/animations.json`; module này giữ type,
- * validate và tra cứu. Thuần TS: không import `cc`, test được bằng vitest.
+ * Game code only refers to animations by logical key (`player.idle.down`), never by
+ * assembling file paths. The real data lives in `assets/resources/data/animations.json`;
+ * this module holds the type, validation and lookup. Pure TS: no `cc` import, testable with vitest.
  *
- * Key: `<actor>.<animation>.<direction>` cho animation có hướng (`player.walk.left`),
- * `<actor>.<animation>` cho animation không hướng (`player.dead`, `tengu.trans`).
+ * Key: `<actor>.<animation>.<direction>` for directional animations (`player.walk.left`),
+ * `<actor>.<animation>` for non-directional ones (`player.dead`, `tengu.trans`).
  *
- * Cách cắt sheet (pack không có atlas JSON, mọi sheet đều cắt theo grid):
- * - `layout: "grid"`: **cột = direction** theo đúng thứ tự `directions` (pack dùng D/U/L/R),
- *   **hàng = frame**. Ví dụ Idle.png 128×128, frame 32×32, 4 directions = 4 cột × 4 hàng.
- *   Sheet một cột (Dead.png 32×64) cũng là grid với `directions: []`.
- * - `layout: "strip"`: một hàng duy nhất, frame chạy từ trái sang phải (sheet boss).
+ * How sheets are sliced (the pack has no atlas JSON, every sheet is cut on a grid):
+ * - `layout: "grid"`: **column = direction** in exactly the order of `directions` (the pack uses D/U/L/R),
+ *   **row = frame**. Example Idle.png 128×128, frame 32×32, 4 directions = 4 columns × 4 rows.
+ *   A single-column sheet (Dead.png 32×64) is also a grid with `directions: []`.
+ * - `layout: "strip"`: a single row, frames run left to right (boss sheets).
  *
- * `sheet` là đường dẫn tương đối so với `game/assets/` (ví dụ `art/characters/ninja-green/Idle.png`),
- * KHÔNG phải đường dẫn trong pack gốc: pack nằm ở `art-source/` và bị gitignore, chỉ subset
- * dùng thật mới được copy vào `game/assets/art/`.
+ * `sheet` is a path relative to `game/assets/` (e.g. `art/characters/ninja-green/Idle.png`),
+ * NOT a path inside the original pack: the pack lives in `art-source/` and is gitignored, only the
+ * subset actually used is copied into `game/assets/art/`.
  */
 
-/** 4 hướng có art thật trong pack. */
+/** The 4 directions with real art in the pack. */
 export type Direction = 'down' | 'up' | 'left' | 'right';
 
-/** Thứ tự cột chuẩn của pack Ninja Adventure: D / U / L / R. */
+/** The pack's canonical column order from Ninja Adventure: D / U / L / R. */
 export const DIRECTIONS: readonly Direction[] = ['down', 'up', 'left', 'right'];
 
-/** Cách đọc sheet: xem mô tả đầu file. */
+/** How to read a sheet: see the file header. */
 export type SheetLayout = 'grid' | 'strip';
 
-/** Một animation đã cắt được từ sheet. */
+/** One animation sliced out of a sheet. */
 export interface SpriteEntry {
-  /** Đường dẫn tương đối so với `game/assets/`. */
+  /** Path relative to `game/assets/`. */
   readonly sheet: string;
   readonly frameWidth: number;
   readonly frameHeight: number;
   readonly layout: SheetLayout;
-  /** Rỗng khi animation không có hướng. */
+  /** Empty when the animation has no direction. */
   readonly directions: readonly Direction[];
-  /** Số frame của **một** direction (hoặc tổng số frame nếu không hướng). */
+  /** Frame count of **one** direction (or the total frame count when there is no direction). */
   readonly frames: number;
   readonly fps: number;
   readonly loop: boolean;
   /**
-   * Cách neo frame vào node: actor đứng bằng **chân** (`feet`), FX nổ giữa
-   * (`center`). Mặc định `feet` khi entry cũ chưa khai.
+   * How a frame anchors to its node: actors stand on their **feet** (`feet`), explosions are
+   * centred (`center`). Defaults to `feet` for older entries that do not declare it.
    */
   readonly anchor: SpriteAnchor;
   /**
-   * Số pixel trong suốt từ đáy frame tới pixel đặc thấp nhất (đọc từ PNG).
-   * `SpriteAnimator` dùng `footPx / frameHeight` làm anchor dọc, nên frame
-   * 96×48 và 96×96 vẫn đặt chân lên cùng một đường.
+   * Number of transparent pixels from the bottom of the frame to the lowest solid pixel (read from the PNG).
+   * `SpriteAnimator` uses `footPx / frameHeight` as the vertical anchor, so a 96×48 and a
+   * 96×96 frame still put their feet on the same line.
    */
   readonly footPx: number;
 }
 
-/** Cách neo một sprite vào node. */
+/** How a sprite anchors to its node. */
 export type SpriteAnchor = 'feet' | 'center';
 
 
-/** Nội dung `assets/resources/data/animations.json` sau khi validate. */
+/** Contents of `assets/resources/data/animations.json` after validation. */
 export interface AnimationManifest {
   readonly version: number;
   readonly sprites: Readonly<Record<string, SpriteEntry>>;
 }
 
-/** Phiên bản schema mà module này hiểu. */
+/** Schema version this module understands. */
 export const MANIFEST_VERSION = 1;
 
 /**
- * Định dạng key hợp lệ: các segment `[a-z0-9-]` nối bằng dấu chấm, ít nhất 2 segment.
- * Cấm chữ hoa, khoảng trắng, gạch dưới, `/` để key không thể trượt thành đường dẫn file.
+ * Valid key format: `[a-z0-9-]` segments joined by dots, at least 2 segments.
+ * No uppercase, whitespace, underscores or `/`, so a key can never drift into a file path.
  */
 export const ANIMATION_KEY_PATTERN =
   /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/;
 
 /**
- * Key bắt buộc của M6, gom theo actor. Test dùng bảng này để chứng minh **mỗi
- * vai trò** có đủ bộ animation tối thiểu, không chỉ "manifest có nhiều key".
+ * The required M6 keys, grouped by actor. Tests use this table to prove **every
+ * role** has its minimum animation set, not just that "the manifest has many keys".
  */
 export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[]>> = {
   player: [
@@ -134,38 +134,38 @@ function monsterAnimations(actor: string): readonly string[] {
   ];
 }
 
-/** Danh sách phẳng của mọi key bắt buộc — dùng cho test "resolve được". */
+/** Flat list of every required key — used by the "can be resolved" test. */
 export const REQUIRED_KEYS: readonly string[] = Object.values(REQUIRED_ACTOR_ANIMATIONS).flat();
 
-/** Một key bắt buộc. */
+/** One required key. */
 export type RequiredKey = string;
 
 
 /**
- * Validate JSON thô và trả manifest đã chuẩn hoá.
- * Ném **một** `Error` liệt kê **toàn bộ** lỗi tìm được, không dừng ở lỗi đầu tiên.
+ * Validate raw JSON and return a normalised manifest.
+ * Throws **one** `Error` listing **every** problem found, not just the first one.
  */
 export function validateManifest(raw: unknown): AnimationManifest {
   const problems: string[] = [];
 
   if (!isRecord(raw)) {
-    throw new Error(formatProblems([`root phải là object, nhận ${describeValue(raw)}`]));
+    throw new Error(formatProblems([`root must be an object, got ${describeValue(raw)}`]));
   }
 
   if (raw['version'] !== MANIFEST_VERSION) {
-    problems.push(`version phải là ${MANIFEST_VERSION}, nhận ${describeValue(raw['version'])}`);
+    problems.push(`version must be ${MANIFEST_VERSION}, got ${describeValue(raw['version'])}`);
   }
 
   const spritesRaw = raw['sprites'];
   if (!isRecord(spritesRaw)) {
-    problems.push(`sprites phải là object map key → entry, nhận ${describeValue(spritesRaw)}`);
-    // Không có gì để duyệt tiếp: ném luôn nhưng vẫn kèm lỗi version nếu có.
+    problems.push(`sprites must be an object map key → entry, got ${describeValue(spritesRaw)}`);
+    // Nothing left to walk: throw right away, but still include the version problem if any.
     throw new Error(formatProblems(problems));
   }
 
   const keys = Object.keys(spritesRaw);
   if (keys.length === 0) {
-    problems.push('sprites rỗng: cần ít nhất một animation');
+    problems.push('sprites is empty: at least one animation is required');
   }
 
   const sprites: Record<string, SpriteEntry> = {};
@@ -184,8 +184,8 @@ export function validateManifest(raw: unknown): AnimationManifest {
 }
 
 /**
- * Tra một key. Ưu tiên key chính; nếu không có thì dùng `fallbackKey` (theo quy tắc
- * "pack thiếu thì khai báo fallback" trong AGENTS.md). Không có cả hai thì ném lỗi kèm gợi ý.
+ * Look up one key. The primary key wins; if absent, `fallbackKey` is used (per the
+ * "declare a fallback when the pack is missing art" rule in AGENTS.md). If neither exists, throws with suggestions.
  */
 export function resolve(
   manifest: AnimationManifest,
@@ -193,7 +193,7 @@ export function resolve(
   fallbackKey?: string,
 ): SpriteEntry {
   if (key.length === 0) {
-    throw new Error('resolve: key rỗng.');
+    throw new Error('resolve: empty key.');
   }
 
   const direct = manifest.sprites[key];
@@ -207,15 +207,15 @@ export function resolve(
       return fallback;
     }
     throw new Error(
-      `Không có animation "${key}" lẫn fallback "${fallbackKey}". ${suggestKeys(manifest, key)}`,
+      `No animation "${key}" nor fallback "${fallbackKey}". ${suggestKeys(manifest, key)}`,
     );
   }
 
-  throw new Error(`Không có animation "${key}". ${suggestKeys(manifest, key)}`);
+  throw new Error(`No animation "${key}". ${suggestKeys(manifest, key)}`);
 }
 
 // ---------------------------------------------------------------------------
-// Validator nội bộ
+// Internal validators
 // ---------------------------------------------------------------------------
 
 function validateEntry(
@@ -227,12 +227,12 @@ function validateEntry(
 
   if (!ANIMATION_KEY_PATTERN.test(key)) {
     problems.push(
-      `${at}: key phải dạng <actor>.<animation>[.<direction>], chỉ gồm [a-z0-9-] và dấu chấm`,
+      `${at}: key must look like <actor>.<animation>[.<direction>], using only [a-z0-9-] and dots`,
     );
   }
 
   if (!isRecord(raw)) {
-    problems.push(`${at}: entry phải là object, nhận ${describeValue(raw)}`);
+    problems.push(`${at}: entry must be an object, got ${describeValue(raw)}`);
     return undefined;
   }
 
@@ -269,7 +269,7 @@ function validateEntry(
   return { sheet, frameWidth, frameHeight, layout, directions, frames, fps, loop, anchor, footPx };
 }
 
-/** Key kết thúc bằng direction ⇒ entry phải có direction đó; không kết thúc bằng direction ⇒ rỗng. */
+/** Key ends with a direction ⇒ the entry must contain it; key does not ⇒ must be empty. */
 function checkKeyMatchesDirections(
   key: string,
   directions: readonly Direction[],
@@ -284,17 +284,17 @@ function checkKeyMatchesDirections(
   if (keyDirection !== undefined) {
     if (!directions.includes(keyDirection)) {
       problems.push(
-        `${at}: key trỏ tới direction "${keyDirection}" nhưng directions = [${directions.join(', ')}]`,
+        `${at}: key points at direction "${keyDirection}" but directions = [${directions.join(', ')}]`,
       );
     }
   } else if (directions.length > 0) {
     problems.push(
-      `${at}: key không có direction ở cuối nên directions phải rỗng, nhận [${directions.join(', ')}]`,
+      `${at}: key has no trailing direction so directions must be empty, got [${directions.join(', ')}]`,
     );
   }
 
   if (layout === 'strip' && directions.length > 1) {
-    problems.push(`${at}: layout "strip" chỉ có một hàng nên directions tối đa 1 phần tử`);
+    problems.push(`${at}: layout "strip" has a single row so directions can hold at most 1 element`);
   }
 }
 
@@ -305,12 +305,12 @@ function readSheet(
 ): string | undefined {
   const value = record['sheet'];
   if (typeof value !== 'string' || value.length === 0) {
-    problems.push(`${at}.sheet phải là đường dẫn không rỗng, nhận ${describeValue(value)}`);
+    problems.push(`${at}.sheet must be a non-empty path, got ${describeValue(value)}`);
     return undefined;
   }
   if (!isAssetRelativePath(value)) {
     problems.push(
-      `${at}.sheet phải là đường dẫn tương đối trong game/assets/ (tương đối, kết thúc bằng .png, không có ".."), nhận "${value}"`,
+      `${at}.sheet must be a relative path inside game/assets/ (relative, ending in .png, no ".."), got "${value}"`,
     );
     return undefined;
   }
@@ -326,7 +326,7 @@ function readLayout(
   if (value === 'grid' || value === 'strip') {
     return value;
   }
-  problems.push(`${at}.layout phải là "grid" hoặc "strip", nhận ${describeValue(value)}`);
+  problems.push(`${at}.layout must be "grid" or "strip", got ${describeValue(value)}`);
   return undefined;
 }
 
@@ -340,7 +340,7 @@ function readPositiveInteger(
   if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
     return value;
   }
-  problems.push(`${at}.${field} phải là số nguyên dương, nhận ${describeValue(value)}`);
+  problems.push(`${at}.${field} must be a positive integer, got ${describeValue(value)}`);
   return undefined;
 }
 
@@ -354,7 +354,7 @@ function readPositiveNumber(
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
     return value;
   }
-  problems.push(`${at}.${field} phải là số hữu hạn > 0, nhận ${describeValue(value)}`);
+  problems.push(`${at}.${field} must be a finite number > 0, got ${describeValue(value)}`);
   return undefined;
 }
 
@@ -368,7 +368,7 @@ function readBoolean(
   if (typeof value === 'boolean') {
     return value;
   }
-  problems.push(`${at}.${field} phải là boolean, nhận ${describeValue(value)}`);
+  problems.push(`${at}.${field} must be a boolean, got ${describeValue(value)}`);
   return undefined;
 }
 
@@ -380,7 +380,7 @@ function readDirections(
   const value = record['directions'];
   if (!Array.isArray(value)) {
     problems.push(
-      `${at}.directions phải là array (rỗng nếu animation không có hướng), nhận ${describeValue(value)}`,
+      `${at}.directions must be an array (empty when the animation has no direction), got ${describeValue(value)}`,
     );
     return undefined;
   }
@@ -390,12 +390,12 @@ function readDirections(
   items.forEach((item: unknown, index: number) => {
     if (!isDirection(item)) {
       problems.push(
-        `${at}.directions[${index}] phải là một trong ${DIRECTIONS.join('/')}, nhận ${describeValue(item)}`,
+        `${at}.directions[${index}] must be one of ${DIRECTIONS.join('/')}, got ${describeValue(item)}`,
       );
       return;
     }
     if (parsed.includes(item)) {
-      problems.push(`${at}.directions[${index}] trùng direction "${item}"`);
+      problems.push(`${at}.directions[${index}] duplicates direction "${item}"`);
       return;
     }
     parsed.push(item);
@@ -407,7 +407,7 @@ function readDirections(
 
   if (!isCanonicalOrder(parsed)) {
     problems.push(
-      `${at}.directions phải theo thứ tự cột của pack (${DIRECTIONS.join(', ')}), nhận [${parsed.join(', ')}]`,
+      `${at}.directions must follow the pack's column order (${DIRECTIONS.join(', ')}), got [${parsed.join(', ')}]`,
     );
     return undefined;
   }
@@ -423,7 +423,7 @@ function readAnchor(
   const value = record['anchor'];
   if (value === undefined) return 'feet';
   if (value === 'feet' || value === 'center') return value;
-  problems.push(`${at}.anchor phải là "feet" hoặc "center", nhận ${describeValue(value)}`);
+  problems.push(`${at}.anchor must be "feet" or "center", got ${describeValue(value)}`);
   return undefined;
 }
 
@@ -436,19 +436,19 @@ function readFootPx(
   const value = record['footPx'];
   if (value === undefined) return 0;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    problems.push(`${at}.footPx phải là số nguyên >= 0, nhận ${describeValue(value)}`);
+    problems.push(`${at}.footPx must be an integer >= 0, got ${describeValue(value)}`);
     return undefined;
   }
   if (frameHeight !== undefined && value >= frameHeight) {
     problems.push(
-      `${at}.footPx (${value}) phải nhỏ hơn frameHeight (${frameHeight}) để anchor nằm trong frame`,
+      `${at}.footPx (${value}) must be smaller than frameHeight (${frameHeight}) so the anchor stays inside the frame`,
     );
     return undefined;
   }
   return value;
 }
 
-/** Thứ tự cột trong sheet là cố định; đảo thứ tự array sẽ cắt sai sprite. */
+/** Column order inside a sheet is fixed; reversing the array slices the wrong sprite. */
 function isCanonicalOrder(directions: readonly Direction[]): boolean {
   let previousIndex = -1;
   for (const direction of directions) {
@@ -469,7 +469,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Đường dẫn phải tương đối, dùng `/`, không thoát khỏi pack, và trỏ tới file png. */
+/** Path must be relative, use `/`, stay inside the pack, and point at a png file. */
 function isAssetRelativePath(value: string): boolean {
   if (!value.endsWith('.png')) return false;
   if (value.startsWith('/') || value.includes('\\')) return false;
@@ -483,16 +483,16 @@ function suggestKeys(manifest: AnimationManifest, key: string): string {
     actor === undefined ? [] : allKeys.filter((candidate) => candidate.startsWith(`${actor}.`));
 
   if (sameActor.length === 0) {
-    return `Manifest có ${allKeys.length} key, xem assets/resources/data/animations.json.`;
+    return `Manifest has ${allKeys.length} keys, see assets/resources/data/animations.json.`;
   }
 
   const shown = sameActor.slice(0, 8).join(', ');
   const suffix = sameActor.length > 8 ? ', …' : '';
-  return `Actor "${actor}" có: ${shown}${suffix}.`;
+  return `Actor "${actor}" has: ${shown}${suffix}.`;
 }
 
 function formatProblems(problems: readonly string[]): string {
-  const header = `animations.json không hợp lệ — ${problems.length} lỗi:`;
+  const header = `animations.json is invalid — ${problems.length} problem(s):`;
   return [header, ...problems.map((problem) => `  - ${problem}`)].join('\n');
 }
 
@@ -509,16 +509,16 @@ function describeValue(value: unknown): string {
 }
 
 /**
- * Số cột của sheet.
+ * Column count of the sheet.
  *
- * `grid` lấy cột theo `directions`; sheet một cột (`Dead.png`, `directions: []`) thì cột = 1.
- * Nếu để loader tự suy ra từ `directions.length` thì sheet chết sẽ ra 0 cột và chia cho 0.
+ * `grid` takes columns from `directions`; a single-column sheet (`Dead.png`, `directions: []`) has 1 column.
+ * If the loader inferred it from `directions.length`, a dead sheet would give 0 columns and divide by zero.
  */
 export function frameColumns(entry: SpriteEntry): number {
   return entry.layout === 'strip' ? entry.frames : Math.max(1, entry.directions.length);
 }
 
-/** Số hàng: strip luôn 1, grid thì mỗi hàng là một frame. */
+/** Row count: strip is always 1, grid has one row per frame. */
 export function frameRows(entry: SpriteEntry): number {
   return entry.layout === 'strip' ? 1 : entry.frames;
 }
@@ -531,15 +531,15 @@ export interface FrameRect {
 }
 
 /**
- * Rect pixel của một frame, gốc trên-trái (thứ tự đọc của ảnh).
- * Với `strip`, `direction` bị bỏ qua vì sheet chỉ có một hàng.
+ * Pixel rect of one frame, top-left origin (image reading order).
+ * For `strip`, `direction` is ignored because the sheet has only one row.
  */
 export function frameRect(entry: SpriteEntry, direction: Direction, frame: number): FrameRect {
   if (!Number.isInteger(frame) || frame < 0 || frame >= entry.frames) {
-    throw new Error(`frame phải là số nguyên trong [0, ${entry.frames}), nhận ${frame}`);
+    throw new Error(`frame must be an integer in [0, ${entry.frames}), got ${frame}`);
   }
 
-  // Strip chạy ngang; grid chạy dọc theo hàng, ngang theo cột direction.
+  // Strip runs horizontally; grid runs down rows, across direction columns.
   if (entry.layout === 'strip') {
     return {
       x: frame * entry.frameWidth,
@@ -554,7 +554,7 @@ export function frameRect(entry: SpriteEntry, direction: Direction, frame: numbe
     column = entry.directions.indexOf(direction);
     if (column < 0) {
       throw new Error(
-        `direction "${direction}" không có trong sheet (chỉ có: ${entry.directions.join(', ')})`,
+        `direction "${direction}" is not in the sheet (only: ${entry.directions.join(', ')})`,
       );
     }
   }

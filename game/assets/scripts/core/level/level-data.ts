@@ -1,11 +1,11 @@
 /**
- * Hợp đồng runtime của một phòng. Đây là thứ game dùng, không phải định dạng editor:
- * nguồn dữ liệu là `.tmx` (xem `core/level/tmx.ts` cho quy ước object layer), và
- * adapter mapper object layer vào `LevelData` qua `parseTmxLevel` → `parseLevelData`.
+ * Runtime contract of one room. This is what the game uses, not the editor format:
+ * the data source is `.tmx` (see `core/level/tmx.ts` for the object layer convention), and the
+ * mapper adapter turns an object layer into `LevelData` via `parseTmxLevel` → `parseLevelData`.
  *
- * Hệ toạ độ: **tile unit, gốc trên-trái, y hướng xuống** — đúng hệ của Tiled.
- * Adapter Cocos lật trục y khi dựng node. Phòng luôn đúng 32×18 tile 16 px
- * (`docs/gdd.md` §8), nên `size` và `tileSizePx` bị validate cứng.
+ * Coordinate system: **tile units, top-left origin, y pointing down** — Tiled's system.
+ * The Cocos adapter flips the y axis when building nodes. A room is always exactly 32×18 tiles of 16 px
+ * (`docs/gdd.md` §8), so `size` and `tileSizePx` are validated strictly.
  */
 import type { Vec2 } from '../math/vec2';
 
@@ -13,7 +13,7 @@ export const ROOM_COLS = 32;
 export const ROOM_ROWS = 18;
 export const TILE_SIZE_PX = 16;
 
-/** GDD §4 gọi vai trò này là "Brute"; hợp đồng dữ liệu dùng tên `tank`. */
+/** GDD §4 calls this role "Brute"; the data contract uses the name `tank`. */
 export const ENEMY_ROLES = ['chaser', 'caster', 'tank'] as const;
 export type EnemyRole = (typeof ENEMY_ROLES)[number];
 
@@ -29,7 +29,7 @@ export const ROOM_SIZE: RoomSize = { cols: ROOM_COLS, rows: ROOM_ROWS };
 
 export interface EnemySpawn {
   readonly role: EnemyRole;
-  /** Vị trí trong phòng, tile unit. */
+  /** Position inside the room, tile units. */
   readonly at: Vec2;
   readonly elite: boolean;
 }
@@ -40,17 +40,17 @@ export interface Wave {
 
 export interface Obstacle {
   readonly kind: ObstacleKind;
-  /** Góc trên-trái của hình chữ nhật, tile unit. */
+  /** Top-left corner of the rectangle, tile units. */
   readonly x: number;
   readonly y: number;
-  /** Kích thước theo tile; luôn > 0. */
+  /** Size in tiles; always > 0. */
   readonly width: number;
   readonly height: number;
 }
 
 export interface Door {
   readonly at: Vec2;
-  /** Số phòng đích trong cùng chapter; `null` = cửa cuối chapter / không đi đâu. */
+  /** Target room number within the chapter; `null` = chapter exit / goes nowhere. */
   readonly toRoom: number | null;
 }
 
@@ -69,13 +69,13 @@ export interface LevelData {
   readonly waves: Wave[];
   readonly obstacles: Obstacle[];
   readonly doors: Door[];
-  /** Chỉ có ở phòng boss; `name` khớp key art (ví dụ `TenguBlue`). */
+  /** Only present in a boss room; `name` matches an art key (e.g. `TenguBlue`). */
   readonly boss?: BossInfo;
-  /** Chỉ có ở phòng boss; chỗ boss đứng (tile unit). Thiếu thì adapter dùng mặc định. */
+  /** Only present in a boss room; where the boss stands (tile units). The adapter uses a default when absent. */
   readonly bossStart?: Vec2;
 }
 
-/** Một file chapter: `{ chapter, rooms }`. */
+/** One chapter file: `{ chapter, rooms }`. */
 export interface ChapterData {
   readonly chapter: number;
   readonly rooms: LevelData[];
@@ -83,7 +83,7 @@ export interface ChapterData {
 
 const EPSILON = 1e-9;
 
-/** Gom toàn bộ lỗi rồi ném một `Error` duy nhất, thay vì dừng ở lỗi đầu tiên. */
+/** Collect every problem then throw a single `Error`, instead of stopping at the first one. */
 class ProblemList {
   private readonly items: string[] = [];
 
@@ -95,7 +95,7 @@ class ProblemList {
     if (this.items.length === 0) return;
 
     const details = this.items.map((item) => `  - ${item}`).join('\n');
-    throw new Error(`${header} (${this.items.length} lỗi)\n${details}`);
+    throw new Error(`${header} (${this.items.length} problem(s))\n${details}`);
   }
 }
 
@@ -133,7 +133,7 @@ function readFiniteNumber(
   problems: ProblemList,
 ): number | null {
   if (!isFiniteNumber(value)) {
-    problems.add(path, `phải là số hữu hạn, nhận ${describeValue(value)}`);
+    problems.add(path, `must be a finite number, got ${describeValue(value)}`);
     return null;
   }
   return value;
@@ -141,7 +141,7 @@ function readFiniteNumber(
 
 function readVec2(value: unknown, path: string, problems: ProblemList): Vec2 | null {
   if (!isRecord(value)) {
-    problems.add(path, `phải là object { x, y }, nhận ${describeValue(value)}`);
+    problems.add(path, `must be an object { x, y }, got ${describeValue(value)}`);
     return null;
   }
 
@@ -150,19 +150,19 @@ function readVec2(value: unknown, path: string, problems: ProblemList): Vec2 | n
   const xOk = isFiniteNumber(x);
   const yOk = isFiniteNumber(y);
 
-  if (!xOk) problems.add(`${path}.x`, `phải là số hữu hạn, nhận ${describeValue(x)}`);
-  if (!yOk) problems.add(`${path}.y`, `phải là số hữu hạn, nhận ${describeValue(y)}`);
+  if (!xOk) problems.add(`${path}.x`, `must be a finite number, got ${describeValue(x)}`);
+  if (!yOk) problems.add(`${path}.y`, `must be a finite number, got ${describeValue(y)}`);
 
   return xOk && yOk ? { x, y } : null;
 }
 
-/** Điểm hợp lệ nằm trong hình chữ nhật đóng [0, cols] × [0, rows]. */
+/** A valid point lies inside the closed rectangle [0, cols] × [0, rows]. */
 function checkPointInRoom(point: Vec2, path: string, problems: ProblemList): void {
   if (point.x < 0 || point.x > ROOM_COLS) {
-    problems.add(path, `x=${point.x} nằm ngoài phòng (0..${ROOM_COLS})`);
+    problems.add(path, `x=${point.x} is outside the room (0..${ROOM_COLS})`);
   }
   if (point.y < 0 || point.y > ROOM_ROWS) {
-    problems.add(path, `y=${point.y} nằm ngoài phòng (0..${ROOM_ROWS})`);
+    problems.add(path, `y=${point.y} is outside the room (0..${ROOM_ROWS})`);
   }
 }
 
@@ -172,7 +172,7 @@ function readEnemy(
   problems: ProblemList,
 ): EnemySpawn | null {
   if (!isRecord(value)) {
-    problems.add(path, `phải là object EnemySpawn, nhận ${describeValue(value)}`);
+    problems.add(path, `must be an object EnemySpawn, got ${describeValue(value)}`);
     return null;
   }
 
@@ -181,7 +181,7 @@ function readEnemy(
   if (!roleOk) {
     problems.add(
       `${path}.role`,
-      `không hợp lệ (${describeValue(role)}); chỉ nhận ${ENEMY_ROLES.join(', ')}`,
+      `invalid (${describeValue(role)}); expected one of ${ENEMY_ROLES.join(', ')}`,
     );
   }
 
@@ -191,7 +191,7 @@ function readEnemy(
   const elite = value.elite;
   const eliteOk = typeof elite === 'boolean';
   if (!eliteOk) {
-    problems.add(`${path}.elite`, `phải là boolean, nhận ${describeValue(elite)}`);
+    problems.add(`${path}.elite`, `must be a boolean, got ${describeValue(elite)}`);
   }
 
   if (!roleOk || at === null || !eliteOk) return null;
@@ -200,18 +200,18 @@ function readEnemy(
 
 function readWave(value: unknown, path: string, problems: ProblemList): Wave | null {
   if (!isRecord(value)) {
-    problems.add(path, `phải là object Wave, nhận ${describeValue(value)}`);
+    problems.add(path, `must be an object Wave, got ${describeValue(value)}`);
     return null;
   }
 
   if (!Array.isArray(value.enemies)) {
-    problems.add(`${path}.enemies`, `phải là mảng EnemySpawn, nhận ${describeValue(value.enemies)}`);
+    problems.add(`${path}.enemies`, `must be an array of EnemySpawn, got ${describeValue(value.enemies)}`);
     return null;
   }
 
   const enemies: EnemySpawn[] = [];
   if (value.enemies.length === 0) {
-    problems.add(`${path}.enemies`, 'không được rỗng');
+    problems.add(`${path}.enemies`, 'must not be empty');
   }
 
   value.enemies.forEach((rawEnemy, index) => {
@@ -228,7 +228,7 @@ function readObstacle(
   problems: ProblemList,
 ): Obstacle | null {
   if (!isRecord(value)) {
-    problems.add(path, `phải là object Obstacle, nhận ${describeValue(value)}`);
+    problems.add(path, `must be an object Obstacle, got ${describeValue(value)}`);
     return null;
   }
 
@@ -237,7 +237,7 @@ function readObstacle(
   if (!kindOk) {
     problems.add(
       `${path}.kind`,
-      `không hợp lệ (${describeValue(kind)}); chỉ nhận ${OBSTACLE_KINDS.join(', ')}`,
+      `invalid (${describeValue(kind)}); expected one of ${OBSTACLE_KINDS.join(', ')}`,
     );
   }
 
@@ -248,8 +248,8 @@ function readObstacle(
 
   if (x === null || y === null || width === null || height === null) return null;
 
-  if (width <= 0) problems.add(`${path}.width`, `phải > 0, nhận ${width}`);
-  if (height <= 0) problems.add(`${path}.height`, `phải > 0, nhận ${height}`);
+  if (width <= 0) problems.add(`${path}.width`, `must be > 0, got ${width}`);
+  if (height <= 0) problems.add(`${path}.height`, `must be > 0, got ${height}`);
 
   const outsideRoom =
     x < 0 ||
@@ -259,7 +259,7 @@ function readObstacle(
   if (outsideRoom) {
     problems.add(
       path,
-      `vượt ra ngoài phòng 0..${ROOM_COLS} × 0..${ROOM_ROWS} ` +
+      `extends outside the room 0..${ROOM_COLS} × 0..${ROOM_ROWS} ` +
         `(x=${x}, y=${y}, width=${width}, height=${height})`,
     );
   }
@@ -270,7 +270,7 @@ function readObstacle(
 
 function readDoor(value: unknown, path: string, problems: ProblemList): Door | null {
   if (!isRecord(value)) {
-    problems.add(path, `phải là object Door, nhận ${describeValue(value)}`);
+    problems.add(path, `must be an object Door, got ${describeValue(value)}`);
     return null;
   }
 
@@ -283,7 +283,7 @@ function readDoor(value: unknown, path: string, problems: ProblemList): Door | n
     if (!isInteger(value.toRoom) || value.toRoom < 1) {
       problems.add(
         `${path}.toRoom`,
-        `phải là số phòng >= 1 hoặc null, nhận ${describeValue(value.toRoom)}`,
+        `must be a room number >= 1 or null, got ${describeValue(value.toRoom)}`,
       );
       toRoomOk = false;
     } else {
@@ -297,13 +297,13 @@ function readDoor(value: unknown, path: string, problems: ProblemList): Door | n
 
 function readBoss(value: unknown, path: string, problems: ProblemList): BossInfo | null {
   if (!isRecord(value)) {
-    problems.add(path, `phải là object { name }, nhận ${describeValue(value)}`);
+    problems.add(path, `must be an object { name }, got ${describeValue(value)}`);
     return null;
   }
 
   const name = value.name;
   if (typeof name !== 'string' || name.trim() === '') {
-    problems.add(`${path}.name`, `phải là chuỗi không rỗng, nhận ${describeValue(name)}`);
+    problems.add(`${path}.name`, `must be a non-empty string, got ${describeValue(name)}`);
     return null;
   }
 
@@ -312,27 +312,27 @@ function readBoss(value: unknown, path: string, problems: ProblemList): BossInfo
 
 function parseRoom(value: unknown, path: string, problems: ProblemList): LevelData | null {
   if (!isRecord(value)) {
-    problems.add(path, `phải là object LevelData, nhận ${describeValue(value)}`);
+    problems.add(path, `must be an object LevelData, got ${describeValue(value)}`);
     return null;
   }
 
   let id = '';
   if (typeof value.id !== 'string' || value.id.trim() === '') {
-    problems.add(`${path}.id`, `phải là chuỗi không rỗng, nhận ${describeValue(value.id)}`);
+    problems.add(`${path}.id`, `must be a non-empty string, got ${describeValue(value.id)}`);
   } else {
     id = value.id;
   }
 
   let chapter = 1;
   if (!isInteger(value.chapter) || value.chapter < 1 || value.chapter > 3) {
-    problems.add(`${path}.chapter`, `phải là số nguyên 1..3, nhận ${describeValue(value.chapter)}`);
+    problems.add(`${path}.chapter`, `must be an integer 1..3, got ${describeValue(value.chapter)}`);
   } else {
     chapter = value.chapter;
   }
 
   let room = 1;
   if (!isInteger(value.room) || value.room < 1) {
-    problems.add(`${path}.room`, `phải là số nguyên >= 1, nhận ${describeValue(value.room)}`);
+    problems.add(`${path}.room`, `must be an integer >= 1, got ${describeValue(value.room)}`);
   } else {
     room = value.room;
   }
@@ -341,7 +341,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
   if (typeof value.isBossRoom !== 'boolean') {
     problems.add(
       `${path}.isBossRoom`,
-      `phải là boolean, nhận ${describeValue(value.isBossRoom)}`,
+      `must be a boolean, got ${describeValue(value.isBossRoom)}`,
     );
   } else {
     isBossRoom = value.isBossRoom;
@@ -349,20 +349,20 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
 
   const size = value.size;
   if (!isRecord(size)) {
-    problems.add(`${path}.size`, `phải là { cols: ${ROOM_COLS}, rows: ${ROOM_ROWS} }`);
+    problems.add(`${path}.size`, `must be { cols: ${ROOM_COLS}, rows: ${ROOM_ROWS} }`);
   } else {
     if (size.cols !== ROOM_COLS) {
-      problems.add(`${path}.size.cols`, `phải bằng ${ROOM_COLS}, nhận ${describeValue(size.cols)}`);
+      problems.add(`${path}.size.cols`, `must equal ${ROOM_COLS}, got ${describeValue(size.cols)}`);
     }
     if (size.rows !== ROOM_ROWS) {
-      problems.add(`${path}.size.rows`, `phải bằng ${ROOM_ROWS}, nhận ${describeValue(size.rows)}`);
+      problems.add(`${path}.size.rows`, `must equal ${ROOM_ROWS}, got ${describeValue(size.rows)}`);
     }
   }
 
   if (value.tileSizePx !== TILE_SIZE_PX) {
     problems.add(
       `${path}.tileSizePx`,
-      `phải bằng ${TILE_SIZE_PX}, nhận ${describeValue(value.tileSizePx)}`,
+      `must equal ${TILE_SIZE_PX}, got ${describeValue(value.tileSizePx)}`,
     );
   }
 
@@ -371,10 +371,10 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
 
   const waves: Wave[] = [];
   if (!Array.isArray(value.waves)) {
-    problems.add(`${path}.waves`, `phải là mảng Wave, nhận ${describeValue(value.waves)}`);
+    problems.add(`${path}.waves`, `must be an array of Wave, got ${describeValue(value.waves)}`);
   } else {
     if (value.waves.length === 0) {
-      problems.add(`${path}.waves`, 'phải có ít nhất 1 wave');
+      problems.add(`${path}.waves`, 'must have at least 1 wave');
     }
     value.waves.forEach((rawWave, index) => {
       const wave = readWave(rawWave, `${path}.waves[${index}]`, problems);
@@ -386,7 +386,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
   if (!Array.isArray(value.obstacles)) {
     problems.add(
       `${path}.obstacles`,
-      `phải là mảng Obstacle, nhận ${describeValue(value.obstacles)}`,
+      `must be an array of Obstacle, got ${describeValue(value.obstacles)}`,
     );
   } else {
     value.obstacles.forEach((rawObstacle, index) => {
@@ -397,7 +397,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
 
   const doors: Door[] = [];
   if (!Array.isArray(value.doors)) {
-    problems.add(`${path}.doors`, `phải là mảng Door, nhận ${describeValue(value.doors)}`);
+    problems.add(`${path}.doors`, `must be an array of Door, got ${describeValue(value.doors)}`);
   } else {
     value.doors.forEach((rawDoor, index) => {
       const door = readDoor(rawDoor, `${path}.doors[${index}]`, problems);
@@ -412,10 +412,10 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
   }
 
   if (isBossRoom && boss === undefined) {
-    problems.add(`${path}.boss`, 'phòng boss bắt buộc có boss { name }');
+    problems.add(`${path}.boss`, 'a boss room requires a boss { name }');
   }
   if (!isBossRoom && value.boss !== undefined) {
-    problems.add(`${path}.boss`, 'chỉ phòng boss mới được khai báo boss');
+    problems.add(`${path}.boss`, 'only a boss room may declare boss');
   }
 
   let bossStart: Vec2 | undefined;
@@ -427,7 +427,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     }
   }
   if (!isBossRoom && value.bossStart !== undefined) {
-    problems.add(`${path}.bossStart`, 'chỉ phòng boss mới được khai báo bossStart');
+    problems.add(`${path}.bossStart`, 'only a boss room may declare bossStart');
   }
 
   return {
@@ -448,23 +448,23 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
 
 function readChapter(value: unknown, problems: ProblemList): ChapterData | null {
   if (!isRecord(value)) {
-    problems.add('chapter', `file phải là object { chapter, rooms }, nhận ${describeValue(value)}`);
+    problems.add('chapter', `file must be an object { chapter, rooms }, got ${describeValue(value)}`);
     return null;
   }
 
   let chapter = 1;
   if (!isInteger(value.chapter) || value.chapter < 1 || value.chapter > 3) {
-    problems.add('chapter', `phải là số nguyên 1..3, nhận ${describeValue(value.chapter)}`);
+    problems.add('chapter', `must be an integer 1..3, got ${describeValue(value.chapter)}`);
   } else {
     chapter = value.chapter;
   }
 
   if (!Array.isArray(value.rooms)) {
-    problems.add('rooms', `phải là mảng LevelData, nhận ${describeValue(value.rooms)}`);
+    problems.add('rooms', `must be an array of LevelData, got ${describeValue(value.rooms)}`);
     return null;
   }
   if (value.rooms.length === 0) {
-    problems.add('rooms', 'phải có ít nhất 1 phòng');
+    problems.add('rooms', 'must have at least 1 room');
     return { chapter, rooms: [] };
   }
 
@@ -477,7 +477,7 @@ function readChapter(value: unknown, problems: ProblemList): ChapterData | null 
     if (level.chapter !== chapter) {
       problems.add(
         `${path}.chapter`,
-        `phải bằng chapter của file (${chapter}), nhận ${level.chapter}`,
+        `must equal the file chapter (${chapter}), got ${level.chapter}`,
       );
     }
     parsed.push({ level, index });
@@ -491,7 +491,7 @@ function readChapter(value: unknown, problems: ProblemList): ChapterData | null 
   }
   for (const [roomNumber, indices] of indicesByRoom) {
     if (indices.length > 1) {
-      problems.add('rooms', `số phòng ${roomNumber} bị trùng (index ${indices.join(', ')})`);
+      problems.add('rooms', `room number ${roomNumber} is duplicated (index ${indices.join(', ')})`);
     }
   }
 
@@ -501,7 +501,7 @@ function readChapter(value: unknown, problems: ProblemList): ChapterData | null 
       if (door.toRoom !== null && !roomNumbers.has(door.toRoom)) {
         problems.add(
           `rooms[${index}].doors[${doorIndex}].toRoom`,
-          `trỏ tới phòng ${door.toRoom} không tồn tại trong chapter`,
+          `points at room ${door.toRoom} which does not exist in the chapter`,
         );
       }
     });
@@ -511,41 +511,41 @@ function readChapter(value: unknown, problems: ProblemList): ChapterData | null 
 }
 
 /**
- * Parse một phòng, hoặc một file chapter.
+ * Parse one room, or one chapter file.
  *
- * - Với object phòng: validate phòng đó. Không thể kiểm tra `door.toRoom` vì
- *   không biết các phòng khác.
- * - Với file chapter `{ chapter, rooms }`: validate **tất cả** phòng, kể cả số
- *   phòng trùng và door trỏ tới phòng không tồn tại; trả về phòng đầu tiên.
- *   Dùng `parseChapterData` khi cần cả 9 phòng.
+ * - For a room object: validate that room. `door.toRoom` cannot be checked because
+ *   the other rooms are unknown.
+ * - For a chapter file `{ chapter, rooms }`: validate **all** rooms, including duplicate
+ *   room numbers and doors pointing at rooms that do not exist; returns the first room.
+ *   Use `parseChapterData` when you need all 9 rooms.
  *
- * Mọi lỗi được gom lại và ném trong **một** `Error`.
+ * Every problem is collected and thrown in **one** `Error`.
  */
 export function parseLevelData(raw: unknown): LevelData {
   if (isRecord(raw) && Array.isArray(raw.rooms)) {
     const chapter = parseChapterData(raw);
     const first = chapter.rooms[0];
-    if (first === undefined) throw new Error('LevelData không hợp lệ: chapter không có phòng nào');
+    if (first === undefined) throw new Error('Invalid LevelData: chapter has no rooms');
     return first;
   }
 
   const problems = new ProblemList();
   const level = parseRoom(raw, 'level', problems);
-  problems.throwIfAny('LevelData không hợp lệ');
-  if (level === null) throw new Error('LevelData không hợp lệ: dữ liệu gốc không phải object');
+  problems.throwIfAny('Invalid LevelData');
+  if (level === null) throw new Error('Invalid LevelData: raw data is not an object');
   return level;
 }
 
-/** Parse `{ chapter, rooms }`, validate toàn bộ quan hệ giữa các phòng. */
+/** Parse `{ chapter, rooms }`, validating every relationship between rooms. */
 export function parseChapterData(raw: unknown): ChapterData {
   const problems = new ProblemList();
   const chapter = readChapter(raw, problems);
-  problems.throwIfAny('ChapterData không hợp lệ');
-  if (chapter === null) throw new Error('ChapterData không hợp lệ: dữ liệu gốc không phải object');
+  problems.throwIfAny('Invalid ChapterData');
+  if (chapter === null) throw new Error('Invalid ChapterData: raw data is not an object');
   return chapter;
 }
 
-/** Hình chữ nhật đóng: điểm trên biên vẫn tính là trong phòng. */
+/** Closed rectangle: a point on the boundary still counts as inside the room. */
 export function isInsideRoom(level: LevelData, point: Vec2): boolean {
   return (
     point.x >= 0 &&
@@ -556,9 +556,9 @@ export function isInsideRoom(level: LevelData, point: Vec2): boolean {
 }
 
 /**
- * Obstacle đầu tiên chứa điểm. Hình chữ nhật nửa mở [x, x+width) × [y, y+height)
- * để hai tile kề nhau không cùng chứa một điểm trên biên. O(n) theo số obstacle —
- * phòng chỉ có vài vật cản nên không cần spatial index.
+ * First obstacle containing the point. Half-open rectangle [x, x+width) × [y, y+height)
+ * so two adjacent tiles never both contain a boundary point. O(n) in obstacle count —
+ * a room has only a few obstacles, so no spatial index is needed.
  */
 export function obstacleAt(level: LevelData, point: Vec2): Obstacle | null {
   for (const obstacle of level.obstacles) {

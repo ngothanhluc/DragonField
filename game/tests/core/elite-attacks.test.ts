@@ -56,14 +56,14 @@ function cloneSource(): Record<string, unknown> {
   return structuredClone(TUNING_SOURCE) as Record<string, unknown>;
 }
 
-describe('elite — số liệu và scale từ config/tuning.json', () => {
-  it('scale elite lấy từ JSON (GDD §4: 1.15)', () => {
+describe('elite — numbers and scale from config/tuning.json', () => {
+  it('elite scale comes from the JSON (GDD §4: 1.15)', () => {
     const raw = cloneSource().enemies as { elite: { scale: number } };
     expect(eliteScale()).toBe(raw.elite.scale);
     expect(eliteScale()).toBeCloseTo(1.15);
   });
 
-  it('tank elite có 1 cú lao thêm; chaser/caster không có', () => {
+  it('elite tank has 1 extra charge; chaser/caster have none', () => {
     expect(eliteExtraCharges('tank', true)).toBe(ELITE_EXTRA_TANK_CHARGES);
     expect(eliteExtraCharges('tank', true)).toBe(1);
     expect(eliteExtraCharges('tank', false)).toBe(0);
@@ -72,14 +72,14 @@ describe('elite — số liệu và scale từ config/tuning.json', () => {
   });
 });
 
-describe('elite chaser — đòn thêm: lao ngắn (pounce)', () => {
-  it('chaser thường không bao giờ telegraph, chỉ đi bộ/đứng', () => {
+describe('elite chaser — extra attack: short pounce', () => {
+  it('a regular chaser never telegraphs, only walks/stands', () => {
     const state = enemyState('chaser', { x: 8, y: 5 }, false);
     const action = decideAction({ state, player: { x: 16, y: 5 }, nowMs: 5000, level });
     expect(action.kind).toBe('walk');
   });
 
-  it('elite trong tầm thì telegraph rồi lao, đúng tốc độ/thời gian trong JSON', () => {
+  it('an elite in range telegraphs then pounces, at the speed/duration from the JSON', () => {
     const player = { x: 8 + ELITE_POUNCE_RANGE_TILES - 1, y: 5 };
     const state = enemyState('chaser', { x: 8, y: 5 }, true);
 
@@ -93,7 +93,7 @@ describe('elite chaser — đòn thêm: lao ngắn (pounce)', () => {
     };
     const start = ELITE_POUNCE_COOLDOWN_MS + 1;
 
-    // Chưa đủ telegraph: vẫn đứng.
+    // Telegraph not finished yet: still standing.
     expect(
       decideAction({ state: telegraphing, player, nowMs: start + ELITE_POUNCE_TELEGRAPH_MS - 1, level }),
     ).toEqual(telegraph);
@@ -113,14 +113,14 @@ describe('elite chaser — đòn thêm: lao ngắn (pounce)', () => {
     expect(attackReleased(telegraph, charge)).toBe('charge');
   });
 
-  it('telegraph của elite chaser dùng đúng thời lượng và progress 0..1', () => {
+  it('elite chaser telegraph uses the exact duration and progress 0..1', () => {
     expect(TELEGRAPH_MS.chaser).toBe(ELITE_POUNCE_TELEGRAPH_MS);
     expect(telegraphProgress(1000, 1000, 'chaser')).toBe(0);
     expect(telegraphProgress(1000, 1000 + ELITE_POUNCE_TELEGRAPH_MS / 2, 'chaser')).toBeCloseTo(0.5);
     expect(telegraphProgress(1000, 1000 + ELITE_POUNCE_TELEGRAPH_MS, 'chaser')).toBe(1);
   });
 
-  it('ngoài tầm pounce thì vẫn chỉ đi bộ', () => {
+  it('outside pounce range it still only walks', () => {
     const state = enemyState('chaser', { x: 2, y: 5 }, true);
     const action = decideAction({
       state,
@@ -132,8 +132,8 @@ describe('elite chaser — đòn thêm: lao ngắn (pounce)', () => {
   });
 });
 
-describe('elite tank — đòn thêm: lao lần hai, chốt hướng mới', () => {
-  it('charge đầu có followUps = 1; hết cú đầu thì lao tiếp về phía player mới', () => {
+describe('elite tank — extra attack: a second charge, locking a new direction', () => {
+  it('the first charge has followUps = 1; after it, charge again toward the new player position', () => {
     const player = { x: 10, y: 5 };
     const state = enemyState('tank', { x: 10, y: 14 }, true, {
       action: { kind: 'telegraph', sinceMs: 1000 },
@@ -147,10 +147,10 @@ describe('elite tank — đòn thêm: lao lần hai, chốt hướng mới', () 
     expect(first.followUps).toBe(ELITE_EXTRA_TANK_CHARGES);
 
     const charging = { ...state, action: first };
-    // Player né sang phải trong lúc cú đầu chạy.
+    // Player dodges to the right while the first charge runs.
     const playerAfterDodge = { x: 16, y: 5 };
 
-    // Giữa cú lao: giữ nguyên hướng (không bám player).
+    // Mid-charge: keeps the direction (does not track the player).
     const halfway = decideAction({
       state: charging,
       player: playerAfterDodge,
@@ -159,7 +159,7 @@ describe('elite tank — đòn thêm: lao lần hai, chốt hướng mới', () 
     });
     expect(halfway).toMatchObject({ kind: 'charge', direction: { x: 0, y: -1 } });
 
-    // Hết cú đầu: lao cú hai, hướng chốt lại theo player mới.
+    // First charge over: second charge, direction re-locked onto the new player position.
     const second = decideAction({
       state: charging,
       player: playerAfterDodge,
@@ -173,7 +173,7 @@ describe('elite tank — đòn thêm: lao lần hai, chốt hướng mới', () 
     expect(second.direction.x).toBeGreaterThan(0);
     expect(second.untilMs).toBe(first.untilMs + TANK_CHARGE_DURATION_MS);
     expect(second.speedTilesPerSecond).toBe(TANK_CHARGE_SPEED_TILES_PER_SECOND);
-    // charge -> charge không phát thêm sự kiện "vừa ra đòn" cho adapter.
+    // charge -> charge emits no extra "attack released" event for the adapter.
     expect(attackReleased(first, second)).toBeNull();
 
     const secondCharge = { ...charging, action: second };
@@ -182,7 +182,7 @@ describe('elite tank — đòn thêm: lao lần hai, chốt hướng mới', () 
     ).toEqual({ kind: 'idle' });
   });
 
-  it('tank thường chỉ lao một cú', () => {
+  it('a regular tank only charges once', () => {
     const player = { x: 10, y: 5 };
     const state = enemyState('tank', { x: 10, y: 14 }, false, {
       action: { kind: 'telegraph', sinceMs: 1000 },
@@ -200,8 +200,8 @@ describe('elite tank — đòn thêm: lao lần hai, chốt hướng mới', () 
   });
 });
 
-describe('stagger — trúng đạn thì đứng yên, không bắn nốt telegraph', () => {
-  it('caster đang telegraph mà trúng đòn: action stagger, không có phát bắn nào', () => {
+describe('stagger — hit by a projectile it stands still and does not finish the telegraph', () => {
+  it('a caster mid-telegraph that gets hit: stagger action, no shot fired', () => {
     const player = { x: 5, y: 5 };
     const telegraph: EnemyAction = { kind: 'telegraph', sinceMs: 1000 };
     const state = enemyState('caster', { x: 10, y: 5 }, false, {
@@ -213,16 +213,16 @@ describe('stagger — trúng đạn thì đứng yên, không bắn nốt telegr
     expect(stagger).toEqual({ kind: 'stagger', untilMs: 1350 });
 
     const staggered = { ...state, action: stagger };
-    // Trong thời gian choáng: giữ nguyên, không di chuyển.
+    // During the stun: holds, does not move.
     expect(decideAction({ state: staggered, player, nowMs: 1300, level })).toEqual(stagger);
-    // Telegraph -> stagger không phải là "bắn".
+    // Telegraph -> stagger is not a "shot".
     expect(attackReleased(telegraph, stagger)).toBeNull();
 
-    // Hết choáng: quay lại hành vi bình thường; cooldown tính từ lúc choáng nên còn idle.
+    // Stun over: back to normal behaviour; the cooldown counts from the stagger so it is still idle.
     expect(decideAction({ state: staggered, player, nowMs: 1350, level })).toEqual({ kind: 'idle' });
   });
 
-  it('stagger không chặn enemy chết', () => {
+  it('stagger does not stop an enemy from dying', () => {
     const dead = enemyState('tank', { x: 10, y: 5 }, false, {
       action: { kind: 'stagger', untilMs: 5000 },
       health: 0,
@@ -233,8 +233,8 @@ describe('stagger — trúng đạn thì đứng yên, không bắn nốt telegr
   });
 });
 
-describe('elite — số liệu đọc từ JSON, không hardcode', () => {
-  it('đổi pounceRange trong JSON thì chaser elite thôi lao', () => {
+describe('elite — numbers read from the JSON, not hardcoded', () => {
+  it('changing pounceRange in the JSON stops the elite chaser from pouncing', () => {
     const raw = cloneSource();
     const elite = (raw.enemies as { elite: { chaser: Record<string, unknown> } }).elite;
     elite.chaser.pounceRangeTiles = 0;
@@ -252,7 +252,7 @@ describe('elite — số liệu đọc từ JSON, không hardcode', () => {
     expect(action.kind).toBe('walk');
   });
 
-  it('đổi extraCharges trong JSON thì tank elite lao thêm đúng số đó', () => {
+  it('changing extraCharges in the JSON makes the elite tank charge exactly that many more', () => {
     const raw = cloneSource();
     const elite = (raw.enemies as { elite: { tank: Record<string, unknown> } }).elite;
     elite.tank.extraCharges = 2;
