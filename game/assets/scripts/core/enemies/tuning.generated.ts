@@ -94,4 +94,41 @@ export const TUNING_DATA = {
       },
     },
   },
+  feel: {
+    shake: {
+      maxOffsetTiles: 0.5,
+      decayPerSecond: 2.4,
+      playerHurt: 0.55,
+      explosion: 0.45,
+      bossCharge: 0.7,
+      enemyKill: 0.1,
+    },
+    squash: {
+      playerTurnMs: 110,
+      playerTurnAmount: 0.16,
+      playerHurtMs: 150,
+      playerHurtAmount: 0.24,
+      enemyHitMs: 130,
+      enemyHitAmount: 0.22,
+      bossHitMs: 120,
+      bossHitAmount: 0.1,
+    },
+    damageNumbers: {
+      lifetimeMs: 620,
+      riseTiles: 1,
+      poolSize: 24,
+    },
+    coin: {
+      coinsPerPickup: 3,
+      durationMs: 460,
+      staggerMs: 70,
+      arcHeightTiles: 1.4,
+      poolSize: 16,
+    },
+    muzzle: {
+      drawUnits: 0.7,
+      lifetimeMs: 140,
+      offsetTiles: 0.45,
+    },
+  },
 } as const;
