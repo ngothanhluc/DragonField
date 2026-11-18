@@ -47,6 +47,12 @@ import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data
 import { parseTmxLevel } from '../core/level/tmx';
 import { parseWaterLayout, waterAreasFor } from '../core/level/water-layout';
 import type { WaterLayout } from '../core/level/water-layout';
+import { chapterAtmosphere, parseAtmosphereConfig, visibleAtmosphere } from '../core/atmosphere/atmosphere';
+import type { AtmosphereConfig } from '../core/atmosphere/atmosphere';
+import { attachAtmosphere } from './atmosphere-view';
+import type { AtmosphereHandle } from './atmosphere-view';
+import { attachLivingDecor } from './living-decor-view';
+import type { DecorHandle } from './living-decor-view';
 import type { Vec2 } from '../core/math/vec2';
 import { metaBaseline } from '../core/meta/run-stats';
 import { SeededRng } from '../core/rng';
@@ -64,7 +70,7 @@ import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
 import { BulletView } from './bullet-view';
 import { CombatLoop, STRESS_ENEMY_BULLETS } from './combat-loop';
-import type { DebugStatus, DebugUiText, DebugVfxSnapshot } from './debug-api';
+import type { DebugStatus, DebugUiText, DebugVfxSnapshot, DebugAtmosphereSnapshot } from './debug-api';
 import { TELEGRAPH_RING_SHEET } from './enemy-view';
 import { createFxPool } from './fx/effect-pool';
 import type { FxPool } from './fx/effect-pool';
@@ -168,6 +174,7 @@ interface LoadedChapter {
 export class Bootstrap extends Component {
   private manifest: AnimationManifest | null = null;
   private waterLayout: WaterLayout | null = null;
+  private atmosphereConfig: AtmosphereConfig | null = null;
   private chapter: ChapterData | null = null;
   private chapterAssets: ReadonlyMap<number, TiledMapAsset> = new Map();
   private run: RunState | null = null;
@@ -186,6 +193,15 @@ export class Bootstrap extends Component {
   private roomRoot: Node | null = null;
   private uiRoot: Node | null = null;
   private camera: WorldCamera | null = null;
+  /** Ticket #6: over-actor atmosphere sits above `fx-layer`, still below the HUD. */
+  private atmosphereLayer: Node | null = null;
+  /** Per-room atmosphere/decor nodes of the current room (destroyed on room change/effects toggle). */
+  private atmosphereHandle: AtmosphereHandle | null = null;
+  private decorHandle: DecorHandle | null = null;
+  /** What the current room really draws (debug `atmosphere()` for the browser proof). */
+  private atmosphereSnapshot: DebugAtmosphereSnapshot = { chapter: 0, layers: [], animals: 0, props: 0 };
+  /** Seed of the running run: decor is placed from it so a room looks the same on re-entry. */
+  private runSeed = 1;
 
   private player: PlayerController | null = null;
   private bulletView: BulletView | null = null;
@@ -335,6 +351,7 @@ export class Bootstrap extends Component {
 
     this.manifest = await this.loadManifest();
     this.waterLayout = await this.loadWaterLayout();
+    this.atmosphereConfig = await this.loadAtmosphere();
     this.camera = new WorldCamera(this.node, DESIGN_WIDTH, DESIGN_HEIGHT);
     this.camera.onViewportChange = (scale) => {
       this.hud?.node.setScale(scale, scale, 1);
@@ -386,6 +403,7 @@ export class Bootstrap extends Component {
 
     const seed =
       seedArg ?? ((Date.now() ^ (chapterNumber * 0x9e3779b1)) >>> 0);
+    this.runSeed = seed;
     // Run baseline = base stats + purchased meta (hearts/damage/fire rate).
     this.skills.reset(seed, metaBaseline(DEFAULT_COMBAT, save));
     this.rewards = new RunRewards();
@@ -477,6 +495,17 @@ export class Bootstrap extends Component {
         return parseWaterLayout(json);
       } catch (error: unknown) {
         throw new Error(`"resources/data/water-layout.json" is invalid: ${errorMessage(error)}`);
+      }
+    });
+  }
+
+  /** Chapter atmosphere + living decor (#6); numbers live in the JSON, not in `tuning.json`. */
+  private loadAtmosphere(): Promise<AtmosphereConfig> {
+    return this.loadJson('data/atmosphere').then((json) => {
+      try {
+        return parseAtmosphereConfig(json);
+      } catch (error: unknown) {
+        throw new Error(`"resources/data/atmosphere.json" is invalid: ${errorMessage(error)}`);
       }
     });
   }
@@ -588,6 +617,18 @@ export class Bootstrap extends Component {
     sheets.add(HEART_SHEET);
     for (const sheet of obstacleSheets(chapter.chapter)) sheets.add(sheet);
 
+    // Chapter atmosphere + living decor (#6): preload so the first frame of a room has no pop.
+    const atmosphere =
+      this.atmosphereConfig === null ? null : chapterAtmosphere(this.atmosphereConfig, chapter.chapter);
+    if (atmosphere !== null) {
+      for (const layer of atmosphere.layers) {
+        if (layer.sprite !== null) sheets.add(resolve(manifest, layer.sprite).sheet);
+      }
+      for (const key of [...atmosphere.decor.animals, ...atmosphere.decor.props]) {
+        sheets.add(resolve(manifest, key).sheet);
+      }
+    }
+
     return Array.from(sheets);
   }
 
@@ -603,6 +644,9 @@ export class Bootstrap extends Component {
     this.bulletLayer = this.addLayer('bullet-layer', worldRoot);
     // FX above actors + bullets: explosions/impacts are not painted over by enemies.
     this.fxLayer = this.addLayer('fx-layer', worldRoot);
+    // Chapter atmosphere that draws over actors (#6) stays below the HUD and at low alpha,
+    // so telegraphs and bullets always read on top of it.
+    this.atmosphereLayer = this.addLayer('atmosphere-layer', worldRoot);
   }
 
   private addLayer(name: string, parent: Node): Node {
@@ -627,7 +671,75 @@ export class Bootstrap extends Component {
     if (water !== null) {
       attachRoomWater(this.roomRoot, waterAreasFor(water, level.chapter, level.room));
     }
+    // Atmosphere and living decor are rebuilt with the room; their nodes die with `roomRoot`.
+    this.rebuildRoomAtmosphere(level);
     this.currentLevel = level;
+  }
+
+  /**
+   * Build/replace the atmosphere layers (#6) and this room's animals/props.
+   *
+   * Called on every room build and when the Effects setting changes while paused (Reduced drops
+   * secondary layers, animals and animated props, so the current room is rebuilt from
+   * `visibleAtmosphere` rather than patched piecemeal).
+   */
+  private rebuildRoomAtmosphere(level: LevelData): void {
+    this.atmosphereHandle?.destroy();
+    this.atmosphereHandle = null;
+    this.decorHandle?.destroy();
+    this.decorHandle = null;
+
+    const config = this.atmosphereConfig;
+    const manifest = this.manifest;
+    const save = this.save;
+    const roomRoot = this.roomRoot;
+    this.atmosphereSnapshot = { chapter: level.chapter, layers: [], animals: 0, props: 0 };
+    if (config === null || manifest === null || save === null || roomRoot === null) return;
+
+    const atmosphere = chapterAtmosphere(config, level.chapter);
+    if (atmosphere === null) return;
+
+    const visible = visibleAtmosphere(atmosphere, save.settings.effects);
+    // Same run seed + room → identical placement on re-entry, different from other rooms.
+    const seed = (this.runSeed ^ (level.chapter * 0x9e3779b1) ^ (level.room * 0x85ebca6b)) >>> 0;
+
+    const handle = attachAtmosphere(roomRoot, this.atmosphereLayer, {
+      visible,
+      manifest,
+      seed,
+      // Chapter 2 ripples belong on the river/waterfall, not on dry grass.
+      rippleAreas:
+        this.waterLayout === null ? [] : waterAreasFor(this.waterLayout, level.chapter, level.room),
+    });
+    this.atmosphereHandle = handle;
+
+    const decor = attachLivingDecor(roomRoot, {
+      level,
+      tuning: config.animal,
+      manifest,
+      seed: (seed + 1) >>> 0,
+      playerOf: () => this.player?.position ?? null,
+      visible,
+      spec: atmosphere.decor,
+    });
+    this.decorHandle = decor;
+
+    // Planned counts immediately (so `atmosphere()` is never empty while textures load),
+    // then the real counts once the sprites exist.
+    this.atmosphereSnapshot = {
+      chapter: level.chapter,
+      layers: handle.kinds,
+      animals: visible.animals ? atmosphere.decor.animalsPerRoom : 0,
+      props: visible.animatedProps ? atmosphere.decor.propsPerRoom : 0,
+    };
+    void decor.ready.then((counts) => {
+      this.atmosphereSnapshot = {
+        chapter: level.chapter,
+        layers: handle.kinds,
+        animals: counts.animals,
+        props: counts.props,
+      };
+    });
   }
 
   private createPlayer(startAt: Vec2): PlayerController {
@@ -971,6 +1083,9 @@ export class Bootstrap extends Component {
     this.player?.setEffectsMode(settings.effects);
     this.combat?.setEffectsMode(settings.effects);
     this.bulletView?.setEffectsMode(settings.effects);
+    // Effects Reduced also turns off the secondary atmosphere layers, animals and animated props.
+    const level = this.currentLevel;
+    if (level !== null && this.roomRoot !== null) this.rebuildRoomAtmosphere(level);
   }
 
   /** Snapshot the run for the result screen before teardown (ScreenFlow knows no RunState/combat). */
@@ -1006,6 +1121,9 @@ export class Bootstrap extends Component {
 
     this.roomRoot?.destroy();
     this.roomRoot = null;
+    this.atmosphereHandle = null;
+    this.decorHandle = null;
+    this.atmosphereSnapshot = { chapter: 0, layers: [], animals: 0, props: 0 };
     this.currentLevel = null;
     this.chapter = null;
     this.chapterAssets = new Map();
@@ -1092,6 +1210,7 @@ export class Bootstrap extends Component {
       audioManager: () => this.audio,
       setEffects: (mode) => this.debugSetEffects(mode),
       vfx: () => this.debugVfx(),
+      atmosphere: () => this.atmosphereSnapshot,
     });
   }
 
