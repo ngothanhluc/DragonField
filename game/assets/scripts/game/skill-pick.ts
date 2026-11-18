@@ -24,6 +24,7 @@ import {
 import { describeSkill } from '../core/skills/description';
 import type { SkillDef } from '../core/skills/pool';
 import { loadPixelTexture } from './assets/texture-cache';
+import { loadSkillCardIcon, SKILL_ICON_SIZE_PX } from './assets/skill-icon';
 import { playSfx } from './audio/sfx';
 import { createBackdropPanel, createLabel, RARITY_COLORS } from './hud';
 import { sliceSliced } from './screens/menu';
@@ -45,6 +46,9 @@ const CARD_WIDTH = 140;
 const CARD_HEIGHT = 150;
 const CARD_GAP = 12;
 const CARD_Y = -12;
+/** Card icon is ×2 (48 px): an integer multiple keeps the 24 px pixel art crisp. */
+const CARD_ICON_SCALE = 2;
+const CARD_ICON_SIZE = SKILL_ICON_SIZE_PX * CARD_ICON_SCALE;
 
 const TITLE_COLOR = new CocosColor(255, 230, 120, 255);
 const TEXT_COLOR = new CocosColor(238, 238, 238, 255);
@@ -246,16 +250,33 @@ function makeCard(
   key.color = MUTED_COLOR;
   key.node.setPosition(-CARD_WIDTH / 2 + 10, CARD_HEIGHT / 2 - 10, 0);
 
+  // Skill icon at the top of the card (Disabled variant once the skill is maxed, see `skillCardIconSheet`).
+  const icon = new CocosNode('icon');
+  icon.layer = Layers.Enum.UI_2D;
+  icon.parent = node;
+  const iconSprite: Sprite = icon.addComponent(CocosSprite);
+  iconSprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+  iconSprite.trim = false;
+  const iconTransform: UITransform | null = icon.getComponent(CocosUITransform);
+  if (iconTransform !== null) iconTransform.setContentSize(CARD_ICON_SIZE, CARD_ICON_SIZE);
+  icon.setPosition(0, CARD_HEIGHT / 2 - 12 - CARD_ICON_SIZE / 2, 0);
+  // Missing/unloadable art must not break the picker: the card keeps its name and effect text.
+  void loadSkillCardIcon(skill, stacks)
+    .then((iconFrame) => {
+      if (icon.isValid) iconSprite.spriteFrame = iconFrame;
+    })
+    .catch(() => undefined);
+
   const name = createLabel(node, 'name', skill.name);
   name.fontSize = 13;
   name.lineHeight = 15;
   name.color = TEXT_COLOR;
-  name.node.setPosition(0, CARD_HEIGHT / 2 - 28, 0);
+  name.node.setPosition(0, 6, 0);
 
   const rarity = createLabel(node, 'rarity', skill.rarity.toUpperCase());
   rarity.fontSize = 9;
   rarity.color = RARITY_COLORS[skill.rarity];
-  rarity.node.setPosition(0, CARD_HEIGHT / 2 - 46, 0);
+  rarity.node.setPosition(0, -6, 0);
 
   const effect = createLabel(node, 'effect', describeSkill(skill));
   effect.fontSize = 9;
@@ -266,9 +287,9 @@ function makeCard(
   const effectTransform: UITransform | null = effect.node.getComponent(CocosUITransform);
   if (effectTransform !== null) {
     // Fixed width = the card interior; RESIZE_HEIGHT only stretches the height.
-    effectTransform.setContentSize(CARD_WIDTH - 16, 60);
+    effectTransform.setContentSize(CARD_WIDTH - 16, 38);
   }
-  effect.node.setPosition(0, 4, 0);
+  effect.node.setPosition(0, -32, 0);
   // Force a relayout after changing overflow/width: the system font sometimes keeps the old
   // single-line size and draws past the card (Thorns hit exactly this bug).
   effect.updateRenderData?.(true);
