@@ -1,0 +1,13 @@
+#!/bin/sh
+# Chạy một lệnh bằng account GitHub sở hữu repo, không đổi account đang active của máy.
+# Account lấy từ docs/agents/issue-tracker.md. Token chỉ nằm trong env của tiến trình con,
+# không lên dòng lệnh (hc ls hiện dòng lệnh).
+#   scripts/as-owner gh pr create ...
+#   scripts/as-owner scripts/pr-wait 12 --until green --allow-no-checks
+set -eu
+owner=ngothanhluc
+token=$(gh auth token -u "$owner" 2>/dev/null) || {
+  echo "as-owner: chưa đăng nhập gh bằng account $owner (gh auth login)" >&2
+  exit 2
+}
+GH_TOKEN=$token exec "$@"

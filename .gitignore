@@ -34,3 +34,6 @@ NewProject/
 .shots/
 # bản deploy commit sẵn cho Cloudflare: native/ ở đây là texture/audio, không phải build native
 !game/deploy/**/native/
+
+# Brief, báo cáo, ledger của vòng tự động trong mỗi worktree ticket
+.kol-auto/

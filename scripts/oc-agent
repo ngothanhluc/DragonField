@@ -1,0 +1,32 @@
+#!/bin/sh
+# Khởi động opencode tương tác với model và effort của một vai trò.
+# Được gọi bởi template hc (oc-impl, oc-impl-pro, oc-adversary), cwd là worktree.
+#   scripts/oc-agent executor|executor-pro|adversary
+# Model: bản mới nhất trong dòng (resolve-models). Effort: nội dung .kol-auto/effort.<vai trò>
+# trong worktree nếu có (orchestrator ghi trước khi khởi động), không thì bậc đầu trong
+# thang `effort` của vai trò ở models.json.
+set -eu
+role=${1:?thiếu vai trò}
+here=$(cd "$(dirname "$0")" && pwd)
+model=$("$here/resolve-models" --get "$role")
+if [ ! -f .opencode/opencode.json ]; then
+  echo "oc-agent: worktree thiếu .opencode/opencode.json — commit bộ tự động hoá vào nhánh mặc định trước" >&2
+  exit 2
+fi
+ladder=$(python3 -I -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["roles"][sys.argv[2]].get("effort", [])))' \
+  "$here/../models.json" "$role")
+effort=""
+[ -f ".kol-auto/effort.$role" ] && effort=$(tr -d ' \n' < ".kol-auto/effort.$role")
+[ -z "$effort" ] && effort=${ladder%% *}
+target=$model
+if [ -n "$effort" ]; then
+  case " $ladder " in
+    *" $effort "*) target="$model#$effort" ;;
+    *) echo "oc-agent: effort '$effort' không nằm trong thang của $role: $ladder" >&2; exit 2 ;;
+  esac
+fi
+echo "oc-agent: $role → $target" >&2
+# .opencode/opencode.json: agent mặc định `kol` đọc model từ biến này. Variant (#effort) chỉ được
+# giữ ở model cấp agent, model cấp gốc bỏ mất nó (docs opencode, đã kiểm bằng `opencode debug agents`).
+# --standalone bắt buộc: server nền dùng chung của opencode không thấy env của tiến trình này.
+KB_OC_MODEL=$target KB_OC_ROLE=$role exec opencode --standalone --auto

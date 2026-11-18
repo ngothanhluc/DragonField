@@ -1,0 +1,94 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "kol",
+  "agents": {
+    "kol": {
+      "mode": "primary",
+      "model": "{env:KB_OC_MODEL}"
+    }
+  },
+  "permissions": [
+    {
+      "action": "external_directory",
+      "resource": "*",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "*",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "tdd",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "executor-rules",
+      "effect": "allow"
+    }
+  ],
+  "policies": [
+    {
+      "action": "tool.use",
+      "resource": "shell:git push *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:gh *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:scripts/as-owner *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:git worktree *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:git checkout *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:git switch *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:git rebase *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:git reset *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:git merge *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:hc run *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:opencode *",
+      "effect": "deny"
+    },
+    {
+      "action": "tool.use",
+      "resource": "shell:claude *",
+      "effect": "deny"
+    }
+  ]
+}

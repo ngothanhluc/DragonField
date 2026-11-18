@@ -1,0 +1,35 @@
+{
+  "$comment": "Vai trò → dòng model. scripts/resolve-models chọn bản mới nhất trong dòng có trong gói. Không ghi ID cụ thể ở đây. `effort` là thang variant của opencode, bậc đầu là mặc định; xem .claude/skills/effort.",
+  "provider": "opencode-go",
+  "roles": {
+    "executor": {
+      "match": "^deepseek-v[0-9.]+-flash$",
+      "note": "implement mọi ticket",
+      "effort": [
+        "low",
+        "high",
+        "max"
+      ]
+    },
+    "executor-pro": {
+      "match": "^deepseek-v[0-9.]+-pro$",
+      "note": "nâng cấp khi executor thua ở bậc effort cao nhất",
+      "effort": [
+        "high",
+        "max"
+      ]
+    },
+    "adversary": {
+      "match": "^gpt-[0-9.]+-luna$",
+      "note": "kẻ phá trong review-loop cho ticket rủi ro",
+      "effort": [
+        "medium"
+      ]
+    }
+  },
+  "orchestrator": {
+    "models_dev_provider": "anthropic",
+    "match": "^claude-opus-[0-9-]+$",
+    "note": "model của session Claude Code; script chỉ nhắc khi có bản mới hơn"
+  }
+}
