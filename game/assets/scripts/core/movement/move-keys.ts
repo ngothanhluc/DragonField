@@ -49,10 +49,9 @@ const BY_KEY_CODE: Readonly<Record<number, MoveDirection>> = {
  * The movement key for a keyboard event, or `null`.
  *
  * `code` (the **physical** key) wins: a Vietnamese input method (Telex/VNI) turns
- * `key` into `Process` or a composed letter and `keyCode` into 229 while composing
- * text, but `code` still says `KeyW`. The player used to read `keyCode` through Cocos
- * `input`, so WASD got stuck when the IME was on. `key`/`keyCode` are only the
- * fallback for environments that do not send `code`.
+ * `key` into `Process` or a composed letter and `keyCode` into 229 while composing text,
+ * but `code` still says `KeyW`. The player used to read `keyCode` through Cocos `input`,
+ * so WASD got stuck when the IME was on. `key`/`keyCode` are only the fallback for no `code`.
  */
 export function moveDirectionForKey(event: KeyIdentity): MoveDirection | null {
   const byCode = BY_CODE[event.code];
