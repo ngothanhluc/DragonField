@@ -84,19 +84,17 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     name: 'settings',
     title: 'SETTINGS',
     subtitle: 'Saved to this browser',
-    info: [
-      'Keybinds (fixed in v1)',
-      'WASD / arrows — move',
-      'Esc / P — pause',
-      'Mouse + Enter / Space — menus',
-    ],
+    // Gọn: màn có 5 hàng nên keybind gộp còn 1 dòng, nếu không nút Back rơi
+    // ngoài canvas ở viewport thấp (1280×720) và hint đè lên hàng cuối.
+    info: ['Keybinds fixed: WASD/arrows move · Esc/P pause · Enter/Space menus'],
     items,
     onBack: options.onBack,
     onAdjust: (index, delta) => {
       if (index === 0) changeVolume(delta);
     },
     hint: '↑/↓ select · ←/→ adjust volume · Esc back',
-    buttonHeight: 34,
+    buttonHeight: 26,
+    buttonGap: 6,
   });
 
   return task.then((built) => {

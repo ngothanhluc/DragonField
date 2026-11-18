@@ -33,7 +33,11 @@ type Sprite = InstanceType<typeof CocosSprite>;
 type UITransform = InstanceType<typeof CocosUITransform>;
 type SpriteFrame = Awaited<ReturnType<typeof getFrame>>;
 
-/** Cỡ coin trước khi biết frame thật (init set lại theo `SpriteFrame.width/height`). */
+/**
+ * Cỡ coin trước khi biết frame thật (init set lại theo `SpriteFrame.rect`).
+ * Cảnh báo: `SpriteFrame.width/height` là cỡ **cả texture** (40×10 của sheet
+ * Coin2), không phải cỡ frame đã cắt — dùng nhầm là coin bị kéo dài 4×.
+ */
 const COIN_FALLBACK_PX = 10;
 const DAMAGE_COLOR = new CocosColor(255, 255, 255, 255);
 const CRIT_COLOR = new CocosColor(255, 214, 90, 255);
@@ -94,11 +98,12 @@ export class FeelView {
     const firstFrame = this.coinFrames[0];
     for (let index = 0; index < FEEL_TUNING.coin.poolSize; index += 1) {
       const slot = this.createCoinSlot(coinLayer, index);
-      // `sizeMode = CUSTOM` lấy kích thước từ UITransform: phải set đúng cỡ frame,
-      // không thì coin bị kéo theo default 100×100 (bẫy AGENTS.md).
+      // `sizeMode = CUSTOM` lấy kích thước từ UITransform: phải set đúng cỡ **frame
+      // đã cắt** (`frame.rect` 10×10), không phải `frame.width/height` (cỡ cả sheet
+      // 40×10) và cũng không để default 100×100 — cả hai đều làm coin méo (AGENTS.md).
       const transform: UITransform | null = slot.node.getComponent(CocosUITransform);
       if (transform !== null && firstFrame !== undefined) {
-        transform.setContentSize(firstFrame.width, firstFrame.height);
+        transform.setContentSize(firstFrame.rect.width, firstFrame.rect.height);
       }
       this.coinSlots.push(slot);
     }

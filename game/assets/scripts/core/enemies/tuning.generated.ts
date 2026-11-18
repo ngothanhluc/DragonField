@@ -97,8 +97,8 @@ export const TUNING_DATA = {
   feel: {
     shake: {
       maxOffsetTiles: 0.5,
-      decayPerSecond: 2.4,
-      playerHurt: 0.55,
+      decayPerSecond: 1.6,
+      playerHurt: 0.8,
       explosion: 0.2,
       bossCharge: 0.7,
     },
