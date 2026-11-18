@@ -7,7 +7,9 @@ description: Working rules for the opencode executor in the full-send automation
 
 You implement **exactly one ticket** in the current worktree (cwd).
 
-**Domain skills.** Besides this skill and `tdd`, you may load any other skill the repo's opencode config allows you. The brief names which ones are needed; load them **before** designing that part. When a skill targets a different stack than this repo's (check `AGENTS.md`), translate the technique to the repo's stack; do not copy its code. The coordination skills (`full-send`, `brief`, `review-loop`, `proof`, `watch-pr`, `effort`) are not yours. The orchestrator (Claude Code) wrote the brief and the acceptance test; it will read the diff, run proof, open the PR and merge. Your part ends at the local commit.
+**Domain skills.** Besides this skill and `tdd`, you may load any other skill the repo's opencode config allows you. The brief names which ones are needed; load them **before** designing that part. When a skill targets a different stack than this repo's (check `AGENTS.md`), translate the technique to the repo's stack; do not copy its code.
+
+**Your role.** You are the executor: you write the product code and commit it locally. The orchestrator (a Claude Code session on Claude Opus) wrote the brief and the acceptance test, and it owns everything after your commit: review, proof, PR, merge. The coordination skills (`full-send`, `full-send-spec`, `full-stop`, `brief`, `review-loop`, `proof`, `watch-pr`, `effort`) are the orchestrator's; leave them unloaded.
 
 ## Contract
 

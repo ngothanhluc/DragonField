@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Effort
 
+Which model runs each role is in **Roles** in `.claude/skills/full-send/SKILL.md`. This skill only decides how hard each one thinks.
+
 **Start low, climb only after a verified failure**: red acceptance test, red checks, executor reported `blocked`, or a sent blocker fix is still unresolved. "The ticket looks hard" is not a reason to climb. Models self-allocate effort worse than a fixed table, and high effort on easy work costs several times more with no gain.
 
 ## Executor ladder
@@ -30,12 +32,11 @@ Each rung is a `model#variant`. The ladder comes from `effort` in `models.json`;
 | Role | How to set it | Effort |
 |---|---|---|
 | opencode adversary (`oc-adversary`) | first rung of `adversary` in `models.json` | `medium` |
-| Claude adversary (Agent tool) | the Agent tool's `effort` parameter | `medium` |
-| Claude subagent reading/searching many files | the Agent tool's `effort` parameter | `low` |
-| Owner in `full-send-spec` | the session default | unset |
+| Claude adversary (Agent tool, `model: "opus"`) | the Agent tool's `effort` parameter | `medium` |
+| Owner in `full-send-spec` (`claude --model opus`) | the session default | unset |
 | Orchestrator rechecking the premise | add `ultrathink` to that turn | xhigh for one turn |
 
-The Agent tool only takes an effort when a document asks for it: this table is that request, so every Agent tool call in the automation passes `effort` per the table.
+The Claude adversary is the only Agent tool call in the automation (see **Roles** in `full-send`). The Agent tool only takes an effort when a document asks for it; this table is that request, so pass `effort: "medium"`.
 
 ## Recording
 

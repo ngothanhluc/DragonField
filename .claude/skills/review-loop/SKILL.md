@@ -30,10 +30,10 @@ If `git diff --shortstat <red-test SHA>` grows across rounds for anything other 
 
 ## Adversaries (only when `risk: yes`)
 
-Once the first round has no blockers left, run two adversaries in parallel, each in its own one-off worktree created from the ticket's HEAD (`git worktree add --detach <temp dir> HEAD`):
+Once the first round has no blockers left, run two adversaries in parallel: one opencode model and one Claude model, so their blind spots differ. Give each its own one-off worktree created from the ticket's HEAD (`git worktree add --detach <temp dir> HEAD`):
 
-- `hc run --bg --name adv-<n> --cwd <temp-wt-1> oc-adversary "<ticket goal, acceptance criteria, diff path, report file .agent-auto/adversary.md, parent terminal $HC_TERMINAL_ID>"`
-- A Claude subagent (Agent tool, `model: "opus"`, `effort: "medium"` per `.claude/skills/effort/SKILL.md`, no `isolation`) with the same information and the absolute path `<temp-wt-2>`: "Work only inside <temp-wt-2>. Break this change. Every finding must include the command you ran, the real output, and the output the goal requires. No run, no report. Do not change product code, do not commit."
+1. **opencode adversary:** `hc run --bg --name adv-<n> --cwd <temp-wt-1> oc-adversary "<ticket goal, acceptance criteria, diff path, report file .agent-auto/adversary.md, parent terminal $HC_TERMINAL_ID>"`
+2. **Claude adversary:** an Agent tool call with `model: "opus"`, `effort: "medium"`, and no `isolation`. Its prompt carries the same information plus the absolute path `<temp-wt-2>`: "Work only inside <temp-wt-2>. Break this change. Every finding must include the command you ran, the real output, and the output the goal requires; report only findings you ran. Leave product code and git history as they are."
 
 For each finding you get back, **rerun its command yourself** on the ticket worktree. If the output shows a bug that breaks the ticket's goal, add it to the ledger (graded per step 4). Otherwise drop it and record how many findings were dropped and why. Merge findings with the same root cause. Delete the temp worktrees and `hc rm adv-<n>` afterwards.
 
