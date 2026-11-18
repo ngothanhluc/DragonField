@@ -51,7 +51,15 @@ describe('animations.json', () => {
   });
 
   it('only uses actors fixed in the GDD', () => {
-    const actors: ReadonlySet<string> = new Set<string>(['player', ...MONSTERS, ...BOSSES, 'fx']);
+    // `animal.*` / `decor.*` are ticket #6's living decor (M8): decor is art, not combat actors.
+    const actors: ReadonlySet<string> = new Set<string>([
+      'player',
+      ...MONSTERS,
+      ...BOSSES,
+      'fx',
+      'animal',
+      'decor',
+    ]);
     for (const [key] of entries) {
       expect(actors.has(actorOf(key)), `unknown actor in key ${key}`).toBe(true);
     }

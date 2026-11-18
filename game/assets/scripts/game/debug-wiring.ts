@@ -8,6 +8,7 @@ import type { Node as CocosNode } from 'cc';
 import type { AudioManager } from './audio/audio-manager';
 import type {
   DebugAnimationSnapshot,
+  DebugAtmosphereSnapshot,
   DebugAudioSnapshot,
   DebugBossSnapshot,
   DebugEnemySnapshot,
@@ -58,6 +59,7 @@ export interface DebugWiringHost {
   readonly audioManager: () => AudioManager | null;
   readonly setEffects: (mode: 'full' | 'reduced') => boolean;
   readonly vfx: () => DebugVfxSnapshot;
+  readonly atmosphere: () => DebugAtmosphereSnapshot;
 }
 
 /** Install the API if the URL has `?debug=1`; returns `true` when installed. */
@@ -110,6 +112,7 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
         : animationOfNode(host.actorLayer(), nodeName),
     setEffects: host.setEffects,
     vfx: host.vfx,
+    atmosphere: host.atmosphere,
   };
 
   return installDebugApi(provider);
