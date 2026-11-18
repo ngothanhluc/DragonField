@@ -23,7 +23,7 @@ Roguelite né đạn top-down, pixel 16px, chạy trên web. Người chơi **t�
 
 ## Trạng thái hiện tại
 
-M0–M6 xong, M7 (ship) đang làm — xem `docs/milestones.md`. Game chạy ở **https://yokai.lukeinc.tech**
+M0–M7 xong (đã ship); M8 (hình ảnh) và M9 (nội dung) đã chốt spec, chưa bắt đầu — xem `docs/milestones.md` và GDD §13. Game chạy ở **https://yokai.lukeinc.tech**
 (Cloudflare Worker `yokai-field`, chỉ file tĩnh). Trang giới thiệu nằm ở portfolio:
 https://lukeinc.tech/projects/dragon-field (repo riêng `luke-tech`).
 

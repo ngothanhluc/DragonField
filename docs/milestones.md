@@ -116,14 +116,67 @@ Nguồn thiết kế: `docs/gdd.md`. Quyết định kỹ thuật: `docs/tech-de
 - Build < 15 MB (audio stream riêng nếu cần).
 - Không lỗi console ở lần chơi đầu.
 
-**Trạng thái: 🚧 Đang làm (2026-11-18).** 598 test xanh (mới: `move-keys`, `deploy-html`, bound boss trong `boss.test`, extent sprite trong `art-files`, `pixelPerfectRect`/`worldToUiScale` trong `letterbox`). World vẽ ở bội số nguyên (1920×1080 → 1536×864 ×3, lề pixel nguyên), HUD thu theo `hudScale` để bám mép phòng, menu vẫn `SHOW_ALL`. Boss đứng trong `bossRoomBounds` theo extent sprite đo từ PNG — Samurai charge sát tường không còn bị cắt (đã xem ở 1920×1080). WASD đọc `event.code` trên `document` — event giả lập `key: 'đ'`, `keyCode: 229` vẫn đi đúng; **chờ thử bằng Telex thật** (`?debug=1` → `__yokai.keyLog()`). Panel/thẻ skill đổi sang `nine_path_panel_interior` (hết khung chồng lệch từ M6). `bun run deploy:prepare`: 431 file, 6.66 MB, file lớn nhất 2.42 MB. Local 1920×1080: `stress()` 8 enemy + 44 đạn **60.0 fps** (6 mẫu × 120 frame). Còn lại: deploy thật, kiểm Chrome trên domain, Safari/Firefox (người kiểm), Telex thật.
+**Trạng thái: ✅ Xong (2026-11-18).** 598 test xanh (mới: `move-keys`, `deploy-html`, bound boss trong `boss.test`, extent sprite trong `art-files`, `pixelPerfectRect`/`worldToUiScale` trong `letterbox`). World vẽ ở bội số nguyên (1920×1080 → 1536×864 ×3, lề pixel nguyên), HUD thu theo `hudScale` để bám mép phòng, menu vẫn `SHOW_ALL`. Boss đứng trong `bossRoomBounds` theo extent sprite đo từ PNG — Samurai charge sát tường không còn bị cắt (đã xem ở 1920×1080). WASD đọc `event.code` trên `document` — event giả lập `key: 'đ'`, `keyCode: 229` vẫn đi đúng; **chờ thử bằng Telex thật** (`?debug=1` → `__yokai.keyLog()`). Panel/thẻ skill đổi sang `nine_path_panel_interior` (hết khung chồng lệch từ M6). `bun run deploy:prepare`: 431 file, 6.66 MB, file lớn nhất 2.42 MB. Local 1920×1080: `stress()` 8 enemy + 44 đạn **60.0 fps** (6 mẫu × 120 frame). **Deploy thật ✅** (Cloudflare Workers Builds, `yokai.lukeinc.tech` trả 200). **Chrome trên domain ✅ (2026-11-18)**: `?debug=1`, viewport 1920×876, canvas khớp đúng `innerWidth×innerHeight`, title → ch1, `stress()` 8 enemy + 44 đạn **60.0 fps** (4 mẫu × 120 frame), `placeholders()` rỗng, 0 error console (warning duy nhất do gọi `stress()` khi phòng còn đang load). Chủ dự án quyết định **bỏ qua** kiểm Safari/Firefox và thử Telex thật (2026-11-18) — nghiệm thu “Chrome/Safari/Firefox” chỉ xác nhận trên Chrome; fix WASD theo `event.code` giữ nguyên nhưng chưa thử bằng bộ gõ thật.
+
+---
+
+## M8 — Hình ảnh và juice
+
+Chốt qua buổi grill 2026-11-18 (xem GDD §13, ADR-014…017). **Không đổi số balance**: hitbox, damage, AI, spawn giữ nguyên; `run-simulation` phải xanh không cần retune. Nhánh `m8-visuals`, merge `master` (= deploy) khi đạt nghiệm thu. Skill dùng: `game-feel`, `game-ui-ux`, `level-design`, `performance-optimization` (engine-neutral — tự map sang Cocos).
+
+**Việc (theo thứ tự).**
+1. **Juice.** Rung màn khi trúng đòn / boss slam, biên độ là bội số nguyên texel (giữ integer scaling M7); squash/stretch player (đổi hướng, trúng đòn) và enemy (trúng đạn); muzzle flash; coin bay về HUD khi nhặt vàng; số damage bằng font pixel. Settings: **Screen shake** bật/tắt (mặc định bật), **Damage numbers** bật/tắt (mặc định tắt).
+2. **VFX vũ khí.**
+   - Sprite đạn player theo nguyên tố mạnh nhất (ưu tiên): Explosive → BigEnergyBall tint cam, Freeze → IceSpike, Poison → PlantSpike, Homing → ShurikenMagic, Piercing → Kunai, mặc định Shuriken. Sharpen ≥ 3 → bản Big (BigShuriken/BigKunai).
+   - Vệt bay 2–3 ghost (pool riêng), màu theo nguyên tố: lửa cam, băng cyan, độc xanh lá, homing tím, crit vàng. Tụt fps → 1 ghost.
+   - Impact riêng: crit (Spark lớn + flash trắng + hitstop dài hơn), freeze (`Elemental/Ice`), poison (`Elemental/Plant` + bong bóng), explosive (Explosion + SmokeCircular + shake), pierce (`Attack/Cut` nhỏ), ricochet (Spark ở điểm bật + tia nối mục tiêu mới), execute (`Slash/Arc` + flash đỏ), lifesteal (hạt đỏ bay về player).
+   - Player phát `Attack` 4 hướng khi **đứng yên** và bắn; đang chạy giữ walk + muzzle flash.
+   - `Magic/Boost` khi nhận skill; `Magic/Aura` dưới chân khi ≥ 8 stack hoặc có skill Epic+, màu theo nguyên tố mạnh nhất.
+   - **Ngôn ngữ hình dạng:** đạn player nhọn (shuriken/kunai/spike), đạn địch tròn + viền tối, theo chapter: ch1 EnergyBall, ch2 bong bóng nước, ch3 CanonBall/Rock, ch4 Fireball (ADR-016).
+   - Settings **Effects: Full / Reduced** — Reduced tắt trail, aura, particle phụ; giữ impact và telegraph.
+3. **Elite palette remap.** Script lúc build sinh PNG biến thể elite, remap theo index `Palette.png` (53 màu) — thay tint nhân màu từ M3 (ADR-015).
+4. **Icon skill.** 20 skill → icon 24×24 trong `Ui/Skill Icon` (+ bản Disabled) cho HUD, thẻ chọn skill, shop giữa run, icon cửa. Ánh xạ là data, có test không trùng.
+5. **Không khí theo chapter** bằng sprite + `Graphics` (không shader custom — ADR-017): ch1 Raylight + lá bay, ch2 Fog + gợn nước, ch3 tro + vignette, ch4 hơi nóng/cát. **Decor sống** không collider, không che đạn/telegraph: thú `Animal/`, cờ/cây/hoa animated.
+6. **Dress lại ch3** (hết “giấy rách”) và boss arena.
+7. **Menu sống.** Title + chapter select vẽ phòng thật của chapter, NinjaGreen idle, thú, lớp không khí.
+8. **Âm thanh nhỏ.** Biến thể SFX (không lặp một file) + jingle room clear / nhận skill.
+
+**Nghiệm thu.**
+- `bun run check` xanh; test mới cho: chọn sprite đạn theo loadout, shake bội số texel, ánh xạ icon, palette remap (màu output ⊂ palette), settings mới round-trip save.
+- `run-simulation` xanh **không đổi `tuning.json`**.
+- `stress()` **60 fps ở 1920×1080** với Effects Full, loadout có trail + aura; không file deploy > 25 MiB (bỏ trần 15 MB của M7).
+- Đọc được: ảnh chụp màn hình đầy đạn — đạn địch phân biệt được với đạn player ở mọi loadout; telegraph không bị decor/FX che.
+- 0 lỗi console ở luồng title → ch1 → boss → result.
+
+**Trạng thái: ⏳ Chưa bắt đầu.**
+
+---
+
+## M9 — Nội dung
+
+Nhánh `m9-content`. Skill dùng: thêm `game-ai`, `roguelike`, `game-docs`. Số liệu mới đặt trong `tuning.json` và chỉnh bằng sim (ADR-013); người duyệt bảng sim, không duyệt từng số.
+
+**Việc.**
+1. **Pool phòng.** Mỗi chapter 15–18 phòng, mỗi run bốc 9 theo seed run. Phòng sinh bằng script `.tmx` từ template gọn + script dress (mở rộng `scripts/dress-rooms.ts`); người duyệt qua ảnh chụp.
+2. **Chọn cửa.** Sau mỗi phòng thường: 2 cửa, mỗi cửa có icon phần thưởng (skill / vàng / hồi máu / shop / rương). Phòng boss luôn cuối (ADR-014).
+3. **Phòng đặc biệt.** Hồi máu (NPC), shop giữa run (NPC, **chung vàng meta** — tiêu trong run thì về ít hơn), rương (`Items/Treasure`). NPC lấy từ `Actor/Character/`, chỉ làm NPC, không làm skin player.
+4. **Vai trò enemy mới**, có ở cả ch1–4, sprite theo chapter từ monster chưa dùng: **Sniper** (đứng xa, telegraph đường thẳng ~800 ms, 1 viên nhanh), **Splitter** (chết tách 2–3 con nhỏ hơn, tint).
+5. **Boss pool** (random 1/2 theo seed), nhạc riêng mỗi boss: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / GiantBamboo · ch4 GiantRacoon / Tengu biến thể màu (pattern mạnh hơn). Boss mới theo chuẩn M4: 3 phase, tint + màu telegraph + banner, mỗi phase ≥ 1 pattern buộc di chuyển.
+6. **Chapter 4 — sa mạc** (`TilesetDesert` + `tileset_camp`), mở sau ch3. Save bump `version` + migrate.
+
+**Nghiệm thu.**
+- Test: bốc phòng theo seed tất định và không trùng trong run; mọi phòng sinh ra đi được từ spawn tới cửa, prop đặc là obstacle, spawn không đè obstacle; phần thưởng cửa theo seed; shop trừ vàng đúng + chặn khi thiếu; splitter tách đúng số con; sniper telegraph trước khi bắn; boss mới đứng yên tại `playerStart` vẫn trúng đòn ở mọi phase; save v1 → v2 migrate.
+- Sim (nhiều seed, cả 2 boss mỗi chapter): đứng yên thua phòng 1; né + loadout tiêu biểu thắng cả 4 chapter.
+- Chơi trọn ch1 → ch4 trong browser, 0 lỗi console; 60 fps `stress()` 1920×1080.
+
+**Trạng thái: ⏳ Chưa bắt đầu** (chờ M8).
 
 ---
 
 ## Phụ thuộc
 
 ```text
-M0 → M1 → M1.5 → M2 → M3 → M4 → M5 → M6 → M7
+M0 → M1 → M1.5 → M2 → M3 → M4 → M5 → M6 → M7 → M8 → M9
 ```
 
 Không mốc nào bắt đầu khi mốc trước chưa đạt nghiệm thu. Ngoại lệ: tải pack Update #8 và dựng bộ tile dungeon có thể chạy song song M0–M1.

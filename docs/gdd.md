@@ -205,6 +205,8 @@ người chơi cũ không mất cấp, nhưng save ghi ra luôn dùng tên mới
 
 Inventory, equipment, NPC, dialog, hub, shop trong màn, nhiều nhân vật, gamepad, mobile, localization, leaderboard, daily run, dash.
 
+> Từ M9, **NPC** (chỉ hồi máu/bán hàng, không dialog) và **shop trong run** ra khỏi danh sách này — xem §13.
+
 ---
 
 ## 12. Rủi ro đã biết
@@ -214,3 +216,32 @@ Inventory, equipment, NPC, dialog, hub, shop trong màn, nhiều nhân vật, ga
 3. **Không monster nào có attack/hurt/death** → telegraph, trúng đòn và chết đều là FX + tint. Rủi ro: người chơi không đọc được đòn. Test bắt buộc ở M3: 3 enemy phải phân biệt được trong 2 giây.
 4. **20 skill × 3 chapter** là khối balance lớn; giữ pool đóng băng, chỉ tune số.
 5. `TilesetFloor.png` lệch 1 px và không có atlas JSON → bảng frame/animation phải khai báo tay, sai một ô là lệch toàn bộ animation.
+
+---
+
+## 13. Mở rộng sau v1 (M8–M9)
+
+Chốt 2026-11-18. Việc và nghiệm thu chi tiết: `docs/milestones.md` M8/M9.
+
+### 13.1 Hình ảnh (M8 — không đổi balance)
+
+- **Juice:** shake theo bội số texel, squash/stretch, muzzle flash, coin bay về HUD, số damage (mặc định tắt).
+- **Đạn kể build:** sprite đạn player đổi theo nguyên tố mạnh nhất trong loadout (Explosive > Freeze > Poison > Homing > Piercing > mặc định), to hơn khi Sharpen ≥ 3, trail màu theo nguyên tố; mỗi hiệu ứng skill có impact riêng; aura khi build mạnh.
+- **Ngôn ngữ hình dạng:** đạn player **nhọn**, đạn địch **tròn + viền tối**. Đây là luật đọc màn hình, không chỉ là style — màu đạn player giờ đổi theo build nên không còn dùng màu để phân biệt ta/địch.
+- **Không khí chapter** + decor sống (thú, cờ, cây) không collider, không che đạn/telegraph.
+- **Accessibility:** Screen shake on/off, Damage numbers on/off, Effects Full/Reduced.
+
+### 13.2 Nội dung (M9)
+
+| | v1 | M9 |
+|---|---|---|
+| Chapter | 3 | **4** (thêm sa mạc sau ch3) |
+| Phòng mỗi chapter | 9 cố định | pool 15–18, run bốc 9 theo seed |
+| Đường đi | thẳng | sau mỗi phòng chọn 1/2 cửa, mỗi cửa có icon thưởng |
+| Phòng đặc biệt | – | hồi máu, shop giữa run, rương |
+| Vai trò enemy | chaser / caster / tank | + **sniper**, **splitter** |
+| Boss | 1 / chapter | pool 2 / chapter, nhạc riêng |
+
+Boss pool: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / GiantBamboo · ch4 GiantRacoon / Tengu biến thể màu.
+
+**Shop giữa run dùng chung vàng meta** (§7): tiêu trong run thì về ít vàng hơn — đánh đổi “mạnh bây giờ hay mạnh vĩnh viễn”. Save (§10) bump `version` khi thêm chapter 4.

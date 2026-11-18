@@ -181,3 +181,43 @@ Bảng đầy đủ: `docs/gdd.md` §3–§5. Toàn bộ số nằm trong `src/c
 **Lý do.** Một cuộc kiểm tra bằng simulation phát hiện người chơi **đứng yên vẫn thắng chapter 1 mà không mất máu** — lỗi này không thể thấy bằng test đơn vị, và sẽ chỉ lộ ra sau khi dựng xong scene. Tách số liệu khỏi code cho phép retune bằng JSON và đo lại trong vài giây. JSON không được import trực tiếp vì mọi thứ dưới `assets/` là nội dung asset DB, và không có cách kiểm chứng bằng CLI rằng import JSON sống sót qua bước bundle script của editor; module TS thì chắc chắn sống.
 
 **Hệ quả.** Thay đổi cân bằng = sửa `config/tuning.json` rồi chạy `bun run gen`; `bun run check:config` (chạy đầu tiên trong `bun run check`) fail nếu file generated lệch nguồn. Thay đổi cân bằng phải kèm một lần chạy sim có số liệu trước/sau. Test tích hợp giữ các ngưỡng: đứng yên thua, né sống lâu hơn ≥2×, god-mode vẫn thắng trong 60–180 s. Nếu một ngưỡng bị phá, đó là tín hiệu thiết kế, không phải test hỏng.
+
+---
+
+## ADR-014 — Run có nhánh: chọn 1/2 cửa, pool phòng theo seed
+
+**Quyết định.** M9: mỗi chapter có pool 15–18 phòng, run bốc 9 bằng RNG seed của run; sau mỗi phòng thường người chơi chọn 1 trong 2 cửa có icon thưởng (skill / vàng / hồi máu / shop / rương). Phòng boss cố định cuối. Phòng sinh bằng script `.tmx` (template + dress), không vẽ tay trong Tiled.
+
+**Lý do.** v1 có 9 phòng cố định nên các run giống nhau; chọn cửa là thay đổi tạo khác biệt lớn nhất trên mỗi công sức. Agent không dùng được GUI Tiled, và 60–70 phòng vẽ tay không kiểm được bằng test.
+
+**Hệ quả.** Logic bốc phòng/thưởng nằm trong `core/run/` và có test tất định theo seed. Phải có test hình học cho mọi phòng sinh ra (đi được spawn → cửa, prop đặc = obstacle, spawn không đè obstacle). Balance sim phải mô phỏng cả lựa chọn cửa.
+
+---
+
+## ADR-015 — Elite là PNG remap theo palette, sinh lúc build
+
+**Quyết định.** Biến thể elite được sinh sẵn bằng script: map mỗi màu của sprite sang màu khác trong `Palette.png` (53 màu) theo bảng index. Không tint nhân màu, không shader.
+
+**Lý do.** Tint nhân màu (M3) làm lệch khỏi palette của pack; shader custom trong Cocos 3.8 tốn công và rủi ro khi build web. Script remap test được bằng vitest với decoder `scripts/lib/png.ts`.
+
+**Hệ quả.** Thêm PNG vào `resources/art` (dung lượng tăng nhẹ — trần 15 MB đã bỏ ở M8). Test: mọi pixel output thuộc palette.
+
+---
+
+## ADR-016 — Đạn ta nhọn, đạn địch tròn
+
+**Quyết định.** Đạn player luôn là hình nhọn (shuriken, kunai, spike); đạn địch luôn là hình tròn có viền tối (EnergyBall, bong bóng, CanonBall/Rock, Fireball). Explosive của player dùng BigEnergyBall tint cam vì Fireball thuộc đạn địch ch4.
+
+**Lý do.** Từ M8 màu đạn player đổi theo build, nên màu không còn phân biệt được ta/địch. Hình dạng là kênh đọc còn lại trên màn hình đầy đạn.
+
+**Hệ quả.** Mọi projectile mới phải chọn theo luật này; review ảnh chụp “màn đầy đạn” là một mục nghiệm thu M8.
+
+---
+
+## ADR-017 — Không khí bằng sprite/Graphics, không shader custom; ngân sách là fps, không phải MB
+
+**Quyết định.** Lớp không khí chapter (nắng, sương, tro, nóng), trail, aura dùng sprite từ pack + `Graphics`, pool sẵn. Bỏ trần build 15 MB của M7; cổng còn lại: `stress()` 60 fps ở 1920×1080 với Effects Full, và không file deploy > 25 MiB (giới hạn Cloudflare static assets). Có setting Effects Full/Reduced.
+
+**Lý do.** Phòng chỉ một màn hình, camera tĩnh — overlay sprite đủ đẹp và không có rủi ro build shader. Người chơi web không cảm nhận vài MB, nhưng cảm nhận ngay fps tụt trong game né đạn.
+
+**Hệ quả.** `deploy:prepare` đổi cổng từ “tổng > 15 MB” sang “file > 25 MiB”. Mọi FX mới đi qua pool (`fx/effect-pool.ts`), không dùng `SpriteAnimator` cho FX.
