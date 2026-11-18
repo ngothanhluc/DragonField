@@ -65,7 +65,7 @@ describe('SaveData — defaults', () => {
     expect(defaults.upgrades).toEqual({ hearts: 0, damage: 0, fireRate: 0 });
     expect(defaults.chaptersUnlocked).toBe(1);
     expect(defaults.best).toEqual({ chapter: 0, room: 0 });
-    expect(defaults.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false });
+    expect(defaults.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false, effects: 'full' });
 
     expect(parseSaveData(defaults)).toEqual(defaults);
     expect(parseSaveData(JSON.parse(serializeSave(defaults)))).toEqual(defaults);
@@ -78,7 +78,7 @@ describe('SaveData — defaults', () => {
       upgrades: { hearts: 0, damage: 0, fireRate: 0 },
       chaptersUnlocked: 1,
       best: { chapter: 0, room: 0 },
-      settings: { volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false },
+      settings: { volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false, effects: 'full' },
     });
   });
 
@@ -113,7 +113,7 @@ describe('SaveData — migrate', () => {
       upgrades: { hearts: 2, damage: 1, fireRate: 3 },
       chaptersUnlocked: 2,
       best: { chapter: 1, room: 4 },
-      settings: { volume: 0.5, fullscreen: true, screenShake: true, damageNumbers: false },
+      settings: { volume: 0.5, fullscreen: true, screenShake: true, damageNumbers: false, effects: 'full' },
     });
   });
 
@@ -124,7 +124,7 @@ describe('SaveData — migrate', () => {
     expect(migrated.upgrades).toEqual({ hearts: 1, damage: 0, fireRate: 0 });
     expect(migrated.chaptersUnlocked).toBe(1);
     expect(migrated.best).toEqual({ chapter: 0, room: 0 });
-    expect(migrated.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false });
+    expect(migrated.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false, effects: 'full' });
   });
 
   it('reads the old key names from the GDD §10 draft (hp, firerate)', () => {
@@ -455,7 +455,7 @@ describe('Settings', () => {
     const input = { volume: 2, fullscreen: true };
     const applied = applySettings(input);
 
-    expect(applied).toEqual({ volume: 1, fullscreen: true, screenShake: true, damageNumbers: false });
+    expect(applied).toEqual({ volume: 1, fullscreen: true, screenShake: true, damageNumbers: false, effects: 'full' });
     expect(input.volume).toBe(2);
 
     expect(applySettings({ volume: -1, fullscreen: false })).toEqual({
@@ -463,6 +463,7 @@ describe('Settings', () => {
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
+      effects: 'full',
     });
   });
 
@@ -472,14 +473,16 @@ describe('Settings', () => {
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
+      effects: 'full',
     });
     expect(applySettings({ volume: Number.NaN })).toEqual({
       volume: DEFAULT_VOLUME,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
+      effects: 'full',
     });
-    // Plain object: all 4 own keys, JSON.stringify emits every field.
-    expect(Object.keys(applySettings())).toEqual(['volume', 'fullscreen', 'screenShake', 'damageNumbers']);
+    // Plain object: all 5 own keys, JSON.stringify emits every field.
+    expect(Object.keys(applySettings())).toEqual(['volume', 'fullscreen', 'screenShake', 'damageNumbers', 'effects']);
   });
 });

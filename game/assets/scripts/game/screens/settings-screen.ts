@@ -1,10 +1,10 @@
 /**
- * Settings (GDD §9): volume, fullscreen, accessibility (shake, damage numbers), read-only
- * keybinds.
+ * Settings (GDD §9): volume, fullscreen, accessibility (shake, damage numbers), Effects
+ * Full/Reduced, read-only keybinds.
  *
  * Volume steps by 10% and is written to the save immediately (`onVolume`), so reopening after
- * a reload shows the right value. The two ticket #2 flags apply **immediately** on click (no
- * run restart needed): motion-sensitive players can turn shake off mid-run.
+ * a reload shows the right value. The two ticket #2 flags and the ticket #3 effects mode apply
+ * **immediately** on click (no run restart needed).
  */
 import { stepVolume, type Settings } from '../../core/save/settings';
 import { buildMenuScreen, type MenuItem, type MenuScreen } from './menu';
@@ -17,6 +17,7 @@ export interface SettingsScreenOptions {
   readonly onToggleFullscreen: () => void;
   readonly onToggleScreenShake: () => void;
   readonly onToggleDamageNumbers: () => void;
+  readonly onToggleEffects: () => void;
   readonly onBack: () => void;
 }
 
@@ -31,6 +32,11 @@ export function formatFullscreen(on: boolean): string {
 /** Shared toggle label for accessibility flags. */
 export function formatToggle(label: string, on: boolean): string {
   return `${label}   ${on ? 'ON' : 'OFF'}`;
+}
+
+/** Effects mode row: Full keeps trails/auras, Reduced drops them and keeps impacts. */
+export function formatEffects(mode: 'full' | 'reduced'): string {
+  return `Effects   ${mode === 'full' ? 'FULL' : 'REDUCED'}`;
 }
 
 export function buildSettingsScreen(options: SettingsScreenOptions): Promise<MenuScreen> {
@@ -55,6 +61,12 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     screen?.updateItem(3, formatToggle('Damage numbers', current.damageNumbers));
   };
 
+  const toggleEffects = (): void => {
+    current = { ...current, effects: current.effects === 'full' ? 'reduced' : 'full' };
+    options.onToggleEffects();
+    screen?.updateItem(4, formatEffects(current.effects));
+  };
+
   const items: MenuItem[] = [
     {
       label: formatVolume(current.volume),
@@ -76,6 +88,11 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
       detail: 'Enter / click to toggle',
       activate: () => toggleDamageNumbers(),
     },
+    {
+      label: formatEffects(current.effects),
+      detail: 'Enter / click to toggle',
+      activate: () => toggleEffects(),
+    },
     { label: 'Back', activate: options.onBack },
   ];
 
@@ -84,7 +101,7 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     name: 'settings',
     title: 'SETTINGS',
     subtitle: 'Saved to this browser',
-    // Compact: the screen has 5 rows, so keybinds are merged into one line; otherwise the Back
+    // Compact: the screen has 6 rows, so keybinds are merged into one line; otherwise the Back
     // button falls off the canvas at low viewports (1280×720) and the hint overlaps the last row.
     info: ['Keybinds fixed: WASD/arrows move · Esc/P pause · Enter/Space menus'],
     items,
@@ -94,7 +111,8 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     },
     hint: '↑/↓ select · ←/→ adjust volume · Esc back',
     buttonHeight: 26,
-    buttonGap: 6,
+    // 6 rows since the Effects row (#3): gap 6 pushed Back into the bottom hint at 1280×720.
+    buttonGap: 4,
   });
 
   return task.then((built) => {

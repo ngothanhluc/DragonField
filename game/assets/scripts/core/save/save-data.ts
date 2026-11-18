@@ -107,6 +107,21 @@ function readFlag(
   return value;
 }
 
+/**
+ * Read the optional `settings.effects` mode: absent → `undefined` (defaults to `full` via
+ * `applySettings`), anything other than `full`/`reduced` → a `settings.effects` error.
+ */
+function readEffects(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): Settings['effects'] | undefined {
+  const value = source['effects'];
+  if (value === undefined) return undefined;
+  if (value === 'full' || value === 'reduced') return value;
+  problems.add(`settings.effects`, `must be "full" or "reduced", got ${describeValue(value)}`);
+  return undefined;
+}
+
 export function createDefaultSave(): SaveData {
   return {
     version: SAVE_VERSION,
@@ -192,7 +207,7 @@ export function parseSaveData(raw: unknown): SaveData {
   if (!isRecord(rawSettings)) {
     problems.add(
       'settings',
-      `must be an object { volume, fullscreen, screenShake, damageNumbers }, got ${describeValue(rawSettings)}`,
+      `must be an object { volume, fullscreen, screenShake, damageNumbers, effects }, got ${describeValue(rawSettings)}`,
     );
   } else {
     const volume = rawSettings.volume;
@@ -209,10 +224,11 @@ export function parseSaveData(raw: unknown): SaveData {
       );
     }
 
-    // Accessibility flags added in ticket #2: a v1 save from before the ticket lacks the field, so
-    // take the default — no SAVE_VERSION bump. Only report when present with the wrong type.
+    // Accessibility flags added in ticket #2, effects mode in #3: an older v1 save lacks the
+    // field, so take the default — no SAVE_VERSION bump. Only report a present, wrong value.
     const screenShake = readFlag(rawSettings, 'screenShake', problems);
     const damageNumbers = readFlag(rawSettings, 'damageNumbers', problems);
+    const effects = readEffects(rawSettings, problems);
 
     // Only use the read value when the field is valid; otherwise keep the default.
     settings = applySettings({
@@ -220,6 +236,7 @@ export function parseSaveData(raw: unknown): SaveData {
       ...(typeof fullscreen === 'boolean' ? { fullscreen } : {}),
       ...(screenShake !== undefined ? { screenShake } : {}),
       ...(damageNumbers !== undefined ? { damageNumbers } : {}),
+      ...(effects !== undefined ? { effects } : {}),
     });
   }
 
@@ -257,6 +274,7 @@ export function serializeSave(data: SaveData): string {
       fullscreen: valid.settings.fullscreen,
       screenShake: valid.settings.screenShake,
       damageNumbers: valid.settings.damageNumbers,
+      effects: valid.settings.effects,
     },
   });
 }
@@ -360,6 +378,7 @@ function migrateSettings(raw: unknown, fallback: Settings): unknown {
     fullscreen: pick(raw, 'fullscreen', fallback.fullscreen),
     screenShake: pick(raw, 'screenShake', fallback.screenShake),
     damageNumbers: pick(raw, 'damageNumbers', fallback.damageNumbers),
+    effects: pick(raw, 'effects', fallback.effects),
   };
 }
 

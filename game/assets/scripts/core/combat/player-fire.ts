@@ -44,6 +44,7 @@ export function firePlayerVolley(args: PlayerFireArgs): number {
       homing: plan.homing,
       explosiveRadiusTiles: plan.explosiveRadiusTiles,
       explosiveDamage: plan.explosiveDamage,
+      crit: plan.crit,
     });
   }
 

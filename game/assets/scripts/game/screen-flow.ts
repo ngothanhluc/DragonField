@@ -368,6 +368,13 @@ export class ScreenFlow {
         const current = this.currentSettings(save.settings);
         this.persistSettings({ ...current, damageNumbers: !current.damageNumbers });
       },
+      onToggleEffects: () => {
+        const current = this.currentSettings(save.settings);
+        this.persistSettings({
+          ...current,
+          effects: current.effects === 'full' ? 'reduced' : 'full',
+        });
+      },
       onBack: backTo,
     });
 
@@ -502,7 +509,8 @@ export class ScreenFlow {
       normalized.volume === save.settings.volume &&
       normalized.fullscreen === save.settings.fullscreen &&
       normalized.screenShake === save.settings.screenShake &&
-      normalized.damageNumbers === save.settings.damageNumbers
+      normalized.damageNumbers === save.settings.damageNumbers &&
+      normalized.effects === save.settings.effects
     ) {
       return;
     }

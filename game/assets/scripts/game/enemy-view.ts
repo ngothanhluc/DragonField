@@ -379,19 +379,29 @@ export class EnemyView extends Component {
   }
 
   /** Freeze/Poison when a player bullet lands. Core decides the effect; the view holds state + reports FX. */
-  applyStatus(stats: DerivedStats, nowMs: number): void {
+  applyStatus(
+    stats: DerivedStats,
+    nowMs: number,
+  ): { readonly slowStarted: boolean; readonly poisonStarted: boolean } {
     const wasSlowed = this.statuses.isSlowed(nowMs);
     const wasPoisoned = this.statuses.isPoisoned(nowMs);
     this.statuses.apply(stats, nowMs);
 
-    if (!wasSlowed && this.statuses.isSlowed(nowMs)) {
+    // The status FX belongs to the **first application** of the status, not to every hit:
+    // a rapid-fire loadout hits the same enemy many times per second.
+    const slowStarted = !wasSlowed && this.statuses.isSlowed(nowMs);
+    const poisonStarted = !wasPoisoned && this.statuses.isPoisoned(nowMs);
+
+    if (slowStarted) {
       this.fx?.spawn('fx.ice', this.position);
       playSfx('freeze');
     }
-    if (!wasPoisoned && this.statuses.isPoisoned(nowMs)) {
+    if (poisonStarted) {
       this.fx?.spawn('fx.poison', this.position);
       playSfx('poison');
     }
+
+    return { slowStarted, poisonStarted };
   }
 
   /** Whether the current dash already dealt damage — the battle loop asks to avoid double-hitting. */
