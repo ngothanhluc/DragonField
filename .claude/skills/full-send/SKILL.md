@@ -65,6 +65,7 @@ All true on the PR's latest commit:
 
 - Proof covers every change in the diff.
 - `pr-wait` exits 0 on this commit.
+  - Known exception (owner decision, 2026-11-19): the Cloudflare check `Workers Builds: yokai-field` always fails on non-production PR branches (preview `versions upload`; logs not reachable from here). It does not gate the merge. If `pr-wait` exits 1 **only** for that check and the GitHub `check` job is green on this commit, treat the CI gate as passed. Remove this exception once preview builds are disabled in Cloudflare.
 - The review ledger has no open blocker or should.
 - No reviewer is requesting changes.
 - The branch is up to date with the default branch and GitHub reports it mergeable.
