@@ -1,223 +1,223 @@
 # Tech decisions — Yokai Field v2
 
-Bản ghi quyết định kỹ thuật. Mỗi mục là một ADR ngắn: quyết định, lý do, hệ quả.
-Ngày chốt: 2026-11-15. Trạng thái: đã chốt, chỉ mở lại khi có bằng chứng mới.
+Technical decision record. Each entry is a short ADR: decision, rationale, consequences.
+Agreed: 2026-11-15. Status: settled, reopened only with new evidence.
 
 ---
 
-## ADR-001 — Engine: Cocos Creator 3.8.8, chỉ web-desktop
+## ADR-001 — Engine: Cocos Creator 3.8.8, web-desktop only
 
-**Quyết định.** Dùng Cocos Creator **3.8.8** (LTS, phát hành 2025-12-16). Không dùng 4.0 (mới nhất chỉ là `4.0.0-beta.2`, 2026-11-13; trang download chính thức chỉ có 3.8.x). Target duy nhất: **web-desktop**.
+**Decision.** Use Cocos Creator **3.8.8** (LTS, released 2025-12-16). Do not use 4.0 (the latest is only `4.0.0-beta.2`, 2026-11-13; the official download page only offers 3.8.x). Sole target: **web-desktop**.
 
-**Lý do.** 3.8 là bản stable duy nhất; web là nền tảng mạnh nhất của Cocos; bỏ mobile/mini-game để không phải xử lý touch + layout mobile từ đầu.
+**Rationale.** 3.8 is the only stable release; web is Cocos's strongest platform; dropping mobile/mini-game avoids handling touch + mobile layout from the start.
 
-**Hệ quả.** Không có native build. Input = chuột + bàn phím. Save = `localStorage`. Resolution phải theo pixel-perfect scaling.
-
----
-
-## ADR-002 — Rewrite từ đầu, không port parity
-
-**Quyết định.** Không port 1:1 codebase Unity. Thể loại mới: **roguelite né đạn một màn hình** (tham chiếu Archero). Người chơi tự động bắn, kỹ năng nằm ở di chuyển; dọn phòng → chọn 1/3 skill; chết là hết run, giữ vàng mua upgrade vĩnh viễn. 3 chapter × (8 phòng + 1 boss theo GDD §5). Bỏ hub, NPC, dialog, inventory. Chi tiết ở `docs/gdd.md`.
-
-**Lý do.** Audit cho thấy nội dung cũ rất mỏng (Level1 = 14 quái rải rác, damage hardcode = 1, không có state machine). Không có baseline nào đáng giữ, nên đổi thể loại không mất gì thêm.
-
-**Hệ quả.** Single-screen room ⇒ **không cần camera follow, không cần map lớn**. Hệ thống mới phải xây: skill pool, rarity, meta progression, save meta. Hệ thống bị bỏ: dialog, inventory, shop trong màn, hub. Các con số kỹ thuật (16px, cadence animation, audio) vẫn giữ trong `docs/research/2026-11-unity-content-audit.md`.
+**Consequences.** No native build. Input = mouse + keyboard. Save = `localStorage`. Resolution must use pixel-perfect scaling.
 
 ---
 
-## ADR-003 — Repo: Cocos ở root, xoá Unity, giữ tag
+## ADR-002 — Rewrite from scratch, no parity port
 
-**Quyết định.** Tag `unity-final` trên commit cuối của bản Unity, sau đó force-push repo sạch chỉ còn project Cocos ở root. Bỏ Plastic SCM, chỉ dùng git.
+**Decision.** No 1:1 port of the Unity codebase. New genre: **single-screen bullet-dodging roguelite** (Archero reference). The player auto-fires, the skill is movement; clear a room → pick 1 of 3 skills; death ends the run, gold is kept for permanent upgrades. 3 chapters × (8 rooms + 1 boss per GDD §5). Drop hub, NPCs, dialog, inventory. Details in `docs/gdd.md`.
 
-**Lý do.** Repo gọn cho agent; tag đủ để quay lại mà không cần branch/backup riêng. Plastic không cần thiết khi chỉ có một người và agent làm việc qua git.
+**Rationale.** The audit showed the old content was very thin (Level1 = 14 scattered mobs, damage hardcoded to 1, no state machine). Nothing worth keeping as a baseline, so a genre change costs nothing extra.
 
-**Hệ quả.** Không còn `.plastic/`, `ignore.conf`, `Assets/`, `Packages/`, `ProjectSettings/`. Không xoá cho tới khi 3 tài liệu trong `docs/` tồn tại (xem ADR-011).
-
----
-
-## ADR-004 — Kiến trúc: core TS thuần + adapter Cocos
-
-**Quyết định.** Toàn bộ logic (stats, combat math, inventory, save, level data) nằm trong `assets/scripts/core/` và **không được import `cc`**. Component `cc` trong `assets/scripts/game/` chỉ là adapter mỏng: đọc input, gọi core, gán sprite/transform. UI ở `assets/scripts/ui/`.
-
-**Lý do.** Docs Cocos xác nhận compiler **bỏ qua TypeScript type error** và `tsconfig.json` không được đọc lúc compile. Đồng thời CLI không có authoring headless. Nếu logic nằm trong component thì không test được và agent không có phản hồi nào ngoài việc mở editor.
-
-**Hệ quả.** Bắt buộc có `tsc --noEmit` + vitest. Ranh giới `core` không import `cc` phải được enforce (eslint rule `no-restricted-imports`).
+**Consequences.** Single-screen room ⇒ **no camera follow, no large maps**. New systems to build: skill pool, rarity, meta progression, meta save. Systems dropped: dialog, inventory, in-level shop, hub. Technical numbers (16px, animation cadence, audio) are preserved in `docs/research/2026-11-unity-content-audit.md`.
 
 ---
 
-## ADR-005 — Pipeline level: TiledMap render + LevelData thuần TS
+## ADR-003 — Repo: Cocos at root, Unity deleted, tag kept
 
-**Quyết định.** Map là `.tmx` (orthogonal, 32×18 tile 16 px) tại
-`game/assets/resources/data/levels/chapter-<n>/room-<r>.tmx`, kèm `.tsx` trong cùng thư mục.
-Cocos `TiledMap` render tile layer. Object layer được parse bằng **một** parser TS thuần
-(`core/level/tmx.ts`) thành `LevelData`; runtime lấy XML từ `TiledMapAsset.tmxXmlStr` và
-gọi đúng hàm mà vitest dùng, nên file hỏng không thể lọt qua `bun run check`.
+**Decision.** Tag `unity-final` on the last Unity commit, then force-push a clean repo containing only the Cocos project at the root. Drop Plastic SCM, use git only.
 
-**Quy ước** (nguồn duy nhất: comment đầu `core/level/tmx.ts`):
+**Rationale.** A lean repo is easier for the agent; the tag is enough to go back without a separate branch/backup. Plastic is unnecessary when it is one person plus an agent working through git.
 
-- Map properties: `chapter` int 1..3, `room` int ≥ 1, `isBossRoom` bool (mặc định false),
-  `boss` string = `spriteName` trong `BOSSES` (chỉ phòng boss).
-- Object layer (nhận diện bằng `name`):
-  - `playerStart` — point, đúng 1.
+**Consequences.** No more `.plastic/`, `ignore.conf`, `Assets/`, `Packages/`, `ProjectSettings/`. Do not delete until the 3 documents in `docs/` exist (see ADR-011).
+
+---
+
+## ADR-004 — Architecture: pure TS core + Cocos adapters
+
+**Decision.** All logic (stats, combat math, inventory, save, level data) lives in `assets/scripts/core/` and **must not import `cc`**. `cc` components in `assets/scripts/game/` are thin adapters only: read input, call core, assign sprite/transform. UI lives in `assets/scripts/ui/`.
+
+**Rationale.** Cocos docs confirm the compiler **skips TypeScript type errors** and `tsconfig.json` is not read at compile time. The CLI also has no headless authoring. If logic lived in components it would be untestable, and the agent would get no feedback except by opening the editor.
+
+**Consequences.** `tsc --noEmit` + vitest are mandatory. The "`core` must not import `cc`" boundary is enforced (eslint rule `no-restricted-imports`).
+
+---
+
+## ADR-005 — Level pipeline: TiledMap rendering + pure TS LevelData
+
+**Decision.** Maps are `.tmx` (orthogonal, 32×18 tiles of 16 px) at
+`game/assets/resources/data/levels/chapter-<n>/room-<r>.tmx`, with `.tsx` in the same directory.
+Cocos `TiledMap` renders the tile layers. The object layer is parsed by **one** pure-TS parser
+(`core/level/tmx.ts`) into `LevelData`; at runtime it pulls the XML from `TiledMapAsset.tmxXmlStr` and
+calls the same function vitest uses, so a broken file cannot slip past `bun run check`.
+
+**Conventions** (single source: the header comment of `core/level/tmx.ts`):
+
+- Map properties: `chapter` int 1..3, `room` int ≥ 1, `isBossRoom` bool (default false),
+  `boss` string = `spriteName` in `BOSSES` (boss rooms only).
+- Object layer (identified by `name`):
+  - `playerStart` — point, exactly 1.
   - `spawn` — point; properties `role` (chaser/caster/tank), `wave` (int ≥ 1), `elite` (bool).
   - `obstacle` — rect; property `kind` (pillar/wall/pit).
-  - `door` — point; property `toRoom` (int ≥ 1), thiếu = cửa cuối chapter (`null`).
-  - `bossStart` — point, tuỳ chọn, chỉ phòng boss (mặc định 16,5).
-  - Object tên khác ⇒ lỗi, để typo không âm thầm bị bỏ qua.
-- Toạ độ object là **pixel Tiled** (16 px/tile); parser đổi sang tile unit.
-- Tile layer chỉ để vẽ (`encoding="csv"`); va chạm/vật cản **không** suy ra từ tile.
-- Thêm phòng = thêm `.tmx`. Bootstrap `resources.loadDir` cả thư mục, sắp theo `room`,
-  và `RunState` nhận tổng phòng từ dữ liệu — thả `room-10.tmx` là HUD hiện `x/10`,
-  không sửa code.
+  - `door` — point; property `toRoom` (int ≥ 1), missing = last door of the chapter (`null`).
+  - `bossStart` — point, optional, boss rooms only (default 16,5).
+  - Any other object name ⇒ error, so typos are never silently skipped.
+- Object coordinates are **Tiled pixels** (16 px/tile); the parser converts to tile units.
+- Tile layers are for drawing only (`encoding="csv"`); collision/obstacles are **not** derived from tiles.
+- Adding a room = adding a `.tmx`. Bootstrap `resources.loadDir`s the whole directory, sorted by `room`,
+  and `RunState` takes the room total from data — drop in `room-10.tmx` and the HUD shows `x/10`,
+  no code change.
 
-**Lý do.** Cocos không có TileMap native, chỉ TiledMap/TMX; không có đường import tilemap
-từ Unity. Tách LevelData giữ được khả năng test headless mà vẫn dùng component chính thức;
-một parser duy nhất loại bỏ khả năng test và runtime hiểu file khác nhau.
+**Rationale.** Cocos has no native TileMap, only TiledMap/TMX; there is no tilemap import path
+from Unity. Separating LevelData keeps headless testability while still using the official component;
+a single parser removes the chance of tests and runtime reading the file differently.
 
-**Hệ quả.** Không có Circle/Edge collider như Unity — collision là box/polygon hoặc
-tile-based; hiện chỉ dùng hình chữ nhật trục song song (object `rotation` phải bằng 0).
-Tileset phải nằm trong asset DB (PNG import Type = sprite-frame) và `.tsx` phải ở cùng thư
-mục với `.tmx`, tham chiếu bằng tên file trần (`source="field.tsx"`): importer lưu đúng
-chuỗi đó làm key và engine tra `tsxContentMap[source]` **không có fallback** như ảnh.
-
----
-
-## ADR-006 — Hợp đồng art: manifest tên logic
-
-**Quyết định.** Code không tham chiếu tên file sprite. Mọi animation truy cập qua tên logic trong `assets/resources/data/animations.json` (`player.idle.down`, `enemy.grunt.attack`), kèm `fallback` khi pack thiếu.
-
-**Lý do.** Cho phép build M1→M5 bằng placeholder và swap art ở M6 mà không sửa logic.
-
-**Hệ quả.** Manifest phải được validate bằng test (mọi key được code dùng đều tồn tại hoặc có fallback).
+**Consequences.** No Circle/Edge colliders like Unity — collision is box/polygon or
+tile-based; currently only axis-aligned rectangles are used (object `rotation` must be 0).
+Tilesets must be in the asset DB (PNG import Type = sprite-frame) and `.tsx` must sit in the same
+directory as `.tmx`, referenced by bare filename (`source="field.tsx"`): the importer stores that
+exact string as the key and the engine looks up `tsxContentMap[source]` **with no fallback** unlike images.
 
 ---
 
-## ADR-007 — Đặc tả art
+## ADR-006 — Art contract: logical-name manifest
 
-**Quyết định.** **Chỉ dùng Ninja Adventure Update #8** (pixel-boy & AAA, CC0), không pack ngoài, **không vẽ thêm asset nào**. Nguồn: `art-source/ninja-adventure/` (110 MB: 1915 PNG, 188 audio, 23 tileset, 66 monster, 20 folder boss, 361 file UI, 62 skill icon). Tile 16×16, top-down 3/4, 4 hướng.
+**Decision.** Code never references sprite filenames. Every animation is accessed through a logical name in `assets/resources/data/animations.json` (`player.idle.down`, `enemy.grunt.attack`), with a `fallback` when the pack lacks it.
 
-Những gì pack **không có** thì **cắt khỏi thiết kế**, không tự làm:
-- **Không có tileset dungeon/crypt** → 3 chapter là đồng cỏ/rừng, sông/thác, làng hoang.
-- **Rồng không có animation** (modular parts, 0 frame) → bỏ rồng. Boss dùng Tengu / Squid / Samurai.
-- **Chỉ 1 nhân vật có bộ 4 hướng đầy đủ** (`CharacterAnimated/NinjaGreen`) → player là nhân vật đó, không có skin animated.
-- **Không monster nào có attack/hurt/death** → telegraph, trúng đòn, chết đều là FX + palette remap.
-- **Không có art thanh máu boss / khung thẻ skill** → ghép từ nine-path `Theme Wood`.
+**Rationale.** Lets M1→M5 be built with placeholders and art swapped in at M6 without touching logic.
 
-Chi tiết + bảng coverage: `docs/art/pack-inventory.md`.
-
-**Lý do.** Survey cho thấy không tồn tại rồng animated top-down 16px nào trên thị trường, và pack này đã có sẵn bề rộng kẻ địch (66 monster + 10 boss) — đúng thứ roguelite cần hơn là một con boss đẹp. Tự vẽ dungeon tiles + rồng là 2 task author lớn nhất, và cả hai đều không cần thiết cho loop.
-
-**Hệ quả.** Zero rủi ro license, zero công author art. Đổi lại: theme bị giới hạn trong 3 bối cảnh có sẵn, và biểu đạt của enemy phụ thuộc hoàn toàn vào FX.
+**Consequences.** The manifest must be validated by a test (every key used by code exists or has a fallback).
 
 ---
 
-## ADR-008 — Số liệu combat
+## ADR-007 — Art spec
 
-**Quyết định.**
-- Di chuyển WASD 8 hướng, **không dash**, không nút đánh/bắn.
-- **Auto-fire 2 phát/giây, bắn cả khi đang chạy**, tự nhắm enemy gần nhất trong tầm.
-- Đạn: 1 viên, damage 1, tốc độ 12 tile/s.
-- Player 6 tim; nhận 1 damage; **i-frame 0.8 s**; knockback 3 px.
-- Enemy: hitstop 70 ms khi trúng, stagger 150 ms; telegraph 500 ms (caster) / 700 ms (brute).
-- Boss theo GDD §5: Tengu 60 / Squid 80 / Samurai 100 máu, 3 phase (100–66 / 66–33 / 33–0%).
+**Decision.** **Use only Ninja Adventure Update #8** (pixel-boy & AAA, CC0), no outside packs, **no drawing extra assets**. Source: `art-source/ninja-adventure/` (110 MB: 1915 PNGs, 188 audio files, 23 tilesets, 66 monsters, 20 boss folders, 361 UI files, 62 skill icons). 16×16 tiles, top-down 3/4 view, 4 directions.
 
-Bảng đầy đủ: `docs/gdd.md` §3–§5. Toàn bộ số nằm trong `src/core/config`, có test.
+Whatever the pack **lacks** is **cut from the design**, not made by hand:
+- **No dungeon/crypt tileset** → the 3 chapters are grassland/forest, river/waterfall, abandoned village.
+- **Dragons have no animation** (modular parts, 0 frames) → drop dragons. Bosses use Tengu / Squid / Samurai.
+- **Only 1 character has a full 4-direction set** (`CharacterAnimated/NinjaGreen`) → the player is that character, no animated skins.
+- **No monster has attack/hurt/death** → telegraph, getting hit and death are all FX + palette remap.
+- **No boss health bar / skill card frame art** → assemble from nine-path `Theme Wood`.
 
-**Lý do.** "Cảm giác tốt hơn" chỉ kiểm chứng được khi có số; và với roguelite, các số này là đầu vào của balance skill nên phải tách khỏi logic.
+Details + coverage table: `docs/art/pack-inventory.md`.
 
-**Hệ quả.** Luật "đứng lại mới bắn" của Archero bị bỏ ⇒ độ khó phải đến từ mật độ đạn và số quái. Nếu playtest thấy nhạt, thêm lại như một skill chứ không đổi luật gốc.
+**Rationale.** A survey found no animated top-down 16px dragons on the market, and this pack already has enemy breadth (66 monsters + 10 bosses) — exactly what a roguelite needs more than one pretty boss. Drawing dungeon tiles + dragons by hand would be the 2 biggest authoring tasks, and neither is needed for the loop.
 
----
-
-## ADR-009 — Code-first, art sau, có taste test
-
-**Quyết định.** Build bằng placeholder (hình chữ nhật màu + animation giả) từ M1. Gắn tileset + player sprite thật ở **M1.5** để duyệt hướng art. Swap toàn bộ ở M6.
-
-**Lý do.** Art phụ thuộc license và sự tồn tại của pack — không thể là điều kiện chặn code. Nhưng để art tới M6 sẽ mất động lực, nên cần một mốc nhìn thấy được sớm.
-
-**Hệ quả.** M1.5 là mốc bắt buộc, không phải tuỳ chọn.
+**Consequences.** Zero licence risk, zero art authoring effort. In exchange: themes are limited to the 3 available settings, and enemy expression depends entirely on FX.
 
 ---
 
-## ADR-010 — Gate và CI
+## ADR-008 — Combat numbers
 
-**Quyết định.** `tsc --noEmit`, `vitest`, `eslint` + `prettier` chạy trên mỗi push qua GitHub Actions. **Không** build web trong CI (build cần editor GUI).
+**Decision.**
+- WASD movement in 8 directions, **no dash**, no attack/fire buttons.
+- **Auto-fire at 2 shots/s, firing even while running**, auto-targets the nearest enemy in range.
+- Bullets: 1 projectile, damage 1, speed 12 tiles/s.
+- Player 6 hearts; takes 1 damage; **i-frame 0.8 s**; knockback 3 px.
+- Enemy: 70 ms hitstop on hit, 150 ms stagger; 500 ms telegraph (caster) / 700 ms (brute).
+- Bosses per GDD §5: Tengu 60 / Squid 80 / Samurai 100 health, 3 phases (100–66 / 66–33 / 33–0%).
 
-**Lý do.** Cocos bỏ qua type error; không có gate thì lỗi kiểu chỉ nổ lúc runtime. Build web trong CI cần cài editor vào runner — quá nặng, để sau M7.
+Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, with tests.
 
-**Hệ quả.** `bun run check` là lệnh duy nhất agent cần chạy trước khi báo xong việc.
+**Rationale.** "Feels better" can only be verified with numbers; and in a roguelite these numbers are the input to skill balance, so they must be separated from logic.
+
+**Consequences.** Archero's "stand still to shoot" rule is gone ⇒ difficulty must come from bullet density and mob count. If playtests feel flat, add it back as a skill rather than changing the core rule.
 
 ---
 
-## ADR-011 — Điều kiện được xoá Unity
+## ADR-009 — Code-first, art later, with a taste test
 
-**Quyết định.** Chỉ xoá `Assets/`, `Packages/`, `ProjectSettings/`, `.plastic/` sau khi các file sau tồn tại và đã commit:
+**Decision.** Build with placeholders (coloured rectangles + fake animation) from M1. Attach real tilesets + the player sprite at **M1.5** to approve the art direction. Swap everything at M6.
+
+**Rationale.** Art depends on licensing and on the pack existing — it cannot gate code. But leaving art until M6 kills motivation, so an early visible milestone is needed.
+
+**Consequences.** M1.5 is a required milestone, not optional.
+
+---
+
+## ADR-010 — Gates and CI
+
+**Decision.** `tsc --noEmit`, `vitest`, `eslint` + `prettier` run on every push via GitHub Actions. **No** web build in CI (the build needs the editor GUI).
+
+**Rationale.** Cocos skips type errors; without a gate, type errors only blow up at runtime. A web build in CI would require installing the editor on the runner — too heavy, deferred past M7.
+
+**Consequences.** `bun run check` is the only command the agent needs to run before reporting done.
+
+---
+
+## ADR-011 — Conditions for deleting Unity
+
+**Decision.** Delete `Assets/`, `Packages/`, `ProjectSettings/`, `.plastic/` only after the following files exist and are committed:
 1. `docs/research/2026-11-unity-content-audit.md` ✅
 2. `docs/gdd.md`
-3. `docs/tech-decisions.md` (file này)
+3. `docs/tech-decisions.md` (this file)
 4. `docs/milestones.md`
-5. ~~`docs/art/asset-pack-shortlist.md`~~ — đã xoá sau khi chốt Ninja Adventure (ADR-007)
+5. ~~`docs/art/asset-pack-shortlist.md`~~ — deleted after choosing Ninja Adventure (ADR-007)
 
-**Lý do.** Tránh mất dữ liệu không thể phục hồi khi chưa có gì thay thế.
+**Rationale.** Avoid irreversible data loss before there is anything to replace it with.
 
-**Hệ quả.** Tag `unity-final` phải được tạo **trước** khi xoá.
-
----
-
-## ADR-012 — Save: chỉ meta, không lưu run
-
-**Quyết định.** `localStorage`, 1 slot, schema versioned: `gold`, `upgrades{hp,damage,firerate}`, `chaptersUnlocked`, `best{chapter,room}`, `settings{volume,fullscreen}`. **Không** lưu run đang chơi.
-
-**Lý do.** Chủ dự án chọn không resume run: chết/tắt tab là mất run. Schema nhỏ nên không cần migration phức tạp; vẫn giữ `version` để có chỗ sửa sau.
-
-**Hệ quả.** Không cần serialize state giữa các phòng. Toàn bộ "run state" sống trong RAM và bị xoá khi reload.
+**Consequences.** The `unity-final` tag must be created **before** deleting.
 
 ---
 
-## ADR-013 — Số liệu tune nằm trong `game/config/tuning.json`, và simulation là cổng balance
+## ADR-012 — Save: meta only, runs are not saved
 
-**Quyết định.** Mọi con số tune (combat, enemy, spawn) nằm trong `game/config/tuning.json` — **ngoài `assets/`**, để Cocos không coi đó là asset DB content. `scripts/gen-tuning.ts` đọc JSON, validate bằng `core/enemies/tuning-schema.ts`, rồi sinh `assets/scripts/core/enemies/tuning.generated.ts` (module TS thường, `as const`). Code game đọc qua `core/enemies/tuning.ts` và `core/config.ts`, không giữ hằng số riêng. `core/sim/run-simulation.ts` là công cụ đo: nó chạy trọn một chapter bằng core thuần, không cần engine.
+**Decision.** `localStorage`, 1 slot, versioned schema: `gold`, `upgrades{hp,damage,firerate}`, `chaptersUnlocked`, `best{chapter,room}`, `settings{volume,fullscreen}`. **No** saving of the in-progress run.
 
-**Lý do.** Một cuộc kiểm tra bằng simulation phát hiện người chơi **đứng yên vẫn thắng chapter 1 mà không mất máu** — lỗi này không thể thấy bằng test đơn vị, và sẽ chỉ lộ ra sau khi dựng xong scene. Tách số liệu khỏi code cho phép retune bằng JSON và đo lại trong vài giây. JSON không được import trực tiếp vì mọi thứ dưới `assets/` là nội dung asset DB, và không có cách kiểm chứng bằng CLI rằng import JSON sống sót qua bước bundle script của editor; module TS thì chắc chắn sống.
+**Rationale.** The project owner chose no run resume: dying or closing the tab loses the run. The schema is small so no complex migration is needed; `version` is kept to leave room for later.
 
-**Hệ quả.** Thay đổi cân bằng = sửa `config/tuning.json` rồi chạy `bun run gen`; `bun run check:config` (chạy đầu tiên trong `bun run check`) fail nếu file generated lệch nguồn. Thay đổi cân bằng phải kèm một lần chạy sim có số liệu trước/sau. Test tích hợp giữ các ngưỡng: đứng yên thua, né sống lâu hơn ≥2×, god-mode vẫn thắng trong 60–180 s. Nếu một ngưỡng bị phá, đó là tín hiệu thiết kế, không phải test hỏng.
-
----
-
-## ADR-014 — Run có nhánh: chọn 1/2 cửa, pool phòng theo seed
-
-**Quyết định.** M9: mỗi chapter có pool 15–18 phòng, run bốc 9 bằng RNG seed của run; sau mỗi phòng thường người chơi chọn 1 trong 2 cửa có icon thưởng (skill / vàng / hồi máu / shop / rương). Phòng boss cố định cuối. Phòng sinh bằng script `.tmx` (template + dress), không vẽ tay trong Tiled.
-
-**Lý do.** v1 có 9 phòng cố định nên các run giống nhau; chọn cửa là thay đổi tạo khác biệt lớn nhất trên mỗi công sức. Agent không dùng được GUI Tiled, và 60–70 phòng vẽ tay không kiểm được bằng test.
-
-**Hệ quả.** Logic bốc phòng/thưởng nằm trong `core/run/` và có test tất định theo seed. Phải có test hình học cho mọi phòng sinh ra (đi được spawn → cửa, prop đặc = obstacle, spawn không đè obstacle). Balance sim phải mô phỏng cả lựa chọn cửa.
+**Consequences.** No need to serialize state between rooms. The entire "run state" lives in RAM and is wiped on reload.
 
 ---
 
-## ADR-015 — Elite là PNG remap theo palette, sinh lúc build
+## ADR-013 — Tuning numbers live in `game/config/tuning.json`, and simulation is the balance gate
 
-**Quyết định.** Biến thể elite được sinh sẵn bằng script: map mỗi màu của sprite sang màu khác trong `Palette.png` (53 màu) theo bảng index. Không tint nhân màu, không shader.
+**Decision.** Every tuning number (combat, enemy, spawn) lives in `game/config/tuning.json` — **outside `assets/`**, so Cocos does not treat it as asset DB content. `scripts/gen-tuning.ts` reads the JSON, validates it with `core/enemies/tuning-schema.ts`, then generates `assets/scripts/core/enemies/tuning.generated.ts` (a plain TS module, `as const`). Game code reads through `core/enemies/tuning.ts` and `core/config.ts` and keeps no constants of its own. `core/sim/run-simulation.ts` is the measurement tool: it runs a whole chapter on pure core, no engine needed.
 
-**Lý do.** Tint nhân màu (M3) làm lệch khỏi palette của pack; shader custom trong Cocos 3.8 tốn công và rủi ro khi build web. Script remap test được bằng vitest với decoder `scripts/lib/png.ts`.
+**Rationale.** A simulation check found the player **could stand still and still win chapter 1 without losing health** — a bug unit tests cannot see, and one that would only surface after the scene was built. Separating numbers from code allows retuning via JSON and re-measuring in seconds. JSON is not imported directly because everything under `assets/` is asset DB content, and there is no CLI way to verify that a JSON import survives the editor's script bundling step; a TS module definitely does.
 
-**Hệ quả.** Thêm PNG vào `resources/art` (dung lượng tăng nhẹ — trần 15 MB đã bỏ ở M8). Test: mọi pixel output thuộc palette.
-
----
-
-## ADR-016 — Đạn ta nhọn, đạn địch tròn
-
-**Quyết định.** Đạn player luôn là hình nhọn (shuriken, kunai, spike); đạn địch luôn là hình tròn có viền tối (EnergyBall, bong bóng, CanonBall/Rock, Fireball). Explosive của player dùng BigEnergyBall tint cam vì Fireball thuộc đạn địch ch4.
-
-**Lý do.** Từ M8 màu đạn player đổi theo build, nên màu không còn phân biệt được ta/địch. Hình dạng là kênh đọc còn lại trên màn hình đầy đạn.
-
-**Hệ quả.** Mọi projectile mới phải chọn theo luật này; review ảnh chụp “màn đầy đạn” là một mục nghiệm thu M8.
+**Consequences.** A balance change = edit `config/tuning.json` then run `bun run gen`; `bun run check:config` (the first step of `bun run check`) fails if the generated file drifts from the source. A balance change must come with a sim run showing before/after numbers. Integration tests hold the thresholds: standing still loses, dodging survives ≥2× longer, god-mode still wins within 60–180 s. If a threshold breaks, that is a design signal, not a broken test.
 
 ---
 
-## ADR-017 — Không khí bằng sprite/Graphics, không shader custom; ngân sách là fps, không phải MB
+## ADR-014 — Branching runs: pick 1 of 2 doors, seeded room pool
 
-**Quyết định.** Lớp không khí chapter (nắng, sương, tro, nóng), trail, aura dùng sprite từ pack + `Graphics`, pool sẵn. Bỏ trần build 15 MB của M7; cổng còn lại: `stress()` 60 fps ở 1920×1080 với Effects Full, và không file deploy > 25 MiB (giới hạn Cloudflare static assets). Có setting Effects Full/Reduced.
+**Decision.** M9: each chapter has a pool of 15–18 rooms, a run draws 9 using the run's seeded RNG; after each normal room the player picks 1 of 2 doors showing a reward icon (skill / gold / heal / shop / chest). The boss room is fixed at the end. Rooms are generated by a `.tmx` script (template + dress), not drawn by hand in Tiled.
 
-**Lý do.** Phòng chỉ một màn hình, camera tĩnh — overlay sprite đủ đẹp và không có rủi ro build shader. Người chơi web không cảm nhận vài MB, nhưng cảm nhận ngay fps tụt trong game né đạn.
+**Rationale.** v1 had 9 fixed rooms so runs felt the same; door choice is the change that buys the most difference per unit of effort. The agent cannot use the Tiled GUI, and 60–70 hand-drawn rooms cannot be verified by tests.
 
-**Hệ quả.** `deploy:prepare` đổi cổng từ “tổng > 15 MB” sang “file > 25 MiB”. Mọi FX mới đi qua pool (`fx/effect-pool.ts`), không dùng `SpriteAnimator` cho FX.
+**Consequences.** Room/reward draw logic lives in `core/run/` with seed-deterministic tests. There must be geometry tests for every generated room (spawn → door is walkable, solid props = obstacles, spawns do not overlap obstacles). The balance sim must model door choice too.
+
+---
+
+## ADR-015 — Elites are palette-remapped PNGs, generated at build time
+
+**Decision.** Elite variants are pre-generated by a script: map each sprite colour to another colour in `Palette.png` (53 colours) via an index table. No multiplicative tint, no shader.
+
+**Rationale.** Multiplicative tint (M3) drifts off the pack palette; custom shaders in Cocos 3.8 are effortful and risky for web builds. The remap script is testable with vitest using the `scripts/lib/png.ts` decoder.
+
+**Consequences.** Adds PNGs to `resources/art` (slight size increase — the 15 MB cap was dropped at M8). Test: every output pixel belongs to the palette.
+
+---
+
+## ADR-016 — Player bullets pointed, enemy bullets round
+
+**Decision.** Player bullets are always pointed shapes (shuriken, kunai, spike); enemy bullets are always round with a dark outline (EnergyBall, bubble, CanonBall/Rock, Fireball). The player's Explosive uses BigEnergyBall tinted orange because Fireball belongs to the ch4 enemy bullets.
+
+**Rationale.** From M8 the player bullet colour changes with the build, so colour no longer separates friend from foe. Shape is the remaining readable channel on a bullet-filled screen.
+
+**Consequences.** Every new projectile must follow this rule; reviewing a “screen full of bullets” screenshot is an M8 acceptance item.
+
+---
+
+## ADR-017 — Atmosphere via sprites/Graphics, no custom shaders; the budget is fps, not MB
+
+**Decision.** Chapter atmosphere layers (sunlight, mist, ash, heat), trails and auras use sprites from the pack + `Graphics`, pooled up front. The M7 15 MB build cap is dropped; the remaining gates are: `stress()` at 60 fps at 1920×1080 with Effects Full, and no deploy file > 25 MiB (Cloudflare static assets limit). There is an Effects Full/Reduced setting.
+
+**Rationale.** A room is one screen with a static camera — a sprite overlay looks good enough and carries no shader build risk. Web players do not feel a few MB, but they feel an fps drop instantly in a bullet-dodging game.
+
+**Consequences.** `deploy:prepare` switches the gate from “total > 15 MB” to “file > 25 MiB”. Every new FX goes through the pool (`fx/effect-pool.ts`), never `SpriteAnimator` for FX.
