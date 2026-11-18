@@ -1,16 +1,16 @@
 /**
- * Meta upgrade → chỉ số gốc của một run (GDD §7).
+ * Meta upgrades → the base stats of a run (GDD §7).
  *
- * `core/meta/upgrades.ts` chỉ quy đổi cấp thành 3 bonus; file này áp chúng vào
- * `StatsBaseline` **trước** khi skill layer cộng dồn. Nhờ vậy:
+ * `core/meta/upgrades.ts` only converts levels into 3 bonuses; this file applies them to
+ * `StatsBaseline` **before** the skill layer stacks its own. That gives:
  *
- * - meta là nền của mọi run (mua càng nhiều, mọi run sau càng mạnh);
- * - skill vẫn nhân/cộng trên nền đó, không có hai nguồn sự thật;
- * - test được bằng vitest, không cần engine.
+ * - meta is the floor of every run (buy more, every later run is stronger);
+ * - skills still multiply/add on top of that floor, with no second source of truth;
+ * - testable with vitest, no engine needed.
  *
- * Quy ước: damage và nhịp bắn của meta là **hệ số trên chỉ số gốc**, tim là
- * **cộng thẳng** vào trần máu. Không áp hệ số lên phần skill cộng thêm — skill
- * đã có luật cộng dồn riêng trong `core/skills/derived-stats.ts`.
+ * Convention: meta damage and fire rate are **factors on the base stats**, hearts are
+ * **added directly** to the health cap. Never apply the factors to the skill bonus — skills
+ * have their own stacking rules in `core/skills/derived-stats.ts`.
  */
 import type { StatsBaseline } from '../skills/derived-stats';
 import { applyUpgrades, type UpgradeBonuses, type UpgradeState } from './upgrades';
@@ -24,7 +24,7 @@ function roundTo(value: number, digits: number): number {
   return Math.round(value * factor) / factor;
 }
 
-/** Áp bonus meta đã tính sẵn vào baseline. Không sửa `base`. */
+/** Apply precomputed meta bonuses to the baseline. Never mutates `base`. */
 export function applyUpgradesToBaseline(
   base: StatsBaseline,
   bonuses: UpgradeBonuses,
@@ -42,7 +42,7 @@ export function applyUpgradesToBaseline(
   };
 }
 
-/** Một cửa vào cho bootstrap: save → baseline của run. */
+/** One entry point for bootstrap: save → the run's baseline. */
 export function metaBaseline(base: StatsBaseline, state: UpgradeState): StatsBaseline {
   return applyUpgradesToBaseline(base, applyUpgrades(state));
 }

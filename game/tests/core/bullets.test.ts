@@ -14,7 +14,7 @@ function spawnAt(pool: BulletPool, position: Vec2, damage = 1): Bullet {
 }
 
 describe('BulletPool.consume', () => {
-  it('thu hồi đạn đang sống ngay trong frame, không chờ update', () => {
+  it('retires a live bullet within the frame, without waiting for update', () => {
     const pool = new BulletPool();
     const bullet = spawnAt(pool, { x: 1, y: 1 });
     spawnAt(pool, { x: 2, y: 2 });
@@ -24,12 +24,12 @@ describe('BulletPool.consume', () => {
     expect(pool.size).toBe(1);
     expect(pool.active().map((live) => live.id)).not.toContain(bullet.id);
 
-    // Viên còn lại không bị dịch chuyển bởi việc thu hồi.
+    // The remaining bullet is not shifted by the retire.
     pool.update(100);
     expect(pool.size).toBe(1);
   });
 
-  it('trả false với id không có trong pool, và không đụng đạn khác', () => {
+  it('returns false for an id not in the pool, and touches no other bullet', () => {
     const pool = new BulletPool();
     const bullet = spawnAt(pool, { x: 1, y: 1 });
 
@@ -41,22 +41,22 @@ describe('BulletPool.consume', () => {
     expect(pool.active()[0]?.id).toBe(bullet.id);
   });
 
-  it('id đã consume không sống lại: gọi lần hai vẫn false', () => {
+  it('a consumed id does not come back: a second call still returns false', () => {
     const pool = new BulletPool();
     const first = spawnAt(pool, { x: 0, y: 0 });
-    // Chụp id ngay: `spawn` trả về chính slot của pool, slot đó sẽ bị tái dùng.
+    // Capture the id now: `spawn` returns the pool slot itself, and that slot will be reused.
     const firstId = first.id;
 
     expect(pool.consume(firstId)).toBe(true);
     expect(pool.consume(firstId)).toBe(false);
 
-    // Slot được tái dùng nhưng id mới — id cũ không quay lại.
+    // The slot is reused but with a new id — the old id does not return.
     const second = spawnAt(pool, { x: 0, y: 0 });
     expect(second.id).toBeGreaterThan(firstId);
     expect(pool.active().map((bullet) => bullet.id)).toEqual([second.id]);
   });
 
-  it('giữ thứ tự cũ → mới của các viên còn lại', () => {
+  it('keeps oldest → newest order for the remaining bullets', () => {
     const pool = new BulletPool();
     const ids = [1, 2, 3, 4, 5].map((damage) => spawnAt(pool, { x: damage, y: 0 }, damage).id);
 
@@ -66,12 +66,12 @@ describe('BulletPool.consume', () => {
     expect(pool.active().map((bullet) => bullet.id)).toEqual([ids[0], ids[2], ids[4]]);
   });
 
-  it('thu hồi an toàn khi duyệt danh sách id chụp trước (không bỏ sót viên nào)', () => {
+  it('retiring is safe while iterating a captured id list (no bullet is skipped)', () => {
     const pool = new BulletPool(16);
     for (let index = 0; index < 10; index += 1) spawnAt(pool, { x: index, y: 0 }, index + 1);
 
-    // Chụp id trước rồi consume trong vòng lặp: mảng live bị dồn nhưng vòng lặp
-    // này chỉ đi trên mảng id, nên không viên nào bị nhảy cóc.
+    // Capture ids first then consume in a loop: the live array is compacted but this loop
+    // only walks the id array, so no bullet is skipped.
     const ids = pool.snapshot().map((bullet) => bullet.id);
     let removed = 0;
     for (const id of ids) {
@@ -85,7 +85,7 @@ describe('BulletPool.consume', () => {
 });
 
 describe('BulletPool.consumeWhere', () => {
-  it('bỏ đúng nhóm viên và trả về số lượng', () => {
+  it('drops exactly the matching group and returns the count', () => {
     const pool = new BulletPool();
     spawnAt(pool, { x: 0, y: 0 }, 1);
     spawnAt(pool, { x: 0, y: 0 }, 2);
@@ -98,7 +98,7 @@ describe('BulletPool.consumeWhere', () => {
     expect(pool.snapshot().map((bullet) => bullet.damage)).toEqual([1, 3]);
   });
 
-  it('predicate không khớp gì thì trả 0 và không đụng pool', () => {
+  it('a predicate that matches nothing returns 0 and touches no pool state', () => {
     const pool = new BulletPool();
     spawnAt(pool, { x: 0, y: 0 });
     spawnAt(pool, { x: 1, y: 0 });
@@ -107,7 +107,7 @@ describe('BulletPool.consumeWhere', () => {
     expect(pool.size).toBe(2);
   });
 
-  it('bỏ tất cả trong một lượt (dùng cho dọn phòng)', () => {
+  it('drops everything in one pass (used for room cleanup)', () => {
     const pool = new BulletPool();
     for (let index = 0; index < 5; index += 1) spawnAt(pool, { x: index, y: 0 });
 
@@ -115,7 +115,7 @@ describe('BulletPool.consumeWhere', () => {
     expect(pool.size).toBe(0);
   });
 
-  it('gom id trúng trong lúc duyệt rồi consume một lần — không consume giữa vòng lặp', () => {
+  it('collect hit ids while iterating then consume once — never consume mid-loop', () => {
     const pool = new BulletPool(8);
     for (let index = 0; index < 6; index += 1) {
       pool.spawn({
@@ -136,8 +136,8 @@ describe('BulletPool.consumeWhere', () => {
   });
 });
 
-describe('BulletPool — sức chứa sau nhiều chu kỳ consume/spawn', () => {
-  it('không bao giờ vượt capacity dù spawn và consume liên tục', () => {
+describe('BulletPool — capacity across many consume/spawn cycles', () => {
+  it('never exceeds capacity even with continuous spawn and consume', () => {
     const capacity = 8;
     const pool = new BulletPool(capacity);
 
@@ -159,7 +159,7 @@ describe('BulletPool — sức chứa sau nhiều chu kỳ consume/spawn', () =>
     expect(pool.active().length).toBeLessThanOrEqual(capacity);
   });
 
-  it('slot consume được tái dùng, không cấp phát mới', () => {
+  it('a consumed slot is reused, not newly allocated', () => {
     const pool = new BulletPool(2);
     const first = spawnAt(pool, { x: 0, y: 0 });
     const second = spawnAt(pool, { x: 1, y: 0 });
@@ -168,7 +168,7 @@ describe('BulletPool — sức chứa sau nhiều chu kỳ consume/spawn', () =>
     pool.consume(first.id);
     const third = spawnAt(pool, { x: 2, y: 0 });
 
-    // Capacity 2: phát thứ ba phải dùng lại slot vừa thu hồi, size vẫn là 2.
+    // Capacity 2: the third shot must reuse the slot just retired, size stays 2.
     expect(pool.size).toBe(2);
     expect(third.id).toBeGreaterThan(second.id);
     expect(pool.snapshot().map((bullet) => bullet.damage)).toEqual([1, 1]);

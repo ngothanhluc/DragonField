@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { FireControl } from '../../assets/scripts/core/combat/fire-control';
 
 describe('FireControl', () => {
-  it('bắn ngay ở tick đầu tiên', () => {
+  it('fires on the very first tick', () => {
     const fire = new FireControl(500);
 
     expect(fire.tick(0)).toBe(true);
   });
 
-  it('không bắn lại trước khi hết interval', () => {
+  it('does not fire again before the interval elapses', () => {
     const fire = new FireControl(500);
     fire.tick(0);
 
@@ -16,7 +16,7 @@ describe('FireControl', () => {
     expect(fire.tick(249)).toBe(false);
   });
 
-  it('bắn lại khi đủ interval, tính cả phần dư của frame', () => {
+  it('fires again once the interval is met, counting the frame remainder', () => {
     const fire = new FireControl(500);
     fire.tick(0);
 
@@ -24,11 +24,11 @@ describe('FireControl', () => {
     expect(fire.tick(250)).toBe(true);
   });
 
-  it('không trôi nhịp khi frame time không đều', () => {
+  it('the rate does not drift when frame time is uneven', () => {
     const fire = new FireControl(500);
     let shots = 0;
 
-    // 10 giây với frame 16 ms, bắt đầu bằng một phát ngay lập tức.
+    // 10 seconds at 16 ms frames, starting with an immediate shot.
     for (let elapsed = 0; elapsed < 10_000; elapsed += 16) {
       if (fire.tick(16)) shots += 1;
     }
@@ -37,12 +37,12 @@ describe('FireControl', () => {
     expect(shots).toBeLessThanOrEqual(21);
   });
 
-  it('tính interval từ nhịp bắn mỗi giây', () => {
+  it('derives the interval from the fire rate per second', () => {
     expect(FireControl.fromRate(2).intervalMs).toBe(500);
     expect(FireControl.fromRate(4).intervalMs).toBe(250);
   });
 
-  it('từ chối interval không hợp lệ', () => {
+  it('rejects an invalid interval', () => {
     expect(() => new FireControl(0)).toThrow();
     expect(() => new FireControl(-1)).toThrow();
   });

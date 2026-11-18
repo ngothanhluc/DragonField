@@ -17,7 +17,7 @@ const PLAYER = { x: 16, y: 9 };
 const ENEMY = { x: 16, y: 4 };
 const PLAYER_RADIUS = 0.25;
 
-/** Một frame 16 ms của đạn; trả về số viên vừa trúng player. */
+/** One 16 ms bullet frame; returns how many bullets just hit the player. */
 function stepBulletsAgainstPlayer(
   pool: BulletPool,
   nowMs: number,
@@ -41,12 +41,12 @@ function stepBulletsAgainstPlayer(
 }
 
 describe('aimDirection / rotateDirection', () => {
-  it('chuẩn hoá hướng, hai điểm trùng nhau thì bay sang phải', () => {
+  it('normalises the direction, coincident points fly right', () => {
     expect(aimDirection({ x: 0, y: 0 }, { x: 3, y: 4 })).toEqual({ x: 0.6, y: 0.8 });
     expect(aimDirection({ x: 2, y: 2 }, { x: 2, y: 2 })).toEqual({ x: 1, y: 0 });
   });
 
-  it('xoay 90° đổi trục, giữ độ dài 1', () => {
+  it('a 90° rotation changes axis, keeping length 1', () => {
     const rotated = rotateDirection({ x: 1, y: 0 }, Math.PI / 2);
     expect(rotated.x).toBeCloseTo(0);
     expect(rotated.y).toBeCloseTo(1);
@@ -54,8 +54,8 @@ describe('aimDirection / rotateDirection', () => {
   });
 });
 
-describe('eliteVolleyAngles — đòn thêm của elite caster', () => {
-  it('caster thường 1 viên đi thẳng; elite 3 viên đối xứng', () => {
+describe('eliteVolleyAngles — elite caster extra attack', () => {
+  it('regular caster fires 1 straight bullet; elite fires 3 symmetric bullets', () => {
     expect(eliteVolleyAngles('caster', false)).toEqual([0]);
 
     const angles = eliteVolleyAngles('caster', true);
@@ -66,19 +66,19 @@ describe('eliteVolleyAngles — đòn thêm của elite caster', () => {
     expect((angles[0] ?? 0) + (angles[2] ?? 0)).toBeCloseTo(0);
   });
 
-  it('chaser/tank không bắn đạn — đòn thêm của chúng là lao', () => {
+  it('chaser/tank fire no bullets — their extra attack is a charge', () => {
     expect(eliteVolleyAngles('chaser', true)).toEqual([]);
     expect(eliteVolleyAngles('tank', true)).toEqual([]);
   });
 });
 
-describe('fireEnemyVolley — sinh đạn qua pool', () => {
-  it('một viên đi đúng hướng player, đúng tốc độ và owner enemy', () => {
+describe('fireEnemyVolley — spawns bullets through the pool', () => {
+  it('one bullet goes straight at the player, at the right speed and with the enemy as owner', () => {
     const pool = new BulletPool(8);
     expect(fireEnemyVolley({ pool, from: ENEMY, to: PLAYER, damage: 2, angles: [0] })).toBe(1);
 
     const [bullet] = pool.snapshot();
-    if (bullet === undefined) throw new Error('phải có 1 viên');
+    if (bullet === undefined) throw new Error('must have 1 bullet');
 
     expect(bullet.owner).toBe('enemy');
     expect(bullet.damage).toBe(2);
@@ -87,12 +87,12 @@ describe('fireEnemyVolley — sinh đạn qua pool', () => {
     expect(Math.hypot(bullet.velocity.x, bullet.velocity.y)).toBeCloseTo(
       ENEMY_BULLET_SPEED_TILES_PER_SECOND,
     );
-    // Bay từ enemy về phía player: y tăng (player ở dưới enemy trong hệ tile).
+    // Flies from the enemy toward the player: y increases (the player is below the enemy in tile space).
     expect(bullet.velocity.y).toBeGreaterThan(0);
     expect(bullet.position).toEqual(ENEMY);
   });
 
-  it('3 viên toả quạt: viên giữa đi thẳng, hai viên lệch hai bên', () => {
+  it('3-bullet fan: the centre bullet goes straight, the other two offset either side', () => {
     const pool = new BulletPool(8);
     fireEnemyVolley({ pool, from: ENEMY, to: PLAYER, damage: 1, angles: [-0.22, 0, 0.22] });
 
@@ -102,32 +102,32 @@ describe('fireEnemyVolley — sinh đạn qua pool', () => {
     const center = bullets[1];
     const left = bullets[0];
     const right = bullets[2];
-    if (center === undefined || left === undefined || right === undefined) throw new Error('thiếu đạn');
+    if (center === undefined || left === undefined || right === undefined) throw new Error('missing bullets');
 
     const base = aimDirection(ENEMY, PLAYER);
     expect(center.velocity.x).toBeCloseTo(base.x * ENEMY_BULLET_SPEED_TILES_PER_SECOND);
-    // Hai viên ngoài lệch ngược dấu nhau quanh viên giữa (cross product).
+    // The outer two are offset in opposite signs around the centre bullet (cross product).
     const cross = (a: { x: number; y: number }, b: { x: number; y: number }): number =>
       a.x * b.y - a.y * b.x;
     expect(cross(center.velocity, left.velocity)).toBeLessThan(0);
     expect(cross(center.velocity, right.velocity)).toBeGreaterThan(0);
   });
 
-  it('không có góc nào thì không spawn gì', () => {
+  it('no angles means nothing is spawned', () => {
     const pool = new BulletPool(4);
     expect(fireEnemyVolley({ pool, from: ENEMY, to: PLAYER, damage: 1, angles: [] })).toBe(0);
     expect(pool.active()).toHaveLength(0);
   });
 });
 
-describe('i-frame khi trúng đạn enemy', () => {
-  it('viên thứ hai trong 800 ms không trừ tim, sau 800 ms lại trừ', () => {
+describe('i-frame when hit by an enemy bullet', () => {
+  it('the second bullet within 800 ms costs no heart, after 800 ms it does again', () => {
     const pool = new BulletPool(8);
     const health = new HealthState(DEFAULT_COMBAT);
     let nowMs = 0;
     const heartsBefore = health.current;
 
-    // Viên 1: bay từ enemy 5 tile, trúng player sau ~1.2 s.
+    // Bullet 1: flies from 5 tiles away, hits the player after ~1.2 s.
     fireEnemyVolley({ pool, from: ENEMY, to: PLAYER, damage: 1, angles: [0] });
     let hits = 0;
     for (let guard = 0; guard < 200 && hits === 0; guard += 1) {
@@ -140,7 +140,7 @@ describe('i-frame khi trúng đạn enemy', () => {
     expect(health.current).toBe(heartsBefore - 1);
     expect(health.isInvulnerable(nowMs)).toBe(true);
 
-    // Viên 2 spawn ngay trên người player, trúng ở frame kế tiếp — vẫn trong i-frame.
+    // Bullet 2 spawns right on the player, hits on the next frame — still inside the i-frame.
     pool.spawn({
       position: { x: PLAYER.x, y: PLAYER.y - 0.3 },
       velocity: { x: 0, y: 2 },
@@ -154,7 +154,7 @@ describe('i-frame khi trúng đạn enemy', () => {
     expect(second.hits).toBe(0);
     expect(health.current).toBe(heartsBefore - 1);
 
-    // Qua mốc 800 ms: viên thứ ba trừ tim bình thường.
+    // Past the 800 ms mark: the third bullet costs a heart as usual.
     nowMs += DEFAULT_COMBAT.invulnerabilityMs;
     pool.spawn({
       position: { x: PLAYER.x, y: PLAYER.y - 0.3 },

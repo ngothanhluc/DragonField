@@ -1,27 +1,27 @@
 /**
- * Cộng dồn damage lẻ thành damage nguyên.
+ * Accumulate fractional damage into whole damage.
  *
- * Vì sao cần: poison (1 dps × 16 ms/frame), crit ×2, execute +50% và vụ nổ
- * 50% đều sinh số lẻ. Trừ thẳng vào máu boss qua hàng nghìn frame sẽ ra
- * `54.00000000000001`, và HUD in đúng con số đó. Giữ **máu là số nguyên** bằng
- * cách chỉ trừ phần nguyên, còn phần lẻ nằm trong `carry` cho frame sau — tổng
- * damage theo thời gian không đổi, nhưng không còn nhiễu float.
+ * Why: poison (1 dps × 16 ms/frame), crit ×2, execute +50% and the 50% explosion
+ * all produce fractions. Subtracting straight from boss health over thousands of frames gives
+ * `54.00000000000001`, and the HUD prints exactly that. Keeping **health integral** by
+ * subtracting only the whole part, leaving the remainder in `carry` for the next frame — total
+ * damage over time is unchanged, but there is no float noise.
  *
- * Hàm thuần, không import `cc`; BossView (`game/`) và boss sim dùng chung.
+ * Pure functions, no `cc` import; BossView (`game/`) and the boss sim share them.
  */
 export interface DamageStep {
-  /** Phần lẻ còn lại, luôn trong [0, 1). */
+  /** Remaining fraction, always in [0, 1). */
   readonly carry: number;
-  /** Số damage nguyên được áp frame này. */
+  /** Whole damage applied this frame. */
   readonly whole: number;
 }
 
-/** Dưới ngưỡng này coi như 0 để `0.999999999` không kẹt carry mãi. */
+/** Below this threshold treat as 0 so `0.999999999` does not stay stuck in carry forever. */
 const EPSILON = 1e-9;
 
 /**
- * `carry + amount` → phần nguyên để trừ máu + phần lẻ giữ lại.
- * `amount` âm/NaN/Infinity là no-op (config hỏng không được hồi máu).
+ * `carry + amount` → the whole part to subtract from health + the fraction kept back.
+ * A negative/NaN/Infinity `amount` is a no-op (a broken config must not heal).
  */
 export function accumulateDamage(carry: number, amount: number): DamageStep {
   const safeCarry = Number.isFinite(carry) && carry > 0 ? carry : 0;

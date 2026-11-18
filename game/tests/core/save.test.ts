@@ -24,14 +24,14 @@ import type { SaveData } from '../../assets/scripts/core/save/save-data';
 import { DEFAULT_VOLUME, applySettings, clampVolume } from '../../assets/scripts/core/save/settings';
 import { MemorySaveStorage, SaveRepository } from '../../assets/scripts/core/save/storage';
 
-/** Chạy hàm và trả message của lỗi; fail test nếu không ném. */
+/** Run a function and return the error message; fail the test when nothing throws. */
 function errorMessage(run: () => unknown): string {
   try {
     run();
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
-  throw new Error('Mong đợi hàm ném lỗi nhưng không ném');
+  throw new Error('Expected the function to throw but it did not');
 }
 
 function stateWith(levels: Partial<Record<UpgradeTrack, number>>): UpgradeState {
@@ -42,22 +42,22 @@ function saveWith(patch: Partial<SaveData>): SaveData {
   return { ...createDefaultSave(), ...patch };
 }
 
-/** Cặp (cấp trước, cấp sau) để kiểm tra bảng giá tăng dần mà không cần non-null assertion. */
+/** (previous level, next level) pairs to check the price table rises, without non-null assertions. */
 function increasingPairs(costs: readonly number[]): Array<[number, number]> {
   const pairs: Array<[number, number]> = [];
   for (let index = 1; index < costs.length; index += 1) {
     const previous = costs[index - 1];
     const current = costs[index];
     if (previous === undefined || current === undefined) {
-      throw new Error(`Bảng giá thiếu phần tử ở index ${index}`);
+      throw new Error(`Price table is missing element at index ${index}`);
     }
     pairs.push([previous, current]);
   }
   return pairs;
 }
 
-describe('SaveData — mặc định', () => {
-  it('save mặc định tự hợp lệ và round-trip qua serialize/parse', () => {
+describe('SaveData — defaults', () => {
+  it('the default save is valid and round-trips through serialize/parse', () => {
     const defaults = createDefaultSave();
 
     expect(defaults.version).toBe(SAVE_VERSION);
@@ -71,7 +71,7 @@ describe('SaveData — mặc định', () => {
     expect(parseSaveData(JSON.parse(serializeSave(defaults)))).toEqual(defaults);
   });
 
-  it('serialize theo đúng thứ tự key của GDD §10', () => {
+  it('serialize follows the exact GDD §10 key order', () => {
     expect(JSON.parse(serializeSave(createDefaultSave()))).toEqual({
       version: SAVE_VERSION,
       gold: 0,
@@ -82,22 +82,22 @@ describe('SaveData — mặc định', () => {
     });
   });
 
-  it('serialize từ chối save không hợp lệ thay vì ghi rác', () => {
+  it('serialize rejects an invalid save instead of writing garbage', () => {
     expect(() => serializeSave(saveWith({ gold: -1 }))).toThrow(/gold/);
   });
 });
 
 describe('SaveData — migrate', () => {
-  it('object rỗng thành save mặc định', () => {
+  it('an empty object becomes the default save', () => {
     expect(migrate({})).toEqual(createDefaultSave());
   });
 
-  it('version thiếu hoặc version 0 đều thành save mặc định', () => {
+  it('a missing or 0 version both become the default save', () => {
     expect(migrate({ version: 0 })).toEqual(createDefaultSave());
     expect(migrate({ version: undefined })).toEqual(createDefaultSave());
   });
 
-  it('giữ nguyên field hợp lệ của save cùng version', () => {
+  it('keeps valid fields of a save at the same version', () => {
     const migrated = migrate({
       version: SAVE_VERSION,
       gold: 120,
@@ -117,7 +117,7 @@ describe('SaveData — migrate', () => {
     });
   });
 
-  it('vá field thiếu bằng mặc định (save một phần)', () => {
+  it('patches missing fields with defaults (partial save)', () => {
     const migrated = migrate({ gold: 30, upgrades: { hearts: 1 } });
 
     expect(migrated.gold).toBe(30);
@@ -127,35 +127,35 @@ describe('SaveData — migrate', () => {
     expect(migrated.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false });
   });
 
-  it('đọc tên key cũ của bản nháp GDD §10 (hp, firerate)', () => {
+  it('reads the old key names from the GDD §10 draft (hp, firerate)', () => {
     const migrated = migrate({ upgrades: { hp: 2, firerate: 3 } });
 
     expect(migrated.upgrades).toEqual({ hearts: 2, damage: 0, fireRate: 3 });
   });
 
-  it('từ chối version mới hơn game', () => {
+  it('rejects a version newer than the game', () => {
     expect(() => migrate({ version: 999 })).toThrow(/999/);
-    expect(() => migrate({ version: 999 })).toThrow(/mới hơn/);
+    expect(() => migrate({ version: 999 })).toThrow(/newer/);
     expect(() => migrate({ version: SAVE_VERSION + 1 })).toThrow(new RegExp(String(SAVE_VERSION)));
   });
 
-  it('từ chối dữ liệu không phải object hoặc version âm', () => {
-    expect(() => migrate('không phải save')).toThrow(/phải là object/);
-    expect(() => migrate(null)).toThrow(/phải là object/);
+  it('rejects non-object data or a negative version', () => {
+    expect(() => migrate('không phải save')).toThrow(/must be an object/); // i18n-allow: sample bad data
+    expect(() => migrate(null)).toThrow(/must be an object/);
     expect(() => migrate({ version: -1 })).toThrow(/version/);
     expect(() => migrate({ version: '1' })).toThrow(/version/);
   });
 });
 
 describe('SaveData — validate', () => {
-  it('gom nhiều lỗi vào một Error duy nhất', () => {
+  it('collects several problems into a single Error', () => {
     const broken = {
       version: SAVE_VERSION,
       gold: -5,
       upgrades: { hearts: 0, damage: 0, fireRate: MAX_LEVEL + 1 },
       chaptersUnlocked: 99,
       best: { chapter: 0, room: 0 },
-      settings: { volume: 2, fullscreen: 'có' },
+      settings: { volume: 2, fullscreen: 'có' }, // i18n-allow: sample bad data
     };
 
     const message = errorMessage(() => parseSaveData(broken));
@@ -165,10 +165,10 @@ describe('SaveData — validate', () => {
     expect(message).toContain('upgrades.fireRate');
     expect(message).toContain('settings.volume');
     expect(message).toContain('settings.fullscreen');
-    expect(message).toMatch(/5 lỗi/);
+    expect(message).toMatch(/5 problem/);
   });
 
-  it('báo cả lỗi lồng nhau (upgrades + best)', () => {
+  it('reports nested problems (upgrades + best) too', () => {
     const message = errorMessage(() =>
       parseSaveData({
         ...createDefaultSave(),
@@ -182,19 +182,19 @@ describe('SaveData — validate', () => {
     expect(message).toContain('best.chapter');
   });
 
-  it('parseSaveData đòi đúng version, save cũ phải qua migrate', () => {
+  it('parseSaveData demands the exact version, old saves must go through migrate', () => {
     expect(() => parseSaveData({ ...createDefaultSave(), version: 0 })).toThrow(/version/);
     expect(() => parseSaveData({ ...createDefaultSave(), version: '1' })).toThrow(/version/);
   });
 
-  it('từ chối dữ liệu không phải object', () => {
-    expect(() => parseSaveData(undefined)).toThrow(/phải là object/);
-    expect(() => parseSaveData([1, 2, 3])).toThrow(/phải là object/);
+  it('rejects non-object data', () => {
+    expect(() => parseSaveData(undefined)).toThrow(/must be an object/);
+    expect(() => parseSaveData([1, 2, 3])).toThrow(/must be an object/);
   });
 });
 
 describe('SaveData — withBest', () => {
-  it('ghi kỷ lục mới trên save mới, không sửa save cũ', () => {
+  it('records a new best on a new save, without modifying the old save', () => {
     const base = createDefaultSave();
     const next = withBest(base, 1, 3);
 
@@ -203,7 +203,7 @@ describe('SaveData — withBest', () => {
     expect(next.gold).toBe(base.gold);
   });
 
-  it('không lùi kỷ lục: chapter xa hơn thắng, cùng chapter thì room lớn hơn thắng', () => {
+  it('never regresses a record: a further chapter wins, same chapter means the larger room wins', () => {
     const save = withBest(withBest(createDefaultSave(), 2, 3), 1, 9);
 
     expect(save.best).toEqual({ chapter: 2, room: 3 });
@@ -211,7 +211,7 @@ describe('SaveData — withBest', () => {
     expect(withBest(save, 2, 2).best).toEqual({ chapter: 2, room: 3 });
   });
 
-  it('nhận room 10 — tổng phòng theo dữ liệu nên save không chặn trần 9', () => {
+  it('accepts room 10 — the room total comes from data so the save has no 9 cap', () => {
     const repository = new SaveRepository(new MemorySaveStorage());
     repository.save(withBest(createDefaultSave(), 1, 10));
 
@@ -219,7 +219,7 @@ describe('SaveData — withBest', () => {
     expect(repository.lastLoadError).toBeNull();
   });
 
-  it('từ chối chapter/room ngoài miền', () => {
+  it('rejects a chapter/room out of range', () => {
     expect(() => withBest(createDefaultSave(), 0, 1)).toThrow(/chapter/);
     expect(() => withBest(createDefaultSave(), 4, 1)).toThrow(/chapter/);
     expect(() => withBest(createDefaultSave(), 1, 0)).toThrow(/room/);
@@ -227,8 +227,8 @@ describe('SaveData — withBest', () => {
   });
 });
 
-describe('Upgrades — bảng giá', () => {
-  it('mỗi track có đúng 10 mốc giá, tăng dần, là số nguyên dương', () => {
+describe('Upgrades — price table', () => {
+  it('every track has exactly 10 price steps, rising, positive integers', () => {
     for (const track of UPGRADE_TRACKS) {
       const costs = UPGRADE_COSTS[track];
 
@@ -243,7 +243,7 @@ describe('Upgrades — bảng giá', () => {
     }
   });
 
-  it('khớp khoảng giá GDD §7: hearts 50 → 500, damage/fireRate 40 → 400', () => {
+  it('matches the GDD §7 price band: hearts 50 → 500, damage/fireRate 40 → 400', () => {
     expect(costFor('hearts', 1)).toBe(50);
     expect(costFor('hearts', MAX_LEVEL)).toBe(500);
     expect(costFor('damage', 1)).toBe(40);
@@ -252,13 +252,13 @@ describe('Upgrades — bảng giá', () => {
     expect(costFor('fireRate', MAX_LEVEL)).toBe(400);
   });
 
-  it('từ chối cấp ngoài 1..10', () => {
+  it('rejects a level outside 1..10', () => {
     expect(() => costFor('damage', 0)).toThrow(/1\.\.10/);
     expect(() => costFor('damage', MAX_LEVEL + 1)).toThrow(/1\.\.10/);
     expect(() => costFor('damage', 1.5)).toThrow(/1\.\.10/);
   });
 
-  it('max level: hearts bị chặn ở 5, các track khác 10', () => {
+  it('max level: hearts capped at 5, other tracks at 10', () => {
     expect(maxLevelFor('hearts')).toBe(MAX_HEARTS_TRACK);
     expect(maxLevelFor('hearts')).toBe(5);
     expect(maxLevelFor('damage')).toBe(MAX_LEVEL);
@@ -267,7 +267,7 @@ describe('Upgrades — bảng giá', () => {
 });
 
 describe('Upgrades — mua', () => {
-  it('trừ đúng giá và tăng cấp, không sửa state cũ', () => {
+  it('deducts exactly the price and raises the level, without modifying the old state', () => {
     const before = stateWith({});
     const result = buy(before, 'damage', 1000);
 
@@ -276,7 +276,7 @@ describe('Upgrades — mua', () => {
     expect(before.upgrades.damage).toBe(0);
   });
 
-  it('mua liên tiếp trả đúng giá từng cấp', () => {
+  it('buying repeatedly charges the price of each level', () => {
     const first = buy(stateWith({}), 'fireRate', 100);
     const second = buy(first.state, 'fireRate', first.gold);
 
@@ -285,36 +285,36 @@ describe('Upgrades — mua', () => {
     expect(second.gold).toBe(100 - costFor('fireRate', 1) - costFor('fireRate', 2));
   });
 
-  it('chặn mua khi thiếu vàng, state không đổi', () => {
+  it('blocks a purchase when gold is short, state unchanged', () => {
     const before = stateWith({});
 
     expect(canBuy(before, 'damage', costFor('damage', 1) - 1)).toBe(false);
     expect(canBuy(before, 'damage', costFor('damage', 1))).toBe(true);
-    expect(() => buy(before, 'damage', 0)).toThrow(/Không đủ vàng/);
+    expect(() => buy(before, 'damage', 0)).toThrow(/Not enough gold/);
     expect(before.upgrades.damage).toBe(0);
   });
 
-  it('không mua quá cấp tối đa của từng track', () => {
+  it('cannot buy past the max level of a track', () => {
     const maxedHearts = stateWith({ hearts: MAX_HEARTS_TRACK });
     const maxedDamage = stateWith({ damage: MAX_LEVEL });
 
     expect(canBuy(maxedHearts, 'hearts', 1_000_000)).toBe(false);
-    expect(() => buy(maxedHearts, 'hearts', 1_000_000)).toThrow(/tối đa/);
+    expect(() => buy(maxedHearts, 'hearts', 1_000_000)).toThrow(/maximum/);
     expect(canBuy(maxedDamage, 'damage', 1_000_000)).toBe(false);
-    expect(() => buy(maxedDamage, 'damage', 1_000_000)).toThrow(/tối đa 10/);
+    expect(() => buy(maxedDamage, 'damage', 1_000_000)).toThrow(/maximum level 10/);
 
     expect(maxedHearts.upgrades.hearts).toBe(MAX_HEARTS_TRACK);
     expect(maxedDamage.upgrades.damage).toBe(MAX_LEVEL);
   });
 
-  it('bỏ qua vàng không hợp lệ (NaN)', () => {
+  it('ignores invalid gold (NaN)', () => {
     expect(canBuy(stateWith({}), 'damage', Number.NaN)).toBe(false);
-    expect(() => buy(stateWith({}), 'damage', Number.NaN)).toThrow(/Không đủ vàng/);
+    expect(() => buy(stateWith({}), 'damage', Number.NaN)).toThrow(/Not enough gold/);
   });
 });
 
 describe('Upgrades — applyUpgrades', () => {
-  it('cấp 0 không đổi gì', () => {
+  it('level 0 changes nothing', () => {
     expect(applyUpgrades(stateWith({}))).toEqual({
       maxHeartsBonus: 0,
       damageMultiplier: 1,
@@ -322,7 +322,7 @@ describe('Upgrades — applyUpgrades', () => {
     });
   });
 
-  it('map cấp sang 3 bonus: +1 tim, +5% damage, +3% nhịp bắn mỗi cấp', () => {
+  it('maps levels to 3 bonuses: +1 heart, +5% damage, +3% fire rate per level', () => {
     const bonuses = applyUpgrades(stateWith({ hearts: 3, damage: 4, fireRate: 5 }));
 
     expect(bonuses.maxHeartsBonus).toBe(3);
@@ -330,7 +330,7 @@ describe('Upgrades — applyUpgrades', () => {
     expect(bonuses.fireRateMultiplier).toBeCloseTo(1.15, 10);
   });
 
-  it('cấp tối đa cho bonus tối đa, không vượt cap', () => {
+  it('max level gives the max bonus, never past the cap', () => {
     const bonuses = applyUpgrades(
       stateWith({ hearts: MAX_HEARTS_TRACK, damage: MAX_LEVEL, fireRate: MAX_LEVEL }),
     );
@@ -340,7 +340,7 @@ describe('Upgrades — applyUpgrades', () => {
     expect(bonuses.fireRateMultiplier).toBeCloseTo(1.3, 10);
   });
 
-  it('save hỏng (cấp âm/ngoài bảng) bị kẹp về khoảng hợp lệ', () => {
+  it('a broken save (negative/out-of-table level) is clamped into the valid range', () => {
     const bonuses = applyUpgrades(stateWith({ hearts: 99, damage: -3, fireRate: 99 }));
 
     expect(bonuses.maxHeartsBonus).toBe(MAX_HEARTS_TRACK);
@@ -350,30 +350,30 @@ describe('Upgrades — applyUpgrades', () => {
 });
 
 describe('SaveRepository', () => {
-  it('storage rỗng trả save mặc định, không có lỗi', () => {
+  it('empty storage returns the default save with no error', () => {
     const repository = new SaveRepository(new MemorySaveStorage());
 
     expect(repository.load()).toEqual(createDefaultSave());
     expect(repository.lastLoadError).toBeNull();
   });
 
-  it('JSON hỏng trả save mặc định và ghi lại lỗi', () => {
-    const repository = new SaveRepository(new MemorySaveStorage('{ hỏng json'));
+  it('broken JSON returns the default save and records the error', () => {
+    const repository = new SaveRepository(new MemorySaveStorage('{ hỏng json')); // i18n-allow: sample bad data
 
     expect(repository.load()).toEqual(createDefaultSave());
     expect(repository.lastLoadError).not.toBeNull();
     expect(repository.lastLoadError).toMatch(/JSON|Unexpected/);
   });
 
-  it('save hỏng schema cũng trả mặc định và ghi lỗi', () => {
+  it('a schema-broken save also returns the default and records the error', () => {
     const repository = new SaveRepository(
-      new MemorySaveStorage(JSON.stringify({ version: 999, gold: 'nhiều' })),
+      new MemorySaveStorage(JSON.stringify({ version: 999, gold: 'nhiều' })), // i18n-allow: sample bad data
     );
 
     const loaded = repository.load();
 
     expect(loaded).toEqual(createDefaultSave());
-    expect(repository.lastLoadError).toMatch(/999|mới hơn/);
+    expect(repository.lastLoadError).toMatch(/999|newer/);
   });
 
   it('save → load round-trip', () => {
@@ -393,7 +393,7 @@ describe('SaveRepository', () => {
     expect(new SaveRepository(storage).lastLoadError).toBeNull();
   });
 
-  it('load save cũ trong storage được migrate, không báo lỗi', () => {
+  it('a load of an old save in storage is migrated without an error', () => {
     const storage = new MemorySaveStorage(JSON.stringify({ gold: 77 }));
 
     const loaded = new SaveRepository(storage).load();
@@ -403,8 +403,8 @@ describe('SaveRepository', () => {
     expect(new SaveRepository(storage).lastLoadError).toBeNull();
   });
 
-  it('load thành công xoá lỗi của lần trước', () => {
-    const storage = new MemorySaveStorage('{ hỏng');
+  it('a successful load clears the previous error', () => {
+    const storage = new MemorySaveStorage('{ hỏng'); // i18n-allow: sample bad data
     const repository = new SaveRepository(storage);
 
     repository.load();
@@ -415,7 +415,7 @@ describe('SaveRepository', () => {
     expect(repository.lastLoadError).toBeNull();
   });
 
-  it('reset xoá slot', () => {
+  it('reset clears the slot', () => {
     const storage = new MemorySaveStorage();
     const repository = new SaveRepository(storage);
 
@@ -429,7 +429,7 @@ describe('SaveRepository', () => {
     expect(repository.load()).toEqual(createDefaultSave());
   });
 
-  it('MemorySaveStorage là buffer thuần trong RAM', () => {
+  it('MemorySaveStorage is a pure in-RAM buffer', () => {
     const storage = new MemorySaveStorage();
 
     expect(storage.read()).toBeNull();
@@ -441,7 +441,7 @@ describe('SaveRepository', () => {
 });
 
 describe('Settings', () => {
-  it('kẹp volume dưới 0, trên 1, NaN về khoảng hợp lệ', () => {
+  it('clamps volume below 0, above 1, and NaN into the valid range', () => {
     expect(clampVolume(-0.4)).toBe(0);
     expect(clampVolume(0)).toBe(0);
     expect(clampVolume(0.35)).toBe(0.35);
@@ -451,7 +451,7 @@ describe('Settings', () => {
     expect(clampVolume(Number.POSITIVE_INFINITY)).toBe(DEFAULT_VOLUME);
   });
 
-  it('applySettings trả bản chuẩn hoá, không sửa input', () => {
+  it('applySettings returns the normalised copy without modifying the input', () => {
     const input = { volume: 2, fullscreen: true };
     const applied = applySettings(input);
 
@@ -466,7 +466,7 @@ describe('Settings', () => {
     });
   });
 
-  it('applySettings lấp field thiếu bằng mặc định', () => {
+  it('applySettings fills missing fields with defaults', () => {
     expect(applySettings()).toEqual({
       volume: DEFAULT_VOLUME,
       fullscreen: false,
@@ -479,7 +479,7 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
     });
-    // Object thường: đủ 4 own key, JSON.stringify ra đủ field.
+    // Plain object: all 4 own keys, JSON.stringify emits every field.
     expect(Object.keys(applySettings())).toEqual(['volume', 'fullscreen', 'screenShake', 'damageNumbers']);
   });
 });

@@ -5,7 +5,7 @@ import {
 } from '../../assets/scripts/core/save/save-data';
 
 describe('unlockNextChapter', () => {
-  it('thắng chapter 1 mở chapter 2; thắng 2 mở 3', () => {
+  it('winning chapter 1 opens chapter 2; winning 2 opens 3', () => {
     const first = unlockNextChapter(createDefaultSave(), 1);
     expect(first.chaptersUnlocked).toBe(2);
 
@@ -13,7 +13,7 @@ describe('unlockNextChapter', () => {
     expect(second.chaptersUnlocked).toBe(3);
   });
 
-  it('không thu hẹp tiến trình và không vượt quá chapter cuối', () => {
+  it('never shrinks progress and never exceeds the last chapter', () => {
     const save = { ...createDefaultSave(), chaptersUnlocked: 3 };
     expect(unlockNextChapter(save, 1).chaptersUnlocked).toBe(3);
     expect(unlockNextChapter(save, 3).chaptersUnlocked).toBe(3);
@@ -22,7 +22,7 @@ describe('unlockNextChapter', () => {
     expect(unlocked.chaptersUnlocked).toBe(2);
   });
 
-  it('không sửa save truyền vào; chapter sai thì ném', () => {
+  it('does not modify the passed save; a wrong chapter throws', () => {
     const save = createDefaultSave();
     unlockNextChapter(save, 1);
     expect(save.chaptersUnlocked).toBe(1);

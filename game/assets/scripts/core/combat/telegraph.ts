@@ -1,15 +1,15 @@
 /**
- * Thời lượng telegraph (GDD §4, ADR-008). Enemy không có frame đòn, nên
- * telegraph là tín hiệu duy nhất cho người chơi biết đòn sắp ra.
+ * Telegraph duration (GDD §4, ADR-008). Enemies have no attack frame, so
+ * the telegraph is the only signal telling the player an attack is coming.
  *
- * Thuần số học: không biết gì về engine, scene hay FX. Adapter dùng
- * `telegraphProgress` để scale vòng `Magic/Circle` dưới chân enemy.
+ * Pure arithmetic: knows nothing about the engine, scene or FX. The adapter uses
+ * `telegraphProgress` to scale the `Magic/Circle` ring under the enemy's feet.
  *
- * Số của enemy đọc từ `config/tuning.json` (`enemies.roles.<role>.telegraphMs`).
- * Riêng chaser elite dùng `enemies.elite.chaser.pounceTelegraphMs` vì cú lao
- * (đòn thêm của bản elite) là thứ duy nhất nó telegraph.
- * Boss giữ 800 ms ở đây vì pattern boss do `core/boss/` sở hữu và chưa nằm
- * trong bảng tune enemy thường.
+ * Enemy numbers come from `config/tuning.json` (`enemies.roles.<role>.telegraphMs`).
+ * The elite chaser uses `enemies.elite.chaser.pounceTelegraphMs` because the pounce
+ * (the elite's extra attack) is the only thing it telegraphs.
+ * Bosses keep 800 ms here because boss patterns are owned by `core/boss/` and are not yet
+ * in the regular enemy tuning table.
  */
 import { ENEMY_TUNING } from '../enemies/tuning';
 
@@ -22,12 +22,12 @@ export const TELEGRAPH_MS = {
 
 export type TelegraphKind = keyof typeof TELEGRAPH_MS;
 
-/** Đã đủ `durationMs` kể từ `startedMs` chưa (biên tính là xong). */
+/** Has `durationMs` elapsed since `startedMs` (the boundary counts as done)? */
 export function isTelegraphElapsed(startedMs: number, nowMs: number, durationMs: number): boolean {
   return nowMs - startedMs >= durationMs;
 }
 
-/** Như trên nhưng tra thời lượng theo loại enemy. */
+/** Like above but looks up the duration by enemy kind. */
 export function isTelegraphComplete(
   startedMs: number,
   nowMs: number,
@@ -36,7 +36,7 @@ export function isTelegraphComplete(
   return isTelegraphElapsed(startedMs, nowMs, TELEGRAPH_MS[kind]);
 }
 
-/** Tiến độ 0..1 để vẽ FX; ngoài cửa sổ telegraph thì kẹp về 0 hoặc 1. */
+/** Progress 0..1 to draw the FX; outside the telegraph window it clamps to 0 or 1. */
 export function telegraphProgress(
   startedMs: number,
   nowMs: number,

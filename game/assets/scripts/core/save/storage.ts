@@ -1,31 +1,31 @@
 /**
- * Adapter storage cho save. Core **không** đụng `localStorage` (không có DOM,
- * test được bằng Node): nó chỉ biết interface `SaveStorage`. Bản thật dùng
- * `window.localStorage` nằm ở `assets/scripts/game/`.
+ * Storage adapter for saves. Core never touches `localStorage` (no DOM,
+ * testable under Node): it only knows the `SaveStorage` interface. The real implementation using
+ * `window.localStorage` lives in `assets/scripts/game/`.
  */
 import { createDefaultSave, migrate, serializeSave } from './save-data';
 import type { SaveData } from './save-data';
 
 export interface SaveStorage {
-  /** `null` = chưa có gì trong slot. */
+  /** `null` = nothing in the slot yet. */
   read(): string | null;
   write(value: string): void;
   clear(): void;
 }
 
 /**
- * Một slot save duy nhất (ADR-012).
+ * A single save slot (ADR-012).
  *
- * `load` không bao giờ ném: save hỏng/không đọc được thì trả save mặc định để
- * người chơi vẫn vào game được, nhưng lỗi được giữ ở `lastLoadError` để UI và
- * log báo lại — im lặng nuốt lỗi là mất tiến trình mà không ai biết.
+ * `load` never throws: a broken/unreadable save returns the default save so the
+ * player can still enter the game, but the error is kept in `lastLoadError` for the UI and
+ * logs to report — silently swallowing it loses progress with nobody noticing.
  */
 export class SaveRepository {
   private loadError: string | null = null;
 
   constructor(private readonly storage: SaveStorage) {}
 
-  /** Lỗi của lần `load` gần nhất, `null` nếu sạch. */
+  /** Error from the latest `load`, `null` when clean. */
   get lastLoadError(): string | null {
     return this.loadError;
   }
@@ -53,7 +53,7 @@ export class SaveRepository {
     this.storage.write(serializeSave(data));
   }
 
-  /** Xoá slot và trạng thái lỗi — dùng cho "xoá tiến trình". */
+  /** Clear the slot and the error state — used by "delete progress". */
   reset(): void {
     this.storage.clear();
     this.loadError = null;
@@ -65,7 +65,7 @@ export class SaveRepository {
   }
 }
 
-/** Storage trong RAM: dùng cho test, và làm fallback khi trình duyệt chặn storage. */
+/** In-memory storage: used by tests, and as a fallback when the browser blocks storage. */
 export class MemorySaveStorage implements SaveStorage {
   private value: string | null;
 

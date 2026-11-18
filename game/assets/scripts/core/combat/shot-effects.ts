@@ -1,59 +1,59 @@
 /**
- * Hiệu ứng skill lên **một phát bắn** và **một lần trúng đòn**.
+ * Skill effects on **one shot** and **one hit**.
  *
- * Tách khỏi adapter vì đây là nơi dễ lệch giữa game và simulation nhất:
- * số đạn, góc xoè, crit, execute, lifesteal, nảy, nổ. Cả `game/player-controller.ts`
- * và `core/sim/*` gọi đúng những hàm này; chúng chỉ thuần số học + `SeededRng`.
+ * Split from the adapter because this is where game and simulation drift most easily:
+ * projectile count, spread angle, crit, execute, lifesteal, ricochet, explosion. Both `game/player-controller.ts`
+ * and `core/sim/*` call exactly these functions; they are pure arithmetic + `SeededRng`.
  *
- * Quy ước damage: damage của viên đạn đã gồm crit (roll lúc bắn). Execute là
- * hệ số **áp lúc trúng** vì nó phụ thuộc máu mục tiêu tại thời điểm đó.
+ * Damage convention: a bullet's damage already includes crit (rolled at fire time). Execute is a
+ * factor **applied on hit** because it depends on the target's health at that moment.
  */
 import type { SeededRng } from '../rng';
 import type { DerivedStats } from '../skills/derived-stats';
 
-/** Tổng góc xoè của Twin Shot (GDD §6: ±12°). */
+/** Total spread of Twin Shot (GDD §6: ±12°). */
 export const TWIN_SPREAD_RADIANS = (12 * Math.PI) / 180;
 
-/** Bán kính nảy sang mục tiêu khác, tile. Xa hơn nữa thì coi như không có mục tiêu. */
+/** Bounce radius to another target, tiles. Anything farther counts as no target. */
 export const RICOCHET_RANGE_TILES = 8;
 
-/** Tốc độ quay tối đa của đạn homing, radian/giây. Đủ nhanh để thấy "bám". */
+/** Maximum turn rate of a homing bullet, radians/second. Fast enough to look like "tracking". */
 export const HOMING_TURN_RATE_RADIANS_PER_SECOND = (720 * Math.PI) / 180;
 
-/** Một viên trong loạt bắn, đã chốt damage/flags để adapter chỉ việc spawn. */
+/** One bullet in a volley, with damage/flags settled so the adapter only has to spawn it. */
 export interface ProjectilePlan {
-  /** Lệch so với hướng aim, radian. */
+  /** Offset from the aim direction, radians. */
   readonly angleOffset: number;
   readonly damage: number;
   readonly crit: boolean;
-  /** Số enemy còn xuyên qua được. */
+  /** Enemies it can still pass through. */
   readonly pierce: number;
-  /** Số lần còn nảy được. */
+  /** Remaining bounces. */
   readonly ricochet: number;
   readonly homing: boolean;
   readonly explosiveRadiusTiles: number;
-  /** Damage vụ nổ, đã tính crit + ratio. 0 = không nổ. */
+  /** Explosion damage, crit + ratio already applied. 0 = no explosion. */
   readonly explosiveDamage: number;
 }
 
 /**
- * Chia một phát bắn thành `stats.projectiles` viên.
+ * Split one shot into `stats.projectiles` bullets.
  *
- * **Luôn có một viên đi thẳng** (góc 0): nếu mọi viên đều lệch ±12°, ở tầm xa
- * hai viên của Twin Shot 1 stack đều trượt enemy 0.8 tile và DPS thành 0 — bug
- * lộ ra ở simulation khi cộng dồn Twin Shot + Rapid Fire. Các viên thêm lần lượt
- * lệch +12° / −12° (GDD §6 "bắn chéo ±12°"), nên stack thêm vẫn là bonus ở tầm
- * gần chứ không làm mất viên giữa.
+ * **One bullet always flies straight** (angle 0): if every bullet were offset ±12°, at long
+ * range the two bullets of a 1-stack Twin Shot would both miss a 0.8-tile enemy and DPS would drop to 0 — a bug
+ * that shows up in the simulation when stacking Twin Shot + Rapid Fire. Extra bullets are offset
+ * +12° / −12° in turn (GDD §6 "fires at ±12°"), so additional stacks stay a bonus at close
+ * range instead of losing the middle bullet.
  *
- * Crit roll **mỗi viên một lần** (đạn nổ/crit độc lập), chỉ tiêu RNG khi
- * `critChance > 0` để loadout không crit không làm lệch chuỗi RNG của roll skill.
+ * Crit is rolled **once per bullet** (explosions/crits are independent); RNG is only spent when
+ * `critChance > 0` so a loadout without crit does not shift the skill-roll RNG sequence.
  */
 export function planVolley(stats: DerivedStats, rng: SeededRng): ProjectilePlan[] {
   const count = Math.max(1, Math.round(stats.projectiles));
   const plans: ProjectilePlan[] = [];
 
   for (let index = 0; index < count; index += 1) {
-    // index 0 = viên giữa; 1 = +12°, 2 = −12°, 3 = +12°, …
+    // index 0 = middle bullet; 1 = +12°, 2 = −12°, 3 = +12°, …
     const angleOffset =
       index === 0
         ? 0
@@ -79,10 +79,10 @@ export function planVolley(stats: DerivedStats, rng: SeededRng): ProjectilePlan[
 }
 
 /**
- * Damage cuối lên mục tiêu đang còn `healthFraction` máu (0..1).
+ * Final damage on a target that still has `healthFraction` health (0..1).
  *
- * Executioner: cộng `executeBonus` (theo stack) khi máu dưới ngưỡng. Với 2 stack
- * bonus = 1.0 tức ×2 damage; không áp cho vụ nổ (vụ nổ đã là damage phụ).
+ * Executioner: adds `executeBonus` (per stack) when health is below the threshold. With 2 stacks
+ * the bonus is 1.0, i.e. ×2 damage; not applied to explosions (an explosion is already extra damage).
  */
 export function damageAfterExecute(
   stats: Pick<DerivedStats, 'executeThreshold' | 'executeBonus'>,
@@ -96,8 +96,8 @@ export function damageAfterExecute(
 }
 
 /**
- * Máu hồi từ damage vừa gây. GDD §6 ghi "làm tròn xuống": 5% của 3 damage = 0,
- * nên lifesteal 1 stack không hồi gì với đạn 1 damage — đúng chữ của bảng.
+ * Health restored from damage just dealt. GDD §6 says "round down": 5% of 3 damage = 0,
+ * so 1-stack lifesteal restores nothing with 1-damage bullets — exactly the wording of the table.
  */
 export function lifestealHeal(
   stats: Pick<DerivedStats, 'lifestealPercent'>,
@@ -118,9 +118,9 @@ export interface RicochetTarget {
 }
 
 /**
- * Mục tiêu kế tiếp cho đạn nảy: gần nhất trong `RICOCHET_RANGE_TILES`, bỏ qua
- * chính mục tiêu vừa trúng và những mục tiêu đạn đã chạm (`alreadyHit`).
- * Trả `null` khi không còn ai — đạn bị thu hồi như bình thường.
+ * Next target for a ricocheting bullet: nearest within `RICOCHET_RANGE_TILES`, skipping
+ * the target just hit and any the bullet already touched (`alreadyHit`).
+ * Returns `null` when nobody is left — the bullet is retired as usual.
  */
 export function ricochetTarget(
   from: { readonly x: number; readonly y: number },
@@ -144,8 +144,8 @@ export function ricochetTarget(
 }
 
 /**
- * Xoay vận tốc về phía `to` nhưng không quá `maxTurnRadians`, giữ nguyên tốc độ.
- * Dùng cho Homing: mỗi frame gọi một lần, đạn không bao giờ "teleport" hướng.
+ * Rotate the velocity toward `to` by at most `maxTurnRadians`, keeping speed.
+ * Used by Homing: called once per frame, a bullet never "teleports" its heading.
  */
 export function steerVelocity(
   velocity: { readonly x: number; readonly y: number },
@@ -161,7 +161,7 @@ export function steerVelocity(
   const currentAngle = Math.atan2(velocity.y, velocity.x);
   const desiredAngle = Math.atan2(to.y - from.y, to.x - from.x);
   let delta = desiredAngle - currentAngle;
-  // Chuẩn hoá về (-π, π]: rẽ phải ngắn nhất thay vì quay gần cả vòng.
+  // Normalise to (-π, π]: take the shortest turn instead of spinning almost all the way around.
   delta = Math.atan2(Math.sin(delta), Math.cos(delta));
   const turn = Math.max(-maxTurnRadians, Math.min(maxTurnRadians, delta));
   const angle = currentAngle + turn;

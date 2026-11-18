@@ -4,14 +4,14 @@ import { HealthState } from '../../assets/scripts/core/combat/health';
 const config = { playerMaxHearts: 6, invulnerabilityMs: 800 };
 
 describe('HealthState', () => {
-  it('bắt đầu với máu tối đa', () => {
+  it('starts at max health', () => {
     const health = new HealthState(config);
 
     expect(health.current).toBe(6);
     expect(health.isDead).toBe(false);
   });
 
-  it('trừ máu và bật i-frame sau khi trúng', () => {
+  it('subtracts health and turns on the i-frame after a hit', () => {
     const health = new HealthState(config);
 
     const result = health.tryDamage(1, 0);
@@ -20,7 +20,7 @@ describe('HealthState', () => {
     expect(health.isInvulnerable(500)).toBe(true);
   });
 
-  it('chặn đòn thứ hai trong cửa sổ i-frame', () => {
+  it('blocks the second hit inside the i-frame window', () => {
     const health = new HealthState(config);
     health.tryDamage(1, 0);
 
@@ -30,7 +30,7 @@ describe('HealthState', () => {
     expect(health.current).toBe(5);
   });
 
-  it('cho phép trúng đòn đúng lúc i-frame kết thúc', () => {
+  it('allows a hit exactly when the i-frame ends', () => {
     const health = new HealthState(config);
     health.tryDamage(1, 0);
 
@@ -40,7 +40,7 @@ describe('HealthState', () => {
     expect(health.current).toBe(4);
   });
 
-  it('chết khi máu về 0 và không nhận thêm sát thương', () => {
+  it('dies at 0 health and takes no further damage', () => {
     const health = new HealthState(config);
     const first = health.tryDamage(4, 0);
     expect(first.dead).toBe(false);
@@ -51,7 +51,7 @@ describe('HealthState', () => {
     expect(health.tryDamage(1, 2000).applied).toBe(false);
   });
 
-  it('hồi máu nhưng không vượt quá max, và không hồi khi đã chết', () => {
+  it('heals without exceeding max, and does not heal when dead', () => {
     const health = new HealthState(config);
     health.tryDamage(3, 0);
 
