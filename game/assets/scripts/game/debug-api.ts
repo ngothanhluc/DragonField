@@ -108,6 +108,17 @@ export interface DebugAtmosphereSnapshot {
   readonly props: number;
 }
 
+/** The living room drawn behind title / chapter select (#8), read from the live adapter. */
+export interface DebugMenuBackdropSnapshot {
+  readonly chapter: number;
+  readonly room: number;
+  /** Idle ninja position in world units (bottom-left origin, y up); `null` when not drawn. */
+  readonly player: { readonly x: number; readonly y: number } | null;
+  readonly layers: readonly string[];
+  readonly animals: number;
+  readonly props: number;
+}
+
 /** Data bootstrap supplies to the API; every method is a live closure. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
@@ -155,6 +166,10 @@ export interface DebugProvider {
   readonly vfx: () => DebugVfxSnapshot;
   /** Chapter atmosphere + living decor of the current room (#6). */
   readonly atmosphere: () => DebugAtmosphereSnapshot;
+  /** Living room behind title / chapter select (#8); `null` when nothing is drawn. */
+  readonly menuBackdrop: () => DebugMenuBackdropSnapshot | null;
+  /** Total nodes in the current scene (leak check for the menu backdrop). */
+  readonly nodeCount: () => number;
 }
 
 export type YokaiDebugApi = Omit<
@@ -204,6 +219,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
     setEffects: { value: provider.setEffects, enumerable: true },
     vfx: { value: provider.vfx, enumerable: true },
     atmosphere: { value: provider.atmosphere, enumerable: true },
+    menuBackdrop: { value: provider.menuBackdrop, enumerable: true },
+    nodeCount: { value: provider.nodeCount, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -213,7 +230,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, ' +
       'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
-      'setEffects, vfx, atmosphere, keyLog).',
+      'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, keyLog).',
   );
   return true;
 }

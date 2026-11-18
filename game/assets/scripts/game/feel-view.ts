@@ -79,6 +79,8 @@ export class FeelView {
 
   private readonly coinSlots: CoinSlot[] = [];
   private readonly popupSlots: PopupSlot[] = [];
+  /** `coin-fly` / `damage-numbers` layer nodes (destroying the slots alone leaves them behind). */
+  private readonly layers: Node[] = [];
   private coinFrames: readonly SpriteFrame[] = [];
   private coinFps = 10;
   private options: FeelViewOptions | null = null;
@@ -191,8 +193,10 @@ export class FeelView {
   destroy(): void {
     for (const slot of this.coinSlots) if (slot.node.isValid) slot.node.destroy();
     for (const slot of this.popupSlots) if (slot.node.isValid) slot.node.destroy();
+    for (const layer of this.layers) if (layer.isValid) layer.destroy();
     this.coinSlots.length = 0;
     this.popupSlots.length = 0;
+    this.layers.length = 0;
     this.coinFrames = [];
     this.options = null;
   }
@@ -275,6 +279,7 @@ export class FeelView {
     const node = new CocosNode(name);
     node.layer = Layers.Enum.UI_2D;
     node.parent = parent;
+    this.layers.push(node);
     return node;
   }
 

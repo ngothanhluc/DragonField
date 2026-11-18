@@ -5,6 +5,7 @@
  * `placeholders`/`audio`/`anim` logic lives here too instead of being scattered through the class.
  */
 import type { Node as CocosNode } from 'cc';
+import { director } from 'cc';
 import type { AudioManager } from './audio/audio-manager';
 import type {
   DebugAnimationSnapshot,
@@ -12,6 +13,7 @@ import type {
   DebugAudioSnapshot,
   DebugBossSnapshot,
   DebugEnemySnapshot,
+  DebugMenuBackdropSnapshot,
   DebugProvider,
   DebugScreenId,
   DebugStatus,
@@ -60,6 +62,14 @@ export interface DebugWiringHost {
   readonly setEffects: (mode: 'full' | 'reduced') => boolean;
   readonly vfx: () => DebugVfxSnapshot;
   readonly atmosphere: () => DebugAtmosphereSnapshot;
+  readonly menuBackdrop: () => DebugMenuBackdropSnapshot | null;
+}
+
+/** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
+function countNodes(node: Node): number {
+  let total = 1;
+  for (const child of node.children) total += countNodes(child);
+  return total;
 }
 
 /** Install the API if the URL has `?debug=1`; returns `true` when installed. */
@@ -113,6 +123,11 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     setEffects: host.setEffects,
     vfx: host.vfx,
     atmosphere: host.atmosphere,
+    menuBackdrop: host.menuBackdrop,
+    nodeCount: () => {
+      const scene: Node | null = director.getScene() as Node | null;
+      return scene === null ? 0 : countNodes(scene);
+    },
   };
 
   return installDebugApi(provider);
