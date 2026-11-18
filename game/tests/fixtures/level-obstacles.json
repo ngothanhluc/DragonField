@@ -1,0 +1,595 @@
+{
+  "chapter-1/room-1.tmx": [
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 6,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 22,
+      "y": 6,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 11,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 22,
+      "y": 11,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-1/room-2.tmx": [
+    {
+      "kind": "pillar",
+      "x": 11,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 19,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-1/room-3.tmx": [
+    {
+      "kind": "pillar",
+      "x": 6,
+      "y": 8,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 24,
+      "y": 8,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-1/room-4.tmx": [
+    {
+      "kind": "wall",
+      "x": 8,
+      "y": 9,
+      "width": 6,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 18,
+      "y": 9,
+      "width": 6,
+      "height": 1
+    }
+  ],
+  "chapter-1/room-5.tmx": [
+    {
+      "kind": "pit",
+      "x": 10,
+      "y": 6,
+      "width": 3,
+      "height": 2
+    },
+    {
+      "kind": "pit",
+      "x": 19,
+      "y": 6,
+      "width": 3,
+      "height": 2
+    }
+  ],
+  "chapter-1/room-6.tmx": [
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 22,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-1/room-7.tmx": [
+    {
+      "kind": "pillar",
+      "x": 10,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 20,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-1/room-8.tmx": [
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 5,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 22,
+      "y": 5,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 11,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pillar",
+      "x": 22,
+      "y": 11,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-1/room-9.tmx": [
+    {
+      "kind": "pillar",
+      "x": 6,
+      "y": 5,
+      "width": 3,
+      "height": 3
+    },
+    {
+      "kind": "pillar",
+      "x": 23,
+      "y": 5,
+      "width": 3,
+      "height": 3
+    },
+    {
+      "kind": "pillar",
+      "x": 6,
+      "y": 10,
+      "width": 3,
+      "height": 3
+    },
+    {
+      "kind": "pillar",
+      "x": 23,
+      "y": 10,
+      "width": 3,
+      "height": 3
+    }
+  ],
+  "chapter-2/room-1.tmx": [
+    {
+      "kind": "pillar",
+      "x": 10,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 21,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "chapter-2/room-2.tmx": [
+    {
+      "kind": "wall",
+      "x": 13,
+      "y": 5,
+      "width": 4,
+      "height": 1
+    },
+    {
+      "kind": "pit",
+      "x": 13,
+      "y": 11,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-2/room-3.tmx": [
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 9,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 23,
+      "y": 9,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 15,
+      "y": 5,
+      "width": 2,
+      "height": 1
+    }
+  ],
+  "chapter-2/room-4.tmx": [
+    {
+      "kind": "pit",
+      "x": 10,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pit",
+      "x": 20,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-2/room-5.tmx": [
+    {
+      "kind": "wall",
+      "x": 14,
+      "y": 8,
+      "width": 4,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 6,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 25,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "chapter-2/room-6.tmx": [
+    {
+      "kind": "pillar",
+      "x": 9,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 22,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 14,
+      "y": 11,
+      "width": 3,
+      "height": 1
+    }
+  ],
+  "chapter-2/room-7.tmx": [
+    {
+      "kind": "wall",
+      "x": 11,
+      "y": 9,
+      "width": 3,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 19,
+      "y": 9,
+      "width": 3,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 16,
+      "y": 5,
+      "width": 1,
+      "height": 2
+    }
+  ],
+  "chapter-2/room-8.tmx": [
+    {
+      "kind": "pit",
+      "x": 8,
+      "y": 6,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pit",
+      "x": 22,
+      "y": 6,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "wall",
+      "x": 15,
+      "y": 10,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-2/room-9.tmx": [
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 24,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 24,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "chapter-3/room-1.tmx": [
+    {
+      "kind": "pillar",
+      "x": 10,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 21,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 15,
+      "y": 10,
+      "width": 2,
+      "height": 1
+    }
+  ],
+  "chapter-3/room-2.tmx": [
+    {
+      "kind": "wall",
+      "x": 8,
+      "y": 8,
+      "width": 2,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 22,
+      "y": 8,
+      "width": 2,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 18,
+      "y": 4,
+      "width": 1,
+      "height": 2
+    }
+  ],
+  "chapter-3/room-3.tmx": [
+    {
+      "kind": "pillar",
+      "x": 11,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 20,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 14,
+      "y": 10,
+      "width": 4,
+      "height": 1
+    }
+  ],
+  "chapter-3/room-4.tmx": [
+    {
+      "kind": "pit",
+      "x": 9,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pit",
+      "x": 21,
+      "y": 7,
+      "width": 2,
+      "height": 2
+    }
+  ],
+  "chapter-3/room-5.tmx": [
+    {
+      "kind": "wall",
+      "x": 14,
+      "y": 5,
+      "width": 4,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 10,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 23,
+      "y": 10,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "chapter-3/room-6.tmx": [
+    {
+      "kind": "wall",
+      "x": 10,
+      "y": 9,
+      "width": 3,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 19,
+      "y": 9,
+      "width": 3,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 18,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "chapter-3/room-7.tmx": [
+    {
+      "kind": "pit",
+      "x": 8,
+      "y": 5,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "pit",
+      "x": 22,
+      "y": 5,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "kind": "wall",
+      "x": 15,
+      "y": 10,
+      "width": 3,
+      "height": 1
+    }
+  ],
+  "chapter-3/room-8.tmx": [
+    {
+      "kind": "pillar",
+      "x": 11,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 20,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "wall",
+      "x": 14,
+      "y": 11,
+      "width": 4,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 18,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "chapter-3/room-9.tmx": [
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 24,
+      "y": 10,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 8,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "kind": "pillar",
+      "x": 24,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    }
+  ]
+}

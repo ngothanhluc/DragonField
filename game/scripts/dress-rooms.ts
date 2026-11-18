@@ -311,8 +311,31 @@ function dressChapterTwo(
 }
 
 // ---------------------------------------------------------------------------
-// Ch3 — village dirt, rubble, roofs/towers on the top edge
+// Ch3 — abandoned-village paving/patches in the field, stone props on the border
 // ---------------------------------------------------------------------------
+
+/** Rows of 1-based local ids; `0` leaves the cell empty. Whole props, never single pieces. */
+type BlockRows = readonly (readonly number[])[];
+
+/** Verified complete flat VillageAbandoned props (row 3–4 of the sheet). */
+const VILLAGE_BLOCKS: readonly BlockRows[] = [
+  [[108, 109], [128, 129]], // round moss patch 2×2
+  [[67], [87]], // tall paving patch 1×2
+  [[69, 70], [0, 90]], // L-shaped paving patch
+];
+
+/** Verified flat single tiles (paving, stepping stones, low bushes, fallen leaves). */
+const VILLAGE_FLAT_SINGLES: readonly number[] = [68, 88, 89, 91, 105, 106, 165, 166, 225, 226];
+const DESERT_FLAT_SINGLES: readonly number[] = [189, 190, 237, 238, 239, 240];
+
+/** Complete solid props that fit in one border cell (self-contained in the PNG). */
+const BORDER_VILLAGE_PROPS: readonly number[] = [148, 149, 227, 230, 231, 232, 233, 234, 235];
+const BORDER_DESERT_PROPS: readonly number[] = [215, 235, 227, 228];
+
+interface Cell {
+  readonly x: number;
+  readonly y: number;
+}
 
 function dressChapterThree(
   chapter: number,
@@ -321,19 +344,108 @@ function dressChapterThree(
   rng: () => number,
 ): number[] {
   const data = new Array<number>(COLS * ROWS).fill(0);
-  // Interior cells only take **flat** Desert props (dry bushes, bones/gravel): VillageAbandoned
-  // is all autotile pieces with transparent corners, and placing them alone mid-field reads as torn paper.
-  const props = [189, 237, 238, 239, 240];
+  const used = new Set<string>();
 
-  for (let cluster = 0; cluster < 20; cluster += 1) {
-    const x = 1 + Math.floor(rng() * (COLS - 2));
-    const y = 1 + Math.floor(rng() * (ROWS - 2));
-    if (!canPlace(reserved, x, y)) continue;
-    setTile(data, x, y, gid(chapter, 'ground', pick(rng, props)));
+  const fitsBlock = (block: BlockRows, x: number, y: number): boolean => {
+    for (let dy = 0; dy < block.length; dy += 1) {
+      const row = block[dy] ?? [];
+      for (let dx = 0; dx < row.length; dx += 1) {
+        if ((row[dx] ?? 0) === 0) continue;
+        const tx = x + dx;
+        const ty = y + dy;
+        if (!canPlace(reserved, tx, ty) || used.has(key(tx, ty))) return false;
+      }
+    }
+    return true;
+  };
+
+  const stampBlock = (block: BlockRows, x: number, y: number): void => {
+    for (let dy = 0; dy < block.length; dy += 1) {
+      const row = block[dy] ?? [];
+      for (let dx = 0; dx < row.length; dx += 1) {
+        const local = row[dx] ?? 0;
+        if (local === 0) continue;
+        setTile(data, x + dx, y + dy, gid(chapter, 'village', local));
+        used.add(key(x + dx, y + dy));
+      }
+    }
+  };
+
+  const placeFlat = (
+    set: 'village' | 'ground',
+    local: number,
+    x: number,
+    y: number,
+  ): boolean => {
+    if (!canPlace(reserved, x, y) || used.has(key(x, y))) return false;
+    setTile(data, x, y, gid(chapter, set, local));
+    used.add(key(x, y));
+    return true;
+  };
+
+  // One of each whole village prop: two multi-tile patches per room minimum, never torn pieces.
+  const anchors: Cell[] = [];
+  for (const block of VILLAGE_BLOCKS) {
+    const height = block.length;
+    const width = Math.max(...block.map((row) => row.length));
+    const options: Cell[] = [];
+    for (let y = 1; y + height <= ROWS - 1; y += 1) {
+      for (let x = 1; x + width <= COLS - 1; x += 1) {
+        if (fitsBlock(block, x, y)) options.push({ x, y });
+      }
+    }
+    if (options.length === 0) continue;
+    const at = pick(rng, options);
+    stampBlock(block, at.x, at.y);
+    anchors.push({ x: at.x + Math.floor(width / 2), y: at.y + Math.floor(height / 2) });
   }
 
-  // No props on rows 0/17: the HUD/letterbox cuts them, and half-roof/fence pieces
-  // read as garbage. Keep only complete props inside the field.
+  // Stepping stones / paving spilling out of the patches.
+  for (const anchor of anchors) {
+    for (let step = 0; step < 3; step += 1) {
+      const tx = anchor.x + Math.floor(rng() * 7) - 3;
+      const ty = anchor.y + Math.floor(rng() * 7) - 3;
+      placeFlat('village', pick(rng, VILLAGE_FLAT_SINGLES), tx, ty);
+    }
+  }
+
+  // A few loose village tiles plus the dry Desert bushes that were already there.
+  for (let step = 0; step < 5; step += 1) {
+    placeFlat(
+      'village',
+      pick(rng, VILLAGE_FLAT_SINGLES),
+      1 + Math.floor(rng() * (COLS - 2)),
+      1 + Math.floor(rng() * (ROWS - 2)),
+    );
+  }
+  for (let step = 0; step < 10; step += 1) {
+    placeFlat(
+      'ground',
+      pick(rng, DESERT_FLAT_SINGLES),
+      1 + Math.floor(rng() * (COLS - 2)),
+      1 + Math.floor(rng() * (ROWS - 2)),
+    );
+  }
+
+  // Border: complete solid props on row 17 and columns 0/31 (row 0 sits under the HUD).
+  const border: Cell[] = [];
+  for (let x = 1; x < COLS - 1; x += 1) border.push({ x, y: ROWS - 1 });
+  for (let y = 1; y < ROWS - 1; y += 1) {
+    border.push({ x: 0, y });
+    border.push({ x: COLS - 1, y });
+  }
+  const free = border.filter(
+    (cell) => !used.has(key(cell.x, cell.y)) && !reserved.cells.has(key(cell.x, cell.y)),
+  );
+  const wanted = room === 9 ? 10 : 6;
+  for (let step = 0; step < wanted && free.length > 0; step += 1) {
+    const [cell] = free.splice(Math.floor(rng() * free.length), 1);
+    if (cell === undefined) break;
+    const set = rng() < 0.65 ? 'village' : 'ground';
+    const local = set === 'village' ? pick(rng, BORDER_VILLAGE_PROPS) : pick(rng, BORDER_DESERT_PROPS);
+    setTile(data, cell.x, cell.y, gid(chapter, set, local));
+    used.add(key(cell.x, cell.y));
+  }
 
   return data;
 }
