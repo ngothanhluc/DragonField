@@ -1825,6 +1825,18 @@
       "anchor": "center",
       "footPx": 8
     },
+    "fx.coin": {
+      "sheet": "resources/art/ui/coin/Coin2.png",
+      "frameWidth": 10,
+      "frameHeight": 10,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 5
+    },
     "fx.impact": {
       "sheet": "resources/art/fx/spark/SpriteSheet.png",
       "frameWidth": 45,

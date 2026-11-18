@@ -34,6 +34,7 @@ import {
   parseTuning,
   type CombatTuning,
   type EnemiesTuning,
+  type FeelTuning,
   type TuningConfig,
 } from './tuning-schema';
 
@@ -56,3 +57,6 @@ export const ENEMY_TUNING: EnemiesTuning = TUNING.enemies;
 
 /** Hệ số scale theo chapter — `behaviours.ts` đọc khi tính máu/sát thương. */
 export const CHAPTER_TUNING = TUNING.chapters;
+
+/** Số liệu juice (ticket #2) — adapter `game/` đọc, `core/feel/` chỉ nhận số qua tham số. */
+export const FEEL_TUNING: FeelTuning = TUNING.feel;

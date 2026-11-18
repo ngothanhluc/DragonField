@@ -21,7 +21,9 @@ import { ShieldCharger } from '../core/combat/shield';
 import { startKnockback, stepKnockback, type KnockbackState } from '../core/combat/knockback';
 import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
+import { FEEL_TUNING } from '../core/enemies/tuning';
 import { ROOM_EDGE_MARGIN_TILES } from '../core/enemies/behaviours';
+import { squashScale } from '../core/feel/squash';
 import { ROOM_COLS, ROOM_ROWS, type LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-intent';
@@ -43,6 +45,8 @@ type Sprite = InstanceType<typeof CocosSprite>;
 const PLAYER_NO_TINT = new CocosColor(255, 255, 255, 255);
 const PLAYER_SHIELD_TINT = new CocosColor(150, 225, 255, 255);
 const PLAYER_HURT_TINT = new CocosColor(255, 150, 150, 255);
+/** Màu muzzle flash: vàng ấm, đọc được trên mọi nền chapter. */
+const MUZZLE_TINT = new CocosColor(255, 238, 170, 255);
 /** Thời gian giữ tint trúng đòn / chặn đòn, ms. */
 const PLAYER_TINT_MS = 140;
 
@@ -102,6 +106,12 @@ export class PlayerController extends Component {
   private attackUntilMs = 0;
   private hitUntilMs = 0;
   private attackAnimMs = 0;
+  /** Scale gốc của node (ACTOR_SCALE) — squash luôn nhân từ số này, không trôi. */
+  private baseScale = 1;
+  /** Mốc bắt đầu squash và tham số của nó; hết thời gian là về đúng `baseScale`. */
+  private squashStartMs = Number.NEGATIVE_INFINITY;
+  private squashDurationMs = 0;
+  private squashAmount = 0;
   /** Cú đẩy đang chạy sau đòn trúng; `null` = không bị đẩy. */
   private knockback: KnockbackState | null = null;
 
@@ -172,6 +182,7 @@ export class PlayerController extends Component {
   init(args: PlayerInitArgs): void {
     this.animator = this.getComponent(SpriteAnimator);
     this.sprite = this.getComponent(CocosSprite);
+    this.baseScale = this.node.scale.x > 0 ? this.node.scale.x : 1;
     if (args.rng !== undefined) this.rng = args.rng;
     this.fx = args.fx ?? null;
     this.attackAnimMs = Math.max(1, loopDurationMs(resolve(args.manifest, 'player.attack.down')));
@@ -214,7 +225,16 @@ export class PlayerController extends Component {
     const moving = moveIntent.x !== 0 || moveIntent.y !== 0;
 
     if (moving) {
+      const previousFacing = this.facing;
       this.facing = directionFromVector(moveIntent, this.facing);
+      // Đổi hướng = một cái "nảy" nhỏ, để chuyển động có trọng lượng.
+      if (this.facing !== previousFacing) {
+        this.startSquash(
+          nowMs,
+          FEEL_TUNING.squash.playerTurnMs,
+          FEEL_TUNING.squash.playerTurnAmount,
+        );
+      }
       const velocity = velocityFromInput(moveIntent, this.stats.moveSpeedTilesPerSecond);
       const seconds = deltaMs / 1000;
       this.tilePosition = {
@@ -236,6 +256,7 @@ export class PlayerController extends Component {
     this.fireIfReady(nowMs, deltaMs, targets);
     this.playCurrentAnimation(nowMs, moving);
     this.applyStateTint(nowMs);
+    this.applySquash(nowMs);
   }
 
   /**
@@ -262,10 +283,18 @@ export class PlayerController extends Component {
     playSfx('player-hurt');
 
     if (result.dead) {
+      // Chết thì `step()` thôi chạy: squash dở sẽ đứng hình, nên trả scale gốc.
+      this.node.setScale(this.baseScale, this.baseScale, 1);
       this.playAnimation('player.dead');
       playSfx('game-over');
       return true;
     }
+
+    this.startSquash(
+      nowMs,
+      FEEL_TUNING.squash.playerHurtMs,
+      FEEL_TUNING.squash.playerHurtAmount,
+    );
 
     if (source !== null) {
       this.knockback = startKnockback(this.tilePosition, source, {
@@ -322,7 +351,42 @@ export class PlayerController extends Component {
     });
 
     this.attackUntilMs = nowMs + this.attackAnimMs;
+
+    // Muzzle flash nhỏ ở đầu nòng: cùng pool FX, không node mới mỗi phát.
+    this.fx?.spawn(
+      'fx.impact',
+      {
+        x: shot.origin.x + shot.direction.x * FEEL_TUNING.muzzle.offsetTiles,
+        y: shot.origin.y + shot.direction.y * FEEL_TUNING.muzzle.offsetTiles,
+      },
+      {
+        drawUnits: FEEL_TUNING.muzzle.drawUnits,
+        lifetimeMs: FEEL_TUNING.muzzle.lifetimeMs,
+        tint: MUZZLE_TINT,
+      },
+    );
     playSfx('shoot');
+  }
+
+  /**
+   * Bắt đầu một lần squash/stretch (nhân từ `baseScale`, không cộng dồn). Đòn
+   * mới trong lúc cái cũ đang chạy thì cái mới thắng — node không bao giờ lệch
+   * scale gốc quá một lần biến dạng.
+   */
+  private startSquash(nowMs: number, durationMs: number, amount: number): void {
+    if (!(durationMs > 0) || amount === 0) return;
+    this.squashStartMs = nowMs;
+    this.squashDurationMs = durationMs;
+    this.squashAmount = amount;
+  }
+
+  private applySquash(nowMs: number): void {
+    const squash = squashScale(
+      nowMs - this.squashStartMs,
+      this.squashDurationMs,
+      this.squashAmount,
+    );
+    this.node.setScale(this.baseScale * squash.x, this.baseScale * squash.y, 1);
   }
 
   /**

@@ -65,7 +65,7 @@ describe('SaveData — mặc định', () => {
     expect(defaults.upgrades).toEqual({ hearts: 0, damage: 0, fireRate: 0 });
     expect(defaults.chaptersUnlocked).toBe(1);
     expect(defaults.best).toEqual({ chapter: 0, room: 0 });
-    expect(defaults.settings).toEqual({ volume: 0.8, fullscreen: false });
+    expect(defaults.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false });
 
     expect(parseSaveData(defaults)).toEqual(defaults);
     expect(parseSaveData(JSON.parse(serializeSave(defaults)))).toEqual(defaults);
@@ -78,7 +78,7 @@ describe('SaveData — mặc định', () => {
       upgrades: { hearts: 0, damage: 0, fireRate: 0 },
       chaptersUnlocked: 1,
       best: { chapter: 0, room: 0 },
-      settings: { volume: 0.8, fullscreen: false },
+      settings: { volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false },
     });
   });
 
@@ -113,7 +113,7 @@ describe('SaveData — migrate', () => {
       upgrades: { hearts: 2, damage: 1, fireRate: 3 },
       chaptersUnlocked: 2,
       best: { chapter: 1, room: 4 },
-      settings: { volume: 0.5, fullscreen: true },
+      settings: { volume: 0.5, fullscreen: true, screenShake: true, damageNumbers: false },
     });
   });
 
@@ -124,7 +124,7 @@ describe('SaveData — migrate', () => {
     expect(migrated.upgrades).toEqual({ hearts: 1, damage: 0, fireRate: 0 });
     expect(migrated.chaptersUnlocked).toBe(1);
     expect(migrated.best).toEqual({ chapter: 0, room: 0 });
-    expect(migrated.settings).toEqual({ volume: 0.8, fullscreen: false });
+    expect(migrated.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false });
   });
 
   it('đọc tên key cũ của bản nháp GDD §10 (hp, firerate)', () => {
@@ -455,20 +455,31 @@ describe('Settings', () => {
     const input = { volume: 2, fullscreen: true };
     const applied = applySettings(input);
 
-    expect(applied).toEqual({ volume: 1, fullscreen: true });
+    expect(applied).toEqual({ volume: 1, fullscreen: true, screenShake: true, damageNumbers: false });
     expect(input.volume).toBe(2);
 
     expect(applySettings({ volume: -1, fullscreen: false })).toEqual({
       volume: 0,
       fullscreen: false,
+      screenShake: true,
+      damageNumbers: false,
     });
   });
 
   it('applySettings lấp field thiếu bằng mặc định', () => {
-    expect(applySettings()).toEqual({ volume: DEFAULT_VOLUME, fullscreen: false });
+    expect(applySettings()).toEqual({
+      volume: DEFAULT_VOLUME,
+      fullscreen: false,
+      screenShake: true,
+      damageNumbers: false,
+    });
     expect(applySettings({ volume: Number.NaN })).toEqual({
       volume: DEFAULT_VOLUME,
       fullscreen: false,
+      screenShake: true,
+      damageNumbers: false,
     });
+    // Object thường: đủ 4 own key, JSON.stringify ra đủ field.
+    expect(Object.keys(applySettings())).toEqual(['volume', 'fullscreen', 'screenShake', 'damageNumbers']);
   });
 });

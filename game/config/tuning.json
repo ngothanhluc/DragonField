@@ -88,5 +88,41 @@
         "scale": 1.75
       }
     }
+  },
+  "feel": {
+    "shake": {
+      "maxOffsetTiles": 0.5,
+      "decayPerSecond": 1.6,
+      "playerHurt": 0.8,
+      "explosion": 0.2,
+      "bossCharge": 0.7
+    },
+    "squash": {
+      "playerTurnMs": 110,
+      "playerTurnAmount": 0.16,
+      "playerHurtMs": 150,
+      "playerHurtAmount": 0.24,
+      "enemyHitMs": 130,
+      "enemyHitAmount": 0.22,
+      "bossHitMs": 120,
+      "bossHitAmount": 0.1
+    },
+    "damageNumbers": {
+      "lifetimeMs": 620,
+      "riseTiles": 1,
+      "poolSize": 24
+    },
+    "coin": {
+      "coinsPerPickup": 3,
+      "durationMs": 460,
+      "staggerMs": 70,
+      "arcHeightTiles": 1.4,
+      "poolSize": 16
+    },
+    "muzzle": {
+      "drawUnits": 0.7,
+      "lifetimeMs": 140,
+      "offsetTiles": 0.45
+    }
   }
 }

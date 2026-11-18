@@ -152,6 +152,79 @@ export interface TuningConfig {
   /** Hệ số scale theo chapter (GDD §4): mỗi chapter khó hơn, không chỉ đông hơn. */
   readonly chapters: ChapterScalingTuning;
   readonly enemies: EnemiesTuning;
+  /** Số liệu "juice" (ticket #2): rung, squash, coin, số damage, muzzle. */
+  readonly feel: FeelTuning;
+}
+
+/**
+ * Rung camera theo trauma (0..1, cộng dồn + kẹp). Mỗi sự kiện một lượng trauma;
+ * offset tỉ lệ trauma² nên đòn nhẹ gần như không thấy, đòn nặng mới đáng kể.
+ */
+export interface ShakeTuning {
+  /** Biên độ tối đa khi trauma = 1, tile. */
+  readonly maxOffsetTiles: number;
+  /** Trauma mất mỗi giây (tuyến tính). */
+  readonly decayPerSecond: number;
+  /** Trauma khi player trúng đòn thật (0..1). */
+  readonly playerHurt: number;
+  /** Trauma khi vụ nổ Explosive phát ra (0..1). */
+  readonly explosion: number;
+  /** Trauma khi thân boss lao vào player (0..1). */
+  readonly bossCharge: number;
+}
+
+/** Squash/stretch giữ diện tích, mỗi sự kiện một cặp thời lượng + biên độ. */
+export interface SquashTuning {
+  readonly playerTurnMs: number;
+  readonly playerTurnAmount: number;
+  readonly playerHurtMs: number;
+  readonly playerHurtAmount: number;
+  readonly enemyHitMs: number;
+  readonly enemyHitAmount: number;
+  readonly bossHitMs: number;
+  readonly bossHitAmount: number;
+}
+
+/** Số damage bay lên. */
+export interface DamageNumberTuning {
+  /** Sống bao lâu trước khi mờ hẳn, ms. */
+  readonly lifetimeMs: number;
+  /** Bay lên bao nhiêu tile trong cả đời. */
+  readonly riseTiles: number;
+  /** Số label dựng sẵn trong pool (không `new` node mỗi hit). */
+  readonly poolSize: number;
+}
+
+/** Coin bay về ô vàng HUD khi nhận vàng. */
+export interface CoinTuning {
+  /** Số coin mỗi lần nhận vàng (chia đều số tiền, coin cuối nhận phần lẻ). */
+  readonly coinsPerPickup: number;
+  /** Thời gian bay một coin, ms. */
+  readonly durationMs: number;
+  /** Coin sau xuất phát chậm hơn coin trước, ms. */
+  readonly staggerMs: number;
+  /** Độ cao cung so với đường thẳng, tile. */
+  readonly arcHeightTiles: number;
+  /** Số coin dựng sẵn trong pool. */
+  readonly poolSize: number;
+}
+
+/** Muzzle flash mỗi phát bắn. */
+export interface MuzzleTuning {
+  /** Bề rộng FX, world unit. */
+  readonly drawUnits: number;
+  readonly lifetimeMs: number;
+  /** Khoảng cách từ tâm player ra đầu nòng, tile. */
+  readonly offsetTiles: number;
+}
+
+/** Toàn bộ số liệu juice (ticket #2). */
+export interface FeelTuning {
+  readonly shake: ShakeTuning;
+  readonly squash: SquashTuning;
+  readonly damageNumbers: DamageNumberTuning;
+  readonly coin: CoinTuning;
+  readonly muzzle: MuzzleTuning;
 }
 
 /**
@@ -219,6 +292,39 @@ const ROLE_FIELDS = [
   'chargeDurationMs',
   'scale',
 ] as const;
+
+const FEEL_FIELDS = ['shake', 'squash', 'damageNumbers', 'coin', 'muzzle'] as const;
+
+const SHAKE_FIELDS = [
+  'maxOffsetTiles',
+  'decayPerSecond',
+  'playerHurt',
+  'explosion',
+  'bossCharge',
+] as const;
+
+const SQUASH_FIELDS = [
+  'playerTurnMs',
+  'playerTurnAmount',
+  'playerHurtMs',
+  'playerHurtAmount',
+  'enemyHitMs',
+  'enemyHitAmount',
+  'bossHitMs',
+  'bossHitAmount',
+] as const;
+
+const DAMAGE_NUMBER_FIELDS = ['lifetimeMs', 'riseTiles', 'poolSize'] as const;
+
+const COIN_FIELDS = [
+  'coinsPerPickup',
+  'durationMs',
+  'staggerMs',
+  'arcHeightTiles',
+  'poolSize',
+] as const;
+
+const MUZZLE_FIELDS = ['drawUnits', 'lifetimeMs', 'offsetTiles'] as const;
 
 /** Gom toàn bộ lỗi rồi ném một `Error` duy nhất (cùng kiểu `level-data.ts`). */
 class ProblemList {
@@ -635,6 +741,124 @@ function parseEnemies(
   };
 }
 
+/**
+ * Trauma là tỉ lệ 0..1: > 1 làm offset vượt biên độ khai báo, khó suy ra hình
+ * dung khi tune. Vượt thì báo lỗi và kẹp về 1.
+ */
+function readTrauma(
+  source: Record<string, unknown>,
+  field: string,
+  path: string,
+  problems: ProblemList,
+): number {
+  const value = readNumber(source, field, path, problems);
+  if (value === undefined) return 0;
+  if (value > 1) {
+    problems.add(joinPath(path, field), `phải nằm trong 0..1, nhận ${value}`);
+    return 1;
+  }
+  return value;
+}
+
+function zeroFeel(): FeelTuning {
+  return {
+    shake: {
+      maxOffsetTiles: 0,
+      decayPerSecond: 0,
+      playerHurt: 0,
+      explosion: 0,
+      bossCharge: 0,
+    },
+    squash: {
+      playerTurnMs: 0,
+      playerTurnAmount: 0,
+      playerHurtMs: 0,
+      playerHurtAmount: 0,
+      enemyHitMs: 0,
+      enemyHitAmount: 0,
+      bossHitMs: 0,
+      bossHitAmount: 0,
+    },
+    damageNumbers: { lifetimeMs: 0, riseTiles: 0, poolSize: 1 },
+    coin: { coinsPerPickup: 1, durationMs: 0, staggerMs: 0, arcHeightTiles: 0, poolSize: 1 },
+    muzzle: { drawUnits: 0, lifetimeMs: 0, offsetTiles: 0 },
+  };
+}
+
+function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTuning {
+  const source = readObject(raw, 'feel', '', problems, FEEL_FIELDS);
+  if (source === undefined) return zeroFeel();
+
+  const shakeSource = readObject(source, 'shake', 'feel', problems, SHAKE_FIELDS) ?? {};
+  const squashSource = readObject(source, 'squash', 'feel', problems, SQUASH_FIELDS) ?? {};
+  const numbersSource =
+    readObject(source, 'damageNumbers', 'feel', problems, DAMAGE_NUMBER_FIELDS) ?? {};
+  const coinSource = readObject(source, 'coin', 'feel', problems, COIN_FIELDS) ?? {};
+  const muzzleSource = readObject(source, 'muzzle', 'feel', problems, MUZZLE_FIELDS) ?? {};
+
+  const shakePath = 'feel.shake';
+  const shake: ShakeTuning = {
+    maxOffsetTiles: readNumber(shakeSource, 'maxOffsetTiles', shakePath, problems) ?? 0,
+    decayPerSecond:
+      readNumber(shakeSource, 'decayPerSecond', shakePath, problems, { positive: true }) ?? 0,
+    playerHurt: readTrauma(shakeSource, 'playerHurt', shakePath, problems),
+    explosion: readTrauma(shakeSource, 'explosion', shakePath, problems),
+    bossCharge: readTrauma(shakeSource, 'bossCharge', shakePath, problems),
+  };
+  const squashPath = 'feel.squash';
+  const squash: SquashTuning = {
+    playerTurnMs: readNumber(squashSource, 'playerTurnMs', squashPath, problems) ?? 0,
+    playerTurnAmount: readNumber(squashSource, 'playerTurnAmount', squashPath, problems) ?? 0,
+    playerHurtMs: readNumber(squashSource, 'playerHurtMs', squashPath, problems) ?? 0,
+    playerHurtAmount: readNumber(squashSource, 'playerHurtAmount', squashPath, problems) ?? 0,
+    enemyHitMs: readNumber(squashSource, 'enemyHitMs', squashPath, problems) ?? 0,
+    enemyHitAmount: readNumber(squashSource, 'enemyHitAmount', squashPath, problems) ?? 0,
+    bossHitMs: readNumber(squashSource, 'bossHitMs', squashPath, problems) ?? 0,
+    bossHitAmount: readNumber(squashSource, 'bossHitAmount', squashPath, problems) ?? 0,
+  };
+
+  const numbersPath = 'feel.damageNumbers';
+  const damageNumbers: DamageNumberTuning = {
+    lifetimeMs:
+      readNumber(numbersSource, 'lifetimeMs', numbersPath, problems, { positive: true }) ?? 0,
+    riseTiles: readNumber(numbersSource, 'riseTiles', numbersPath, problems) ?? 0,
+    poolSize:
+      readNumber(numbersSource, 'poolSize', numbersPath, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+  };
+
+  const coinPath = 'feel.coin';
+  const coin: CoinTuning = {
+    coinsPerPickup:
+      readNumber(coinSource, 'coinsPerPickup', coinPath, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    durationMs:
+      readNumber(coinSource, 'durationMs', coinPath, problems, { positive: true }) ?? 0,
+    staggerMs: readNumber(coinSource, 'staggerMs', coinPath, problems) ?? 0,
+    arcHeightTiles: readNumber(coinSource, 'arcHeightTiles', coinPath, problems) ?? 0,
+    poolSize:
+      readNumber(coinSource, 'poolSize', coinPath, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+  };
+
+  const muzzlePath = 'feel.muzzle';
+  const muzzle: MuzzleTuning = {
+    drawUnits:
+      readNumber(muzzleSource, 'drawUnits', muzzlePath, problems, { positive: true }) ?? 0,
+    lifetimeMs:
+      readNumber(muzzleSource, 'lifetimeMs', muzzlePath, problems, { positive: true }) ?? 0,
+    offsetTiles: readNumber(muzzleSource, 'offsetTiles', muzzlePath, problems) ?? 0,
+  };
+
+  return { shake, squash, damageNumbers, coin, muzzle };
+}
+
 /** Freeze sâu để không ai vô tình sửa số tune lúc runtime. */
 function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null) return value;
@@ -679,6 +903,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     combat: parseCombat(raw, problems),
     chapters: parseChapters(raw, problems),
     enemies: parseEnemies(raw, problems),
+    feel: parseFeel(raw, problems),
   };
 
   problems.throwIfAny();
