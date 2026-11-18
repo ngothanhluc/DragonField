@@ -560,6 +560,9 @@ export class Bootstrap extends Component {
         for (const spawn of wave.enemies) {
           const monster = this.monsterFor(room.chapter, spawn.role);
           sheets.add(resolve(manifest, `${monster}.walk.down`).sheet);
+          // Elites are a separate generated PNG (ADR-015); preload both so a debug
+          // `spawn(role, true)` renders immediately in any room of the chapter.
+          sheets.add(resolve(manifest, `${monster}.elite.walk.down`).sheet);
         }
       }
 
