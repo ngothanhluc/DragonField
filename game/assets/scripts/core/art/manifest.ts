@@ -116,6 +116,7 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
   ],
   fx: [
     'fx.shuriken',
+    'fx.coin',
     'fx.energy-ball',
     'fx.impact',
     'fx.explosion',

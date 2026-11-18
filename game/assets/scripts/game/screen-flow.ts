@@ -12,7 +12,7 @@
 import type { Node as CocosNode } from 'cc';
 import { chapterGate } from '../core/save/chapter-gate';
 import { applyGold, MAX_GOLD, summariseRun } from '../core/run/rewards';
-import { applySettings } from '../core/save/settings';
+import { applySettings, toPlainSettings } from '../core/save/settings';
 import type { Settings } from '../core/save/settings';
 import type { SaveData } from '../core/save/save-data';
 import type { SaveRepository } from '../core/save/storage';
@@ -61,6 +61,8 @@ export interface ScreenFlowHost {
   setMusic(id: MusicId | null): void;
   /** Master volume áp ngay sau khi save settings đổi. */
   setVolume(volume: number): void;
+  /** Cờ accessibility (rung, số damage) áp ngay lên run đang chơi. */
+  applyFeelSettings(settings: Settings): void;
   fail(error: unknown): void;
 }
 
@@ -354,9 +356,17 @@ export class ScreenFlow {
     const built = await buildSettingsScreen({
       parent: this.host.uiRoot(),
       settings: save.settings,
-      onVolume: (volume) => this.persistSettings({ ...save.settings, volume }),
+      onVolume: (volume) => this.persistSettings({ ...this.currentSettings(save.settings), volume }),
       onToggleFullscreen: () => {
         void this.toggleFullscreen().catch((error: unknown) => this.host.fail(error));
+      },
+      onToggleScreenShake: () => {
+        const current = this.currentSettings(save.settings);
+        this.persistSettings({ ...current, screenShake: !current.screenShake });
+      },
+      onToggleDamageNumbers: () => {
+        const current = this.currentSettings(save.settings);
+        this.persistSettings({ ...current, damageNumbers: !current.damageNumbers });
       },
       onBack: backTo,
     });
@@ -474,15 +484,25 @@ export class ScreenFlow {
     this.persistSettings({ ...save.settings, volume });
   }
 
+  /**
+   * Settings mới nhất từ save sống, không phải bản chụp lúc mở màn — bấm hai
+   * công tắc liên tiếp không được ghi đè lẫn nhau.
+   */
+  private currentSettings(fallback: Settings): Settings {
+    return this.host.save()?.settings ?? fallback;
+  }
+
   private persistSettings(settings: Settings): void {
     const save = this.host.save();
     const repo = this.host.repository();
     if (save === null || repo === null) return;
 
-    const normalized = applySettings(settings);
+    const normalized = toPlainSettings(applySettings(settings));
     if (
       normalized.volume === save.settings.volume &&
-      normalized.fullscreen === save.settings.fullscreen
+      normalized.fullscreen === save.settings.fullscreen &&
+      normalized.screenShake === save.settings.screenShake &&
+      normalized.damageNumbers === save.settings.damageNumbers
     ) {
       return;
     }
@@ -492,6 +512,7 @@ export class ScreenFlow {
       repo.save(next);
       this.host.setSave(next);
       if (normalized.volume !== save.settings.volume) this.host.setVolume(normalized.volume);
+      this.host.applyFeelSettings(normalized);
     } catch (error: unknown) {
       console.warn(`[YokaiField] Không ghi được settings: ${errorMessage(error)}`);
     }

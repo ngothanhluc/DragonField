@@ -56,6 +56,7 @@ import { RunRewards } from '../core/run/run-rewards';
 import { chapterGate } from '../core/save/chapter-gate';
 import { withBest } from '../core/save/save-data';
 import type { SaveData } from '../core/save/save-data';
+import type { Settings } from '../core/save/settings';
 import type { SaveRepository } from '../core/save/storage';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { preloadSheets } from './assets/texture-cache';
@@ -67,6 +68,7 @@ import type { DebugStatus, DebugUiText } from './debug-api';
 import { TELEGRAPH_RING_SHEET } from './enemy-view';
 import { createFxPool } from './fx/effect-pool';
 import type { FxPool } from './fx/effect-pool';
+import { FeelView } from './feel-view';
 import { FpsMeter } from './fps-meter';
 import { Hud, HEART_SHEET } from './hud';
 import { syncCombatHud } from './hud-sync';
@@ -185,6 +187,10 @@ export class Bootstrap extends Component {
   private bulletView: BulletView | null = null;
   private combat: CombatLoop | null = null;
   private hud: Hud | null = null;
+  /** Coin bay + số damage (UI, không rung theo camera world). */
+  private feel: FeelView | null = null;
+  /** Vàng HUD đang hiện; coin tới đâu cộng tới đó (sổ thật vẫn là `rewards`). */
+  private displayedGold = 0;
   private fx: FxPool | null = null;
   private audio: AudioManager | null = null;
   private roomClearBanner: Node | null = null;
@@ -233,6 +239,7 @@ export class Bootstrap extends Component {
       else this.audio?.playMusic(id);
     },
     setVolume: (volume) => this.audio?.setVolume(volume),
+    applyFeelSettings: (settings) => this.setFeelSettings(settings),
     fail: (error) => this.fail(error),
   });
 
@@ -245,6 +252,11 @@ export class Bootstrap extends Component {
   update(deltaTime: number): void {
     const rawDeltaMs = Math.min(Math.max(deltaTime, 0) * 1000, MAX_STEP_MS);
     // Chết: sim đứng yên nhưng FX chết vẫn chạy cho tới khi result mở.
+    // Shake/coin/số damage chạy theo thời gian thật: đứng hình giữa hiệu ứng
+    // (hitstop) trông như lag, và camera lệch tâm sẽ bị giữ nguyên.
+    this.camera?.update(rawDeltaMs);
+    this.feel?.update(rawDeltaMs);
+
     if (this.status === 'dying') {
       this.fx?.update(rawDeltaMs);
       return;
@@ -319,7 +331,11 @@ export class Bootstrap extends Component {
     this.manifest = await this.loadManifest();
     this.waterLayout = await this.loadWaterLayout();
     this.camera = new WorldCamera(this.node, DESIGN_WIDTH, DESIGN_HEIGHT);
-    this.camera.onViewportChange = (scale) => this.hud?.node.setScale(scale, scale, 1);
+    this.camera.onViewportChange = (scale) => {
+      this.hud?.node.setScale(scale, scale, 1);
+      this.feel?.setHudScale(scale);
+    };
+    this.setFeelSettings(this.save.settings);
     this.createWorldLayers();
     await this.screens.showTitle();
   }
@@ -416,8 +432,10 @@ export class Bootstrap extends Component {
       monsterFor: (role) => this.monsterFor(firstRoom.chapter, role),
       rng: this.combatRng,
       onBossPhase: (phase) => this.bossPhases.show(phase),
-      onKill: (role, elite) => this.awardKill(role, elite),
+      onKill: (role, elite, position) => this.awardKill(role, elite, position),
+      onDamage: (info) => this.feel?.spawnDamage(info.position, info.amount, info.crit),
       ...(this.fx !== null ? { fx: this.fx } : {}),
+      ...(this.camera !== null ? { shake: this.camera.shake } : {}),
     });
 
     this.status = 'playing';
@@ -426,6 +444,7 @@ export class Bootstrap extends Component {
     this.combat.startWave(0);
     if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
     this.hud?.setSkills(this.skills.entries);
+    this.displayedGold = 0;
     this.hud?.setGold(0);
     console.log(
       `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} phòng từ ` +
@@ -658,6 +677,16 @@ export class Bootstrap extends Component {
     const hudScale = this.camera?.hudScale ?? 1;
     node.setScale(hudScale, hudScale, 1);
     this.hud = hud;
+
+    // Coin/số damage dựng sau HUD để biết ô vàng nằm đâu.
+    const feel = new FeelView();
+    await feel.init(canvas, {
+      goldAnchor: () => this.hud?.goldAnchor() ?? { x: 0, y: 0 },
+      onCoinArrive: (amount) => this.onCoinArrived(amount),
+    });
+    feel.setHudScale(hudScale);
+    this.feel = feel;
+    if (this.save !== null) this.setFeelSettings(this.save.settings);
   }
 
   /**
@@ -727,7 +756,7 @@ export class Bootstrap extends Component {
       level.isBossRoom,
       this.player?.derivedStats.goldMultiplier ?? 1,
     );
-    this.hud?.setGold(this.rewards.goldEarned);
+    this.flyGold(roomGold, this.player?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
 
     // Second Wind: hồi tim mỗi khi dọn phòng (GDD §6).
     const healPerRoom = this.player?.derivedStats.healPerRoom ?? 0;
@@ -890,11 +919,35 @@ export class Bootstrap extends Component {
     this.screens.finishRun(true);
   }
 
-  /** Cộng vàng cho một kill; HUD cập nhật ngay (GDD §9). */
-  private awardKill(role: EnemyRole, elite: boolean): void {
+  /** Cộng vàng cho một kill rồi cho coin bay từ chỗ chết về ô vàng HUD. */
+  private awardKill(role: EnemyRole, elite: boolean, position: Vec2): void {
     const multiplier = this.player?.derivedStats.goldMultiplier ?? 1;
-    this.rewards.awardKill(role, elite, multiplier);
-    this.hud?.setGold(this.rewards.goldEarned);
+    const amount = this.rewards.awardKill(role, elite, multiplier);
+    this.flyGold(amount, position);
+  }
+
+  /** Coin bay về ô vàng; số HUD cộng khi coin tới (`onCoinArrived`). */
+  private flyGold(amount: number, position: Vec2): void {
+    if (!(amount > 0)) return;
+    const feel = this.feel;
+    if (feel === null) {
+      this.onCoinArrived(amount);
+      return;
+    }
+    feel.flyGold(position, amount);
+  }
+
+  /** Tổng HUD luôn bằng `rewards.goldEarned` sau khi coin cuối tới. */
+  private onCoinArrived(amount: number): void {
+    if (!(amount > 0)) return;
+    this.displayedGold = Math.min(Number.MAX_SAFE_INTEGER, this.displayedGold + amount);
+    this.hud?.setGold(this.displayedGold);
+  }
+
+  /** Cờ accessibility (rung, số damage) áp ngay khi đổi trong Settings. */
+  private setFeelSettings(settings: Settings): void {
+    if (this.camera !== null) this.camera.shake.enabled = settings.screenShake;
+    if (this.feel !== null) this.feel.damageNumbersEnabled = settings.damageNumbers;
   }
 
   /** Chụp run cho result trước khi teardown (ScreenFlow không biết RunState/combat). */
@@ -924,6 +977,9 @@ export class Bootstrap extends Component {
     this.bulletView = null;
     this.hud?.node.destroy();
     this.hud = null;
+    this.feel?.destroy();
+    this.feel = null;
+    this.displayedGold = 0;
 
     this.roomRoot?.destroy();
     this.roomRoot = null;

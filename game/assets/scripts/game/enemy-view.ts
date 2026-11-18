@@ -55,6 +55,8 @@ import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import type { DerivedStats } from '../core/skills/derived-stats';
+import { squashScale } from '../core/feel/squash';
+import { FEEL_TUNING } from '../core/enemies/tuning';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { loadTexture } from './assets/texture-cache';
 import type { FxPool } from './fx/effect-pool';
@@ -189,6 +191,8 @@ export class EnemyView extends Component {
   private knockback: KnockbackState | null = null;
   /** Thời điểm hết flash trúng đòn (ms của run). */
   private hitFlashUntilMs = 0;
+  /** Mốc bắt đầu squash khi trúng đạn; hết `feel.squash.enemyHitMs` là về scale gốc. */
+  private squashStartMs = Number.NEGATIVE_INFINITY;
   /** Vòng telegraph dưới chân — tạo một lần, bật/tắt theo action. */
   private ring: Sprite | null = null;
   private ringFrames: SpriteFrame[] = [];
@@ -275,7 +279,7 @@ export class EnemyView extends Component {
     this.sprite = sprite;
 
     this.syncNodePosition();
-    this.applyScale(1);
+    this.applyScale(1, 0);
     this.playMotion(false, 'down', true);
     this.applyTint(this.idleTint());
 
@@ -356,6 +360,7 @@ export class EnemyView extends Component {
 
     state.health = Math.max(0, state.health - amount);
     this.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+    this.squashStartMs = nowMs;
 
     if (state.health <= 0) {
       this.die();
@@ -483,13 +488,13 @@ export class EnemyView extends Component {
       const kind: RoleTelegraphKind = state.role;
       const elapsedMs = Math.max(0, nowMs - action.sinceMs);
       const pulse = 1 + TELEGRAPH_PULSE * Math.sin((elapsedMs / 1000) * TELEGRAPH_PULSE_SPEED);
-      this.applyScale(hitFlash ? HIT_FLASH_SCALE : pulse);
+      this.applyScale(hitFlash ? HIT_FLASH_SCALE : pulse, nowMs);
       this.applyTint(hitFlash ? HIT_TINT : TELEGRAPH_TINT[kind]);
       this.showRing(kind, telegraphProgress(action.sinceMs, nowMs, kind));
       return;
     }
 
-    this.applyScale(hitFlash ? HIT_FLASH_SCALE : 1);
+    this.applyScale(hitFlash ? HIT_FLASH_SCALE : 1, nowMs);
     this.applyTint(hitFlash ? HIT_TINT : this.stateTint(nowMs));
     this.hideRing();
   }
@@ -543,11 +548,20 @@ export class EnemyView extends Component {
     this.animator?.play(`${key}.${direction}`, direction);
   }
 
-  private applyScale(pulse: number): void {
+  /**
+   * Scale = gốc × elite × pulse telegraph × squash khi trúng đạn. Squash nhân
+   * trên trục x/y riêng nên elite ×1.15 và tank ×1.75 vẫn là scale gốc đúng.
+   */
+  private applyScale(pulse: number, nowMs: number): void {
     const state = this.state;
     const elite = state !== null && state.elite ? eliteScale() : 1;
     const scale = this.baseScale * elite * pulse;
-    this.node.setScale(scale, scale, 1);
+    const squash = squashScale(
+      nowMs - this.squashStartMs,
+      FEEL_TUNING.squash.enemyHitMs,
+      FEEL_TUNING.squash.enemyHitAmount,
+    );
+    this.node.setScale(scale * squash.x, scale * squash.y, 1);
   }
 
   private applyTint(color: Color): void {

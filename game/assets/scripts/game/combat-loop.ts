@@ -39,7 +39,9 @@ import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
 import type { EnemyState } from '../core/enemies/behaviours';
 import { maxHealthFor } from '../core/enemies/behaviours';
+import { FEEL_TUNING } from '../core/enemies/tuning';
 import { eliteVolleyAngles } from '../core/enemies/elite';
+import type { ScreenShake } from '../core/feel/screen-shake';
 import { spawnWave } from '../core/enemies/waves';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { distance, type Vec2 } from '../core/math/vec2';
@@ -88,14 +90,29 @@ export interface CombatLoopOptions {
   /** Callback khi boss đổi phase (bootstrap hiện banner). */
   readonly onBossPhase?: (phase: BossPhase) => void;
   /**
-   * Một enemy vừa chết — bootstrap cộng vàng (M5). Gọi đúng **một lần** cho
-   * mỗi enemy, kể cả khi `killAll()`/debug giết hàng loạt.
+   * Một enemy vừa chết — bootstrap cộng vàng + cho coin bay (M5/#2). Gọi đúng
+   * **một lần** cho mỗi enemy, kể cả khi `killAll()`/debug giết hàng loạt.
+   * `position` là chỗ chết (tile) để coin bay từ đó về HUD.
    */
-  readonly onKill?: (role: EnemyRole, elite: boolean) => void;
+  readonly onKill?: (role: EnemyRole, elite: boolean, position: Vec2) => void;
   /** Boss vừa chết (thưởng phòng boss do bootstrap quyết ở `awardRoomClear`). */
   readonly onBossKilled?: () => void;
   /** Pool flash vụ nổ; vắng mặt thì vẫn chạy, chỉ không có hình. */
   readonly fx?: FxPool;
+  /** Rung camera world (ticket #2); vắng mặt thì game vẫn chạy, chỉ không rung. */
+  readonly shake?: ScreenShake;
+  /**
+   * Một lần trúng đòn lên enemy/boss — bootstrap vẽ số damage nếu setting bật.
+   * `crit` suy ra từ damage viên đạn so với damage cơ bản (crit đã nhân lúc bắn).
+   */
+  readonly onDamage?: (info: DamagePopupInfo) => void;
+}
+
+/** Một lần enemy/boss ăn damage, đủ để hiện số bay lên. */
+export interface DamagePopupInfo {
+  readonly amount: number;
+  readonly position: Vec2;
+  readonly crit: boolean;
 }
 
 export interface CombatUpdateResult {
@@ -125,9 +142,11 @@ export class CombatLoop {
   private readonly monsterFor: (role: EnemyRole) => string;
   private readonly rng: SeededRng;
   private readonly onBossPhase: (phase: BossPhase) => void;
-  private readonly onKill: (role: EnemyRole, elite: boolean) => void;
+  private readonly onKill: (role: EnemyRole, elite: boolean, position: Vec2) => void;
   private readonly onBossKilled: () => void;
   private readonly fx: FxPool | null;
+  private readonly shake: ScreenShake | null;
+  private readonly onDamage: (info: DamagePopupInfo) => void;
   private readonly hitstop = new HitstopClock(DEFAULT_COMBAT.enemyHitstopMs);
   private readonly enemies: EnemyView[] = [];
   private boss: BossView | null = null;
@@ -159,6 +178,8 @@ export class CombatLoop {
     this.onKill = options.onKill ?? (() => undefined);
     this.onBossKilled = options.onBossKilled ?? (() => undefined);
     this.fx = options.fx ?? null;
+    this.shake = options.shake ?? null;
+    this.onDamage = options.onDamage ?? (() => undefined);
   }
 
   get currentLevel(): LevelData {
@@ -351,7 +372,11 @@ export class CombatLoop {
       distance(boss.position, playerPosition) <= boss.hitboxRadiusTiles + PLAYER_RADIUS_TILES
     ) {
       const heartsBefore = this.player.hearts;
-      this.damagePlayer(DEFAULT_COMBAT.contactDamage, boss.position);
+      this.damagePlayer(
+        DEFAULT_COMBAT.contactDamage,
+        boss.position,
+        FEEL_TUNING.shake.bossCharge,
+      );
       const thorns = this.player.derivedStats.thorns;
       if (thorns !== undefined && this.player.hearts < heartsBefore) {
         boss.takeDamage(thorns.damage, this.nowMs);
@@ -462,6 +487,7 @@ export class CombatLoop {
           boss.health / boss.maxHealth,
         );
         boss.takeDamage(damage, this.nowMs);
+        this.reportDamage(damage, boss.position, bullet.damage > stats.damage * 1.01);
         this.bossStatus.apply(stats, this.nowMs);
         this.fx?.spawn('fx.impact', bullet.position, {
           tint: new CocosColor(255, 236, 190, 255),
@@ -487,6 +513,7 @@ export class CombatLoop {
 
         const damage = damageAfterExecute(stats, bullet.damage, victim.health / victim.maxHealth);
         victim.takeDamage(damage, bullet.position, this.nowMs);
+        this.reportDamage(damage, victim.position, bullet.damage > stats.damage * 1.01);
         victim.applyStatus(stats, this.nowMs);
         this.fx?.spawn('fx.impact', victim.position, {
           tint: new CocosColor(255, 236, 190, 255),
@@ -537,6 +564,7 @@ export class CombatLoop {
       drawUnits: Math.max(1.2, bullet.explosiveRadiusTiles * 2),
       lifetimeMs: 820,
     });
+    this.shake?.addTrauma(FEEL_TUNING.shake.explosion);
     playSfx('explosion');
   }
 
@@ -620,12 +648,28 @@ export class CombatLoop {
     }
   }
 
-  /** Trả `true` khi tim thật sự giảm (để Thorns không kích hoạt lúc khiên/i-frame). */
-  private damagePlayer(amount: number, source: Vec2 | null): boolean {
+  /**
+   * Trả `true` khi tim thật sự giảm (để Thorns không kích hoạt lúc khiên/i-frame).
+   * Đòn thật vào tim cộng trauma rung camera (đòn boss lao truyền số lớn hơn).
+   */
+  private damagePlayer(
+    amount: number,
+    source: Vec2 | null,
+    trauma: number = FEEL_TUNING.shake.playerHurt,
+  ): boolean {
     if (this.god) return false;
     const before = this.player.hearts;
     this.player.applyDamage(this.nowMs, amount, source);
-    return this.player.hearts < before;
+    if (this.player.hearts >= before) return false;
+
+    this.shake?.addTrauma(trauma);
+    return true;
+  }
+
+  /** Số damage bay lên tại chỗ trúng (adapter HUD quyết định có vẽ không). */
+  private reportDamage(amount: number, position: Vec2, crit: boolean): void {
+    if (!(amount > 0)) return;
+    this.onDamage({ amount, position, crit });
   }
 
   /** Sinh một enemy và gắn node. Boss/debug dùng chung đường này. */
@@ -695,7 +739,8 @@ export class CombatLoop {
       if (!enemy.isDead || this.rewarded.has(enemy.id)) continue;
       this.rewarded.add(enemy.id);
       const role = enemy.role;
-      if (role !== null) this.onKill(role, enemy.isElite);
+      if (role !== null) this.onKill(role, enemy.isElite, enemy.position);
+      this.shake?.addTrauma(FEEL_TUNING.shake.enemyKill);
       // Gold sparkle tại chỗ chết (không có đồ nhặt riêng trong run).
       this.fx?.spawn('fx.impact', enemy.position, {
         tint: new CocosColor(255, 214, 90, 255),

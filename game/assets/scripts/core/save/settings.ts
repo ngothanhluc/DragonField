@@ -59,14 +59,20 @@ export function stepVolume(volume: number, steps: number): number {
  */
 export function applySettings(settings: Partial<Settings> = {}): Settings {
   const volume = settings.volume === undefined ? DEFAULT_VOLUME : settings.volume;
-  return new NormalizedSettings(
+  const view = new NormalizedSettings(
     clampVolume(volume),
     typeof settings.fullscreen === 'boolean' ? settings.fullscreen : DEFAULT_SETTINGS.fullscreen,
-    typeof settings.screenShake === 'boolean' ? settings.screenShake : DEFAULT_SETTINGS.screenShake,
-    typeof settings.damageNumbers === 'boolean'
-      ? settings.damageNumbers
-      : DEFAULT_SETTINGS.damageNumbers,
   );
+  // Cờ để trong WeakMap, không phải own key (xem ghi chú ở `applySettings`).
+  ACCESSIBILITY_FLAGS.set(view, {
+    screenShake:
+      typeof settings.screenShake === 'boolean' ? settings.screenShake : DEFAULT_SETTINGS.screenShake,
+    damageNumbers:
+      typeof settings.damageNumbers === 'boolean'
+        ? settings.damageNumbers
+        : DEFAULT_SETTINGS.damageNumbers,
+  });
+  return view;
 }
 
 /** Object thường 4 key, đúng thứ tự serialize (volume, fullscreen, screenShake, damageNumbers). */
@@ -79,29 +85,29 @@ export function toPlainSettings(settings: Settings): Settings {
   };
 }
 
+interface AccessibilityFlags {
+  readonly screenShake: boolean;
+  readonly damageNumbers: boolean;
+}
+
+const ACCESSIBILITY_FLAGS = new WeakMap<Settings, AccessibilityFlags>();
+
 /**
- * Kết quả `applySettings`. `volume`/`fullscreen` là field công khai (own key),
- * hai cờ accessibility đọc qua getter — xem ghi chú ở `applySettings`.
+ * Kết quả `applySettings`: `volume`/`fullscreen` là field công khai (own key),
+ * hai cờ accessibility đọc qua getter + WeakMap — xem ghi chú ở `applySettings`.
+ * Không dùng `#private` để build Cocos transpile không phải lo downlevel.
  */
 class NormalizedSettings implements Settings {
-  readonly #screenShake: boolean;
-  readonly #damageNumbers: boolean;
-
   constructor(
     readonly volume: number,
     readonly fullscreen: boolean,
-    screenShake: boolean,
-    damageNumbers: boolean,
-  ) {
-    this.#screenShake = screenShake;
-    this.#damageNumbers = damageNumbers;
-  }
+  ) {}
 
   get screenShake(): boolean {
-    return this.#screenShake;
+    return ACCESSIBILITY_FLAGS.get(this)?.screenShake ?? DEFAULT_SETTINGS.screenShake;
   }
 
   get damageNumbers(): boolean {
-    return this.#damageNumbers;
+    return ACCESSIBILITY_FLAGS.get(this)?.damageNumbers ?? DEFAULT_SETTINGS.damageNumbers;
   }
 }

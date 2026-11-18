@@ -26,6 +26,7 @@ import {
 import { loadPixelTexture } from './assets/texture-cache';
 import type { OwnedSkillStacks } from '../core/skills/pool';
 import { skillAbbreviation } from '../core/skills/description';
+import type { Vec2 } from '../core/math/vec2';
 import { applyPixelFont } from './ui-font';
 import { sliceFrame } from './level-view';
 import type { TileRect } from './level-view';
@@ -193,6 +194,17 @@ export class Hud extends Component {
     const transform: UITransform | null = label.node.getComponent(CocosUITransform);
     if (transform !== null) transform.setAnchorPoint(1, 0.5);
     label.node.setPosition(view.getVisibleSize().width / 2 - PADDING_PX, label.node.position.y, 0);
+  }
+
+  /**
+   * Vị trí ô vàng trong pixel design của canvas (đã nhân scale HUD) — coin bay
+   * từ world về đúng đây (xem `feel-view.ts`).
+   */
+  goldAnchor(): Vec2 {
+    const label = this.goldLabel;
+    if (label === null) return { x: 0, y: 0 };
+    const scale = this.node.scale.x;
+    return { x: label.node.position.x * scale, y: label.node.position.y * scale };
   }
 
   /** Vàng kiếm trong run (M5); shop hiện tổng trong save. */

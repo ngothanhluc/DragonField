@@ -34,6 +34,8 @@ import {
 import type { BulletPool } from '../core/combat/bullets';
 import { accumulateDamage } from '../core/combat/integer-damage';
 import { telegraphProgress } from '../core/combat/telegraph';
+import { FEEL_TUNING } from '../core/enemies/tuning';
+import { squashScale } from '../core/feel/squash';
 import type { EnemyRole } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import type { SeededRng } from '../core/rng';
@@ -103,6 +105,8 @@ export class BossView {
   private damageCarry = 0;
 
   private hitFlashUntilMs = 0;
+  /** Mốc bắt đầu squash khi trúng đạn (nhân từ `ACTOR_SCALE`, không trôi). */
+  private squashStartMs = Number.NEGATIVE_INFINITY;
   private ring: Sprite | null = null;
   private readonly ringFrames: SpriteFrame[] = [];
   private readonly ringTint = new CocosColor(255, 255, 255, 0);
@@ -242,6 +246,7 @@ export class BossView {
     }
 
     this.syncPosition();
+    this.applySquash(nowMs);
     this.applyTint(nowMs);
     this.updateRing(nowMs);
 
@@ -268,6 +273,7 @@ export class BossView {
       health: Math.max(0, this.state.health - step.whole),
     };
     this.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+    this.squashStartMs = nowMs;
     playSfx('enemy-hit');
 
     if (this.state.health <= 0) {
@@ -314,6 +320,16 @@ export class BossView {
     this.lastAnimKey = key;
     // Samurai tách sheet L/R; `animationFor` đã ghép hậu tố, `play` không cần direction.
     this.animator.play(key);
+  }
+
+  /** Squash khi trúng đạn; về đúng `ACTOR_SCALE` khi hết `feel.squash.bossHitMs`. */
+  private applySquash(nowMs: number): void {
+    const squash = squashScale(
+      nowMs - this.squashStartMs,
+      FEEL_TUNING.squash.bossHitMs,
+      FEEL_TUNING.squash.bossHitAmount,
+    );
+    this.node.setScale(ACTOR_SCALE * squash.x, ACTOR_SCALE * squash.y, 1);
   }
 
   private syncPosition(): void {

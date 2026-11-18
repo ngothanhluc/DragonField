@@ -14,6 +14,8 @@ import {
   view,
 } from 'cc';
 import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
+import { FEEL_TUNING } from '../core/enemies/tuning';
+import { ScreenShake } from '../core/feel/screen-shake';
 import { applyWorldLetterbox, fillBrowserViewport } from './viewport';
 
 type Camera = InstanceType<typeof CocosCamera>;
@@ -30,6 +32,11 @@ export class WorldCamera {
   private readonly camera: Camera;
   private readonly designWidth: number;
   private readonly designHeight: number;
+  /**
+   * Trauma shake của **camera world** (không phải HUD): offset cộng vào vị trí
+   * camera mỗi frame, không cộng dồn nên không trôi. `bootstrap` tắt theo setting.
+   */
+  readonly shake = new ScreenShake(FEEL_TUNING.shake, Math.random);
   /** Tỉ lệ band world / band UI hiện tại (≤ 1); HUD nhân node theo số này. */
   hudScale = 1;
   /** Gọi mỗi lần band world đổi (resize, fullscreen). */
@@ -61,6 +68,20 @@ export class WorldCamera {
   applyViewport(): void {
     this.hudScale = applyWorldLetterbox(this.camera, this.designWidth, this.designHeight);
     this.onViewportChange?.(this.hudScale);
+  }
+
+  /**
+   * Một frame: trauma tàn theo thời gian **thật** rồi áp offset nguyên texel vào
+   * vị trí camera world. Gọi cả trong hitstop để camera không đứng lệch tâm.
+   */
+  update(deltaMs: number): void {
+    this.shake.update(deltaMs);
+    const offset = this.shake.offset();
+    this.camera.node.setPosition(
+      ROOM_CENTER.x + offset.x,
+      ROOM_CENTER.y + offset.y,
+      CAMERA_Z,
+    );
   }
 
   destroy(): void {
