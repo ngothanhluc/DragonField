@@ -93,6 +93,15 @@ const MAX_BULLET_NODES = 64;
 
 /** Drawn diameter of one bullet, world units — larger than the 0.15 tile hitbox so it is visible. */
 const BULLET_DRAW_UNITS = 0.6;
+/**
+ * Big variants must read as *bigger*, not just different: a `big-kunai` has the same longest
+ * side as `kunai`. Visual only — the 0.15 tile hitbox is unchanged.
+ */
+const BIG_DRAW_SCALE = 1.4;
+const DRAW_SCALE: Readonly<Record<string, number>> = {
+  'fx.big-shuriken': BIG_DRAW_SCALE,
+  'fx.big-kunai': BIG_DRAW_SCALE,
+};
 /** Ghosts are slightly smaller than the bullet so the trail reads as "behind", not "another shot". */
 const GHOST_SCALE = 0.85;
 
@@ -225,6 +234,9 @@ export class BulletView extends Component {
       const frame = data.frames[frameIndex];
       if (frame === undefined) continue;
 
+      const drawScale =
+        (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) * (DRAW_SCALE[key] ?? 1);
+
       if (entry.lastFrame !== frameIndex || entry.lastKey !== key) {
         entry.lastFrame = frameIndex;
         entry.lastKey = key;
@@ -233,8 +245,7 @@ export class BulletView extends Component {
         const transform = entry.node.getComponent(CocosUITransform);
         // `sizeMode = CUSTOM` takes its size from UITransform — set the sliced frame size.
         if (transform !== null) transform.setContentSize(data.width, data.height);
-        const scale = BULLET_DRAW_UNITS / Math.max(data.width, data.height);
-        entry.node.setScale(scale, scale, 1);
+        entry.node.setScale(drawScale, drawScale, 1);
       }
 
       entry.sprite.color = player ? playerTint : enemyTint;
@@ -251,7 +262,9 @@ export class BulletView extends Component {
 
       if (player && layers.trail) {
         const element = trailElement(owned, bullet.crit);
-        if (element !== null) this.spawnGhost(bullet, data, frameIndex, element, angle);
+        if (element !== null) {
+          this.spawnGhost(bullet, data, frameIndex, element, angle, drawScale);
+        }
       }
     }
 
@@ -282,6 +295,7 @@ export class BulletView extends Component {
     frameIndex: number,
     element: VfxElement,
     angle: number,
+    drawScale: number,
   ): void {
     const now = this.elapsedMs;
     const last = this.ghostClock.get(bullet.id);
@@ -320,7 +334,7 @@ export class BulletView extends Component {
 
     const transform = ghost.node.getComponent(CocosUITransform);
     if (transform !== null) transform.setContentSize(data.width, data.height);
-    const scale = (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) * GHOST_SCALE;
+    const scale = drawScale * GHOST_SCALE;
     ghost.node.setScale(scale, scale, 1);
     this.applyPosition(ghost.node, bullet.position);
   }

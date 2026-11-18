@@ -220,8 +220,6 @@ export interface MuzzleTuning {
 
 /** Weapon VFX (ticket #3): bullet trail, crit hitstop, impact sizes, aura. */
 export interface VfxTuning {
-  /** Ghosts visible behind one player bullet (2–3 reads as a trail; 1 is the low-fps fallback). */
-  readonly trailGhosts: number;
   /** Milliseconds between two ghosts of the same bullet. */
   readonly trailSpawnMs: number;
   /** Ghost lifetime, ms (ghosts × spawnMs ≈ lifetime keeps the count steady). */
@@ -350,7 +348,6 @@ const COIN_FIELDS = [
 const MUZZLE_FIELDS = ['drawUnits', 'lifetimeMs', 'offsetTiles'] as const;
 
 const VFX_FIELDS = [
-  'trailGhosts',
   'trailSpawnMs',
   'trailLifetimeMs',
   'trailPoolSize',
@@ -818,8 +815,7 @@ function zeroFeel(): FeelTuning {
     coin: { coinsPerPickup: 1, durationMs: 0, staggerMs: 0, arcHeightTiles: 0, poolSize: 1 },
     muzzle: { drawUnits: 0, lifetimeMs: 0, offsetTiles: 0 },
     vfx: {
-      trailGhosts: 1,
-      trailSpawnMs: 1,
+        trailSpawnMs: 1,
       trailLifetimeMs: 1,
       trailPoolSize: 1,
       critHitstopMs: 0,
@@ -905,11 +901,6 @@ function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTun
 
   const vfxPath = 'feel.vfx';
   const vfx: VfxTuning = {
-    trailGhosts:
-      readNumber(vfxSource, 'trailGhosts', vfxPath, problems, {
-        integer: true,
-        positive: true,
-      }) ?? 1,
     trailSpawnMs:
       readNumber(vfxSource, 'trailSpawnMs', vfxPath, problems, { positive: true }) ?? 1,
     trailLifetimeMs:

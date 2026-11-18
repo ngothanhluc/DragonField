@@ -3195,11 +3195,11 @@
     },
     "fx.big-shuriken": {
       "sheet": "resources/art/fx/big-shuriken/BigShuriken.png",
-      "frameWidth": 46,
+      "frameWidth": 23,
       "frameHeight": 23,
       "layout": "strip",
       "directions": [],
-      "frames": 1,
+      "frames": 2,
       "fps": 10,
       "loop": true,
       "anchor": "center",

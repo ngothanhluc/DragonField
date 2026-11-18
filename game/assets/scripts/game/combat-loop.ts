@@ -506,8 +506,8 @@ export class CombatLoop {
         this.reportDamage(damage, boss.position, crit);
         this.bossStatus.apply(stats, this.nowMs);
         playSfx('enemy-hit');
-        const healed = lifestealHeal(stats, damage);
-        player.heal(healed);
+        const heartsBefore = player.hearts;
+        const healed = player.heal(lifestealHeal(stats, damage)) - heartsBefore;
         bullet.hitIds.push(BOSS_TARGET_ID);
         this.spawnHitEffects({
           position: boss.position,
@@ -537,8 +537,8 @@ export class CombatLoop {
         this.reportDamage(damage, victim.position, crit);
         victim.applyStatus(stats, this.nowMs);
         playSfx('enemy-hit');
-        const healed = lifestealHeal(stats, damage);
-        player.heal(healed);
+        const heartsBefore = player.hearts;
+        const healed = player.heal(lifestealHeal(stats, damage)) - heartsBefore;
         bullet.hitIds.push(victim.id);
         this.spawnHitEffects({
           position: victim.position,
@@ -589,13 +589,12 @@ export class CombatLoop {
       drawUnits: Math.max(1.2, bullet.explosiveRadiusTiles * 2),
       lifetimeMs: 820,
     });
-    // Secondary smoke ring: the explosion is the telegraph of the AoE, the smoke sells the size.
-    if (effectsLayers(this.effectsMode).secondaryParticles) {
-      this.fx?.spawn('fx.smoke-circular', center, {
-        drawUnits: Math.max(1.0, bullet.explosiveRadiusTiles * 1.6),
-        lifetimeMs: 900,
-      });
-    }
+    // The smoke ring belongs to the explosive impact, so it stays under Reduced like the
+    // explosion itself (only secondary particles are dropped there).
+    this.fx?.spawn('fx.smoke-circular', center, {
+      drawUnits: Math.max(1.0, bullet.explosiveRadiusTiles * 1.6),
+      lifetimeMs: 900,
+    });
     this.shake?.addTrauma(FEEL_TUNING.shake.explosion);
     playSfx('explosion');
   }

@@ -130,7 +130,6 @@ export const TUNING_DATA = {
       offsetTiles: 0.45,
     },
     vfx: {
-      trailGhosts: 3,
       trailSpawnMs: 45,
       trailLifetimeMs: 140,
       trailPoolSize: 96,
