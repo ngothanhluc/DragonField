@@ -455,20 +455,31 @@ describe('Settings', () => {
     const input = { volume: 2, fullscreen: true };
     const applied = applySettings(input);
 
-    expect(applied).toEqual({ volume: 1, fullscreen: true });
+    expect(applied).toEqual({ volume: 1, fullscreen: true, screenShake: true, damageNumbers: false });
     expect(input.volume).toBe(2);
 
     expect(applySettings({ volume: -1, fullscreen: false })).toEqual({
       volume: 0,
       fullscreen: false,
+      screenShake: true,
+      damageNumbers: false,
     });
   });
 
   it('applySettings lấp field thiếu bằng mặc định', () => {
-    expect(applySettings()).toEqual({ volume: DEFAULT_VOLUME, fullscreen: false });
+    expect(applySettings()).toEqual({
+      volume: DEFAULT_VOLUME,
+      fullscreen: false,
+      screenShake: true,
+      damageNumbers: false,
+    });
     expect(applySettings({ volume: Number.NaN })).toEqual({
       volume: DEFAULT_VOLUME,
       fullscreen: false,
+      screenShake: true,
+      damageNumbers: false,
     });
+    // Object thường: đủ 4 own key, JSON.stringify ra đủ field.
+    expect(Object.keys(applySettings())).toEqual(['volume', 'fullscreen', 'screenShake', 'damageNumbers']);
   });
 });
