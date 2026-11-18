@@ -15,7 +15,14 @@ import {
   resources,
   warn,
 } from 'cc';
-import { SFX_IDS, setSfxSink, type SfxId } from './sfx';
+import {
+  SFX_BANK,
+  VariantPicker,
+  sfxVolumeScale,
+  type SfxId,
+} from '../../core/audio/sfx-bank';
+import { SeededRng } from '../../core/rng';
+import { SFX_IDS, setSfxSink } from './sfx';
 
 type AudioClip = InstanceType<typeof CocosAudioClip>;
 type AudioSource = InstanceType<typeof CocosAudioSource>;
@@ -29,24 +36,6 @@ const MUSIC_PATH: Readonly<Record<MusicId, string>> = {
   'chapter-2': 'audio/music/chapter-2',
   'chapter-3': 'audio/music/chapter-3',
   boss: 'audio/music/boss',
-};
-
-const SFX_PATH: Readonly<Record<SfxId, string>> = {
-  shoot: 'audio/sfx/shoot',
-  'enemy-hit': 'audio/sfx/enemy-hit',
-  'player-hurt': 'audio/sfx/player-hurt',
-  'enemy-death': 'audio/sfx/enemy-death',
-  explosion: 'audio/sfx/explosion',
-  'boss-phase': 'audio/sfx/boss-phase',
-  'skill-pick': 'audio/sfx/skill-pick',
-  'ui-move': 'audio/sfx/ui-move',
-  'ui-confirm': 'audio/sfx/ui-confirm',
-  gold: 'audio/sfx/gold',
-  'chapter-clear': 'audio/sfx/chapter-clear',
-  'game-over': 'audio/sfx/game-over',
-  shield: 'audio/sfx/shield',
-  freeze: 'audio/sfx/freeze',
-  poison: 'audio/sfx/poison',
 };
 
 /** Keep only the 12 most recent sounds for the `audio()` debug hook (no growth over play time). */
@@ -83,6 +72,10 @@ export interface AudioSnapshot {
   readonly music: MusicId | null;
   /** SFX played in order, most recent last. */
   readonly lastSfx: readonly SfxId[];
+  /** The full bank (event → resource paths), so headless acceptance sees every declared sound. */
+  readonly bank: Readonly<Record<string, readonly string[]>>;
+  /** Resource path actually chosen for each entry of `lastSfx` (same order and cap). */
+  readonly lastClips: readonly string[];
 }
 
 export class AudioManager {
@@ -95,6 +88,10 @@ export class AudioManager {
   private pending: MusicId | null = null;
   private token = 0;
   private readonly lastSfx: SfxId[] = [];
+  private readonly lastClips: string[] = [];
+  /** SFX variation (which file, how loud) — seeded from the clock, it is presentation only. */
+  private readonly rng = new SeededRng(Date.now());
+  private readonly variants = new VariantPicker(this.rng);
   private destroyed = false;
 
   constructor(parent: Node) {
@@ -165,13 +162,19 @@ export class AudioManager {
   }
 
   playSfx(id: SfxId): void {
+    const path = this.variants.pick(id);
     this.lastSfx.push(id);
-    if (this.lastSfx.length > SFX_HISTORY) this.lastSfx.shift();
+    this.lastClips.push(path);
+    if (this.lastSfx.length > SFX_HISTORY) {
+      this.lastSfx.shift();
+      this.lastClips.shift();
+    }
     if (!this.unlocked || this.destroyed) return;
 
-    loadClip(SFX_PATH[id])
+    const volumeScale = sfxVolumeScale(this.rng);
+    loadClip(path)
       .then((clip) => {
-        if (!this.destroyed) this.sfx.playOneShot(clip, 1);
+        if (!this.destroyed) this.sfx.playOneShot(clip, volumeScale);
       })
       .catch((error: unknown) => {
         warn(error instanceof Error ? error.message : String(error));
@@ -184,12 +187,15 @@ export class AudioManager {
       volume: this.volume,
       music: this.current ?? this.pending,
       lastSfx: Array.from(this.lastSfx),
+      bank: SFX_BANK,
+      lastClips: Array.from(this.lastClips),
     };
   }
 
   /** Preload every clip so the first playback is not late; failures only warn. */
   preload(): void {
-    const paths = [...Object.values(MUSIC_PATH), ...Object.values(SFX_PATH)];
+    const paths: string[] = Array.from(Object.values(MUSIC_PATH));
+    for (const files of Object.values(SFX_BANK)) paths.push(...files);
     for (const path of paths) {
       loadClip(path).catch((error: unknown) => {
         warn(error instanceof Error ? error.message : String(error));

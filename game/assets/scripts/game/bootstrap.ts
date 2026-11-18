@@ -776,6 +776,9 @@ export class Bootstrap extends Component {
     this.status = 'room-clear';
     this.roomClearBanner?.destroy();
     this.roomClearBanner = this.showBanner('room-clear', 'ROOM CLEAR', END_WIN_COLOR, 20);
+    // Celebrate the clear — except on the chapter's last room, where `chapter-clear` plays
+    // ~1 s later from `finishWin()`.
+    if (run.room < run.roomsTotal) playSfx('room-clear');
 
     this.scheduleOnce(() => {
       const current = this.run;

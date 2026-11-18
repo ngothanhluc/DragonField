@@ -9,26 +9,18 @@
  * - Font: copy `NormalFont.ttf`.
  * - Emits minimal `.meta` files; the editor's first build fills in sub-meta.
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { SKILL_ICONS } from '../assets/scripts/core/skills/icons';
+import { convertAudio, ensureDir, ensureDirMeta, writeMeta } from './lib/audio';
 import { fixFontSpacing } from './lib/font-spacing';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT = join(HERE, '..');
 const PACK = join(PROJECT, '..', 'art-source', 'ninja-adventure');
 const RES = join(PROJECT, 'assets', 'resources');
-
-function ensureDir(path: string): void {
-  mkdirSync(path, { recursive: true });
-}
-
-function writeMeta(path: string, meta: object): void {
-  writeFileSync(`${path}.meta`, `${JSON.stringify(meta, null, 2)}\n`);
-}
 
 function pngSize(path: string): { readonly width: number; readonly height: number } {
   const buffer = readFileSync(path);
@@ -135,60 +127,6 @@ function copyPng(sourceRel: string, targetRel: string): void {
   console.log(`png  ${targetRel} (${statSync(target).size} B)`);
 }
 
-function audioMeta(path: string, extension: string, durationSeconds: number, sampleRate: number): object {
-  return {
-    ver: '1.0.27',
-    importer: 'audio-clip',
-    imported: true,
-    uuid: randomUUID(),
-    files: ['.json', extension],
-    subMetas: {},
-    userData: {
-      downloadMode: 0,
-      duration: Math.round(durationSeconds * 1000) / 1000,
-      sampleRate,
-    },
-  };
-}
-
-function convertAudio(sourceRel: string, targetRel: string, bitrate: string, channels: number): void {
-  const source = join(PACK, sourceRel);
-  const target = join(RES, targetRel);
-  if (!existsSync(source)) throw new Error(`missing source audio: ${source}`);
-  ensureDir(dirname(target));
-  execFileSync('ffmpeg', [
-    '-v',
-    'error',
-    '-y',
-    '-i',
-    source,
-    '-c:a',
-    'libmp3lame',
-    '-b:a',
-    bitrate,
-    '-ac',
-    String(channels),
-    target,
-  ]);
-  const probe = execFileSync('ffprobe', [
-    '-v',
-    'error',
-    '-show_entries',
-    'format=duration:stream=sample_rate',
-    '-of',
-    'default=nw=1:nk=1',
-    target,
-  ])
-    .toString()
-    .trim()
-    .split('\n')
-    .map((line) => Number(line));
-  const duration = probe[0] ?? 0;
-  const sampleRate = probe[1] ?? 44100;
-  writeMeta(target, audioMeta(target, '.mp3', duration, sampleRate));
-  console.log(`audio ${targetRel} (${statSync(target).size} B, ${duration.toFixed(2)} s)`);
-}
-
 /**
  * The 20 `*Disabled.png` skill icon variants (#5). The normal variants are already staged, and
  * re-copying them would replace their meta UUIDs; this loop adds only the missing files.
@@ -215,24 +153,6 @@ function copyFont(): void {
   });
   fixFontSpacing(target);
   console.log(`font ${target} (${statSync(target).size} B, space 1/3 em)`);
-}
-
-function ensureDirMeta(rel: string): void {
-  const path = join(RES, rel);
-  if (!existsSync(path)) ensureDir(path);
-  const meta = `${path}.meta`;
-  if (!existsSync(meta)) {
-    writeMeta(path, {
-      ver: '1.2.0',
-      importer: 'directory',
-      imported: true,
-      uuid: randomUUID(),
-      files: [],
-      subMetas: {},
-      userData: {},
-    });
-    console.log(`dir  ${rel}`);
-  }
 }
 
 // `bun run scripts/stage-m6-assets.ts --skill-icons-disabled` stages only the Disabled icon

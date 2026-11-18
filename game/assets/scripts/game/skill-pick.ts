@@ -104,7 +104,7 @@ export async function buildSkillPick(
     if (picked) return;
     if (index < 0 || index >= options.choices.length) return;
     picked = true;
-    playSfx('skill-pick');
+    playSfx('skill-acquired');
     options.onPick(index);
   };
   const onKey = (event: KeyEvent): void => {

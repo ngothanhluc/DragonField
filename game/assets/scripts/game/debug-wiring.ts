@@ -19,6 +19,7 @@ import type {
 import { installDebugApi } from './debug-api';
 import { animationOfNode, collectAnimations, collectPlaceholders } from './debug-extras';
 import type { DerivedStats } from '../core/skills/derived-stats';
+import { SFX_BANK } from '../core/audio/sfx-bank';
 import type { Vec2 } from '../core/math/vec2';
 
 type Node = InstanceType<typeof CocosNode>;
@@ -92,7 +93,14 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
         host.uiRoot(),
       ]),
     audio: (): DebugAudioSnapshot =>
-      host.audioManager()?.snapshot() ?? { unlocked: false, volume: 0, music: null, lastSfx: [] },
+      host.audioManager()?.snapshot() ?? {
+        unlocked: false,
+        volume: 0,
+        music: null,
+        lastSfx: [],
+        bank: SFX_BANK,
+        lastClips: [],
+      },
     anim: (nodeName?: string): string | DebugAnimationSnapshot | null =>
       nodeName === undefined
         ? collectAnimations(host.actorLayer())
