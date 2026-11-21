@@ -29,6 +29,7 @@ import {
   chromaKey,
   clusterToPalette,
   cornerColor,
+  cropToOpaque,
   despeckle,
   directionKey,
   dropStrayBlobs,
@@ -282,7 +283,10 @@ function stage(
   }
 
   if (asset.kind === 'ui') {
-    const processed = quantize(resamplePixelArt(mapped, asset.frameWidth, asset.frameHeight), palette);
+    // A generated panel arrives on a fixed canvas; with a keyed backdrop the drawn margin is
+    // transparent, so crop to the panel before stretching it to the exact target size.
+    const drawn = asset.background === undefined ? mapped : cropToOpaque(mapped);
+    const processed = quantize(resamplePixelArt(drawn, asset.frameWidth, asset.frameHeight), palette);
     writeImage(asset.sheet, processed, asset.nineSlice);
     return [{ key: asset.key, entry: stillEntry(asset, `resources/art/${asset.sheet}`) }];
   }

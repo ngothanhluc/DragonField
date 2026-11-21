@@ -3,6 +3,7 @@ import {
   chromaKey,
   clusterToPalette,
   cornerColor,
+  cropToOpaque,
   despeckle,
   directionKey,
   dropStrayBlobs,
@@ -20,6 +21,7 @@ import {
   inspectCells,
   limitColors,
   mirrorColumn,
+  kindDefaults,
   type AssetSpec,
   type Rgb,
 } from '../../scripts/lib/gemini-art';
@@ -456,5 +458,58 @@ describe('#20 fitCells fitBox', () => {
     expect(y1 - y0 + 1).toBeLessThanOrEqual(4);
     expect(Math.abs(x0 - (15 - x1))).toBeLessThanOrEqual(1);
     expect(Math.abs(y0 - (15 - y1))).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('#20 attachment fitting', () => {
+  it('keeps one size across facings: an upright and a horizontal sword end up as long', () => {
+    const red: Pixel = [200, 0, 0, 255];
+    const pixels: Pixel[] = new Array<Pixel>(16 * 8).fill(CLEAR);
+    // cell 0: a 2×6 upright blade; cell 1: the same length lying horizontally (6×2)
+    for (let y = 1; y < 7; y += 1) for (let x = 3; x < 5; x += 1) pixels[y * 16 + x] = red;
+    for (let y = 3; y < 5; y += 1) for (let x = 9; x < 15; x += 1) pixels[y * 16 + x] = red;
+
+    const out = fitCells(image(pixels, 16, 8), {
+      columns: 2,
+      rows: 1,
+      frameWidth: 8,
+      frameHeight: 8,
+      anchor: kindDefaults('attachment').anchor,
+      share: kindDefaults('attachment').share,
+    });
+
+    const boxOf = (frame: number): { width: number; height: number } => {
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -1;
+      let y1 = -1;
+      for (let y = 0; y < 8; y += 1) {
+        for (let x = 0; x < 8; x += 1) {
+          if ((out.data[(y * out.width + frame * 8 + x) * 4 + 3] ?? 0) < 128) continue;
+          x0 = Math.min(x0, x);
+          y0 = Math.min(y0, y);
+          x1 = Math.max(x1, x);
+          y1 = Math.max(y1, y);
+        }
+      }
+      return { width: x1 - x0 + 1, height: y1 - y0 + 1 };
+    };
+    expect(boxOf(0).height).toBe(boxOf(1).width);
+  });
+});
+
+describe('#20 cropToOpaque', () => {
+  it('crops a keyed panel margin so the stretched image is fully opaque', () => {
+    const red: Pixel = [200, 0, 0, 255];
+    const pixels: Pixel[] = new Array<Pixel>(10 * 10).fill(CLEAR);
+    for (let y = 4; y < 6; y += 1) for (let x = 3; x < 7; x += 1) pixels[y * 10 + x] = red;
+
+    const cropped = cropToOpaque(image(pixels, 10, 10));
+    expect([cropped.width, cropped.height]).toEqual([4, 2]);
+
+    const stretched = resamplePixelArt(cropped, 8, 4);
+    for (let index = 3; index < stretched.data.length; index += 4) {
+      expect(stretched.data[index]).toBe(255);
+    }
   });
 });

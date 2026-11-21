@@ -267,10 +267,12 @@ character portraits.
 }
 ```
 
-**UI — one image, exact size.** `frameWidth × frameHeight` **is** the output size (do not
-ask for a bigger canvas and downscale). `nineSlice` writes the insets into the sprite
-frame's `.meta` borders, so the game can stretch the middle: keep the borders free of
-detail that repeating would smear.
+**UI — one image, exact output size.** The generator returns its own fixed canvas: ask for
+the panel to fill that canvas at the `frameWidth : frameHeight` aspect ratio, or to sit on
+the flat chroma-key backdrop. Staging crops a keyed backdrop margin to the panel, then
+stretches it to `frameWidth × frameHeight`, which **is** the output size. `nineSlice` writes
+the insets into the sprite frame's `.meta` borders, so the game can stretch the middle:
+keep the borders free of detail that repeating would smear.
 
 ```json
 {
@@ -282,6 +284,9 @@ detail that repeating would smear.
   "nineSlice": { "left": 8, "right": 8, "top": 8, "bottom": 8 }
 }
 ```
+
+Omit `background` for a rectangular panel drawn edge to edge; set it when the panel is
+drawn with a margin around it, so the crop removes the margin.
 
 **Tileset — opaque and seamless.** Ask for a grid of tiles with **no** background key:
 every pixel is drawn, neighbouring tiles match across their shared edge, and the edges of

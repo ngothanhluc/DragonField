@@ -1061,7 +1061,7 @@ const KIND_DEFAULTS: Readonly<Record<AssetKind, KindDefaults>> = {
   monster: { fit: 'feet', anchor: 'feet', share: 'column', edgeGate: true, register: 'sprite' },
   boss: { fit: 'feet', anchor: 'feet', share: 'sheet', edgeGate: true, register: 'sprite' },
   prop: { fit: 'feet', anchor: 'feet', share: 'sheet', edgeGate: true, register: 'sprite' },
-  attachment: { fit: 'center', anchor: 'center', share: 'column', edgeGate: true, register: 'sprite' },
+  attachment: { fit: 'center', anchor: 'center', share: 'sheet', edgeGate: true, register: 'sprite' },
   vfx: { fit: 'center', anchor: 'center', share: 'sheet', edgeGate: false, register: 'sprite' },
   particle: { fit: 'center', anchor: 'center', share: 'sheet', edgeGate: false, register: 'sprite' },
   icon: { fit: 'center', anchor: 'center', share: 'cell', edgeGate: true, register: 'sprite' },
@@ -1077,6 +1077,12 @@ export function kindDefaults(kind: AssetKind): KindDefaults {
 interface Cell {
   readonly box: Box;
   readonly local: Box | null;
+}
+
+/** Crop to the opaque bbox of the whole image (returns it unchanged when nothing is opaque). */
+export function cropToOpaque(image: PngImage): PngImage {
+  const box = opaqueBox(image, { x0: 0, y0: 0, x1: image.width, y1: image.height });
+  return box === null ? image : crop(image, box);
 }
 
 /**

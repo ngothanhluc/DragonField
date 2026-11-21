@@ -77,7 +77,7 @@ lines/watermark, and that the subject keeps the same proportions on every frame.
 
 ### UI image
 
-- **One** picture, drawn at the exact target size — do not draw big and downscale.
+- **One** picture. The generator returns its fixed canvas, so ask for the panel to **fill that canvas** at the target aspect ratio (or to sit on the flat backdrop colour); the pipeline crops the drawn panel and scales it to the exact target size.
 - A stretchable panel needs a **nine-slice**: repeatable flat centre, detailed corners and
   edges, and nothing important in the middle of a border that stretching would smear.
 - Opaque across the whole panel; if the panel has a transparent outside, ask for the flat
