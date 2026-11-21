@@ -18,6 +18,7 @@ import {
   upscaleFactor,
   fitColumnsToCells,
   fitCells,
+  footPxFor,
   inspectCells,
   limitColors,
   mirrorColumn,
@@ -511,5 +512,22 @@ describe('#20 cropToOpaque', () => {
     for (let index = 3; index < stretched.data.length; index += 4) {
       expect(stretched.data[index]).toBe(255);
     }
+  });
+});
+
+describe('#20 footPxFor', () => {
+  it('uses the bottom solid row for feet and the frame centre for a centre anchor', () => {
+    const red: Pixel = [200, 0, 0, 255];
+    const pixels: Pixel[] = new Array<Pixel>(4 * 6).fill(CLEAR);
+    for (let x = 0; x < 4; x += 1) pixels[3 * 4 + x] = red;
+    const sheet = image(pixels, 4, 6);
+
+    expect(footPxFor('feet', sheet, 6)).toBe(2);
+    expect(footPxFor('center', sheet, 6)).toBe(3);
+    expect(footPxFor('center', sheet, 32)).toBe(16);
+  });
+
+  it('returns the frame height for a fully transparent feet sheet', () => {
+    expect(footPxFor('feet', image(new Array<Pixel>(9).fill(CLEAR), 3, 3), 3)).toBe(3);
   });
 });

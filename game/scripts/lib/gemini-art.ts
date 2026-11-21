@@ -1086,6 +1086,21 @@ export function cropToOpaque(image: PngImage): PngImage {
 }
 
 /**
+ * `footPx` for a manifest entry. The runtime anchors at `footPx / frameHeight`, so:
+ * - `feet`: transparent rows from the sheet bottom to its lowest solid pixel;
+ * - `center`: the frame centre (the runtime's `center` anchor), whatever the art contains.
+ */
+export function footPxFor(anchor: 'feet' | 'center', image: PngImage, frameHeight: number): number {
+  if (anchor === 'center') return Math.floor(frameHeight / 2);
+  for (let y = image.height - 1; y >= 0; y -= 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      if (image.data[(y * image.width + x) * 4 + 3]! > 0) return image.height - 1 - y;
+    }
+  }
+  return image.height;
+}
+
+/**
  * Fit every cell of a source grid into output frames.
  *
  * `share` decides which cells union their crop window (and therefore share one scale):

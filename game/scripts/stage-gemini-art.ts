@@ -34,6 +34,7 @@ import {
   directionKey,
   dropStrayBlobs,
   fitCells,
+  footPxFor,
   frameBob,
   inspectCells,
   kindDefaults,
@@ -53,7 +54,7 @@ import {
   type Point,
 } from './lib/gemini-art';
 import { buildTsx } from './lib/room-layout';
-import { bottomPadding, readPng, writePng } from './lib/png';
+import { readPng, writePng } from './lib/png';
 import type { PngImage } from './lib/png';
 import { validateAttachments, type AttachmentItem, type CharacterRig } from '../assets/scripts/core/art/attachments';
 
@@ -229,7 +230,7 @@ function cropCell(image: PngImage, column: number, row: number, width: number, h
   return { width, height, data };
 }
 
-function entryFor(asset: AssetSpec, sheet: string, footPx: number): ManifestEntry {
+function entryFor(asset: AssetSpec, sheet: string, image: PngImage): ManifestEntry {
   return {
     sheet,
     frameWidth: asset.frameWidth,
@@ -240,12 +241,12 @@ function entryFor(asset: AssetSpec, sheet: string, footPx: number): ManifestEntr
     fps: asset.fps,
     loop: asset.loop,
     anchor: asset.anchor,
-    footPx,
+    footPx: footPxFor(asset.anchor, image, asset.frameHeight),
   };
 }
 
 /** Single-image entry: one frame, centred, no direction (icons and UI images). */
-function stillEntry(asset: AssetSpec, sheet: string): ManifestEntry {
+function stillEntry(asset: AssetSpec, sheet: string, image: PngImage): ManifestEntry {
   return {
     sheet,
     frameWidth: asset.frameWidth,
@@ -256,7 +257,7 @@ function stillEntry(asset: AssetSpec, sheet: string): ManifestEntry {
     fps: 1,
     loop: false,
     anchor: 'center',
-    footPx: 0,
+    footPx: footPxFor('center', image, asset.frameHeight),
   };
 }
 
@@ -288,7 +289,7 @@ function stage(
     const drawn = asset.background === undefined ? mapped : cropToOpaque(mapped);
     const processed = quantize(resamplePixelArt(drawn, asset.frameWidth, asset.frameHeight), palette);
     writeImage(asset.sheet, processed, asset.nineSlice);
-    return [{ key: asset.key, entry: stillEntry(asset, `resources/art/${asset.sheet}`) }];
+    return [{ key: asset.key, entry: stillEntry(asset, `resources/art/${asset.sheet}`, processed) }];
   }
 
   if (asset.kind === 'icon') {
@@ -313,8 +314,9 @@ function stage(
       const column = index % cells.columns;
       const row = Math.floor(index / cells.columns);
       const file = `${asset.sheet}/${set}-${name}.png`;
-      writeImage(file, cropCell(processed, column, row, asset.frameWidth, asset.frameHeight));
-      return { key: `${actor}.${set}-${name}`, entry: stillEntry(asset, `resources/art/${file}`) };
+      const cell = cropCell(processed, column, row, asset.frameWidth, asset.frameHeight);
+      writeImage(file, cell);
+      return { key: `${actor}.${set}-${name}`, entry: stillEntry(asset, `resources/art/${file}`, cell) };
     });
   }
 
@@ -337,7 +339,7 @@ function stage(
   const processed = quantize(prepared, palette);
   writeImage(asset.sheet, processed);
 
-  const entry = entryFor(asset, `resources/art/${asset.sheet}`, defaults.anchor === 'feet' ? bottomPadding(processed) : 0);
+  const entry = entryFor(asset, `resources/art/${asset.sheet}`, processed);
 
   if (asset.kind === 'character' && asset.attach !== undefined) recordCharacter(attachments, asset, processed, cells);
   if (asset.kind === 'attachment') recordItem(attachments, asset);
