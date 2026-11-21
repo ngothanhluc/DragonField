@@ -66,6 +66,7 @@ cd game
 bun run prep:refs --out ../art-source/gemini/refs --min 768 <reference files...>
 bun run remove:watermark -- ../art-source/gemini/<file>.png --output ../art-source/gemini/<file>.clean.png
 bun run stage:gen  # apply the spec in art-source/gemini/spec.json
+bun run build:room <layout.json> <out.tmx>  # text layout → validated .tmx + .tmx.meta
 ```
 
 Build web (needs the editor installed, does not run in CI):

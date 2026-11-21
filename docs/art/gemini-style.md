@@ -118,7 +118,7 @@ Write `art-source/gemini/spec.json` before staging:
       "fps": 8,
       "loop": true,
       "anchor": "feet",
-      "role": "monster",
+      "kind": "monster",
       "background": "#ff00ff",
       "maxColors": 8,
       "mirror": { "right": "left" }
@@ -127,7 +127,7 @@ Write `art-source/gemini/spec.json` before staging:
 }
 ```
 
-`sheet` is relative to `assets/resources/art/`. The file stem must start with the animation name so the manifest test's filename rule holds.
+`sheet` is relative to `assets/resources/art/` (a **directory** for `icon`). The file stem must start with the animation name so the manifest test's filename rule holds. `kind` defaults to the legacy `role` (`actor`/`monster`/`boss`), and to `character` when neither is given; see [Kinds](#kinds) for each kind's fields.
 
 A key that ends in a direction owns exactly that direction: `sniper.idle.down` pairs with `directions: ["down"]`, which is a one-column grid (`16×64`). A key without a trailing direction must use `directions: []`.
 
@@ -171,6 +171,171 @@ Small blobs spilled across a cell boundary (feet one row too low) are cleared fi
 they do not trip the gate. `bun run stage:gen --force` stages despite issues and only
 prints them — use it for a comparison, never for an asset you commit.
 
+## Kinds
+
+Every spec asset declares a `kind`. It decides how the download is split, fitted, gated,
+registered and whether a manifest entry is written. The old `role` field still works
+(`actor` → `character`, `monster` → `monster`, `boss` → `boss`); no kind and no role means
+`character`.
+
+| Kind | Ask Gemini for | Frame in this project | Anchor | Background | Register |
+|---|---|---|---|---|---|
+| `character` | 4 columns D/U/L/R × N frames, **unarmed**, feet on the floor | 32×32 | feet | magenta | manifest, 4 keys |
+| `monster` | 4 columns D/U/L/R × N frames, same outfit on every row | 16×16 | feet | magenta | manifest, 4 keys |
+| `boss` | one row of N frames | 96×96 | feet | magenta | manifest, 1 key |
+| `attachment` | 4 columns D/U/L/R × **1** frame, weapon alone | 16×16 | centre | magenta | manifest, 4 keys + `attachments.json` |
+| `prop` | one row, e.g. chest closed → open | 16×16 | feet | magenta | manifest, 1 key |
+| `vfx` | one row, motion between frames, loop off | 16×16 (32 for a big burst) | centre | magenta | manifest, 1 key |
+| `particle` | one row, 4–8 frames, loop off | 8×8 | centre | magenta | manifest, 1 key |
+| `icon` | a row of separate objects, margins around each | 24×24 | centre | magenta | one manifest key per name |
+| `ui` | **one** image, drawn edge to edge at the exact size | e.g. 48×32 | centre (stretched) | omit for a rectangular panel | manifest, 1 key |
+| `tileset` | an opaque grid of tiles, seamless edges | 16×16 per tile | — | none (opaque) | PNG + optional `.tsx`, no manifest |
+
+The whole canvas is always stored at the grid the prompt asked for (cells × frame size);
+a character canvas is `4 × frameWidth` wide and `frames × frameHeight` tall. Only
+`icon` and `tileset` read a source grid that is **not** the output grid: icons are fitted
+per cell and split into one file per name, tiles are sliced whole, edge to edge.
+
+**Character — unarmed, separate weapons.** Ask for the body only: no sword, bow, staff or
+shuriken in any frame. Weapons are separate `attachment` assets (held `hand` or worn
+`back`) or plain projectiles, so a run can switch or hide them (GDD §14). Record the attach
+points in the same spec:
+
+```json
+{
+  "key": "cultivator.idle",
+  "kind": "character",
+  "source": "art-source/gemini/cultivator-idle.clean.png",
+  "sheet": "generated/cultivator/idle.png",
+  "frameWidth": 32, "frameHeight": 32,
+  "layout": "grid", "directions": ["down", "up", "left", "right"],
+  "frames": 4, "fps": 8, "loop": true,
+  "background": "#ff00ff",
+  "attach": {
+    "hand": { "down": [22, 20], "up": [10, 20], "left": [12, 20], "right": [20, 20] },
+    "back": { "down": [16, 12], "up": [16, 12], "left": [18, 12], "right": [14, 12] }
+  }
+}
+```
+
+Staging writes/merges `characters[<actor>]` in `attachments.json` with the frame size, the
+points and the per-frame bob it measured from the staged sheet. Stage each animation
+(`.idle`, `.walk`, `.attack`) separately; the bob merges.
+
+**Attachment — one weapon, four facings.** Draw the weapon alone on the backdrop, facing
+the same directions as the body, and keep it small in its cell: an attachment frame is not
+the body frame, the game places it. `fitBox` caps how much of the 16×16 frame the fitted
+weapon may fill, so a back sword stays shorter than the body. `grip` is the point the hand
+or back holds, in the item frame; `behind` overrides the slot's default draw order.
+
+```json
+{
+  "key": "attachment.sword-back",
+  "kind": "attachment",
+  "source": "art-source/gemini/sword-back.clean.png",
+  "sheet": "generated/attachments/sword-back.png",
+  "frameWidth": 16, "frameHeight": 16,
+  "layout": "grid", "directions": ["down", "up", "left", "right"], "frames": 1,
+  "slot": "back",
+  "grip": { "down": [8, 10], "up": [8, 10], "left": [8, 10], "right": [8, 10] },
+  "fitBox": [14, 14],
+  "background": "#ff00ff"
+}
+```
+
+**Prop / VFX / particle — one strip.** One row of frames, one `key`. Effects keep their
+motion because staging fits the **whole strip** with one crop window, not each frame.
+Particles and props are gated for size; vfx/particle skip the edge gate (a burst fills its
+cell). Set `"loop": false` for one-shot effects.
+
+**Icon — a sheet of separate objects.** `sheet` is a **directory**; each name becomes
+`<actor>.<set>-<name>` (key `icon.skills`, name `swords` → `icon.skills-swords`, file
+`generated/icons/skills/skills-swords.png`). Leave margins so the edge gate passes; staging
+then fits every icon to fill its own 24×24 cell. Use it for items, skills and small
+character portraits.
+
+```json
+{
+  "key": "icon.skills",
+  "kind": "icon",
+  "source": "art-source/gemini/skill-icons.clean.png",
+  "sheet": "generated/icons/skills",
+  "frameWidth": 24, "frameHeight": 24,
+  "names": ["swords", "shield", "dash"],
+  "columns": 3,
+  "background": "#ff00ff"
+}
+```
+
+**UI — one image, exact size.** `frameWidth × frameHeight` **is** the output size (do not
+ask for a bigger canvas and downscale). `nineSlice` writes the insets into the sprite
+frame's `.meta` borders, so the game can stretch the middle: keep the borders free of
+detail that repeating would smear.
+
+```json
+{
+  "key": "ui.panel",
+  "kind": "ui",
+  "source": "art-source/gemini/panel.clean.png",
+  "sheet": "generated/ui/panel.png",
+  "frameWidth": 48, "frameHeight": 32,
+  "nineSlice": { "left": 8, "right": 8, "top": 8, "bottom": 8 }
+}
+```
+
+**Tileset — opaque and seamless.** Ask for a grid of tiles with **no** background key:
+every pixel is drawn, neighbouring tiles match across their shared edge, and the edges of
+the sheet tile into each other. Staging slices each whole cell to `frameWidth` (no crop,
+no gate, no manifest entry). With `tsx` it also writes the tileset file next to the rooms:
+
+```json
+{
+  "key": "tileset.ruins",
+  "kind": "tileset",
+  "source": "art-source/gemini/ruins-tiles.clean.png",
+  "sheet": "generated/tilesets/ruins.png",
+  "frameWidth": 16, "frameHeight": 16,
+  "columns": 4, "rows": 3,
+  "tsx": "data/levels/chapter-1/ruins.tsx"
+}
+```
+
+## Rooms from text layouts
+
+Room maps are **not** generated by the image model: a room is data, authored as 18 rows of
+32 characters plus a legend. Each character is a floor tile and may also place an object
+(`obstacle`, `playerStart`, `spawn`, `door`). `bun run build:room` writes the `.tmx` (and
+its `.tmx.meta`) and validates it with the game's own parser before saving, so a broken
+layout fails at build time.
+
+```json
+{
+  "chapter": 1,
+  "room": 7,
+  "tilesets": [{ "source": "field.tsx", "firstgid": 1 }],
+  "legend": {
+    ".": { "tile": 37 },
+    "#": { "tile": 12, "obstacle": "wall" },
+    "o": { "tile": 37, "obstacle": "pillar" },
+    "P": { "tile": 37, "playerStart": true },
+    "c": { "tile": 37, "spawn": { "role": "chaser", "wave": 1 } },
+    "D": { "tile": 37, "door": { "toRoom": 8 } }
+  },
+  "rows": [
+    "################################",
+    "#..............................#",
+    "… 18 rows of 32 characters …"
+  ]
+}
+```
+
+Object coordinates are the **cell centre** (`col × 16 + 8`, `row × 16 + 8`); adjacent
+obstacle cells of the same kind are merged into rectangles, so a wall is one object, not
+one per tile. Waves must be contiguous from 1, and a door without `toRoom` is the chapter
+exit. Objects must not overlap the player start or each other; the parser reports every
+problem at once.
+
+
 ## Watermark removal
 
 Gemini stamps a faint logo into the bottom-right corner of each generated image. It survives the downscale to 64×64 as a tinted patch, so clean the raw download before staging:
@@ -188,6 +353,7 @@ Write a new `.clean.png`, leave the raw download untouched, and point the spec's
 cd game
 bun run remove:watermark -- <input> --output <file>   # strip Gemini's corner logo (new file)
 bun run stage:gen    # process raw downloads, quality gate, write .meta, merge manifest, update allowlist
+bun run build:room <layout.json> <out.tmx>   # text layout → validated .tmx + .tmx.meta (no image model)
 bun run check        # required gate after every generation
 ```
 

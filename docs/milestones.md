@@ -173,10 +173,31 @@ Branch `m9-content`. Skills used: add `game-ai`, `roguelike`, `game-docs`. New n
 
 ---
 
+## M10 — Playable characters and weapons
+
+Design: GDD §14. The art side (unarmed bodies, separate attachments, rig data) lands with ticket #20 in the pipeline; this milestone is the **game-side** work. No balance change: existing characters keep their baked attack sheets until they are migrated one at a time.
+
+**Work.**
+1. **Attachment node.** Add a child node to the player renderer that draws one attachment sprite on top of (or behind) the body, using `core/art/attachments.ts` (`placeAttachment`) for the offset and draw order. Giant body sheets keep their existing baked weapon.
+2. **Draw order per direction.** Apply the `hand`/`back` rules from GDD §14 (and the item's `behind` override) whenever the facing or frame changes; the attachment follows the bob recorded in `attachments.json`.
+3. **Hide/show on skill events.** Expose a hide flag on the attachment node so a skill can hide a worn item while its own effect is on screen (the cultivator's “Ten Thousand Swords” case), and restore it when the effect ends. Projectile weapons never create an attachment node.
+4. **Character select.** Data-driven roster: each playable character is a body sheet plus its default loadout; the title screen picks one and the run stores the choice in the save. One character per run, no mid-run swap.
+5. **Migrate the first character** (the cultivator: unarmed body + `back` sword) behind a settings/data flag, leaving the current character as the default until the new one passes the same acceptance.
+
+**Acceptance.**
+- Tests: `placeAttachment` is already covered; add the node-level cases — a `hand` item is behind only facing `up`, a `back` item behind for every other direction, an item `behind` list wins, the offset includes the bob for frame `n`, hiding and showing on a skill event restores the same offset.
+- A migrated character reads correctly at 1920×1080 in all four directions while idle and while moving: the sword stays on the back, never floats or clips the head, and is not visible during the skill's effect.
+- Character select round-trips through the save (`version` bump + migration), and a run started with each roster entry reaches the chapter boss with 0 console errors.
+- `bun run check` green; `run-simulation` green **without changing `tuning.json`** (a different body must not change hitbox, damage or spawn numbers).
+
+**Status: ⏳ Not started** (waiting on M9 and the ticket #20 art pipeline).
+
+---
+
 ## Dependencies
 
 ```text
-M0 → M1 → M1.5 → M2 → M3 → M4 → M5 → M6 → M7 → M8 → M9
+M0 → M1 → M1.5 → M2 → M3 → M4 → M5 → M6 → M7 → M8 → M9 → M10
 ```
 
 No milestone starts before the previous one meets acceptance. Exception: downloading the Update #8 pack and building the dungeon tile set can run in parallel with M0–M1.

@@ -17,7 +17,7 @@ Author new art in the style already used by the project, with **one human checkp
 
 ## Workflow
 
-1. **Define the asset.** From the request and the style brief, write a spec: logical key, animation/frame size, layout, directions, frame count, frame rate, looping, anchor, source image and target name. Check the existing manifest first so the key is new and consistent.
+1. **Define the asset.** Load [asset-kinds.md](references/asset-kinds.md) first: it says what each kind of asset needs from the generator (one sheet vs. one image, frames, margins, flat backdrop, seamless tiles, nine-slice borders, unarmed bodies with separate attachments). From the request and the style brief, write a spec: kind, logical key, animation/frame size, layout, directions, frame count, frame rate, looping, anchor, source image and target name. Check the existing manifest first so the key is new and consistent.
    Completion: a spec that the project's manifest validator would accept, written to the raw download directory named in the style brief.
 
 2. **Assemble the prompt.** Load the fixed reference set named in the style brief, upscale any tiny pixel-art reference with the command the style brief names (Gemini resamples uploads and loses 10–64 px detail), upload those images through the browser tool (one file per upload call, re-snapshotting between them), and write a prompt that states the frame grid, pixel size, viewing angle, palette restriction and a flat chroma-key backdrop (never "transparent", which the model usually paints white). One prompt produces one sheet.
@@ -35,6 +35,10 @@ Author new art in the style already used by the project, with **one human checkp
 6. **Commit locally.** Stage only the new and modified files and commit with a `feat(art):` message. Never push. Delete scratch previews and screenshots from the raw download directory; keep the approved download and its cleaned copy.
    Completion: a clean working tree and a commit describing the generated asset.
 
+## Not every asset comes from the image model
+
+Some game data is authored, not drawn: **room maps** can be built from a text layout (a grid of characters plus a legend of tiles and objects) by a command the style brief names. Use that command when it exists — it validates the map with the game's own parser before writing, so there is no image prompt, no checkpoint and no watermark step. The same applies to any other data the style brief describes as authored from a text file.
+
 ## Reference
 
-Browser interaction details, including the prompt box, upload control and download button, are in [browser-and-pipeline.md](references/browser-and-pipeline.md). Load that file before touching the browser.
+Browser interaction details, including the prompt box, upload control and download button, are in [browser-and-pipeline.md](references/browser-and-pipeline.md). Load that file before touching the browser. What to ask the model for, per kind of asset, is in [asset-kinds.md](references/asset-kinds.md).
