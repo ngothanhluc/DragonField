@@ -6,8 +6,62 @@ import type { PngImage } from './png';
 
 export type AssetRole = 'actor' | 'monster' | 'boss';
 
+/** Every kind of art the pipeline can stage. `tilemap` is not here: rooms come from text layouts. */
+export const ASSET_KINDS = [
+  'character',
+  'monster',
+  'boss',
+  'attachment',
+  'prop',
+  'vfx',
+  'particle',
+  'icon',
+  'ui',
+  'tileset',
+] as const;
+export type AssetKind = (typeof ASSET_KINDS)[number];
+
+/** How a kind is fitted, gated and registered unless the spec overrides it. */
+export interface KindDefaults {
+  /** `feet`: bottom-centred on the cell floor; `center`: centred; `stretch`: exact target size; `tile`: whole cells edge to edge. */
+  readonly fit: 'feet' | 'center' | 'stretch' | 'tile';
+  readonly anchor: 'feet' | 'center';
+  /** Which cells share one crop window and scale: a direction column, the whole sheet, or each cell alone. */
+  readonly share: 'column' | 'sheet' | 'cell';
+  /** Whether the quality gate rejects sprites touching their cell's side/top edge. */
+  readonly edgeGate: boolean;
+  /** `sprite`: entry in the animation manifest; `tileset`: PNG + `.tsx` for Tiled rooms. */
+  readonly register: 'sprite' | 'tileset';
+}
+
+/** Nine-slice insets in output pixels. */
+export interface NineSlice {
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+export interface FitCellsOptions {
+  readonly columns: number;
+  readonly rows: number;
+  readonly frameWidth: number;
+  readonly frameHeight: number;
+  readonly anchor: 'feet' | 'center';
+  readonly share: 'column' | 'sheet' | 'cell';
+  readonly weights?: ReadonlyMap<number, number>;
+}
+
 export interface AssetSpec {
   readonly key: string;
+  readonly kind?: AssetKind;
+  /** `icon`: one output file per name, read from the source grid in row-major order. */
+  readonly names?: readonly string[];
+  /** `icon`/`tileset`: source grid size in cells. */
+  readonly columns?: number;
+  readonly rows?: number;
+  /** `ui`: nine-slice insets written into the sprite frame meta. */
+  readonly nineSlice?: NineSlice;
   readonly source: string;
   readonly sheet: string;
   readonly frameWidth: number;
@@ -822,4 +876,47 @@ export function clusterToPalette(image: PngImage, palette: readonly Rgb[], clust
     data[index + 3] = 255;
   }
   return { width: image.width, height: image.height, data };
+}
+
+// ---- Ticket #20 stubs: the acceptance test pins these signatures; implement them. ----
+
+/** Defaults for a kind. */
+export function kindDefaults(_kind: AssetKind): KindDefaults {
+  return { fit: 'feet', anchor: 'feet', share: 'column', edgeGate: true, register: 'sprite' };
+}
+
+/** Fit every cell of a source grid into output frames. */
+export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
+  void image;
+  const width = options.columns * options.frameWidth;
+  const height = options.rows * options.frameHeight;
+  return { width, height, data: Buffer.alloc(width * height * 4) };
+}
+
+/** Slice a tileset grid into whole tiles, edge to edge. */
+export function sliceTiles(image: PngImage, columns: number, rows: number, tileSize: number): PngImage {
+  void image;
+  return { width: columns * tileSize, height: rows * tileSize, data: Buffer.alloc(columns * rows * tileSize * tileSize * 4) };
+}
+
+/** Cocos `.meta` for a nearest-filtered sprite frame, optionally nine-sliced. */
+export function spriteFrameMeta(
+  _uuid: string,
+  _name: string,
+  _width: number,
+  _height: number,
+  _border?: NineSlice,
+): Record<string, unknown> {
+  return {};
+}
+
+/** Per column, per frame: how many pixels the top of the sprite sits below frame 0's. */
+export function frameBob(
+  _image: PngImage,
+  columns: number,
+  rows: number,
+  _frameWidth: number,
+  _frameHeight: number,
+): number[][] {
+  return Array.from({ length: columns }, () => new Array<number>(rows).fill(0));
 }
