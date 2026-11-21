@@ -16,6 +16,7 @@ import {
   sheetSize,
   upscaleFactor,
   fitColumnsToCells,
+  fitCells,
   inspectCells,
   limitColors,
   mirrorColumn,
@@ -26,6 +27,7 @@ import type { PngImage } from '../../scripts/lib/png';
 
 const base: AssetSpec = {
   key: 'sniper.idle.down',
+  kind: 'monster',
   source: 'art-source/gemini/sniper.png',
   sheet: 'generated/sniper/idle-down.png',
   frameWidth: 16,
@@ -417,5 +419,42 @@ describe('clusterToPalette', () => {
     for (let i = 0; i < 8; i += 1) mapped.add(result.data[i * 4]!);
     expect(mapped.size).toBe(1);
     expect(Array.from(result.data.subarray(32, 36))).toEqual([250, 30, 30, 255]);
+  });
+});
+
+describe('#20 fitCells fitBox', () => {
+  it('fits the shared window inside fitBox and centres it', () => {
+    const blue: Pixel = [0, 0, 200, 255];
+    const pixels: Pixel[] = new Array<Pixel>(16 * 16).fill(CLEAR);
+    // a 10×2 blob, far too wide to be a sword at full frame size
+    for (let y = 6; y < 8; y += 1) for (let x = 3; x < 13; x += 1) pixels[y * 16 + x] = blue;
+
+    const out = fitCells(image(pixels, 16, 16), {
+      columns: 1,
+      rows: 1,
+      frameWidth: 16,
+      frameHeight: 16,
+      anchor: 'center',
+      share: 'cell',
+      fitBox: [8, 4],
+    });
+
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -1;
+    let y1 = -1;
+    for (let y = 0; y < 16; y += 1) {
+      for (let x = 0; x < 16; x += 1) {
+        if ((out.data[(y * 16 + x) * 4 + 3] ?? 0) < 128) continue;
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x);
+        y1 = Math.max(y1, y);
+      }
+    }
+    expect(x1 - x0 + 1).toBeLessThanOrEqual(8);
+    expect(y1 - y0 + 1).toBeLessThanOrEqual(4);
+    expect(Math.abs(x0 - (15 - x1))).toBeLessThanOrEqual(1);
+    expect(Math.abs(y0 - (15 - y1))).toBeLessThanOrEqual(1);
   });
 });

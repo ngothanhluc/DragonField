@@ -50,11 +50,33 @@ export interface FitCellsOptions {
   readonly anchor: 'feet' | 'center';
   readonly share: 'column' | 'sheet' | 'cell';
   readonly weights?: ReadonlyMap<number, number>;
+  /**
+   * Size in output pixels the shared crop window may fill, instead of the whole frame.
+   * An attachment keeps its size relative to the body this way. Defaults to today's
+   * behaviour: `frameWidth - 1 × frameHeight - 1` for `feet`, the frame for `center`.
+   */
+  readonly fitBox?: readonly [number, number];
+}
+
+/** A point in output-frame pixels. */
+export type Point = readonly [number, number];
+
+/** Attach points of one direction, keyed by direction. */
+export type PointMap = Readonly<Record<string, Point>>;
+
+/** Where a playable character carries an item: on the `hand` or the `back`. */
+export type AttachSlot = 'hand' | 'back';
+
+/** `character` attach points, per slot and direction (output-frame pixels). */
+export interface AttachPoints {
+  readonly hand?: PointMap;
+  readonly back?: PointMap;
 }
 
 export interface AssetSpec {
   readonly key: string;
-  readonly kind?: AssetKind;
+  /** Always set after `parseSpec`: a legacy `role` is translated, and defaulted to `character`. */
+  readonly kind: AssetKind;
   /** `icon`: one output file per name, read from the source grid in row-major order. */
   readonly names?: readonly string[];
   /** `icon`/`tileset`: source grid size in cells. */
@@ -62,7 +84,20 @@ export interface AssetSpec {
   readonly rows?: number;
   /** `ui`: nine-slice insets written into the sprite frame meta. */
   readonly nineSlice?: NineSlice;
+  /** `attachment`: which body slot the item is worn on. Defaults to `hand`. */
+  readonly slot?: AttachSlot;
+  /** `attachment`: direction → grip point in the output frame. Defaults to the frame centre. */
+  readonly grip?: PointMap;
+  /** `attachment`: directions where the item is drawn behind the body. */
+  readonly behind?: readonly string[];
+  /** `character`: attach points for a weapon/prop, in output-frame pixels. */
+  readonly attach?: AttachPoints;
+  /** `tileset`: `.tsx` path under `assets/resources/` written next to the PNG. */
+  readonly tsx?: string;
+  /** Fitted kinds: size the shared crop window may fill, instead of the whole frame. */
+  readonly fitBox?: readonly [number, number];
   readonly source: string;
+  /** File path under `assets/resources/art/`; a **directory** for `icon`. */
   readonly sheet: string;
   readonly frameWidth: number;
   readonly frameHeight: number;
@@ -90,8 +125,17 @@ export interface ArtSpec {
 export type Rgb = readonly [number, number, number];
 
 const KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/;
+const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DIRECTIONS: ReadonlySet<string> = new Set(['down', 'up', 'left', 'right']);
 const ROLES: ReadonlySet<string> = new Set(['actor', 'monster', 'boss']);
+const ROLE_KINDS: Readonly<Record<AssetRole, AssetKind>> = {
+  actor: 'character',
+  monster: 'monster',
+  boss: 'boss',
+};
+/** Kinds drawn as animation sheets: they keep the pre-#20 required fields. */
+const ANIMATED_KINDS: ReadonlySet<AssetKind> = new Set(['character', 'monster', 'boss', 'prop', 'vfx', 'particle']);
+const KINDS: ReadonlySet<string> = new Set(ASSET_KINDS);
 const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
 
 /** `#rrggbb` → RGB triple. */
@@ -115,6 +159,52 @@ function integer(value: unknown, label: string): number {
   return value;
 }
 
+function optionalInteger(value: unknown, label: string): number | undefined {
+  if (value === undefined) return undefined;
+  return integer(value, label);
+}
+
+/** `[x, y]` of two integers. */
+function point(value: unknown, label: string): Point {
+  if (!Array.isArray(value) || value.length !== 2) throw new Error(`${label} must be [x, y]`);
+  const [x, y] = value as readonly unknown[];
+  if (!Number.isInteger(x) || !Number.isInteger(y)) throw new Error(`${label} must be [x, y] of two integers`);
+  return [x as number, y as number];
+}
+
+/** Direction → point, every key a direction. */
+function pointMap(value: unknown, label: string): PointMap {
+  if (!isRecord(value)) throw new Error(`${label} must map a direction to [x, y]`);
+  const result: Record<string, Point> = {};
+  for (const [direction, raw] of Object.entries(value)) {
+    if (!DIRECTIONS.has(direction)) throw new Error(`${label}.${direction} must be a direction (down/up/left/right)`);
+    result[direction] = point(raw, `${label}.${direction}`);
+  }
+  return result;
+}
+
+function nineSlice(value: unknown, label: string): NineSlice {
+  if (!isRecord(value)) throw new Error(`${label} must be { left, right, top, bottom }`);
+  const side = (name: 'left' | 'right' | 'top' | 'bottom'): number => {
+    const raw = value[name];
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0) {
+      throw new Error(`${label}.${name} must be a non-negative integer`);
+    }
+    return raw;
+  };
+  return { left: side('left'), right: side('right'), top: side('top'), bottom: side('bottom') };
+}
+
+function attachPoints(value: unknown, label: string): AttachPoints {
+  if (!isRecord(value)) throw new Error(`${label} must map hand/back to their direction points`);
+  const result: { hand?: PointMap; back?: PointMap } = {};
+  for (const [slot, raw] of Object.entries(value)) {
+    if (slot !== 'hand' && slot !== 'back') throw new Error(`${label}.${slot} must be hand or back`);
+    result[slot] = pointMap(raw, `${label}.${slot}`);
+  }
+  return result;
+}
+
 function parseAsset(value: unknown, index: number): AssetSpec {
   if (!isRecord(value)) throw new Error(`assets[${index}] must be an object`);
   const field = (name: string): unknown => value[name];
@@ -122,32 +212,164 @@ function parseAsset(value: unknown, index: number): AssetSpec {
   if (typeof key !== 'string' || !KEY_PATTERN.test(key)) {
     throw new Error(`assets[${index}].key must be a logical key like actor.idle.down`);
   }
-  for (const name of ['source', 'sheet'] as const) {
+
+  // Kind: the new field, or the legacy role, or the old default (a playable character).
+  const role = field('role');
+  if (role !== undefined && (typeof role !== 'string' || !ROLES.has(role))) {
+    throw new Error(`${key}.role must be actor, monster or boss`);
+  }
+  const kindRaw = field('kind') ?? (role === undefined ? 'character' : ROLE_KINDS[role as AssetRole]);
+  if (typeof kindRaw !== 'string' || !KINDS.has(kindRaw)) {
+    throw new Error(`${key}.kind must be one of ${ASSET_KINDS.join(', ')}`);
+  }
+  const kind = kindRaw as AssetKind;
+  const defaults = kindDefaults(kind);
+  const animated = ANIMATED_KINDS.has(kind);
+
+  for (const name of ['source'] as const) {
     const text = field(name);
     if (typeof text !== 'string' || text.length === 0) {
       throw new Error(`${key}.${name} must be a non-empty string`);
     }
   }
-  const sheet = field('sheet') as string;
-  if (!sheet.endsWith('.png') || sheet.includes('..') || sheet.startsWith('/') || sheet.includes('\\')) {
+  const sheet = field('sheet');
+  if (typeof sheet !== 'string' || sheet.length === 0) throw new Error(`${key}.sheet must be a non-empty string`);
+  if (sheet.includes('..') || sheet.startsWith('/') || sheet.includes('\\')) {
+    throw new Error(`${key}.sheet must be a relative path under assets/resources/art`);
+  }
+  if (kind === 'icon') {
+    if (sheet.endsWith('.png')) throw new Error(`${key}.sheet must be a directory (no .png) for an icon set`);
+  } else if (!sheet.endsWith('.png')) {
     throw new Error(`${key}.sheet must be a relative .png path under assets/resources/art`);
   }
-  const layout = field('layout');
-  if (layout !== 'grid' && layout !== 'strip') throw new Error(`${key}.layout must be grid or strip`);
-  const directions = field('directions');
-  if (!Array.isArray(directions) || directions.some((d) => typeof d !== 'string' || !DIRECTIONS.has(d))) {
-    throw new Error(`${key}.directions must contain only down/up/left/right`);
+
+  let layout: 'grid' | 'strip';
+  if (animated) {
+    const raw = field('layout');
+    if (raw !== 'grid' && raw !== 'strip') throw new Error(`${key}.layout must be grid or strip`);
+    layout = raw;
+  } else if (kind === 'attachment') {
+    const raw = field('layout') ?? 'grid';
+    if (raw !== 'grid') throw new Error(`${key}.layout must be grid for an attachment`);
+    layout = 'grid';
+  } else {
+    const raw = field('layout') ?? 'strip';
+    if (raw !== 'grid' && raw !== 'strip') throw new Error(`${key}.layout must be grid or strip`);
+    layout = raw;
   }
-  const fps = field('fps');
-  if (typeof fps !== 'number' || !Number.isFinite(fps) || fps <= 0) {
-    throw new Error(`${key}.fps must be a positive number`);
+
+  let directions: readonly string[];
+  if (kind === 'attachment') {
+    const raw = field('directions') ?? ['down', 'up', 'left', 'right'];
+    directions = parseDirections(raw, key);
+    for (const direction of ['down', 'up', 'left', 'right']) {
+      if (!directions.includes(direction)) throw new Error(`${key}.directions must hold all four directions`);
+    }
+  } else if (animated) {
+    directions = parseDirections(field('directions'), key);
+  } else {
+    const raw = field('directions') ?? [];
+    directions = parseDirections(raw, key);
+    if (directions.length > 0) throw new Error(`${key}.directions must be empty for a ${kind}`);
   }
-  const anchor = field('anchor');
-  if (anchor !== 'feet' && anchor !== 'center') throw new Error(`${key}.anchor must be feet or center`);
-  const role = field('role');
-  if (role !== undefined && (typeof role !== 'string' || !ROLES.has(role))) {
-    throw new Error(`${key}.role must be actor, monster or boss`);
+
+  let frames: number;
+  if (animated) {
+    frames = integer(field('frames'), `${key}.frames`);
+  } else if (kind === 'attachment') {
+    const raw = field('frames') ?? 1;
+    if (integer(raw, `${key}.frames`) !== 1) throw new Error(`${key}.frames must be 1 for an attachment`);
+    frames = 1;
+  } else {
+    frames = optionalInteger(field('frames'), `${key}.frames`) ?? 1;
   }
+
+  let fps: number;
+  if (animated) {
+    const raw = field('fps');
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
+      throw new Error(`${key}.fps must be a positive number`);
+    }
+    fps = raw;
+  } else {
+    const raw = field('fps') ?? 1;
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
+      throw new Error(`${key}.fps must be a positive number`);
+    }
+    fps = raw;
+  }
+
+  const anchorRaw = field('anchor') ?? defaults.anchor;
+  if (anchorRaw !== 'feet' && anchorRaw !== 'center') throw new Error(`${key}.anchor must be feet or center`);
+  const anchor = anchorRaw;
+
+  const frameWidth = integer(field('frameWidth'), `${key}.frameWidth`);
+  const frameHeight = integer(field('frameHeight'), `${key}.frameHeight`);
+  if (kind === 'tileset' && frameWidth !== frameHeight) {
+    throw new Error(`${key}.frameWidth and frameHeight must be equal (a square tile)`);
+  }
+
+  let names: readonly string[] | undefined;
+  if (kind === 'icon') {
+    const raw = field('names');
+    if (!Array.isArray(raw) || raw.length === 0) throw new Error(`${key}.names must list at least one icon name`);
+    names = (raw as readonly unknown[]).map((name, at) => {
+      if (typeof name !== 'string' || !NAME_PATTERN.test(name)) {
+        throw new Error(`${key}.names[${at}] must be kebab-case`);
+      }
+      return name;
+    });
+  }
+  const columns = optionalInteger(field('columns'), `${key}.columns`) ?? (kind === 'icon' ? names?.length ?? 1 : undefined);
+  const rows = optionalInteger(field('rows'), `${key}.rows`);
+  if (kind === 'tileset' && (columns === undefined || rows === undefined)) {
+    throw new Error(`${key}.columns and rows are required for a tileset`);
+  }
+
+  const nineSliceRaw = field('nineSlice');
+  const slice = nineSliceRaw === undefined ? undefined : nineSlice(nineSliceRaw, `${key}.nineSlice`);
+
+  const slotRaw = field('slot');
+  if (slotRaw !== undefined && slotRaw !== 'hand' && slotRaw !== 'back') {
+    throw new Error(`${key}.slot must be hand or back`);
+  }
+  const gripRaw = field('grip');
+  const grip = gripRaw === undefined ? undefined : pointMap(gripRaw, `${key}.grip`);
+  const behindRaw = field('behind');
+  let behind: readonly string[] | undefined;
+  if (behindRaw !== undefined) {
+    if (!Array.isArray(behindRaw) || behindRaw.some((d) => typeof d !== 'string' || !DIRECTIONS.has(d))) {
+      throw new Error(`${key}.behind must contain only down/up/left/right`);
+    }
+    behind = behindRaw as readonly string[];
+  }
+
+  const attachRaw = field('attach');
+  const attach = attachRaw === undefined ? undefined : attachPoints(attachRaw, `${key}.attach`);
+
+  const tsxRaw = field('tsx');
+  let tsx: string | undefined;
+  if (tsxRaw !== undefined) {
+    if (
+      typeof tsxRaw !== 'string' ||
+      !tsxRaw.endsWith('.tsx') ||
+      tsxRaw.startsWith('/') ||
+      tsxRaw.includes('\\') ||
+      tsxRaw.split('/').some((segment) => segment === '..' || segment === '')
+    ) {
+      throw new Error(`${key}.tsx must be a relative .tsx path under assets/resources/`);
+    }
+    tsx = tsxRaw;
+  }
+
+  const fitBoxRaw = field('fitBox');
+  let fitBox: readonly [number, number] | undefined;
+  if (fitBoxRaw !== undefined) {
+    const box = point(fitBoxRaw, `${key}.fitBox`);
+    if (box[0] <= 0 || box[1] <= 0) throw new Error(`${key}.fitBox must be two positive sizes`);
+    fitBox = box;
+  }
+
   const backgroundRaw = field('background');
   let background: Rgb | 'auto' | undefined;
   if (backgroundRaw !== undefined) {
@@ -180,13 +402,24 @@ function parseAsset(value: unknown, index: number): AssetSpec {
   }
   return {
     key,
+    kind,
+    ...(names === undefined ? {} : { names }),
+    ...(columns === undefined ? {} : { columns }),
+    ...(rows === undefined ? {} : { rows }),
+    ...(slice === undefined ? {} : { nineSlice: slice }),
+    ...(slotRaw === undefined ? {} : { slot: slotRaw as AttachSlot }),
+    ...(grip === undefined ? {} : { grip }),
+    ...(behind === undefined ? {} : { behind }),
+    ...(attach === undefined ? {} : { attach }),
+    ...(tsx === undefined ? {} : { tsx }),
+    ...(fitBox === undefined ? {} : { fitBox }),
     source: field('source') as string,
     sheet,
-    frameWidth: integer(field('frameWidth'), `${key}.frameWidth`),
-    frameHeight: integer(field('frameHeight'), `${key}.frameHeight`),
+    frameWidth,
+    frameHeight,
     layout,
-    directions: directions as readonly string[],
-    frames: integer(field('frames'), `${key}.frames`),
+    directions,
+    frames,
     fps,
     loop: field('loop') === true,
     anchor,
@@ -196,6 +429,14 @@ function parseAsset(value: unknown, index: number): AssetSpec {
     ...(maxColors === undefined ? {} : { maxColors: maxColors as number }),
     ...(mirror === undefined ? {} : { mirror: mirror as Record<string, string> }),
   };
+}
+
+/** Direction list, only down/up/left/right, no duplicates. */
+function parseDirections(value: unknown, key: string): readonly string[] {
+  if (!Array.isArray(value) || value.some((d) => typeof d !== 'string' || !DIRECTIONS.has(d))) {
+    throw new Error(`${key}.directions must contain only down/up/left/right`);
+  }
+  return value as readonly string[];
 }
 
 /** Parse an untrusted spec file into a validated art spec, or throw with a useful message. */
@@ -442,80 +683,15 @@ export function fitColumnsToCells(
   frameHeight: number,
   weights?: ReadonlyMap<number, number>,
 ): PngImage {
-  const cellWidth = image.width / columns;
-  const cellHeight = image.height / frames;
-  if (!Number.isInteger(cellWidth) || !Number.isInteger(cellHeight)) {
-    throw new Error(`source ${image.width}×${image.height} does not split into ${columns}×${frames} cells`);
-  }
-  const data = Buffer.alloc(frameWidth * columns * frameHeight * frames * 4);
-  const outWidth = frameWidth * columns;
-
-  for (let column = 0; column < columns; column += 1) {
-    const boxes: Array<Box | null> = [];
-    let region: Box | null = null;
-    for (let row = 0; row < frames; row += 1) {
-      const cell: Box = {
-        x0: column * cellWidth,
-        y0: row * cellHeight,
-        x1: (column + 1) * cellWidth,
-        y1: (row + 1) * cellHeight,
-      };
-      const found = opaqueBox(image, cell);
-      // Union in cell-local coordinates: every frame shares the same crop window.
-      const local =
-        found === null
-          ? null
-          : {
-              x0: found.x0 - cell.x0,
-              y0: found.y0 - cell.y0,
-              x1: found.x1 - cell.x0,
-              y1: found.y1 - cell.y0,
-            };
-      boxes.push(local);
-      region = unionBox(region, local);
-    }
-    if (region === null) continue;
-
-    const boxWidth = region.x1 - region.x0;
-    const boxHeight = region.y1 - region.y0;
-    const scale = Math.min((frameWidth - 1) / boxWidth, (frameHeight - 1) / boxHeight);
-    const fitWidth = Math.max(1, Math.round(boxWidth * scale));
-    const fitHeight = Math.max(1, Math.round(boxHeight * scale));
-
-    for (let row = 0; row < frames; row += 1) {
-      const local = boxes[row];
-      if (local === null || local === undefined) continue;
-      const cell: Box = {
-        x0: column * cellWidth,
-        y0: row * cellHeight,
-        x1: (column + 1) * cellWidth,
-        y1: (row + 1) * cellHeight,
-      };
-      const window: Box = {
-        x0: cell.x0 + region.x0,
-        y0: cell.y0 + region.y0,
-        x1: cell.x0 + region.x1,
-        y1: cell.y0 + region.y1,
-      };
-      const piece = resamplePixelArt(crop(image, window), fitWidth, fitHeight, weights);
-      const left = column * frameWidth + Math.floor((frameWidth - fitWidth) / 2);
-      // Put this frame's own feet on the cell floor, whatever y Gemini drew them at.
-      const foot = Math.round((local.y1 - region.y0) * scale);
-      const top = row * frameHeight + Math.max(0, frameHeight - foot);
-      for (let y = 0; y < fitHeight; y += 1) {
-        for (let x = 0; x < fitWidth; x += 1) {
-          const from = (y * fitWidth + x) * 4;
-          if (piece.data[from + 3]! < 128) continue;
-          const to = ((top + y) * outWidth + left + x) * 4;
-          data[to] = piece.data[from]!;
-          data[to + 1] = piece.data[from + 1]!;
-          data[to + 2] = piece.data[from + 2]!;
-          data[to + 3] = 255;
-        }
-      }
-    }
-  }
-  return { width: outWidth, height: frameHeight * frames, data };
+  return fitCells(image, {
+    columns,
+    rows: frames,
+    frameWidth,
+    frameHeight,
+    anchor: 'feet',
+    share: 'column',
+    ...(weights === undefined ? {} : { weights }),
+  });
 }
 
 /** Unique opaque colours of a palette sheet, as RGB triples. */
@@ -878,45 +1054,298 @@ export function clusterToPalette(image: PngImage, palette: readonly Rgb[], clust
   return { width: image.width, height: image.height, data };
 }
 
-// ---- Ticket #20 stubs: the acceptance test pins these signatures; implement them. ----
+// ---- Ticket #20: asset kinds, per-kind fitting, slicing, meta, bob. ----
+
+const KIND_DEFAULTS: Readonly<Record<AssetKind, KindDefaults>> = {
+  character: { fit: 'feet', anchor: 'feet', share: 'column', edgeGate: true, register: 'sprite' },
+  monster: { fit: 'feet', anchor: 'feet', share: 'column', edgeGate: true, register: 'sprite' },
+  boss: { fit: 'feet', anchor: 'feet', share: 'sheet', edgeGate: true, register: 'sprite' },
+  prop: { fit: 'feet', anchor: 'feet', share: 'sheet', edgeGate: true, register: 'sprite' },
+  attachment: { fit: 'center', anchor: 'center', share: 'column', edgeGate: true, register: 'sprite' },
+  vfx: { fit: 'center', anchor: 'center', share: 'sheet', edgeGate: false, register: 'sprite' },
+  particle: { fit: 'center', anchor: 'center', share: 'sheet', edgeGate: false, register: 'sprite' },
+  icon: { fit: 'center', anchor: 'center', share: 'cell', edgeGate: true, register: 'sprite' },
+  ui: { fit: 'stretch', anchor: 'center', share: 'sheet', edgeGate: false, register: 'sprite' },
+  tileset: { fit: 'tile', anchor: 'center', share: 'sheet', edgeGate: false, register: 'tileset' },
+};
 
 /** Defaults for a kind. */
-export function kindDefaults(_kind: AssetKind): KindDefaults {
-  return { fit: 'feet', anchor: 'feet', share: 'column', edgeGate: true, register: 'sprite' };
+export function kindDefaults(kind: AssetKind): KindDefaults {
+  return KIND_DEFAULTS[kind];
 }
 
-/** Fit every cell of a source grid into output frames. */
+interface Cell {
+  readonly box: Box;
+  readonly local: Box | null;
+}
+
+/**
+ * Fit every cell of a source grid into output frames.
+ *
+ * `share` decides which cells union their crop window (and therefore share one scale):
+ * - `column`: every frame of a direction column (today's character/monster behaviour),
+ * - `sheet`: every cell of the sheet (an effect strip keeps its motion between frames),
+ * - `cell`: each cell alone (icons each fill their own frame).
+ *
+ * `anchor: 'center'` centres the shared window in the frame; `'feet'` puts each frame's
+ * own feet on the cell floor, exactly like `fitColumnsToCells`.
+ */
 export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
-  void image;
-  const width = options.columns * options.frameWidth;
-  const height = options.rows * options.frameHeight;
-  return { width, height, data: Buffer.alloc(width * height * 4) };
+  const { columns, rows, frameWidth, frameHeight, anchor, share, weights } = options;
+  for (const [label, value] of [
+    ['columns', columns],
+    ['rows', rows],
+    ['frameWidth', frameWidth],
+    ['frameHeight', frameHeight],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) throw new Error(`${label} must be a positive integer`);
+  }
+  const cellWidth = image.width / columns;
+  const cellHeight = image.height / rows;
+  if (!Number.isInteger(cellWidth) || !Number.isInteger(cellHeight)) {
+    throw new Error(`source ${image.width}×${image.height} does not split into ${columns}×${rows} cells`);
+  }
+
+  const cells: Cell[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const box: Box = {
+        x0: column * cellWidth,
+        y0: row * cellHeight,
+        x1: (column + 1) * cellWidth,
+        y1: (row + 1) * cellHeight,
+      };
+      const found = opaqueBox(image, box);
+      cells.push({
+        box,
+        local:
+          found === null
+            ? null
+            : { x0: found.x0 - box.x0, y0: found.y0 - box.y0, x1: found.x1 - box.x0, y1: found.y1 - box.y0 },
+      });
+    }
+  }
+
+  const groupOf = (row: number, column: number): number =>
+    share === 'sheet' ? 0 : share === 'column' ? column : row * columns + column;
+  const regions = new Map<number, Box | null>();
+  cells.forEach((cell, index) => {
+    const group = groupOf(Math.floor(index / columns), index % columns);
+    const current = regions.has(group) ? regions.get(group)! : null;
+    regions.set(group, unionBox(current, cell.local));
+  });
+
+  const [boxWidth, boxHeight] =
+    options.fitBox ?? (anchor === 'feet' ? [frameWidth - 1, frameHeight - 1] : [frameWidth, frameHeight]);
+  const plans = new Map<number, { region: Box; scale: number; fitWidth: number; fitHeight: number }>();
+  for (const [group, region] of regions) {
+    if (region === null) continue;
+    const regionWidth = region.x1 - region.x0;
+    const regionHeight = region.y1 - region.y0;
+    if (regionWidth <= 0 || regionHeight <= 0) continue;
+    const scale = Math.min(boxWidth / regionWidth, boxHeight / regionHeight);
+    plans.set(group, {
+      region,
+      scale,
+      fitWidth: Math.min(frameWidth, Math.max(1, Math.round(regionWidth * scale))),
+      fitHeight: Math.min(frameHeight, Math.max(1, Math.round(regionHeight * scale))),
+    });
+  }
+
+  const outWidth = frameWidth * columns;
+  const data = Buffer.alloc(outWidth * frameHeight * rows * 4);
+  cells.forEach((cell, index) => {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const plan = plans.get(groupOf(row, column));
+    if (plan === undefined || cell.local === null) return;
+    const { region, scale, fitWidth, fitHeight } = plan;
+    const window: Box = {
+      x0: cell.box.x0 + region.x0,
+      y0: cell.box.y0 + region.y0,
+      x1: cell.box.x0 + region.x1,
+      y1: cell.box.y0 + region.y1,
+    };
+    const piece = resamplePixelArt(crop(image, window), fitWidth, fitHeight, weights);
+    const left = column * frameWidth + Math.floor((frameWidth - fitWidth) / 2);
+    const top =
+      anchor === 'feet'
+        ? row * frameHeight + Math.max(0, frameHeight - Math.round((cell.local.y1 - region.y0) * scale))
+        : row * frameHeight + Math.floor((frameHeight - fitHeight) / 2);
+    for (let y = 0; y < fitHeight; y += 1) {
+      for (let x = 0; x < fitWidth; x += 1) {
+        const from = (y * fitWidth + x) * 4;
+        if (piece.data[from + 3]! < 128) continue;
+        const to = ((top + y) * outWidth + left + x) * 4;
+        data[to] = piece.data[from]!;
+        data[to + 1] = piece.data[from + 1]!;
+        data[to + 2] = piece.data[from + 2]!;
+        data[to + 3] = 255;
+      }
+    }
+  });
+  return { width: outWidth, height: frameHeight * rows, data };
 }
 
-/** Slice a tileset grid into whole tiles, edge to edge. */
+/**
+ * Slice a tileset grid into whole tiles, edge to edge: every source cell is resampled
+ * (dominant colour per block) to one `tileSize × tileSize` tile, no crop and no chroma
+ * key. Alpha stays binary, so an opaque tile stays opaque.
+ */
 export function sliceTiles(image: PngImage, columns: number, rows: number, tileSize: number): PngImage {
-  void image;
-  return { width: columns * tileSize, height: rows * tileSize, data: Buffer.alloc(columns * rows * tileSize * tileSize * 4) };
+  for (const [label, value] of [
+    ['columns', columns],
+    ['rows', rows],
+    ['tileSize', tileSize],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) throw new Error(`${label} must be a positive integer`);
+  }
+  const cellWidth = image.width / columns;
+  const cellHeight = image.height / rows;
+  if (!Number.isInteger(cellWidth) || !Number.isInteger(cellHeight)) {
+    throw new Error(`source ${image.width}×${image.height} does not split into ${columns}×${rows} tiles`);
+  }
+  const width = columns * tileSize;
+  const data = Buffer.alloc(columns * tileSize * rows * tileSize * 4);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const box: Box = {
+        x0: column * cellWidth,
+        y0: row * cellHeight,
+        x1: (column + 1) * cellWidth,
+        y1: (row + 1) * cellHeight,
+      };
+      const tile = resamplePixelArt(crop(image, box), tileSize, tileSize);
+      for (let y = 0; y < tileSize; y += 1) {
+        const from = y * tileSize * 4;
+        data.set(tile.data.subarray(from, from + tileSize * 4), ((row * tileSize + y) * width + column * tileSize) * 4);
+      }
+    }
+  }
+  return { width, height: rows * tileSize, data };
 }
 
-/** Cocos `.meta` for a nearest-filtered sprite frame, optionally nine-sliced. */
+/**
+ * Cocos `.meta` for a nearest-filtered sprite frame, optionally nine-sliced. The caller
+ * owns uuid stability: pass the uuid already in the `.meta` file when re-staging.
+ */
 export function spriteFrameMeta(
-  _uuid: string,
-  _name: string,
-  _width: number,
-  _height: number,
-  _border?: NineSlice,
+  uuid: string,
+  name: string,
+  width: number,
+  height: number,
+  border?: NineSlice,
 ): Record<string, unknown> {
-  return {};
+  const sx = Math.round(width / 2);
+  const sy = Math.round(height / 2);
+  return {
+    ver: '1.0.27',
+    importer: 'image',
+    imported: true,
+    uuid,
+    files: ['.json', '.png'],
+    subMetas: {
+      '6c48a': {
+        importer: 'texture',
+        uuid: `${uuid}@6c48a`,
+        displayName: name,
+        id: '6c48a',
+        name: 'texture',
+        userData: {
+          wrapModeS: 'clamp-to-edge',
+          wrapModeT: 'clamp-to-edge',
+          imageUuidOrDatabaseUri: uuid,
+          isUuid: true,
+          visible: false,
+          minfilter: 'nearest',
+          magfilter: 'nearest',
+          mipfilter: 'none',
+          anisotropy: 0,
+        },
+        ver: '1.0.22',
+        imported: true,
+        files: ['.json'],
+        subMetas: {},
+      },
+      f9941: {
+        importer: 'sprite-frame',
+        uuid: `${uuid}@f9941`,
+        displayName: name,
+        id: 'f9941',
+        name: 'spriteFrame',
+        userData: {
+          trimThreshold: 1,
+          rotated: false,
+          offsetX: 0,
+          offsetY: 0,
+          trimX: 0,
+          trimY: 0,
+          width,
+          height,
+          rawWidth: width,
+          rawHeight: height,
+          borderTop: border?.top ?? 0,
+          borderBottom: border?.bottom ?? 0,
+          borderLeft: border?.left ?? 0,
+          borderRight: border?.right ?? 0,
+          packable: true,
+          pixelsToUnit: 100,
+          pivotX: 0.5,
+          pivotY: 0.5,
+          meshType: 0,
+          vertices: {
+            rawPosition: [-sx, -sy, 0, sx, -sy, 0, -sx, sy, 0, sx, sy, 0],
+            indexes: [0, 1, 2, 2, 1, 3],
+            uv: [0, height, width, height, 0, 0, width, 0],
+            nuv: [0, 0, 1, 0, 0, 1, 1, 1],
+            minPos: [-sx, -sy, 0],
+            maxPos: [sx, sy, 0],
+          },
+          isUuid: true,
+          imageUuidOrDatabaseUri: `${uuid}@6c48a`,
+          atlasUuid: '',
+          trimType: 'auto',
+        },
+        ver: '1.0.12',
+        imported: true,
+        files: ['.json'],
+        subMetas: {},
+      },
+    },
+    userData: {
+      type: 'sprite-frame',
+      fixAlphaTransparencyArtifacts: false,
+      hasAlpha: true,
+      redirect: `${uuid}@6c48a`,
+    },
+  };
 }
 
-/** Per column, per frame: how many pixels the top of the sprite sits below frame 0's. */
-export function frameBob(
-  _image: PngImage,
-  columns: number,
-  rows: number,
-  _frameWidth: number,
-  _frameHeight: number,
-): number[][] {
-  return Array.from({ length: columns }, () => new Array<number>(rows).fill(0));
+/**
+ * Per column, per frame: how many pixels the top of the sprite sits below frame 0's
+ * (positive = lower). A frame with no opaque pixel gets 0, so an attachment never jumps
+ * on an empty cell.
+ */
+export function frameBob(image: PngImage, columns: number, rows: number, frameWidth: number, frameHeight: number): number[][] {
+  const topOf = (column: number, row: number): number | null => {
+    for (let y = 0; y < frameHeight; y += 1) {
+      for (let x = 0; x < frameWidth; x += 1) {
+        if (image.data[((row * frameHeight + y) * image.width + column * frameWidth + x) * 4 + 3]! >= 128) {
+          return y;
+        }
+      }
+    }
+    return null;
+  };
+  const result: number[][] = [];
+  for (let column = 0; column < columns; column += 1) {
+    const base = topOf(column, 0);
+    const bobs: number[] = [];
+    for (let row = 0; row < rows; row += 1) {
+      const top = topOf(column, row);
+      bobs.push(top === null || base === null ? 0 : top - base);
+    }
+    result.push(bobs);
+  }
+  return result;
 }

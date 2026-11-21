@@ -3,5 +3,11 @@
   "monsters": [
     "sniper"
   ],
-  "bosses": []
+  "bosses": [],
+  "props": [],
+  "vfx": [],
+  "particles": [],
+  "attachments": [],
+  "icons": [],
+  "ui": []
 }

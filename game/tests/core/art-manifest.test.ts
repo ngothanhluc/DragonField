@@ -31,10 +31,25 @@ interface GeneratedActors {
   readonly actors: readonly string[];
   readonly monsters: readonly string[];
   readonly bosses: readonly string[];
+  /** Ticket #20 kinds: generated prefix allowlists (`icon`, `ui`, `attachment`, `prop`, `vfx`, `particle`). */
+  readonly props?: readonly string[];
+  readonly vfx?: readonly string[];
+  readonly particles?: readonly string[];
+  readonly attachments?: readonly string[];
+  readonly icons?: readonly string[];
+  readonly ui?: readonly string[];
 }
 const GENERATED = JSON.parse(
   readFileSync(join(HERE, '..', '..', 'config', 'generated-art.json'), 'utf8'),
 ) as GeneratedActors;
+/** Generated prefixes that are single-row sheets (icons, UI, effects, props). */
+const GENERATED_STRIP_PREFIXES: ReadonlySet<string> = new Set([
+  ...(GENERATED.props ?? []),
+  ...(GENERATED.vfx ?? []),
+  ...(GENERATED.particles ?? []),
+  'icon',
+  'ui',
+]);
 const MONSTER_ACTORS: ReadonlySet<string> = new Set([...MONSTERS, ...GENERATED.monsters]);
 const BOSS_ACTORS: ReadonlySet<string> = new Set([...BOSSES, ...GENERATED.bosses]);
 
@@ -68,6 +83,12 @@ describe('animations.json', () => {
       ...GENERATED.actors,
       ...GENERATED.monsters,
       ...GENERATED.bosses,
+      ...(GENERATED.props ?? []),
+      ...(GENERATED.vfx ?? []),
+      ...(GENERATED.particles ?? []),
+      ...(GENERATED.attachments ?? []),
+      ...(GENERATED.icons ?? []),
+      ...(GENERATED.ui ?? []),
       'fx',
       'animal',
       'decor',
@@ -188,6 +209,11 @@ describe('animations.json', () => {
     for (const [key, entry] of entries) {
       const actor = actorOf(key);
       if (actor === 'fx') continue;
+      // Ticket #20: icons, UI and generated effects/props are single-row sheets.
+      if (GENERATED_STRIP_PREFIXES.has(actor)) {
+        expect(entry.layout, `${key} must use a strip`).toBe('strip');
+        continue;
+      }
       const expected = BOSS_ACTORS.has(actor) ? 'strip' : 'grid';
       expect(entry.layout, `${key} must use layout ${expected}`).toBe(expected);
     }
