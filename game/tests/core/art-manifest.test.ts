@@ -26,8 +26,17 @@ const MONSTERS = [
   'cyclope',
 ] as const;
 const BOSSES = ['tengu', 'squid', 'samurai'] as const;
-const MONSTER_ACTORS: ReadonlySet<string> = new Set(MONSTERS);
-const BOSS_ACTORS: ReadonlySet<string> = new Set(BOSSES);
+
+interface GeneratedActors {
+  readonly actors: readonly string[];
+  readonly monsters: readonly string[];
+  readonly bosses: readonly string[];
+}
+const GENERATED = JSON.parse(
+  readFileSync(join(HERE, '..', '..', 'config', 'generated-art.json'), 'utf8'),
+) as GeneratedActors;
+const MONSTER_ACTORS: ReadonlySet<string> = new Set([...MONSTERS, ...GENERATED.monsters]);
+const BOSS_ACTORS: ReadonlySet<string> = new Set([...BOSSES, ...GENERATED.bosses]);
 
 /** The real manifest, validated once per file. If it breaks, every test goes red immediately. */
 const manifest: AnimationManifest = validateManifest(readJson());
@@ -50,12 +59,15 @@ describe('animations.json', () => {
     }
   });
 
-  it('only uses actors fixed in the GDD', () => {
+  it('only uses known actors', () => {
     // `animal.*` / `decor.*` are ticket #6's living decor (M8): decor is art, not combat actors.
     const actors: ReadonlySet<string> = new Set<string>([
       'player',
       ...MONSTERS,
       ...BOSSES,
+      ...GENERATED.actors,
+      ...GENERATED.monsters,
+      ...GENERATED.bosses,
       'fx',
       'animal',
       'decor',

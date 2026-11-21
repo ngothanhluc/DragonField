@@ -30,7 +30,7 @@ Design source: `docs/gdd.md`. Technical decisions: `docs/tech-decisions.md`.
 
 ## M1.5 — Art taste test (required)
 
-**Work.** Install the **Ninja Adventure Update #8** pack (includes `Actor/CharacterAnimated`). The room uses the pack's existing tileset (do not draw tiles yourself, no dungeon — ADR-007). Wire player + 1 enemy + 1 room into M1.
+**Work.** Install the **Ninja Adventure Update #8** pack (includes `Actor/CharacterAnimated`). The room uses the pack's existing tileset. Wire player + 1 enemy + 1 room into M1.
 
 **Acceptance.**
 - A 512×288 screenshot that looks like a game, not a prototype.
@@ -94,7 +94,7 @@ Design source: `docs/gdd.md`. Technical decisions: `docs/tech-decisions.md`.
 
 ## M6 — Art integration
 
-**Work.** Decorate all 27 rooms with tilesets that **actually exist in the pack** per the GDD §8 table — ch1 Nature/Relief/Element/Field, ch2 Water + waterfall/water + Nature banks, ch3 VillageAbandoned/House/Towers/Hole, boss arena + 4 stone pillars. Decoration must not contradict collision: anything that looks solid must be an obstacle in the object layer, and floor that looks walkable must stay walkable. Real animation via `animations.json` for the player (NinjaGreen: idle/walk scaled by velocity, hurt, death), the 3 enemy roles + elite (idle/walk; hurt = flash/tint, death = FX — GDD §12.3), and the 3 bosses TenguBlue/SquidGreen/GiantBlueSamurai (attack/Trans/AttackLoop/Shoot/charge/hit tied to pattern events). Foot pivot, no jitter when switching between animations of different sizes. Bullets/VFX/impact from the pack's `FX/` (shuriken, energy ball, spark, explosion, smoke, shield, freeze/poison, gold sparkle), all pooled. Audio: title/chapter/boss music + action SFX, master volume from the save, autoplay unlocked on first input. Pack pixel font for every label. UI uses real nine-slice. In-game credits + `README.md`. **No** dragons, **no** dungeon (ADR-007).
+**Work.** Decorate all 27 rooms with tilesets that **actually exist in the pack** per the GDD §8 table — ch1 Nature/Relief/Element/Field, ch2 Water + waterfall/water + Nature banks, ch3 VillageAbandoned/House/Towers/Hole, boss arena + 4 stone pillars. Decoration must not contradict collision: anything that looks solid must be an obstacle in the object layer, and floor that looks walkable must stay walkable. Real animation via `animations.json` for the player (NinjaGreen: idle/walk scaled by velocity, hurt, death), the 3 enemy roles + elite (idle/walk; hurt = flash/tint, death = FX — GDD §12.3), and the 3 bosses TenguBlue/SquidGreen/GiantBlueSamurai (attack/Trans/AttackLoop/Shoot/charge/hit tied to pattern events). Foot pivot, no jitter when switching between animations of different sizes. Bullets/VFX/impact from the pack's `FX/` (shuriken, energy ball, spark, explosion, smoke, shield, freeze/poison, gold sparkle), all pooled. Audio: title/chapter/boss music + action SFX, master volume from the save, autoplay unlocked on first input. Pack pixel font for every label. UI uses real nine-slice. In-game credits + `README.md`.
 
 **Acceptance.**
 - No placeholders left on screen.

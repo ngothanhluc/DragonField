@@ -70,15 +70,16 @@ required, but it is appreciated. Links from the pack:
 - Itchio: <https://pixel-boy.itch.io/>
 - Pack: <https://pixel-boy.itch.io/ninja-adventure-asset-pack>
 
-All sprites, tilesets, backgrounds, FX, UI, the `NormalFont.ttf` pixel font and
-every music/SFX track used by this game come from that pack. No third-party art
-or audio is included.
+The pack supplies the tilesets, backgrounds, base actors, FX, UI, the
+`NormalFont.ttf` pixel font and every music/SFX track. Additional pixel art is
+generated during development with `create-game-assets` and follows the style
+brief in `docs/art/gemini-style.md`. Extra audio packs are not used.
 
 Engine: **Cocos Creator 3.8.8** (free, Cocos license).
 Code and game design: Yokai Field project.
 
 ## License
 
-Game code © the Yokai Field project. Art/audio © Pixel-boy & AAA, CC0 1.0
+Game code © the Yokai Field project. Pack art/audio © Pixel-boy & AAA, CC0 1.0
 (see the pack's `LICENSE.txt`; CC0 allows commercial use and does not require
-attribution).
+attribution). Generated art is © the Yokai Field project.

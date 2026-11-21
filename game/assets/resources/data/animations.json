@@ -3528,6 +3528,74 @@
       "loop": true,
       "anchor": "center",
       "footPx": 8
+    },
+    "sniper.idle.down": {
+      "sheet": "resources/art/generated/sniper/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "sniper.idle.up": {
+      "sheet": "resources/art/generated/sniper/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "sniper.idle.left": {
+      "sheet": "resources/art/generated/sniper/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "sniper.idle.right": {
+      "sheet": "resources/art/generated/sniper/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
     }
   }
 }

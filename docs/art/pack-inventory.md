@@ -175,7 +175,9 @@ Missing: a dedicated boss health bar, skill card frames, rarity art → build th
 
 ---
 
-## 10. Gaps that must be accepted (no extra art allowed)
+## 10. Gaps in the pack
+
+New art for these gaps may be generated with `create-game-assets`; see `docs/art/gemini-style.md`.
 
 1. **Only 1 animated character** → no animated skins/NPCs.
 2. **No monster has attack/hurt/death** → telegraphs and death must be FX + tint.
