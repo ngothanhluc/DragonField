@@ -3732,6 +3732,30 @@
       "loop": false,
       "anchor": "center",
       "footPx": 8
+    },
+    "icon.cultivator-ten-thousand-swords": {
+      "sheet": "resources/art/generated/icons/cultivator/cultivator-ten-thousand-swords.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 12
+    },
+    "icon.cultivator-portrait": {
+      "sheet": "resources/art/generated/icons/cultivator/cultivator-portrait.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 12
     }
   }
 }

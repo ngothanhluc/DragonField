@@ -12,6 +12,8 @@
   "attachments": [
     "attachment"
   ],
-  "icons": [],
+  "icons": [
+    "icon"
+  ],
   "ui": []
 }
