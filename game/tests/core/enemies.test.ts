@@ -21,6 +21,7 @@ import {
   nextWaveIndex,
   spawnWave,
 } from '../../assets/scripts/core/enemies/waves';
+import { ENEMY_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import {
   parseLevelData,
   type EnemyRole,
@@ -211,7 +212,9 @@ describe('enemy behaviours — tank', () => {
   it('telegraphs for 700 ms then charges straight, and rests when the charge ends', () => {
     const player = { x: 10, y: 9 };
     const state = enemy({ role: 'tank', x: 10, y: 14 });
-    const start = 900;
+    // The tank's first telegraph opens exactly when its attack cooldown runs out (#66 retuned it
+    // to 1600 ms); derive the start from tuning instead of hardcoding the old 900.
+    const start = ENEMY_TUNING.roles.tank.attackCooldownMs;
 
     expect(decideAction({ state, player, nowMs: start - 1, level })).toEqual({ kind: 'idle' });
 
@@ -414,6 +417,18 @@ describe('firstHit', () => {
     const withPit = makeLevel([{ kind: 'pit', x: 10, y: 4, width: 2, height: 2 }]);
 
     expect(firstHit({ from: { x: 5, y: 5 }, to: { x: 20, y: 5 } }, withPit)).toBeNull();
+  });
+
+  it('catches a corner grazed diagonally instead of stepping over it', () => {
+    // A 1×0.5 prop collider: the segment crosses its top-right corner for ~0.06 tiles, which is
+    // shorter than any sampling step. This is the exact geometry that stalled a room (#66):
+    // the caster behind the crate saw the player, every player bullet hit the crate.
+    const withCrate = makeLevel([{ kind: 'prop', x: 27, y: 13, width: 1, height: 0.5 }]);
+
+    const hit = firstHit({ from: { x: 32, y: 16 }, to: { x: 27.41, y: 12.6 } }, withCrate);
+    expect(hit).not.toBeNull();
+    expect(hit?.obstacle.x).toBe(27);
+    expect(hit?.progress).toBeGreaterThan(0.8);
   });
 });
 

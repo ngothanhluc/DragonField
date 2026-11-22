@@ -41,10 +41,10 @@ function inputFor(direction: Direction) {
  * for the auto-aim to fire, far enough that contact damage cannot land) and steps off the enemy
  * bullets' paths.
  *
- * Why it is not "run away from the nearest enemy": since #38 a room is 4×4 screens and the player
- * is faster than every role, so a pure flee policy outruns the room forever (a sniper walks at
- * < 1 tile/s and the run times out) — that is not how a player clears a room. A player dodges
- * **while staying in the fight**, and the score below rewards exactly that.
+ * Why it is not "run away from the nearest enemy": since #38 a room is larger than one screen and
+ * the player is faster than every role, so a pure flee policy outruns the room forever (a sniper
+ * walks at < 1 tile/s and the run times out) — that is not how a player clears a room. A player
+ * dodges **while staying in the fight**, and the score below rewards exactly that.
  */
 const DODGE_DIRECTIONS: readonly Direction[] = [
   { x: 0, y: -1 },
@@ -66,16 +66,33 @@ const DODGE_BULLET_CLEAR_TILES = 1.2;
 const MIN_X = 0.5;
 const MIN_Y = 0.5;
 /**
- * The policy only evaluates its 1.2 s path inside the room. A pool room (#38) is 4×4 screens, so
- * the clamp follows the largest room instead of one 32×18 screen.
+ * The policy only evaluates its 1.2 s path inside the room. A pool room (#38) is 2×2 screens
+ * since #66, so the clamp follows the largest room instead of one 32×18 screen.
  */
-const MAX_X = ROOM_COLS * 4 - 0.5;
-const MAX_Y = ROOM_ROWS * 4 - 0.5;
+const MAX_X = ROOM_COLS * 2 - 0.5;
+const MAX_Y = ROOM_ROWS * 2 - 0.5;
 
 export function makeDodgePolicy(): InputPolicy {
   let lastIndex = 0;
+  let lastPosition: { x: number; y: number } | null = null;
+  // A player who walks into a prop sees it and tries another way; the policy has no room model,
+  // so it detects "I pressed a key and did not move" instead and vetoes that direction briefly.
+  // Without this it stays pinned against a prop while an elite tank body-checks it (#66).
+  let blockedIndex = -1;
+  let blockedUntilMs = 0;
 
   return (world: PolicyWorld) => {
+    if (lastPosition !== null) {
+      const moved = Math.hypot(
+        world.player.x - lastPosition.x,
+        world.player.y - lastPosition.y,
+      );
+      if (lastIndex !== -1 && moved < 0.02) {
+        blockedIndex = lastIndex;
+        blockedUntilMs = world.nowMs + 600;
+      }
+    }
+    lastPosition = { x: world.player.x, y: world.player.y };
     const alive = world.enemies.filter(
       (enemy) => enemy.health > 0 && enemy.action.kind !== 'dead',
     );
@@ -102,7 +119,18 @@ export function makeDodgePolicy(): InputPolicy {
 
         let enemyGap = Number.POSITIVE_INFINITY;
         for (const enemy of alive) {
-          enemyGap = Math.min(enemyGap, Math.hypot(x - enemy.position.x, y - enemy.position.y));
+          // A charging tank closes ~2–3 tiles in this horizon; the frozen position below would
+          // make the policy stand in the dash line. Predict the dash instead (a competent player
+          // sidesteps a telegraph), which matters more now that rooms are 64×36 (#66).
+          const action = enemy.action;
+          const moving =
+            action.kind === 'charge'
+              ? {
+                  x: enemy.position.x + action.direction.x * action.speedTilesPerSecond * seconds,
+                  y: enemy.position.y + action.direction.y * action.speedTilesPerSecond * seconds,
+                }
+              : enemy.position;
+          enemyGap = Math.min(enemyGap, Math.hypot(x - moving.x, y - moving.y));
         }
         let bulletGap = Number.POSITIVE_INFINITY;
         for (const bullet of enemyShots) {
@@ -126,6 +154,8 @@ export function makeDodgePolicy(): InputPolicy {
 
       // Hysteresis: keep the current direction unless another is clearly better.
       if (index === lastIndex) cost -= 0.3;
+      // A direction that just pushed the player into a prop is avoided for a moment.
+      if (index === blockedIndex && world.nowMs < blockedUntilMs) cost += 100;
       if (cost < bestCost) {
         bestCost = cost;
         bestIndex = index;

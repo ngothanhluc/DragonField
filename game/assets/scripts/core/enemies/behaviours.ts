@@ -80,6 +80,23 @@ export function staggerAction(nowMs: number, durationMs: number): EnemyAction {
   return { kind: 'stagger', untilMs: nowMs + durationMs };
 }
 
+/**
+ * The action after a bullet hit. A wind-up that is already running (`telegraph`) is **delayed**,
+ * not cancelled: hits push its start time back by the stun, so constant fire drags the attack out
+ * but a committed telegraph still lands. Cancelling instead makes a focused caster harmless
+ * (worse in a 64×36 room, where the nearest enemy is under continuous fire): the balance sim's
+ * "every caster lands at least one shot before dying" failed with front-loaded hits every ~0.53 s
+ * against a 0.5 s telegraph + 0.15 s stun.
+ *
+ * Every other action (walk, idle, charge) is replaced by the stagger, as before.
+ */
+export function staggerAfterHit(action: EnemyAction, nowMs: number, durationMs: number): EnemyAction {
+  if (action.kind === 'telegraph') {
+    return { kind: 'telegraph', sinceMs: action.sinceMs + durationMs };
+  }
+  return staggerAction(nowMs, durationMs);
+}
+
 /** The chaser deals damage on contact; inside this radius it holds still instead of jittering. */
 export const CHASER_CONTACT_RANGE_TILES = ENEMY_TUNING.roles.chaser.preferredRangeMaxTiles;
 
@@ -149,6 +166,14 @@ const RANGE_TOLERANCE_TILES = 1e-6;
  * the player's reach while still far away.
  */
 const SNIPER_APPROACH_INSET_TILES = 0.75;
+
+/**
+ * Distance inside the approach point at which a sniper stops closing in and instead backs off to
+ * the far edge. Without this margin the "walk in to the near edge" and "walk out to the far edge"
+ * targets overlap, so the sniper paced between ~7 and 12 tiles forever (caught by the headless
+ * "no enemy keeps walking without moving" run once rooms shrank to 64×36).
+ */
+const SNIPER_RETREAT_MARGIN_TILES = 1;
 
 /** A reposition walk counts as arrived within this distance of its target point, tiles. */
 const REPOSITION_ARRIVAL_TILES = 0.3;
@@ -472,7 +497,12 @@ function decideSniper(
   // Between shots it closes to the near edge instead of standing in place at whatever distance
   // it happened to stop (see `SNIPER_APPROACH_INSET_TILES`).
   if (isCoolingDown(state, nowMs, tuning)) {
-    return { kind: 'walk', target: sniperHoldTarget(state, player, level, tuning) };
+    const target = sniperHoldTarget(state, player, level, tuning);
+    // Already at the stand-off point: hold still. A `walk` to its own position moves it nowhere,
+    // and the stuck guard then keeps detouring it sideways (it paced back and forth between the
+    // near and far edges before the rooms shrank).
+    if (distance(state.position, target) <= REPOSITION_ARRIVAL_TILES) return { kind: 'idle' };
+    return { kind: 'walk', target };
   }
   return { kind: 'telegraph', sinceMs: nowMs };
 }
@@ -550,6 +580,14 @@ function decideTank(
     return { kind: 'walk', target: clampToRoom(level, player) };
   }
 
+  // Within charge range but behind cover: the dash is a straight line, so a tank would grind into
+  // the wall while the player's bullets stopped on the same wall — a stand-off that never resolves
+  // (the room could not clear; found by the 64×36 balance sim). Walk on the flow field instead,
+  // like the caster, until the player is in sight.
+  if (!hasLineOfSight(level, state.position, player)) {
+    return { kind: 'walk', target: clampToRoom(level, player) };
+  }
+
   if (isCoolingDown(state, nowMs, tuning)) return { kind: 'idle' };
   return { kind: 'telegraph', sinceMs: nowMs };
 }
@@ -589,7 +627,8 @@ function holdRangeTarget(
 /**
  * Sniper reposition point (#42): farther than the band it walks **to the near edge minus the
  * approach inset** (see `SNIPER_APPROACH_INSET_TILES`) so it ends up inside the player's
- * auto-aim range; closer than the band it backs off to the far edge.
+ * auto-aim range; when the player is closer than that (inside the retreat margin) it backs off to
+ * the far edge again.
  *
  * If that point falls inside an obstacle, walk toward the player instead of standing still: a
  * sniper frozen at `preferredRangeMaxTiles` is outside the auto-aim range and can never be hit,
@@ -605,11 +644,12 @@ function sniperHoldTarget(
 ): Vec2 {
   const gap = distance(player, state.position);
   const approachRange = tuning.preferredRangeMinTiles - SNIPER_APPROACH_INSET_TILES;
-  const range = gap > approachRange ? approachRange : tuning.preferredRangeMaxTiles;
+  const retreat =
+    gap < approachRange - SNIPER_RETREAT_MARGIN_TILES ? tuning.preferredRangeMaxTiles : approachRange;
   const away = directionBetween(player, state.position);
   const atRange = clampToRoom(level, {
-    x: player.x + away.x * range,
-    y: player.y + away.y * range,
+    x: player.x + away.x * retreat,
+    y: player.y + away.y * retreat,
   });
 
   if (obstacleNear(level, atRange, STANDOFF_CLEARANCE_TILES) !== null) {

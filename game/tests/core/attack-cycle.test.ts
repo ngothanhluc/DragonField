@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EnemyAction } from '../../assets/scripts/core/enemies/behaviours';
+import { staggerAfterHit } from '../../assets/scripts/core/enemies/behaviours';
 import { nextActionStartedMs } from '../../assets/scripts/core/enemies/attack-cycle';
 
 const idle: EnemyAction = { kind: 'idle' };
@@ -42,5 +43,18 @@ describe('nextActionStartedMs — attack cycle timestamp', () => {
     expect(nextActionStartedMs(idle, walk, 5000, 1000)).toBe(1000);
     expect(nextActionStartedMs(charge, idle, 5000, 1000)).toBe(1000);
     expect(nextActionStartedMs(charge, charge, 5000, 1000)).toBe(1000);
+  });
+});
+
+describe('staggerAfterHit — a hit delays a committed wind-up', () => {
+  it('pushes a running telegraph back by the stun instead of cancelling it', () => {
+    expect(staggerAfterHit(telegraph, 1200, 150)).toEqual({ kind: 'telegraph', sinceMs: 1150 });
+  });
+
+  it('staggers every other action as before', () => {
+    const hit = { kind: 'stagger', untilMs: 1350 } as const;
+    expect(staggerAfterHit(walk, 1200, 150)).toEqual(hit);
+    expect(staggerAfterHit(idle, 1200, 150)).toEqual(hit);
+    expect(staggerAfterHit(charge, 1200, 150)).toEqual(hit);
   });
 });

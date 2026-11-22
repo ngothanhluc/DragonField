@@ -46,8 +46,8 @@ describe('telegraphLine', () => {
     const wall: Obstacle = { kind: 'wall', x: 12, y: 2, width: 1, height: 14 };
     const line = telegraphLine(room([wall]), { x: 20, y: 9 }, { x: 4, y: 9 });
 
-    expect(line.to.x).toBeGreaterThanOrEqual(12);
-    expect(line.to.x).toBeLessThan(13);
+    // The exact segment test stops on the wall's near face (x = 13), not somewhere inside it.
+    expect(line.to.x).toBeCloseTo(13, 6);
     expect(line.to.y).toBeCloseTo(9, 5);
   });
 

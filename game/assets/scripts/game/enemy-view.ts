@@ -47,7 +47,7 @@ import {
   contactDamageFor,
   decideAction,
   speedFor,
-  staggerAction,
+  staggerAfterHit,
   visualScaleFor,
 } from '../core/enemies/behaviours';
 import type { EnemyAction, EnemyState } from '../core/enemies/behaviours';
@@ -455,7 +455,7 @@ export class EnemyView extends Component {
       return;
     }
 
-    state.action = staggerAction(nowMs, DEFAULT_COMBAT.enemyStaggerMs);
+    state.action = staggerAfterHit(state.action, nowMs, DEFAULT_COMBAT.enemyStaggerMs);
     // Do not reset `actionStartedMs`: the cooldown must keep running through the stun, or an
     // enemy under constant fire would never reach its attack beat.
 

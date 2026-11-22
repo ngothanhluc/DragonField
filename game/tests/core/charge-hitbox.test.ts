@@ -44,11 +44,17 @@ function tankAt(y: number): EnemyState {
 
 describe('segmentHitsCircle — charge hitbox', () => {
   it('hits when the charge path crosses the player, misses when the player steps aside', () => {
+    const reach = TANK_CHARGE_SPEED_TILES_PER_SECOND * (TANK_CHARGE_DURATION_MS / 1000);
+    // The #66 dash is shorter, so put the player halfway down the real path instead of a row that
+    // the old 3-tile dash reached. The invariant — a crossing path hits, a step aside misses — is
+    // unchanged.
+    const playerY = 14 - reach / 2;
     const from = { x: 10, y: 14 };
-    const to = { x: 10, y: 14 - TANK_CHARGE_SPEED_TILES_PER_SECOND * (TANK_CHARGE_DURATION_MS / 1000) };
+    const to = { x: 10, y: 14 - reach };
 
-    expect(segmentHitsCircle(from, to, { x: 10, y: 11 }, PLAYER_RADIUS, ENEMY_RADIUS)).toBe(true);
-    expect(segmentHitsCircle(from, to, { x: 12, y: 11 }, PLAYER_RADIUS, ENEMY_RADIUS)).toBe(false);
+    expect(reach).toBeGreaterThan(PLAYER_RADIUS + ENEMY_RADIUS);
+    expect(segmentHitsCircle(from, to, { x: 10, y: playerY }, PLAYER_RADIUS, ENEMY_RADIUS)).toBe(true);
+    expect(segmentHitsCircle(from, to, { x: 12, y: playerY }, PLAYER_RADIUS, ENEMY_RADIUS)).toBe(false);
   });
 
   it('closed boundary: touching at exactly one point still counts as a hit', () => {
@@ -79,12 +85,14 @@ describe('segmentHitsCircle — charge hitbox', () => {
     const frameMs = 16;
     const seconds = frameMs / 1000;
     const step = TANK_CHARGE_SPEED_TILES_PER_SECOND * seconds;
+    // Stand the player inside the real dash reach (see the test above).
+    const reach = TANK_CHARGE_SPEED_TILES_PER_SECOND * (TANK_CHARGE_DURATION_MS / 1000);
 
     const state = tankAt(14);
     // Standing already inside the telegraph so the first frame returns charge from core.
     state.action = { kind: 'telegraph', sinceMs: 0 };
     state.actionStartedMs = 0;
-    const player = { x: 10, y: 11 };
+    const player = { x: 10, y: 14 - reach / 2 };
 
     let y = state.position.y;
     let hit = false;
