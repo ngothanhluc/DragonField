@@ -62,6 +62,7 @@ import {
   type SeparationBody,
 } from '../enemies/navigation';
 import { DOORS_TUNING, NAVIGATION_TUNING, SPECIAL_ROOMS_TUNING } from '../enemies/tuning';
+import { WaveScheduler, enemyStateFromSpawn, usesWaveScheduler } from '../enemies/wave-scheduler';
 import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
@@ -84,11 +85,18 @@ import {
   type SpecialKind,
 } from '../run/special-rooms';
 import { computeDerivedStats } from '../skills/derived-stats';
+import { screenViewAround } from '../view/view-rect';
 import { simulateBossRun } from './boss-run';
+import type { ViewRect } from '../camera/follow-camera';
 
 export const SIM_STEP_MS = 16;
-/** 10 minutes — longer than the 8–12 minute run of GDD §2. */
-export const SIM_DEFAULT_MAX_DURATION_MS = 600_000;
+/**
+ * Simulated wall-clock cap of one `simulateRun` call. The owner accepted a **30–60 minute** run
+ * for M9 (16-screen rooms, 8× the v1 enemies), and one chapter alone takes ~17 minutes at that
+ * density, so the old 10-minute cap could never let a chapter finish (every call reported
+ * `timeout`). 60 minutes leaves room for the slowest chapter plus a full loadout.
+ */
+export const SIM_DEFAULT_MAX_DURATION_MS = 3_600_000;
 
 /** Collision radius, tiles. */
 const PLAYER_RADIUS_TILES = 0.25;
@@ -152,6 +160,13 @@ export interface SimulationOptions {
 }
 
 export type SimulationStatus = 'won' | 'lost' | 'timeout';
+
+/** A scheduled spawn waiting out its on-screen telegraph (#41). */
+interface SimPendingSpawn {
+  readonly state: EnemyState;
+  /** Sim time at which it joins the fight. */
+  readonly atMs: number;
+}
 
 interface SimEventBase {
   readonly nowMs: number;
@@ -237,7 +252,6 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
   let roomIndex = 0;
   let room = firstRoom;
-  let waveIndex = 0;
   /** Shared flow field per radius class for the current room (#34). Reset on a room change. */
   let navigation = createRoomNavigation(firstRoom);
   const stuckGuard = new StuckGuard(
@@ -247,7 +261,56 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   );
   /** One closure so the per-enemy guard does not allocate a function every frame. */
   const random = (): number => rng.next();
-  let enemies = spawnRoomWave(room, 0);
+
+  /**
+   * #41: the room's spawn delivery. `null` in a boss room (its adds are authored).
+   * The cast keeps the **declared** union: without it the flow analysis starts from `null` and
+   * narrows the variable to `never` after the closure below assigns it.
+   */
+  let scheduler = null as WaveScheduler | null;
+  /** Spawns waiting out their on-screen telegraph before they join the fight. */
+  let pendingSpawns: SimPendingSpawn[] = [];
+  /** Id suffix of the next scheduled spawn, unique inside the room. */
+  let spawnSeq = 0;
+  let enemies: EnemyState[] = [];
+
+  /**
+   * Enter a room's enemies. A normal room is empty and fills from the `WaveScheduler` over time
+   * (8× the authored count under the alive cap); the boss room keeps its authored add list.
+   */
+  const enterRoomEnemies = (level: LevelData, atRoomIndex: number): EnemyState[] => {
+    scheduler = null;
+    pendingSpawns = [];
+    spawnSeq = 0;
+    if (!usesWaveScheduler(level)) {
+      // One-screen room (boss arena, hand-built fixture): its authored list, all of it.
+      return level.waves.flatMap((_, wave) => spawnWave(level, wave));
+    }
+    scheduler = new WaveScheduler(level, waveSeed(level, options.seed, atRoomIndex), atRoomIndex + 1);
+    return [];
+  };
+
+  /** Spawned and not dead, plus spawns still telegraphing (they occupy a slot of the cap). */
+  const aliveEnemies = (): number => {
+    let alive = pendingSpawns.length;
+    for (const enemy of enemies) {
+      if (enemy.health > 0 && enemy.action.kind !== 'dead') alive += 1;
+    }
+    return alive;
+  };
+
+  /** Release due spawns into the fight; called after `scheduler.step`. */
+  const releaseTelegraphed = (): void => {
+    if (pendingSpawns.length === 0) return;
+    const waiting: SimPendingSpawn[] = [];
+    for (const pending of pendingSpawns) {
+      if (pending.atMs <= durationMs) enemies.push(pending.state);
+      else waiting.push(pending);
+    }
+    pendingSpawns = waiting;
+  };
+
+  enemies = enterRoomEnemies(room, 0);
   let player: Vec2 = { x: room.playerStart.x, y: room.playerStart.y };
   let durationMs = 0;
   let roomsCleared = 0;
@@ -448,7 +511,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     const intent = options.policy({
       nowMs: durationMs,
       room: room.room,
-      wave: waveIndex,
+      wave: 0,
       player,
       hearts: health.current,
       shieldCharges: shield.charges,
@@ -456,6 +519,28 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       bullets: bullets.active(),
     });
     player = movePlayer(player, intent, stats.moveSpeedTilesPerSecond, room);
+
+    // What the player can see this frame: one screen, clamped to the room (#41). Enemies are
+    // held to it — they never start an attack from off screen, and far ones idle.
+    const view = viewAroundPlayer(player, room);
+
+    // Wave delivery: batches under the alive cap, on-screen spawns telegraph first.
+    if (scheduler !== null) {
+      const spawns = scheduler.step({
+        nowMs: durationMs,
+        player,
+        view,
+        alive: aliveEnemies(),
+      });
+      for (const spawn of spawns) {
+        pendingSpawns.push({
+          state: enemyStateFromSpawn(room, spawn, spawnSeq, durationMs),
+          atMs: durationMs + spawn.telegraphMs,
+        });
+        spawnSeq += 1;
+      }
+    }
+    releaseTelegraphed();
 
     const targets = enemies.map((enemy) => ({
       id: enemy.id,
@@ -492,7 +577,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       if (enemy.health <= 0) continue;
 
       const before = enemy.action;
-      const next = decideAction({ state: enemy, player, nowMs: durationMs, level: room });
+      const next = decideAction({ state: enemy, player, nowMs: durationMs, level: room, view });
       if (next.kind !== before.kind) enemy.actionStartedMs = durationMs;
       enemy.action = next;
 
@@ -657,11 +742,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       events.push({ kind: 'run-lost', nowMs: durationMs });
       break;
     }
-    if (!isWaveCleared(enemies)) continue;
+    // #41: the room is cleared when the scheduler spawned everything and nothing is left alive.
+    const cleared =
+      scheduler !== null ? scheduler.isCleared(aliveEnemies()) : isWaveCleared(enemies);
+    if (!cleared) continue;
 
-    if (waveIndex + 1 < waveCount(room)) {
-      waveIndex += 1;
-    } else {
+    {
       // The room's clear reward comes from the door taken after the previous room (#39).
       const roomPosition = roomIndex + 1;
       const reward = clearRewardFor(roomPosition, doorReward);
@@ -749,7 +835,6 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           break;
         }
         room = afterSpecial;
-        waveIndex = 0;
         navigation = createRoomNavigation(room);
         stuckGuard.clear();
 
@@ -761,14 +846,13 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         }
 
         player = { x: room.playerStart.x, y: room.playerStart.y };
-        enemies = spawnRoomWave(room, waveIndex);
+        enemies = enterRoomEnemies(room, roomIndex);
         bullets.clear();
         continue;
       }
 
       roomIndex += 1;
       room = nextRoom;
-      waveIndex = 0;
       navigation = createRoomNavigation(room);
       stuckGuard.clear();
 
@@ -782,16 +866,16 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       player = { x: room.playerStart.x, y: room.playerStart.y };
     }
 
-    enemies = spawnRoomWave(room, waveIndex);
+    enemies = enterRoomEnemies(room, roomIndex);
     bullets.clear();
   }
 
   return { status: status ?? 'timeout', roomsCleared, kills, goldEarned, durationMs, events };
 }
 
-/** Waves of the room. Boss rooms are handled by `runBossRoom` so this covers regular rooms only. */
-function spawnRoomWave(room: LevelData, waveIndex: number): EnemyState[] {
-  return spawnWave(room, waveIndex);
+/** One screen of view centred on `centre`, clamped to the room — what the sim's player sees. */
+function viewAroundPlayer(centre: Vec2, level: LevelData): ViewRect {
+  return screenViewAround(centre, level.size);
 }
 
 /** The door the run takes; an out-of-range index or a missing policy falls back to the first. */
@@ -805,6 +889,17 @@ function chooseDoorFrom(
   const index = choose?.(offers, room) ?? 0;
   if (!Number.isInteger(index) || index < 0 || index >= offers.length) return fallback;
   return offers[index] ?? fallback;
+}
+
+/** Deterministic seed of one room's scheduler: the run seed mixed with chapter, room and index. */
+function waveSeed(level: LevelData, seed: number, atRoomIndex: number): number {
+  return (
+    (Math.imul(seed | 0, 0x9e3779b1) ^
+      Math.imul(level.chapter, 0x85ebca6b) ^
+      Math.imul(level.room, 0xc2b2ae35) ^
+      Math.imul(atRoomIndex + 7, 0x27d4eb2d)) >>>
+    0
+  );
 }
 
 /** One room's navigation, built at the configured rebuild throttle (`navigation.rebuildMinMs`). */
@@ -831,10 +926,6 @@ function separateEnemiesForRoom(enemies: EnemyState[], level: LevelData): void {
     const position = moved.get(enemy.id);
     if (position !== undefined) enemy.position = position;
   }
-}
-
-function waveCount(room: LevelData): number {
-  return room.waves.length;
 }
 
 function nearestAlive(from: Vec2, enemies: readonly EnemyState[]): Vec2 | null {

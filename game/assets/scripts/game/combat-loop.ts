@@ -46,9 +46,17 @@ import { splitOnDeath } from '../core/enemies/splitter';
 import { RoomNavigation, separateEnemies, type SeparationBody } from '../core/enemies/navigation';
 import type { ScreenShake } from '../core/feel/screen-shake';
 import { spawnWave } from '../core/enemies/waves';
+import {
+  WaveScheduler,
+  enemyStateFromSpawn,
+  usesWaveScheduler,
+  type ScheduledSpawn,
+} from '../core/enemies/wave-scheduler';
+import type { ViewRect } from '../core/camera/follow-camera';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { distance, type Vec2 } from '../core/math/vec2';
 import type { SeededRng } from '../core/rng';
+import { screenViewAround } from '../core/view/view-rect';
 import {
   effectsLayers,
   type EffectsMode,
@@ -61,6 +69,7 @@ import { EnemyView } from './enemy-view';
 import type { FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE } from './level-view';
 import type { PlayerController } from './player-controller';
+import { pointInCullRect, type CullRect } from './world-culler';
 import { playSfx } from './audio/sfx';
 
 /** `cc` is an any module: import names only work in value position. */
@@ -76,13 +85,15 @@ const EXECUTE_TINT = new CocosColor(255, 90, 90, 255);
 const LIFESTEAL_TINT = new CocosColor(230, 60, 60, 255);
 const POISON_TINT = new CocosColor(120, 240, 110, 255);
 const RICOCHET_TINT = new CocosColor(255, 245, 170, 255);
+/** Spawn telegraph (#41): warm red, so "an enemy is arriving here" never reads as an attack tell. */
+const SPAWN_TELEGRAPH_TINT = new CocosColor(255, 150, 120, 255);
 
 /** Number of enemies and enemy bullets `stress()` keeps alive. */
-export const STRESS_ENEMY_COUNT = 8;
+export const STRESS_ENEMY_COUNT = 24;
 /** Boss id in collision/auto-aim — matches `boss-run.ts` so debug can read it. */
 export const BOSS_TARGET_ID = 'boss';
 /**
- * The milestone target is "8 enemies + 40 bullets". Keep 44 so that after a few bullets hit
+ * The milestone target is "24 enemies + 40 bullets" (M9 alive cap). Keep 44 so that after a few bullets hit
  * the player/obstacles within the frame, the measured number is still **>= 40**.
  */
 export const STRESS_ENEMY_BULLETS = 44;
@@ -90,8 +101,8 @@ export const STRESS_ENEMY_BULLETS = 44;
 const STRESS_ENEMY_HEALTH = 999_999;
 const STRESS_BULLET_SPEED = 3;
 const STRESS_BULLET_TTL_MS = 6000;
-/** Spawn ring radius for stress (around the room centre), tiles. */
-const STRESS_RING_RADIUS = 7;
+/** Spawn ring radius for stress (around the player), tiles — the inner of three rings. */
+const STRESS_RING_RADIUS = 4;
 
 export interface CombatLoopOptions {
   readonly player: PlayerController;
@@ -117,6 +128,11 @@ export interface CombatLoopOptions {
   readonly fx?: FxPool;
   /** World camera shake (ticket #2); when absent the game still runs, just without shake. */
   readonly shake?: ScreenShake;
+  /**
+   * What the player can see this frame, in room tiles (#41) — the follow camera's view. Without
+   * it the loop falls back to one screen centred on the player, clamped to the room.
+   */
+  readonly view?: () => ViewRect | null;
   /**
    * One hit on an enemy/boss — bootstrap draws the damage number if the setting is on.
    * `crit` is derived from the bullet's damage versus base damage (crit is multiplied at fire time).
@@ -150,6 +166,13 @@ export interface EnemySnapshot {
   readonly y: number;
 }
 
+/** One spawn waiting out its on-screen telegraph (#41). It already holds a slot of the alive cap. */
+interface PendingSpawn {
+  readonly state: EnemyState;
+  /** Sim time at which the enemy becomes active. */
+  readonly atMs: number;
+}
+
 export class CombatLoop {
   private readonly player: PlayerController;
   private readonly bulletView: BulletView | null;
@@ -163,6 +186,7 @@ export class CombatLoop {
   private readonly fx: FxPool | null;
   private readonly shake: ScreenShake | null;
   private readonly onDamage: (info: DamagePopupInfo) => void;
+  private readonly viewProvider: () => ViewRect | null;
   private readonly hitstop = new HitstopClock(DEFAULT_COMBAT.enemyHitstopMs);
   /** `Settings.effects` — Reduced keeps impacts/telegraphs but drops secondary particles. */
   private effectsMode: EffectsMode = 'full';
@@ -180,13 +204,21 @@ export class CombatLoop {
    */
   private navigation: RoomNavigation;
   private level: LevelData;
-  private waveIndex = 0;
+  /**
+   * Wave delivery of the current room (#41). `null` in a boss room, whose adds are authored and
+   * whose boss is spawned by `spawnBoss`.
+   */
+  private scheduler: WaveScheduler | null = null;
+  /** Spawns that landed inside the view: they show a telegraph before they become active. */
+  private readonly pendingSpawns: Array<PendingSpawn> = [];
+  /** Id suffix of the next scheduled spawn (unique within the room). */
+  private spawnedSequence = 0;
   private nowMs = 0;
   private playerDied = false;
   private awaitingAdvance = false;
   private god = false;
 
-  /** Debug stress: keep 8 enemies + 44 enemy bullets on screen to measure fps. */
+  /** Debug stress: keep 24 enemies + 44 enemy bullets on screen to measure fps. */
   private stress = false;
   private stressIndex = 0;
   private debugSeq = 0;
@@ -210,6 +242,7 @@ export class CombatLoop {
     this.fx = options.fx ?? null;
     this.shake = options.shake ?? null;
     this.onDamage = options.onDamage ?? (() => undefined);
+    this.viewProvider = options.view ?? (() => null);
   }
 
   get currentLevel(): LevelData {
@@ -220,10 +253,6 @@ export class CombatLoop {
     return this.nowMs;
   }
 
-  get currentWaveIndex(): number {
-    return this.waveIndex;
-  }
-
   get frozenMs(): number {
     return this.hitstop.remaining;
   }
@@ -232,9 +261,23 @@ export class CombatLoop {
     return this.god;
   }
 
-  /** Number of living enemies — bootstrap uses it for debug. */
+  /** Number of living enemies — bootstrap uses it for debug. Telegraphing spawns count. */
   get aliveCount(): number {
-    return this.enemies.filter((enemy) => !enemy.isDead).length;
+    return this.liveEnemyCount();
+  }
+
+  /** Enemies still to kill: alive (telegraphing included) plus the ones not spawned yet. */
+  get enemiesLeft(): number | null {
+    const scheduler = this.scheduler;
+    if (scheduler === null) return null;
+    return this.liveEnemyCount() + Math.max(0, scheduler.total - scheduler.spawned);
+  }
+
+  /** Every enemy spawned and none alive (#41); a boss room also needs its boss down. */
+  get roomCleared(): boolean {
+    const scheduler = this.scheduler;
+    if (scheduler !== null) return scheduler.isCleared(this.liveEnemyCount());
+    return this.enemies.every((enemy) => enemy.isDead) && (this.boss === null || this.boss.isDefeated);
   }
 
   get hasBoss(): boolean {
@@ -285,7 +328,9 @@ export class CombatLoop {
       ROOM_EDGE_MARGIN_TILES,
       NAVIGATION_TUNING.rebuildMinMs,
     );
-    this.waveIndex = 0;
+    this.scheduler = null;
+    this.pendingSpawns.length = 0;
+    this.spawnedSequence = 0;
     this.playerDied = false;
     this.awaitingAdvance = false;
     this.hitstop.reset();
@@ -336,13 +381,27 @@ export class CombatLoop {
     }
   }
 
-  /** Spawn wave `index` of the current room. Call after `enterRoom` (and after the boss is spawned). */
-  startWave(index: number): void {
-    this.waveIndex = index;
+  /**
+   * Fill the room (#41). A multi-screen normal room starts empty and receives its 8× total from
+   * the `WaveScheduler` over time (under the run-slot alive cap, with spawn telegraphs); a
+   * one-screen room (boss arena, dev room) keeps its authored list, exactly as before. Call after
+   * `enterRoom` (and after the boss is spawned). `runSlot` is the room's 1-based position in the
+   * run — room 1 opens with the smallest crowd (see `aliveCapForSlot`).
+   */
+  startWaves(seed: number, runSlot = 1): void {
+    this.scheduler = null;
+    this.pendingSpawns.length = 0;
+    this.spawnedSequence = 0;
     this.awaitingAdvance = false;
-    for (const state of spawnWave(this.level, index)) {
-      this.addEnemy(state);
+
+    const level = this.level;
+    if (!usesWaveScheduler(level)) {
+      for (const state of level.waves.flatMap((_, wave) => spawnWave(level, wave))) {
+        this.addEnemy(state);
+      }
+      return;
     }
+    this.scheduler = new WaveScheduler(level, seed, runSlot);
   }
 
   /** One combat frame. `realDeltaMs` has already been capped by bootstrap. */
@@ -371,8 +430,11 @@ export class CombatLoop {
     }
 
     player.step(this.nowMs, deltaMs, targets, level);
+    // What the player can see this frame (#41): the camera's view, or one screen around the player.
+    const view = this.viewNow();
+    this.stepSpawns(view);
     this.stepBoss(deltaMs, player.position);
-    this.stepEnemies(deltaMs);
+    this.stepEnemies(deltaMs, view);
     this.stepBullets(deltaMs, level);
     this.applyContactDamage();
     this.fx?.update(deltaMs);
@@ -383,12 +445,87 @@ export class CombatLoop {
 
     if (player.isDead) this.playerDied = true;
 
-    const cleared =
-      this.enemies.every((enemy) => enemy.isDead) &&
-      (this.boss === null || this.boss.isDefeated);
+    const cleared = this.roomCleared;
     if (cleared) this.awaitingAdvance = true;
 
     return { frozen: false, playerDied: this.playerDied, cleared };
+  }
+
+  /** The visible rectangle in room tiles, y down — the camera's view or a screen around the player. */
+  private viewNow(): ViewRect {
+    const provided = this.viewProvider();
+    if (provided !== null) return provided;
+    return screenViewAround(this.player.position, this.level.size);
+  }
+
+  /**
+   * Release scheduled spawns (#41): batched under the alive cap, never close to the player and
+   * never unannounced inside the view. A spawn that lands on screen waits out its
+   * `telegraphMs` (with the spawn FX) before it joins the fight; an off-screen one appears at
+   * once — the player cannot see it yet, and the edge arrows point at it.
+   */
+  private stepSpawns(view: ViewRect): void {
+    const scheduler = this.scheduler;
+    if (scheduler === null) {
+      this.releaseTelegraphed();
+      return;
+    }
+
+    const player = this.player.position;
+    const spawns = scheduler.step({
+      nowMs: this.nowMs,
+      player,
+      view,
+      alive: this.liveEnemyCount(),
+    });
+    for (const spawn of spawns) {
+      const state = enemyStateFromSpawn(this.level, spawn, this.spawnedSequence, this.nowMs);
+      this.spawnedSequence += 1;
+      if (spawn.telegraphMs > 0) {
+        this.pendingSpawns.push({ state, atMs: this.nowMs + spawn.telegraphMs });
+        this.showSpawnTelegraph(spawn);
+      } else {
+        this.addEnemy(state);
+      }
+    }
+    this.releaseTelegraphed();
+  }
+
+  /** Make due spawns active, oldest first. */
+  private releaseTelegraphed(): void {
+    if (this.pendingSpawns.length === 0) return;
+    const stillWaiting: PendingSpawn[] = [];
+    for (const pending of this.pendingSpawns) {
+      if (pending.atMs <= this.nowMs) this.addEnemy(pending.state);
+      else stillWaiting.push(pending);
+    }
+    this.pendingSpawns.length = 0;
+    for (const pending of stillWaiting) this.pendingSpawns.push(pending);
+  }
+
+  /** The "something is about to appear here" cue: a red ring of smoke for the telegraph time. */
+  private showSpawnTelegraph(spawn: ScheduledSpawn): void {
+    const fx = this.fx;
+    if (fx === null) return;
+    fx.spawn('fx.smoke-circular', spawn.at, {
+      tint: SPAWN_TELEGRAPH_TINT,
+      drawUnits: 1.8,
+      lifetimeMs: Math.max(120, spawn.telegraphMs),
+    });
+    fx.spawn('fx.spark', spawn.at, {
+      tint: SPAWN_TELEGRAPH_TINT,
+      drawUnits: 0.9,
+      lifetimeMs: Math.max(120, spawn.telegraphMs),
+    });
+  }
+
+  /** Spawned and not dead, plus the spawns still telegraphing (they hold a cap slot). */
+  private liveEnemyCount(): number {
+    let alive = this.pendingSpawns.length;
+    for (const enemy of this.enemies) {
+      if (!enemy.isDead) alive += 1;
+    }
+    return alive;
   }
 
   /** Advance the boss pattern one frame + poison DoT (Freeze does not apply to bosses — see the M4 report). */
@@ -423,13 +560,13 @@ export class CombatLoop {
    * Fire enemy bullets when an enemy releases an attack. Elite casters fire a 3-shot fan
    * (`eliteVolleyAngles`); a normal caster fires one straight shot.
    */
-  private stepEnemies(deltaMs: number): void {
+  private stepEnemies(deltaMs: number, view: ViewRect): void {
     const player = this.player;
 
     for (const enemy of this.enemies) {
       if (enemy.isDead) continue;
 
-      const step = enemy.step(this.nowMs, deltaMs, player.position, this.navigation);
+      const step = enemy.step(this.nowMs, deltaMs, player.position, this.navigation, view);
 
       if (step.released === 'shot') {
         const role = enemy.role;
@@ -888,6 +1025,10 @@ export class CombatLoop {
       boss.takeDamage(boss.health, this.nowMs);
       killed += 1;
     }
+    // #41: a debug/acceptance "clear this room" must not be refilled by the scheduler, and the
+    // telegraphs still waiting must not spawn behind the cleared check.
+    this.scheduler = null;
+    this.pendingSpawns.length = 0;
     // Bulk debug kills must still pay gold exactly like real play (M5).
     this.reportDeaths();
     return killed;
@@ -953,8 +1094,9 @@ export class CombatLoop {
   }
 
   /**
-   * Debug: 8 enemies with unlimited HP + keep >= 40 enemy bullets on screen. The player still
-   * counts as hit but `godMode` blocks damage, so fps is measured under the worst case.
+   * Debug: 24 enemies (the M9 alive cap) with unlimited HP + keep >= 40 enemy bullets on screen.
+   * The player still counts as hit but `godMode` blocks damage, so fps is measured under the worst
+   * case: a full wave, its bullets, Effects Full and a moving camera.
    */
   startStress(): void {
     this.stress = true;
@@ -1010,12 +1152,46 @@ export class CombatLoop {
     return this.player.bullets.active().filter((bullet) => bullet.owner === 'enemy').length;
   }
 
+  /**
+   * Living enemy positions in room tiles, for the HUD edge arrows (#41). The caller owns `out`
+   * and reuses it, so a per-frame HUD sync allocates nothing.
+   */
+  collectAlivePositions(out: Vec2[]): Vec2[] {
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      out.push({ x: enemy.position.x, y: enemy.position.y });
+    }
+    return out;
+  }
+
+  /**
+   * Cull enemy sprites by the camera view (#41): a 128×72 room with 24 enemies + their nodes is
+   * cheap only if the off-screen ones do not draw. Only `Sprite.enabled` changes — the node stays
+   * active because gameplay reads enemies every frame (unlike the FX pool, where `active` is the
+   * lifetime flag).
+   */
+  cullToView(view: CullRect): number {
+    const rows = this.level.size.rows;
+    let hidden = 0;
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      const position = enemy.position;
+      const visible = pointInCullRect(position.x, rows - position.y, view);
+      enemy.setCulled(!visible);
+      if (!visible) hidden += 1;
+    }
+    return hidden;
+  }
+
   /** Remove every enemy from the scene + clear bullets. */
   clear(): void {
     for (const enemy of this.enemies) {
       if (enemy.node.isValid) enemy.node.destroy();
     }
     this.enemies.length = 0;
+    this.pendingSpawns.length = 0;
+    this.scheduler = null;
+    this.spawnedSequence = 0;
     this.boss?.destroy();
     this.boss = null;
     this.bossStatus.clear();
@@ -1036,21 +1212,25 @@ export class CombatLoop {
   private topUpStress(): void {
     const player = this.player;
 
-    // Keep 8 enemies, each with unlimited HP so auto-fire cannot kill them mid-measurement.
-    // Called at both the start and the end of a frame: a wave enemy that dies mid-frame is
-    // replaced immediately, so the count between frames is always 8.
+    // Keep `STRESS_ENEMY_COUNT` (24, the M9 alive cap) enemies, each with unlimited HP so
+    // auto-fire cannot kill them mid-measurement. Called at both the start and the end of a
+    // frame: a wave enemy that dies mid-frame is replaced immediately, so the count between
+    // frames is always the cap.
     let alive = this.aliveCount;
     while (alive < STRESS_ENEMY_COUNT) {
       const role = STRESS_ROLES[this.stressIndex % STRESS_ROLES.length] ?? 'chaser';
       this.stressIndex += 1;
       const angle = (this.stressIndex / STRESS_ENEMY_COUNT) * Math.PI * 2;
+      // Three rings (4/6/8 tiles): 24 bodies in one ring would stack on each other, and the rings
+      // stay mostly inside the 32×18 view, so the measurement is "24 enemies actually drawn".
+      const ring = STRESS_RING_RADIUS + (this.stressIndex % 3) * 2;
       const state: EnemyState = {
         id: `stress-${this.debugSeq}`,
         role,
         elite: this.stressIndex % 4 === 0,
         position: {
-          x: clamp(player.position.x + Math.cos(angle) * STRESS_RING_RADIUS, 1, this.level.size.cols - 1),
-          y: clamp(player.position.y + Math.sin(angle) * STRESS_RING_RADIUS, 1, this.level.size.rows - 1),
+          x: clamp(player.position.x + Math.cos(angle) * ring, 1, this.level.size.cols - 1),
+          y: clamp(player.position.y + Math.sin(angle) * ring, 1, this.level.size.rows - 1),
         },
         health: STRESS_ENEMY_HEALTH,
         maxHealth: STRESS_ENEMY_HEALTH,

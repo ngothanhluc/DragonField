@@ -147,6 +147,32 @@ export const TUNING_DATA = {
     followRate: 8,
     lookAheadRate: 4,
   },
+  waves: {
+    aliveCap: 24,
+    aliveCapStart: 3,
+    aliveCapStepPerRoom: 3,
+    spawnIntervalMs: 1800,
+    spawnBatchSize: 4,
+    spawnJitterTiles: 3,
+    telegraphMs: 800,
+    minSpawnDistanceTiles: 6,
+    maxSpawnDistanceTiles: 18,
+    aggroRadiusTiles: 160,
+    chapterTotals: [
+      {
+        min: 24,
+        max: 32,
+      },
+      {
+        min: 40,
+        max: 48,
+      },
+      {
+        min: 56,
+        max: 64,
+      },
+    ],
+  },
   feel: {
     shake: {
       maxOffsetTiles: 0.5,

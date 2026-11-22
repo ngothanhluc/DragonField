@@ -42,7 +42,7 @@ import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
 import { DOORS_TUNING, SPECIAL_ROOMS_TUNING } from '../core/enemies/tuning';
-import { nextWaveIndex } from '../core/enemies/waves';
+import { edgeArrowTargets, roomEnemyTotal } from '../core/enemies/wave-scheduler';
 import { chapterFromLevels } from '../core/level/chapter';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data';
@@ -88,7 +88,7 @@ import { preloadSheets } from './assets/texture-cache';
 import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
 import { BulletView } from './bullet-view';
-import { CombatLoop, PLAYER_RADIUS_TILES, STRESS_ENEMY_BULLETS } from './combat-loop';
+import { CombatLoop, PLAYER_RADIUS_TILES, STRESS_ENEMY_BULLETS, STRESS_ENEMY_COUNT } from './combat-loop';
 import { CoverView } from './cover-view';
 import type { CoverBody } from './cover-view';
 import { DepthView } from './depth-view';
@@ -112,7 +112,7 @@ import {
 } from '../core/vfx/weapon-vfx';
 import { FeelView } from './feel-view';
 import { FpsMeter } from './fps-meter';
-import { Hud, HEART_SHEET } from './hud';
+import { Hud, HEART_SHEET, MAX_EDGE_ARROWS } from './hud';
 import { syncCombatHud } from './hud-sync';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
 import type { PropView, RoomLayers } from './level-view';
@@ -356,6 +356,10 @@ export class Bootstrap extends Component {
   private currentLevel: LevelData | null = null;
   /** Player position of the previous frame, for the follow camera's velocity (tiles/s). */
   private lastFocus: Vec2 | null = null;
+  /** Reused buffers of the HUD edge-arrow pass (#41): no array allocation per frame. */
+  private readonly arrowTargets: Vec2[] = [];
+  private readonly arrowOffsets: Vec2[] = [];
+  private readonly doorTargets: Vec2[] = [];
   /** Real frame time of the last N frames — the debug `fps()` reads from here. */
   private readonly fpsMeter = new FpsMeter();
   private status: BootstrapStatus = 'loading';
@@ -446,6 +450,7 @@ export class Bootstrap extends Component {
     if (result.frozen) return;
 
     if (this.hud !== null) syncCombatHud(this.hud, player, combat);
+    this.updateHudArrows();
 
     if (result.playerDied) {
       this.beginDeath();
@@ -484,6 +489,9 @@ export class Bootstrap extends Component {
   /**
    * Keep only the room sprites the camera can see (big rooms only). A 32×18 room needs no
    * culling: everything is inside the view, and the pass would be pure overhead.
+   *
+   * Since #36/#41 this also culls what left the room tree: prop bases/overlays and grass tips
+   * (parented to the actor/overlay layers) and the enemy sprites (by `Sprite.enabled`).
    */
   private cullWorldToView(): void {
     const camera = this.camera;
@@ -492,7 +500,47 @@ export class Bootstrap extends Component {
     if (camera === null || level === null || root === null) return;
     if (level.size.cols <= ROOM_COLS && level.size.rows <= ROOM_ROWS) return;
 
-    cullWorld(root, camera.worldViewRect());
+    const view = camera.worldViewRect();
+    cullWorld(root, view);
+    this.cover?.cullToView(view);
+    this.combat?.cullToView(view);
+  }
+
+  /**
+   * Border arrows for what the player cannot see (#41): the nearest off-screen enemies while the
+   * room is not cleared, the doors once it is. The target list is core's `edgeArrowTargets`
+   * (tested); here it is only turned into offsets from the camera centre.
+   */
+  private updateHudArrows(): void {
+    const hud = this.hud;
+    const camera = this.camera;
+    const level = this.currentLevel;
+    const player = this.player;
+    const combat = this.combat;
+    if (hud === null || camera === null || level === null || player === null || combat === null) {
+      return;
+    }
+
+    const view = camera.tileViewRect();
+    this.doorTargets.length = 0;
+    for (const door of level.doors) this.doorTargets.push({ x: door.at.x, y: door.at.y });
+    this.arrowTargets.length = 0;
+    combat.collectAlivePositions(this.arrowTargets);
+    const targets = edgeArrowTargets(
+      player.position,
+      view,
+      this.arrowTargets,
+      this.doorTargets,
+      combat.roomCleared,
+      MAX_EDGE_ARROWS,
+    );
+
+    const centre = camera.position;
+    this.arrowOffsets.length = 0;
+    for (const target of targets) {
+      this.arrowOffsets.push({ x: target.x - centre.x, y: target.y - centre.y });
+    }
+    hud.setArrows(this.arrowOffsets);
   }
 
   /** Death: in-place FX + hold player.dead for ~1.4 s, then open result (GDD §9). */
@@ -674,6 +722,8 @@ export class Bootstrap extends Component {
       onDamage: (info) => this.feel?.spawnDamage(info.position, info.amount, info.crit),
       ...(this.fx !== null ? { fx: this.fx } : {}),
       ...(this.camera !== null ? { shake: this.camera.shake } : {}),
+      // #41: enemies refuse to attack from outside what the player can actually see.
+      view: () => this.camera?.tileViewRect() ?? null,
     });
 
     this.combat = combat;
@@ -681,7 +731,7 @@ export class Bootstrap extends Component {
     this.status = 'playing';
     this.screens.setScreen('playing');
     this.persistBest(run.room);
-    this.combat.startWave(0);
+    this.combat.startWaves(this.waveSeed(firstRoom), run.room);
     if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
     this.hud?.setSkills(this.skills.entries);
     this.displayedGold = 0;
@@ -812,7 +862,8 @@ export class Bootstrap extends Component {
       this.createRoom(level, asset);
       this.combat?.enterRoom(level);
       this.player?.teleport(level.playerStart);
-      this.combat?.startWave(0);
+      // A dev room is inspected on its own: treat it as the run's first slot (smallest crowd).
+      this.combat?.startWaves(this.waveSeed(level), 1);
       const player = this.player;
       if (this.hud !== null && player !== null) syncCombatHud(this.hud, player, this.combat);
 
@@ -1207,20 +1258,15 @@ export class Bootstrap extends Component {
 
   /**
    * Contact damage, enemy bullets and hitstop all moved to `CombatLoop` (M3).
-   * Bootstrap only handles run flow now: wave → room → skill → chapter.
+   * Bootstrap only handles run flow now: room → skill → chapter. Since #41 a room is **one**
+   * continuous wave (the `WaveScheduler` decides when it is cleared), so there is no
+   * wave-to-wave step here any more.
    */
   private onWaveCleared(): void {
     const run = this.run;
     const level = this.currentLevel;
     const combat = this.combat;
     if (run === null || level === null || combat === null) return;
-
-    const nextWave = nextWaveIndex(combat.currentWaveIndex, level);
-    if (nextWave !== null) {
-      run.nextWave(level.waves.length);
-      combat.startWave(nextWave);
-      return;
-    }
 
     run.onRoomCleared();
     this.persistBest(run.room);
@@ -1485,6 +1531,19 @@ export class Bootstrap extends Component {
     this.enterRoom(run.room);
   }
 
+  /**
+   * Seed of one room's `WaveScheduler` (#41): the run seed mixed with chapter and room, so the
+   * same run draws the same waves and a different seed varies the totals and spawn spots.
+   */
+  private waveSeed(level: LevelData): number {
+    return (
+      (Math.imul(this.runSeed | 0, 0x9e3779b1) ^
+        Math.imul(level.chapter, 0x85ebca6b) ^
+        Math.imul(level.room, 0xc2b2ae35)) >>>
+      0
+    );
+  }
+
   private enterRoom(roomNumber: number): void {
     const run = this.run;
     if (run === null) return;
@@ -1518,15 +1577,18 @@ export class Bootstrap extends Component {
     } else {
       this.audio?.playMusic(chapterMusic(level.chapter));
     }
-    this.combat?.startWave(0);
+    this.combat?.startWaves(this.waveSeed(level), run.room);
     const player = this.player;
     if (this.hud !== null && player !== null) {
       syncCombatHud(this.hud, player, this.combat);
     }
 
     console.log(
-      `[YokaiField] Entering room ${run.roomLabel} (${level.waves.length} waves` +
-        `${level.isBossRoom ? ', boss' : ''}).`,
+      `[YokaiField] Entering room ${run.roomLabel} (` +
+        (level.isBossRoom
+          ? 'boss'
+          : `${roomEnemyTotal(level, this.waveSeed(level))} enemies in waves`) +
+        ').',
     );
   }
 
@@ -2176,7 +2238,7 @@ export class Bootstrap extends Component {
     }
     combat.startStress();
     console.log(
-      `[YokaiField] debug stress: 8 enemies + ${STRESS_ENEMY_BULLETS} bullets (>= 40 per the M3 milestone), godMode on.`,
+      `[YokaiField] debug stress: ${STRESS_ENEMY_COUNT} enemies + ${STRESS_ENEMY_BULLETS} bullets (M9 alive cap), godMode on.`,
     );
     return true;
   }

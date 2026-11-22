@@ -1,5 +1,5 @@
 /**
- * Sync the HUD from live state every frame: hearts (Vitality), boss health bar, skill row.
+ * Sync the HUD from live state every frame: hearts (Vitality), boss health bar, enemies left (#41).
  * Split from bootstrap so the run-flow file does not need to know the `bossSnapshot` shape.
  */
 import type { Hud } from './hud';
@@ -20,4 +20,5 @@ export function syncCombatHud(
       ? null
       : { name: boss.name, hp: boss.health, maxHp: boss.maxHealth, phase: boss.phase },
   );
+  hud.setEnemiesLeft(combat?.enemiesLeft ?? null);
 }

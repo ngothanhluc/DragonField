@@ -20,7 +20,7 @@ import {
   director,
   view,
 } from 'cc';
-import { FollowCamera } from '../core/camera/follow-camera';
+import { FollowCamera, type ViewRect } from '../core/camera/follow-camera';
 import { CAMERA_TUNING, FEEL_TUNING } from '../core/enemies/tuning';
 import { ScreenShake } from '../core/feel/screen-shake';
 import type { LevelData, RoomSize } from '../core/level/level-data';
@@ -168,6 +168,14 @@ export class WorldCamera {
       width: VIEW.cols,
       height: VIEW.rows,
     };
+  }
+
+  /**
+   * The visible rectangle in **room tiles** (top-left origin, y down) — the space `LevelData`,
+   * the enemies and the fairness rules (#41) use.
+   */
+  tileViewRect(): ViewRect {
+    return this.follow.viewRect();
   }
 
   destroy(): void {

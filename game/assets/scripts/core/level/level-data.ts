@@ -701,3 +701,27 @@ export function obstacleAt(level: LevelData, point: Vec2): Obstacle | null {
   }
   return null;
 }
+
+/**
+ * First obstacle inside the point's clearance box: the same test as `obstacleAt`, grown by
+ * `clearanceTiles` on every side. Used for "can a body of this radius stand here?" — a walk
+ * target 0.2 tiles from a wall passes `obstacleAt` but can never be reached, which leaves an
+ * enemy walking into the wall forever (found by the M9 balance sim).
+ */
+export function obstacleNear(
+  level: LevelData,
+  point: Vec2,
+  clearanceTiles: number,
+): Obstacle | null {
+  const clearance = Math.max(0, clearanceTiles);
+  for (const obstacle of level.obstacles) {
+    const insideX =
+      point.x >= obstacle.x - clearance &&
+      point.x < obstacle.x + obstacle.width + clearance;
+    const insideY =
+      point.y >= obstacle.y - clearance &&
+      point.y < obstacle.y + obstacle.height + clearance;
+    if (insideX && insideY) return obstacle;
+  }
+  return null;
+}

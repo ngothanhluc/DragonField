@@ -203,7 +203,10 @@ describe('headless runs: no enemy gets stuck', () => {
       const stuck: string[] = [];
       const policy: InputPolicy = (world) => {
         for (const enemy of world.enemies) {
-          if (enemy.health <= 0 || enemy.action.kind !== 'walk') {
+          // #41: with up to 24 bodies converging on a standing player, the ring right around them is
+          // blocked by other bodies, not by the level; only path-finding stalls count (owner decision 2026-11-22).
+          const crowded = Math.hypot(enemy.position.x - world.player.x, enemy.position.y - world.player.y) <= 3;
+          if (enemy.health <= 0 || enemy.action.kind !== 'walk' || crowded) {
             windows.delete(enemy.id);
             continue;
           }
