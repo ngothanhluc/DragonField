@@ -1,23 +1,31 @@
 /**
  * Decorate 27 rooms with tilesets that really exist in the pack (GDD §8): ch1
  * Nature/Relief/Element/Field, ch2 Water + waterfall + Nature banks, ch3
- * VillageAbandoned/House/Towers/Hole.
+ * VillageAbandoned/House/Towers/Hole — and place the room's **props** (#35).
  *
- * Collision consistency rules:
- * - **Walkable** cells (rows 1..16, columns 1..30) only take flat tiles: grass, flowers, dirt, gravel,
- *   shallow water. Never roof/canopy there.
- * - Rows/columns against the edge (0/31, 0/17) are **not walkable** because player/enemy clamp at
- *   `ROOM_EDGE_MARGIN_TILES = 1`, so they can hold solid props (roofs, towers, rocks)
- *   without adding an obstacle — gameplay unchanged.
- * - ch2 water is a shallow river (walkable), not a pit; so it lives in the decor layer,
- *   not as an obstacle.
+ * Three layers of dressing, in this order:
+ * - **Tiles** (walkable ground only): grass, flowers, dirt, gravel, shallow water. Never
+ *   roof/canopy there.
+ * - **Props** (`PROP_CATALOGUE[chapter]`, ticket #35): whole pack drawings — trees, rocks,
+ *   houses, tents, a boat — as `prop` objects in the object layer. A solid prop's **base**
+ *   (trunk, walls, rock bottom) becomes an obstacle at parse time, so what looks solid is solid.
+ * - **Borders** (rows/columns 0/31 and 0/17 are outside the actor clamp) can also hold tile
+ *   decor that reads as solid without changing gameplay.
  *
- * Run: `bun run scripts/dress-rooms.ts`. Idempotent: re-running gives the same result.
+ * Placement rules for props (see `planProps`): deterministic per chapter+room, never on
+ * playerStart/spawns/doors/obstacles, never covering water (the boat excepted), and a
+ * placement that would break the playerStart → door route is rejected. Entrance rooms keep
+ * only a knee-high solid so the no-skill run stays as open as before.
+ *
+ * Run: `bun run scripts/dress-rooms.ts`. Idempotent: re-running gives the same result
+ * (props are stripped and regenerated; the prop rng is separate from the decor rng).
  */
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import type { PlacedProp } from '../assets/scripts/core/level/level-data';
+import { WALK_OVER_KEYS, propCollider, propDef, type PropDef } from '../assets/scripts/core/level/props';
 import type { WaterArea } from '../assets/scripts/core/level/water-layout';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -98,6 +106,26 @@ interface Reserved {
   readonly cells: Set<string>;
   /** playerStart cell — water must not sit right under the player's feet on room entry. */
   readonly playerStart: string | null;
+  /** Existing authored obstacles, in tiles (`pillar`/`wall`/`pit`); props add to these. */
+  readonly obstacles: readonly Rect[];
+  /** playerStart, doors and spawns in tiles — props keep 0.5 tile clear of every one. */
+  readonly points: readonly Vec2[];
+  /** Doors only: the reachability targets. */
+  readonly doors: readonly Vec2[];
+  /** playerStart itself, where the reachability flood fill starts. */
+  readonly start: Vec2 | null;
+}
+
+interface Vec2 {
+  readonly x: number;
+  readonly y: number;
+}
+
+interface Rect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
 }
 
 
@@ -118,6 +146,10 @@ function reserve(cells: Set<string>, x: number, y: number, radius = 0): void {
 function parseReserved(xml: string): Reserved {
   const cells = new Set<string>();
   let playerStart: string | null = null;
+  const obstacles: Rect[] = [];
+  const points: Vec2[] = [];
+  const doors: Vec2[] = [];
+  let start: Vec2 | null = null;
 
   for (const match of xml.matchAll(/<object[^>]*name="obstacle"[^>]*>/g)) {
     const tag = match[0];
@@ -125,6 +157,7 @@ function parseReserved(xml: string): Reserved {
     const y = Number(/\by="(\d+)"/.exec(tag)?.[1] ?? 0) / 16;
     const width = Number(/\bwidth="(\d+)"/.exec(tag)?.[1] ?? 0) / 16;
     const height = Number(/\bheight="(\d+)"/.exec(tag)?.[1] ?? 0) / 16;
+    obstacles.push({ x, y, width, height });
     for (let ty = y; ty < y + height; ty += 1) {
       for (let tx = x; tx < x + width; tx += 1) cells.add(key(tx, ty));
     }
@@ -133,13 +166,19 @@ function parseReserved(xml: string): Reserved {
   for (const match of xml.matchAll(/<object[^>]*name="(playerStart|spawn|door|bossStart)"[^>]*>/g)) {
     const tag = match[0];
     const name = match[1];
-    const x = Math.floor(Number(/\bx="(\d+)"/.exec(tag)?.[1] ?? 0) / 16);
-    const y = Math.floor(Number(/\by="(\d+)"/.exec(tag)?.[1] ?? 0) / 16);
+    const px = Number(/\bx="(\d+)"/.exec(tag)?.[1] ?? 0);
+    const py = Number(/\by="(\d+)"/.exec(tag)?.[1] ?? 0);
+    const x = Math.floor(px / 16);
+    const y = Math.floor(py / 16);
     if (name === 'playerStart') playerStart = key(x, y);
+    // Spawns, doors and the boss are points: props must not sit within 0.5 tile of them.
+    if (name !== 'bossStart') points.push({ x: px / 16, y: py / 16 });
+    if (name === 'playerStart') start = { x: px / 16, y: py / 16 };
+    if (name === 'door') doors.push({ x: px / 16, y: py / 16 });
     reserve(cells, x, y, 1);
   }
 
-  return { cells, playerStart };
+  return { cells, playerStart, obstacles, points, doors, start };
 }
 
 function setTile(data: number[], x: number, y: number, value: number): void {
@@ -451,6 +490,283 @@ function dressChapterThree(
 }
 
 // ---------------------------------------------------------------------------
+// Props (#35) — whole drawings from the pack; a solid prop's base is an obstacle
+// ---------------------------------------------------------------------------
+
+/** Tile size in pixels, the unit `PROP_CATALOGUE` rects and colliders use. */
+const TILE = 16;
+
+/** Rooms 1–3 of a chapter are its entrance: props there stay small (see `planProps`). */
+const ENTRANCE_ROOMS = 3;
+
+interface PropTheme {
+  /** At most one landmark per room (a house, a tent, a statue), and only in every third room. */
+  readonly landmarks: readonly string[];
+  /** Everyday solids, each used at most once per room. */
+  readonly solids: readonly string[];
+  /** Knee-high solids (a 16×16 rock/stump/crate) for the entrance rooms, which stay open. */
+  readonly smallSolids: readonly string[];
+  readonly walkOvers: readonly string[];
+}
+
+/** The eight Nature walk-over props every chapter shares (grass, flowers, bushes). */
+const WALK_OVERS = WALK_OVER_KEYS;
+
+const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
+  1: {
+    landmarks: ['house-orange', 'house-beige', 'house-green', 'hut', 'tent'],
+    solids: [
+      'tree-green', 'tree-pine', 'tree-dead', 'tree-pink', 'tree-round', 'tree-big-green',
+      'tree-small', 'tree-cluster-green', 'tree-cluster-pines', 'rock-boulder', 'rock-small',
+      'rock-cluster', 'stump-big', 'stump', 'bush-blue', 'cart', 'crate', 'totem', 'logs',
+    ],
+    smallSolids: ['rock-small', 'stump', 'crate'],
+    walkOvers: WALK_OVERS,
+  },
+  2: {
+    landmarks: ['house-red', 'house-beige', 'house-orange', 'house-green'],
+    solids: [
+      'tree-green', 'tree-pine', 'tree-round', 'tree-big-orange', 'tree-cluster-pines',
+      'rock-boulder-gray', 'rock-small-gray', 'rock-cluster-gray', 'stump', 'bush-blue',
+      'crate', 'totem',
+    ],
+    smallSolids: ['rock-small-gray', 'stump', 'crate'],
+    walkOvers: [...WALK_OVERS, 'fishnet'],
+  },
+  3: {
+    landmarks: ['house-ruined', 'house-mossy', 'house-timber', 'house-timber-large', 'house-orange', 'house-red', 'frog-statue'],
+    solids: [
+      'tree-mossy', 'tree-mossy-alt', 'tree-mossy-cluster', 'tree-mossy-cluster-alt', 'tree-dead',
+      'tree-green', 'tree-pine', 'rock-boulder', 'rock-cluster', 'stump-big', 'bush-blue',
+      'totem', 'cart', 'crate',
+    ],
+    smallSolids: ['rock-small', 'stump', 'crate'],
+    walkOvers: WALK_OVERS,
+  },
+};
+
+/** Fisher–Yates with the room's seeded rng: the same room always gets the same props. */
+function shuffle<T>(rng: () => number, items: readonly T[]): T[] {
+  const copy = items.slice();
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    const swap = copy[i];
+    const other = copy[j];
+    if (swap === undefined || other === undefined) continue;
+    copy[i] = other;
+    copy[j] = swap;
+  }
+  return copy;
+}
+
+function rectCells(rect: Rect): string[] {
+  const cells: string[] = [];
+  for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+    for (let x = rect.x; x < rect.x + rect.width; x += 1) cells.push(key(x, y));
+  }
+  return cells;
+}
+
+/** Distance from a point to a rectangle (0 when inside) — the same rule the acceptance test uses. */
+function gapToRect(point: Vec2, rect: Rect): number {
+  const cx = Math.max(rect.x, Math.min(point.x, rect.x + rect.width));
+  const cy = Math.max(rect.y, Math.min(point.y, rect.y + rect.height));
+  return Math.hypot(point.x - cx, point.y - cy);
+}
+
+function overlapsWater(sprite: Rect, water: readonly WaterArea[]): boolean {
+  return water.some(
+    (area) =>
+      sprite.x < area.x + area.width &&
+      sprite.x + sprite.width > area.x &&
+      sprite.y < area.y + area.height &&
+      sprite.y + sprite.height > area.y,
+  );
+}
+
+/**
+ * 4-way BFS over tiles whose centre is at least 0.3 tiles from every blocker — the room must
+ * stay traversable after the props land, so a crate can never seal a door. Mirrors the
+ * acceptance test on purpose: the script refuses exactly the placements the test would reject.
+ */
+function reachable(blockers: readonly Rect[], from: Vec2, to: Vec2): boolean {
+  const free = (c: number, r: number): boolean =>
+    c >= 0 && r >= 0 && c < COLS && r < ROWS &&
+    blockers.every((block) => gapToRect({ x: c + 0.5, y: r + 0.5 }, block) >= 0.3);
+
+  const row = Math.floor(from.y);
+  const start: readonly [number, number] = [Math.floor(from.x), row];
+  const goal = `${Math.min(COLS - 1, Math.floor(to.x))},${Math.min(ROWS - 1, Math.floor(to.y))}`;
+  const seen = new Set<string>([`${start[0]},${start[1]}`]);
+  const queue: Array<readonly [number, number]> = [start];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined) break;
+    const [c, r] = current;
+    if (`${c},${r}` === goal) return true;
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const next = `${c + dc},${r + dr}`;
+      if (seen.has(next)) continue;
+      // The door tile itself may sit on the room edge; accept it as the goal even if near a wall.
+      if (next !== goal && !free(c + dc, r + dr)) continue;
+      seen.add(next);
+      queue.push([c + dc, r + dr]);
+    }
+  }
+  return false;
+}
+
+/**
+ * Place the room's props. A dressed room (rooms 4+) gets 4–6 solid and 4–7 walk-over props
+ * (8–13 total) plus a landmark in every third room; the entrance rooms (1–3) get exactly one
+ * knee-high solid and 7 walk-overs, so the no-skill run-entrance stays as open as it was before
+ * props (see `run-simulation`). Boss arenas get a couple of edge props.
+ *
+ * Every placement keeps 0.5 tile clear of playerStart/spawns/doors, never covers water unless
+ * it is the boat, and is rejected if it would break the playerStart → door route.
+ * Deterministic per chapter+room.
+ */
+function planProps(
+  chapter: number,
+  room: number,
+  isBossRoom: boolean,
+  reserved: Reserved,
+  water: readonly WaterArea[],
+  rng: () => number,
+): PlacedProp[] {
+  const theme = PROP_THEMES[chapter];
+  if (theme === undefined) return [];
+
+  const occupied = new Set(reserved.cells);
+  const blockers: Rect[] = [...reserved.obstacles];
+  const placed: PlacedProp[] = [];
+  const usedKeys = new Set<string>();
+  const from = reserved.start ?? { x: 1, y: 1 };
+
+  /** Try `placeKey` at the first free anchor of `pools` (in order), mutating the bookkeeping on success. */
+  const tryPlace = (
+    placeKey: string,
+    pools: readonly (readonly Vec2[])[],
+    allowWater: boolean,
+  ): boolean => {
+    const def: PropDef | undefined = propDef(chapter, placeKey);
+    if (def === undefined) throw new Error(`chapter ${chapter} has no prop ${placeKey}`);
+    const width = Math.ceil(def.rect.width / TILE);
+    const height = Math.ceil(def.rect.height / TILE);
+
+    for (const pool of pools) {
+      for (const anchor of pool) {
+        const sprite: Rect = { x: anchor.x, y: anchor.y, width, height };
+        if (sprite.x + sprite.width > COLS || sprite.y + sprite.height > ROWS) continue;
+        if (!allowWater && water.length > 0 && overlapsWater(sprite, water)) continue;
+
+        const cells = rectCells(sprite);
+        if (cells.some((cell) => occupied.has(cell))) continue;
+
+        const prop: PlacedProp = { key: placeKey, x: anchor.x, y: anchor.y };
+        const collider = propCollider(prop, def);
+        if (collider !== null) {
+          if (reserved.points.some((point) => gapToRect(point, collider) < 0.5)) continue;
+          const trial = [...blockers, collider];
+          if (reserved.doors.some((door) => !reachable(trial, from, door))) continue;
+          blockers.push(collider);
+        }
+
+        for (const cell of cells) occupied.add(cell);
+        placed.push(prop);
+        usedKeys.add(placeKey);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Anchors: row 0 stays empty (the HUD cuts anything drawn there). Edges first for the big
+  // solids, the middle for walk-over decoration.
+  const edge: Vec2[] = [];
+  const inner: Vec2[] = [];
+  for (let y = 1; y < ROWS; y += 1) {
+    for (let x = 0; x < COLS; x += 1) {
+      const onEdge = x <= 1 || x >= COLS - 2 || y <= 1 || y >= ROWS - 2;
+      (onEdge ? edge : inner).push({ x, y });
+    }
+  }
+  const edgePool = shuffle(rng, edge);
+  const innerPool = shuffle(rng, inner);
+
+  // A boat only makes sense on the river: try it first, on the water itself.
+  if (chapter === 2) {
+    const riverAnchors: Vec2[] = [];
+    for (const area of water) {
+      if (area.kind !== 'river') continue;
+      for (let dx = 0; dx + 5 <= area.width; dx += 1) riverAnchors.push({ x: area.x + dx, y: area.y });
+    }
+    if (riverAnchors.length > 0) tryPlace('boat', [shuffle(rng, riverAnchors)], true);
+  }
+
+  // The first rooms are the chapter entrance: the no-skill run (run-simulation) must survive
+  // there, so a big house/tree cluster in rooms 1–3 would turn the arena into a maze. Those
+  // rooms get knee-high solids only; the rest of the chapter is dressed fully.
+  const entrance = !isBossRoom && room <= ENTRANCE_ROOMS;
+  const solidTarget = isBossRoom || entrance ? 1 : 4 + (room % 3);
+  const walkTarget = isBossRoom ? 2 : entrance ? 7 : 4 + (room % 4);
+
+  // A landmark in every third room (rooms 1, 4, 7): a house or tent gives the room a focus.
+  if (!isBossRoom && !entrance && room % 3 === 1) {
+    for (const landmark of shuffle(rng, theme.landmarks)) {
+      if (tryPlace(landmark, [edgePool, innerPool], false)) break;
+    }
+  }
+
+  const solidStock = entrance ? theme.smallSolids : theme.solids;
+  let solidCount = placed.filter((prop) => propDef(chapter, prop.key)?.solid === true).length;
+  for (const candidate of shuffle(rng, solidStock)) {
+    if (solidCount >= solidTarget) break;
+    if (usedKeys.has(candidate)) continue;
+    if (tryPlace(candidate, [edgePool, innerPool], false)) solidCount += 1;
+  }
+
+  let walkCount = placed.filter((prop) => propDef(chapter, prop.key)?.solid === false).length;
+  for (const candidate of shuffle(rng, theme.walkOvers)) {
+    if (walkCount >= walkTarget) break;
+    if (usedKeys.has(candidate)) continue;
+    if (tryPlace(candidate, [innerPool, edgePool], false)) walkCount += 1;
+  }
+
+  return placed;
+}
+
+/** Drop the previous run's prop objects so re-running is idempotent. */
+function stripPropObjects(xml: string): string {
+  return xml.replace(/[ \t]*<object[^>]*name="prop"[\s\S]*?<\/object>\n?/g, '');
+}
+
+function maxObjectId(xml: string): number {
+  let max = 0;
+  for (const match of xml.matchAll(/<object\b[^>]*\bid="(\d+)"/g)) {
+    max = Math.max(max, Number(match[1] ?? 0));
+  }
+  return max;
+}
+
+/** `prop` objects for the object layer: x/y are the **sprite's** top-left in Tiled pixels. */
+function propObjectsXml(props: readonly PlacedProp[], chapter: number, firstId: number): string {
+  return props
+    .map((prop, index) => {
+      const def = propDef(chapter, prop.key);
+      if (def === undefined) throw new Error(`chapter ${chapter} has no prop ${prop.key}`);
+      return (
+        `  <object id="${firstId + index}" name="prop" x="${prop.x * TILE}" y="${prop.y * TILE}"` +
+        ` width="${def.rect.width}" height="${def.rect.height}">\n` +
+        `   <properties>\n    <property name="key" value="${prop.key}"/>\n   </properties>\n` +
+        `  </object>\n`
+      );
+    })
+    .join('');
+}
+
+// ---------------------------------------------------------------------------
 // Ghi TMX
 // ---------------------------------------------------------------------------
 
@@ -525,9 +841,12 @@ function ensureTsx(chapterDir: string, def: TilesetDef): void {
 function dressFile(path: string, chapter: number, room: number): WaterArea[] {
   const raw = readFileSync(path, 'utf8');
   // Remove `kind=solid` obstacles from the previous trial run (dropped: does not change collision).
-  const original = raw.replace(/ ?<object[^>]*name="obstacle"[\s\S]*?<\/object>\n?/g, (block) =>
+  const withoutLegacy = raw.replace(/ ?<object[^>]*name="obstacle"[\s\S]*?<\/object>\n?/g, (block) =>
     block.includes('value="solid"') ? '' : block,
   );
+  // Props are regenerated from scratch every run (idempotent), so their colliders are not
+  // reserved as authored obstacles below — `planProps` tracks what it places itself.
+  const original = stripPropObjects(withoutLegacy);
   const reserved = parseReserved(original);
   const rng = mulberry32(chapter * 100_003 + room * 977);
 
@@ -538,6 +857,17 @@ function dressFile(path: string, chapter: number, room: number): WaterArea[] {
         ? dressChapterTwo(chapter, room, reserved, rng)
         : { data: dressChapterThree(chapter, room, reserved, rng), water: [] as WaterArea[] };
   const decor = result.data;
+
+  // Props get their own rng stream so changing them never reshuffles the ground decor.
+  const isBossRoom = /<property\b[^>]*name="isBossRoom"[^>]*value="true"/.test(original);
+  const props = planProps(
+    chapter,
+    room,
+    isBossRoom,
+    reserved,
+    result.water,
+    mulberry32(chapter * 7919 + room * 104_729 + 35),
+  );
 
   // Drop the old tilesets + decor; keep floor/objectgroup.
   const withoutTilesets = original.replace(/^ <tileset[^\n]*\/>\n?/gm, '');
@@ -565,6 +895,16 @@ function dressFile(path: string, chapter: number, room: number): WaterArea[] {
   const objectIndex = next.indexOf(' <objectgroup');
   if (objectIndex < 0) throw new Error(`${path}: no objectgroup`);
   next = `${next.slice(0, objectIndex)}${decorLayer}${next.slice(objectIndex)}`;
+
+  // Prop objects go last in the object layer; their colliders become obstacles at parse time.
+  const firstPropId = maxObjectId(next) + 1;
+  if (props.length > 0) {
+    const block = propObjectsXml(props, chapter, firstPropId).trimEnd();
+    const close = /\n[ \t]*<\/objectgroup>/.exec(next);
+    if (close === null) throw new Error(`${path}: objectgroup is not closed as expected`);
+    next = next.replace(close[0], `\n${block}${close[0]}`);
+  }
+  next = next.replace(/nextobjectid="\d+"/, `nextobjectid="${firstPropId + props.length}"`);
 
   writeFileSync(path, next);
   return result.water;
