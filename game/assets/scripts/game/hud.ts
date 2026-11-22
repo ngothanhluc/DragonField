@@ -28,6 +28,8 @@ import { cachedSkillIcon, loadSkillIcon, SKILL_ICON_SIZE_PX } from './assets/ski
 import type { OwnedSkillStacks } from '../core/skills/pool';
 import { skillAbbreviation } from '../core/skills/description';
 import type { Vec2 } from '../core/math/vec2';
+import type { DoorReward } from '../core/run/doors';
+import { ICONS, loadRewardIconFrame } from './door-view';
 import { applyPixelFont } from './ui-font';
 import { sliceFrame } from './level-view';
 import type { TileRect } from './level-view';
@@ -87,6 +89,18 @@ interface SkillSlot {
   id: string;
 }
 
+/**
+ * One door arrow (#63): the triangle turns to the heading while the reward icon between the arrow
+ * and the screen centre stays upright.
+ */
+interface DoorArrowSlot {
+  readonly root: Node;
+  readonly triangle: Node;
+  readonly icon: Sprite;
+  /** Reward whose icon this slot shows (or is loading); async loads compare against it. */
+  shownReward: DoorReward | null;
+}
+
 /** Boss health bar. */
 const BOSS_BAR_WIDTH_PX = 180;
 const BOSS_BAR_HEIGHT_PX = 8;
@@ -115,6 +129,25 @@ const ARROW_TOP_INSET_PX =
 export const MAX_EDGE_ARROWS = 3;
 const ARROW_FILL = new CocosColor(255, 233, 170, 235);
 const ARROW_OUTLINE = new CocosColor(20, 16, 24, 220);
+/**
+ * Door arrows (#63) are cyan, so a "walk to a door" arrow never reads as an enemy arrow, and each
+ * one carries its door's reward icon: the shape alone already says what it points at.
+ */
+const DOOR_ARROW_FILL = new CocosColor(130, 230, 255, 240);
+const DOOR_ARROW_OUTLINE = new CocosColor(8, 24, 40, 230);
+/** Reward icon beside the arrow, design px (24 px pack art at half size stays crisp). */
+const DOOR_ARROW_ICON_PX = 12;
+/** Icon sits this far behind the arrow's tail, so it never covers the triangle. */
+const DOOR_ARROW_ICON_INSET_PX = 13;
+const DOOR_HINT_WIDTH_PX = 118;
+const DOOR_HINT_HEIGHT_PX = 22;
+
+/** One door arrow for `setDoorArrows`: offset from the camera centre (tiles, y down) + reward. */
+export interface DoorArrowOffset {
+  readonly x: number;
+  readonly y: number;
+  readonly reward: DoorReward;
+}
 
 function heartRect(index: number): TileRect {
   return {
@@ -156,6 +189,11 @@ export class Hud extends Component {
   private shownEnemiesLeft = -1;
   private readonly arrowNodes: Node[] = [];
 
+  /** #63: off-screen door arrows (own colour + reward icon) and the "choose a door" hint. */
+  private readonly doorArrowSlots: DoorArrowSlot[] = [];
+  private doorHintRoot: Node | null = null;
+  private shownDoorHint = false;
+
   /**
    * Build the HUD. This `node` must be a child of a `Canvas` (created by bootstrap), or
    * nothing will be drawn.
@@ -192,6 +230,8 @@ export class Hud extends Component {
     this.createBossBar(barFrame, size.height);
     this.createEnemiesLeft(size);
     this.createArrows();
+    this.createDoorArrows();
+    this.createDoorHint(size);
 
     this.setRoomLabel(roomText);
     this.setHearts(maxHearts);
@@ -364,10 +404,7 @@ export class Hud extends Component {
    * hearts / gold / room / enemies text. More than `MAX_EDGE_ARROWS` entries are ignored.
    */
   setArrows(offsets: readonly Vec2[]): void {
-    const size = view.getVisibleSize();
-    const halfWidth = size.width / 2 - ARROW_INSET_PX;
-    const topLimit = size.height / 2 - ARROW_TOP_INSET_PX;
-    const bottomLimit = size.height / 2 - ARROW_INSET_PX;
+    const limits = this.arrowLimits(view.getVisibleSize());
 
     for (let index = 0; index < this.arrowNodes.length; index += 1) {
       const node = this.arrowNodes[index];
@@ -378,20 +415,92 @@ export class Hud extends Component {
         continue;
       }
 
-      // y down (room tiles) → y up (UI px).
-      const px = offset.x * HUD_PX_PER_TILE;
-      const py = -offset.y * HUD_PX_PER_TILE;
-      const verticalLimit = py >= 0 ? topLimit : bottomLimit;
-      const scale = Math.min(
-        Math.abs(px) > 1e-6 ? halfWidth / Math.abs(px) : Number.POSITIVE_INFINITY,
-        Math.abs(py) > 1e-6 ? verticalLimit / Math.abs(py) : Number.POSITIVE_INFINITY,
-      );
-      const clamped = Number.isFinite(scale) ? Math.min(1, scale) : 1;
-
-      node.setPosition(px * clamped, py * clamped, 0);
-      node.angle = (Math.atan2(py, px) * 180) / Math.PI;
+      node.angle = this.placeArrow(node, offset, limits);
       if (!node.active) node.active = true;
     }
+
+    // Door arrows own the band while the doors are open; never draw both kinds at once.
+    for (const slot of this.doorArrowSlots) {
+      if (slot.root.active) slot.root.active = false;
+    }
+  }
+
+  /**
+   * Door arrows after a clear (#63): same band and clamping as `setArrows`, but cyan and each one
+   * shows its door's reward icon, so the arrow reads as "a door with this behind it". Offsets are
+   * relative to the camera centre (tiles, y down), nearest door first — the order comes from core's
+   * `doorArrowTargets`, so an on-screen door is already filtered out.
+   */
+  setDoorArrows(targets: readonly DoorArrowOffset[]): void {
+    const limits = this.arrowLimits(view.getVisibleSize());
+
+    for (let index = 0; index < this.doorArrowSlots.length; index += 1) {
+      const slot = this.doorArrowSlots[index];
+      if (slot === undefined) continue;
+      const target = targets[index];
+      if (target === undefined) {
+        if (slot.root.active) slot.root.active = false;
+        continue;
+      }
+
+      const angle = this.placeArrow(slot.root, target, limits);
+      slot.triangle.angle = angle;
+      // Keep the badge upright: only the triangle turns with the heading.
+      const radians = (angle * Math.PI) / 180;
+      slot.icon.node.setPosition(
+        -Math.cos(radians) * DOOR_ARROW_ICON_INSET_PX,
+        -Math.sin(radians) * DOOR_ARROW_ICON_INSET_PX,
+        0,
+      );
+      this.showDoorArrowIcon(slot, target.reward);
+      if (!slot.root.active) slot.root.active = true;
+    }
+
+    // Enemy arrows are for combat: hide them while the doors are the target.
+    for (const node of this.arrowNodes) {
+      if (node.active) node.active = false;
+    }
+  }
+
+  /** "Choose a door" hint after the clear (#63). Bootstrap decides the timing from tuning. */
+  setDoorHint(visible: boolean): void {
+    const root = this.doorHintRoot;
+    if (root === null || visible === this.shownDoorHint) return;
+    this.shownDoorHint = visible;
+    root.active = visible;
+  }
+
+  /** Place `node` on the band edge along the ray to `offset`; returns the heading in degrees. */
+  private placeArrow(
+    node: Node,
+    offset: Vec2,
+    limits: { readonly halfWidth: number; readonly top: number; readonly bottom: number },
+  ): number {
+    // y down (room tiles) → y up (UI px).
+    const px = offset.x * HUD_PX_PER_TILE;
+    const py = -offset.y * HUD_PX_PER_TILE;
+    const verticalLimit = py >= 0 ? limits.top : limits.bottom;
+    const scale = Math.min(
+      Math.abs(px) > 1e-6 ? limits.halfWidth / Math.abs(px) : Number.POSITIVE_INFINITY,
+      Math.abs(py) > 1e-6 ? verticalLimit / Math.abs(py) : Number.POSITIVE_INFINITY,
+    );
+    const clamped = Number.isFinite(scale) ? Math.min(1, scale) : 1;
+
+    node.setPosition(px * clamped, py * clamped, 0);
+    return (Math.atan2(py, px) * 180) / Math.PI;
+  }
+
+  /** Inset of the arrow band inside the design screen (the top edge clears the two HUD rows). */
+  private arrowLimits(size: { readonly width: number; readonly height: number }): {
+    readonly halfWidth: number;
+    readonly top: number;
+    readonly bottom: number;
+  } {
+    return {
+      halfWidth: size.width / 2 - ARROW_INSET_PX,
+      top: size.height / 2 - ARROW_TOP_INSET_PX,
+      bottom: size.height / 2 - ARROW_INSET_PX,
+    };
   }
 
   /** Show/hide the boss health bar. `hp === null` hides it. */
@@ -442,6 +551,73 @@ export class Hud extends Component {
       node.active = false;
       this.arrowNodes.push(node);
     }
+  }
+
+  /**
+   * #63: door arrows, created once. The root carries the clamped position; the triangle child
+   * turns to the heading and the icon child stays upright just behind it.
+   */
+  private createDoorArrows(): void {
+    for (let index = 0; index < MAX_EDGE_ARROWS; index += 1) {
+      const root = new CocosNode(`door-arrow-${index}`);
+      root.layer = Layers.Enum.UI_2D;
+      root.parent = this.node;
+
+      const triangle = new CocosNode('triangle');
+      triangle.layer = Layers.Enum.UI_2D;
+      triangle.parent = root;
+      const graphics: Graphics = triangle.addComponent(CocosGraphics);
+      drawDoorArrow(graphics);
+
+      const iconNode = new CocosNode('reward-icon');
+      iconNode.layer = Layers.Enum.UI_2D;
+      iconNode.parent = root;
+      const icon: Sprite = iconNode.addComponent(CocosSprite);
+      icon.sizeMode = CocosSprite.SizeMode.CUSTOM;
+      icon.trim = false;
+      const transform: UITransform | null = iconNode.getComponent(CocosUITransform);
+      // CUSTOM takes its size from contentSize, not from the frame (AGENTS trap).
+      if (transform !== null) transform.setContentSize(DOOR_ARROW_ICON_PX, DOOR_ARROW_ICON_PX);
+
+      root.active = false;
+      this.doorArrowSlots.push({ root, triangle, icon, shownReward: null });
+    }
+  }
+
+  /** Load the reward icon once per reward change; a failed load leaves the cyan arrow visible. */
+  private showDoorArrowIcon(slot: DoorArrowSlot, reward: DoorReward): void {
+    if (slot.shownReward === reward) return;
+    slot.shownReward = reward;
+
+    const spec = ICONS[reward];
+    void loadRewardIconFrame(spec)
+      .then((frame) => {
+        if (!slot.root.isValid || slot.shownReward !== reward) return;
+        slot.icon.spriteFrame = frame;
+      })
+      .catch(() => undefined);
+  }
+
+  /** #63: the transient "choose a door" hint, centred between the hearts and the room label. */
+  private createDoorHint(size: { readonly width: number; readonly height: number }): void {
+    const root = new CocosNode('door-hint');
+    root.layer = Layers.Enum.UI_2D;
+    root.parent = this.node;
+    // Same row as gold / enemies, in the free space between them.
+    root.setPosition(0, size.height / 2 - HEART_ROW_TOP_PX - GOLD_ROW_TOP_PX, 0);
+
+    const backdrop = createBackdropPanel(
+      root,
+      'door-hint-backdrop',
+      DOOR_HINT_WIDTH_PX,
+      DOOR_HINT_HEIGHT_PX,
+    );
+    backdrop.setPosition(0, 0, 0);
+
+    createLabel(root, 'door-hint-label', 'Choose a door');
+
+    root.active = false;
+    this.doorHintRoot = root;
   }
 
   private createSkillRow(left: number, y: number): void {
@@ -636,6 +812,23 @@ function drawArrow(graphics: Graphics): void {
   graphics.close();
   graphics.fill();
   graphics.strokeColor = ARROW_OUTLINE;
+  graphics.lineWidth = 1;
+  graphics.stroke();
+}
+
+/**
+ * A door arrow (#63): the same readable silhouette as `drawArrow`, in cyan with a deeper outline so
+ * it never reads as an enemy arrow. The reward icon is a sibling node, not part of this drawing.
+ */
+function drawDoorArrow(graphics: Graphics): void {
+  graphics.fillColor = DOOR_ARROW_FILL;
+  graphics.moveTo(7, 0);
+  graphics.lineTo(-5, 5);
+  graphics.lineTo(-2, 0);
+  graphics.lineTo(-5, -5);
+  graphics.close();
+  graphics.fill();
+  graphics.strokeColor = DOOR_ARROW_OUTLINE;
   graphics.lineWidth = 1;
   graphics.stroke();
 }
