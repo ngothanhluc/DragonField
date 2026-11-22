@@ -1416,6 +1416,14 @@ export function frameBob(image: PngImage, columns: number, rows: number, frameWi
 
 /** Block sizes Gemini draws pixel art with. Largest first: a 16 px block is also a valid 8 px grid. */
 const NATIVE_BLOCK_SIZES = [32, 16, 8] as const;
+/**
+ * Share of an axis' colour changes that must sit on one block grid before the grid is
+ * believed. The real downloads measure ~0.92 for their 16 px grid and ~0.50 for their 32 px
+ * candidate (which only sees every second line), so the split is wide.
+ */
+const BLOCK_GRID_SHARE = 0.65;
+/** Gemini's blocks are 15–16 px with a 1 px seam, so a change may land just beside the line. */
+const BLOCK_SEAM_SLACK = 1;
 
 /** Packed colour of a pixel, or -1 when it is transparent. */
 function packedPixel(image: PngImage, x: number, y: number): number {
@@ -1425,57 +1433,70 @@ function packedPixel(image: PngImage, x: number, y: number): number {
 }
 
 /**
- * Positions (x for `x`, y for `y`) where the colour changes between adjacent pixels. Pixel
- * art drawn with b×b blocks only changes at multiples of b, plus the 1 px seam Gemini's
- * downscaled edges leave on the far side of a block boundary.
+ * Positions (x for `x`, y for `y`) where the colour changes between adjacent pixels, weighted
+ * by how many rows/columns change there, and **ignoring changes that touch a 1 px run**.
+ *
+ * A real block boundary repeats across the whole sprite; an anti-aliased speck is a 1 px run
+ * that changes on both sides in a single row. Weighting and dropping those runs keeps the
+ * grid measurable through the noise of a real download (which has ~10 000 of them), while a
+ * genuine pixel-art block grid still explains > 90% of the remaining changes.
  */
-function transitionPositions(image: PngImage, axis: 'x' | 'y'): number[] {
-  const found = new Set<number>();
-  if (axis === 'x') {
-    for (let y = 0; y < image.height; y += 1) {
-      for (let x = 1; x < image.width; x += 1) {
-        if (packedPixel(image, x - 1, y) !== packedPixel(image, x, y)) found.add(x);
+function transitionCounts(image: PngImage, axis: 'x' | 'y'): Map<number, number> {
+  const counts = new Map<number, number>();
+  const outer = axis === 'x' ? image.height : image.width;
+  const inner = axis === 'x' ? image.width : image.height;
+  const at = (index: number, other: number): number =>
+    axis === 'x' ? packedPixel(image, index, other) : packedPixel(image, other, index);
+  for (let other = 0; other < outer; other += 1) {
+    let runStart = 0;
+    let runColour = at(0, other);
+    for (let index = 1; index <= inner; index += 1) {
+      if (index < inner && at(index, other) === runColour) continue;
+      if (index < inner) {
+        let nextEnd = index + 1;
+        while (nextEnd < inner && at(nextEnd, other) === at(index, other)) nextEnd += 1;
+        if (index - runStart >= 2 && nextEnd - index >= 2) {
+          counts.set(index, (counts.get(index) ?? 0) + 1);
+        }
       }
-    }
-  } else {
-    for (let y = 1; y < image.height; y += 1) {
-      for (let x = 0; x < image.width; x += 1) {
-        if (packedPixel(image, x, y - 1) !== packedPixel(image, x, y)) found.add(y);
-      }
+      runStart = index;
+      if (index < inner) runColour = at(index, other);
     }
   }
-  return Array.from(found);
+  return counts;
 }
 
-/** Every transition lands on a multiple of `block`, or one pixel after it (a 1 px seam). */
-function alignsToBlocks(positions: readonly number[], block: number): boolean {
-  if (positions.length < 4) return false;
-  const residues = new Set(positions.map((position) => position % block));
-  for (const base of residues) {
-    let fits = true;
-    for (const residue of residues) {
-      if (residue !== base && residue !== (base + 1) % block) {
-        fits = false;
-        break;
-      }
+/** Share of the axis' colour changes that land within `BLOCK_SEAM_SLACK` of the best grid line. */
+function gridShare(counts: ReadonlyMap<number, number>, block: number): number {
+  let total = 0;
+  for (const count of counts.values()) total += count;
+  if (total < 8) return 0;
+  let best = 0;
+  for (let line = 0; line < block; line += 1) {
+    let onGrid = 0;
+    for (const [position, count] of counts) {
+      const residue = ((position % block) + block) % block;
+      const distance = Math.min(Math.abs(residue - line), block - Math.abs(residue - line));
+      if (distance <= BLOCK_SEAM_SLACK) onGrid += count;
     }
-    if (fits) return true;
+    if (onGrid > best) best = onGrid;
   }
-  return false;
+  return best / total;
 }
 
 /**
  * Size in source pixels of the pixel blocks the image was drawn with.
  *
  * A block size and its divisors both explain a purely block-aligned image, so the largest
- * matching size wins: art drawn with 16 px blocks is not "8 px art". Smooth (not blocky) art
- * has no block grid at all and returns 1.
+ * accepted size wins: art drawn with 16 px blocks is not "8 px art", and its 32 px candidate
+ * only covers half of the changes. Smooth (not blocky) art has no grid that explains most
+ * changes and returns 1.
  */
 export function nativeBlockSize(image: PngImage): number {
-  const xs = transitionPositions(image, 'x');
-  const ys = transitionPositions(image, 'y');
+  const xs = transitionCounts(image, 'x');
+  const ys = transitionCounts(image, 'y');
   for (const block of NATIVE_BLOCK_SIZES) {
-    if (alignsToBlocks(xs, block) && alignsToBlocks(ys, block)) return block;
+    if (gridShare(xs, block) >= BLOCK_GRID_SHARE && gridShare(ys, block) >= BLOCK_GRID_SHARE) return block;
   }
   return 1;
 }

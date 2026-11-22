@@ -24,6 +24,7 @@ import {
   limitColors,
   mirrorColumn,
   kindDefaults,
+  nativeBlockSize,
   removeMarker,
   type AssetSpec,
   type Rgb,
@@ -580,5 +581,47 @@ describe('#22 removeMarker', () => {
         expect(Array.from(cleaned.data.subarray((y * 64 + x) * 4, (y * 64 + x) * 4 + 4))).toEqual([...blue]);
       }
     }
+  });
+});
+
+describe('#22 nativeBlockSize through noise', () => {
+  it('still finds 16 px blocks when a tenth of the pixels are anti-alias specks', () => {
+    const colours: Pixel[] = [
+      [242, 234, 241, 255],
+      [45, 105, 123, 255],
+      [59, 54, 67, 255],
+      [252, 226, 202, 255],
+      [143, 239, 241, 255],
+    ];
+    const seam: Pixel = [20, 27, 27, 255];
+    const width = 512;
+    const pixels: Pixel[] = new Array<Pixel>(width * width).fill(CLEAR);
+    const put = (x: number, y: number, colour: Pixel): void => {
+      pixels[y * width + x] = colour;
+    };
+    // 30×30 blocks of 16 px from (7, 3), with a 1 px seam on some block edges.
+    for (let by = 0; by < 30; by += 1) {
+      for (let bx = 0; bx < 30; bx += 1) {
+        const colour = colours[(bx * 7 + by * 11 + bx * by) % colours.length]!;
+        for (let dy = 0; dy < 16; dy += 1) {
+          for (let dx = 0; dx < 16; dx += 1) put(7 + bx * 16 + dx, 3 + by * 16 + dy, colour);
+        }
+        if (bx % 3 === 0 && by % 2 === 0) {
+          for (let dy = 0; dy < 16; dy += 1) put(7 + bx * 16, 3 + by * 16 + dy, seam);
+        }
+      }
+    }
+    // Anti-aliased specks, as the real downloads have after the palette mapping.
+    let seed = 99;
+    const rand = (): number => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    for (let index = 0; index < pixels.length; index += 1) {
+      if (rand() >= 0.1) continue;
+      pixels[index] = colours[Math.floor(rand() * colours.length)]!;
+    }
+
+    expect(nativeBlockSize(image(pixels, width, width))).toBe(16);
   });
 });
