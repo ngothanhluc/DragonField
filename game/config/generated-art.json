@@ -6,7 +6,9 @@
     "sniper"
   ],
   "bosses": [],
-  "props": [],
+  "props": [
+    "npc"
+  ],
   "vfx": [],
   "particles": [],
   "attachments": [

@@ -41,7 +41,7 @@ import type { AnimationManifest } from '../core/art/manifest';
 import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
-import { DOORS_TUNING } from '../core/enemies/tuning';
+import { DOORS_TUNING, SPECIAL_ROOMS_TUNING } from '../core/enemies/tuning';
 import { nextWaveIndex } from '../core/enemies/waves';
 import { chapterFromLevels } from '../core/level/chapter';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
@@ -66,6 +66,17 @@ import {
   doorOffers,
   type DoorReward,
 } from '../core/run/doors';
+import {
+  buyFromShop,
+  chestReward,
+  healHearts,
+  isSpecialDoor,
+  shopOffers,
+  specialRoomLevel,
+  type ShopOffer,
+  type SpecialKind,
+} from '../core/run/special-rooms';
+import { getSkill } from '../core/skills/pool';
 import { chapterGate } from '../core/save/chapter-gate';
 import { withBest } from '../core/save/save-data';
 import type { SaveData } from '../core/save/save-data';
@@ -86,6 +97,7 @@ import type { DoorSpot } from './door-view';
 import {
   isDebugEnabled,
   type DebugDoorSnapshot,
+  type DebugSpecialSnapshot,
   type DebugStatus,
   type DebugUiText,
   type DebugVfxSnapshot,
@@ -120,6 +132,8 @@ import { ScreenFlow } from './screen-flow';
 import type { RunSnapshot } from './screen-flow';
 import { SkillPreview } from './skill-preview';
 import { SkillRun } from './skill-run';
+import { SpecialRoomView } from './special-room-view';
+import { buildShopPanel, type ShopBuyResult, type ShopPanel } from './shop-panel';
 import { collectUiText } from './ui-text';
 
 const { ccclass } = _decorator;
@@ -172,6 +186,12 @@ const ROOM_CLEAR_BANNER_SECONDS = 1;
 
 /** How close (tiles) the player must get to a door for walking into it to count. */
 const DOOR_ENTER_TILES = 1;
+
+/** How close (tiles) the player must get to the heal/shop NPC or the chest to use it. */
+const SPECIAL_USE_TILES = 1;
+
+/** Special-room art: preloaded at chapter launch so the NPC/chest never pops in. */
+const SPECIAL_ACTOR_KEYS = ['npc.heal', 'npc.shop', 'npc.chest'] as const;
 
 /**
  * Monster by role for each chapter (GDD §4). Keys must match the manifest — no
@@ -262,6 +282,17 @@ export class Bootstrap extends Component {
   private clearReward: DoorReward | null = null;
   /** Clock for the door phase: `CombatLoop` stops advancing once the room is cleared. */
   private doorClockMs = 0;
+  /** Door reward of the special slot the run just entered; consumed by `enterRoom`. */
+  private pendingSpecial: SpecialKind | null = null;
+  /** Live special room (#40): kind, its NPC/chest view and whether it was used. */
+  private specialRoom: SpecialKind | null = null;
+  private specialView: SpecialRoomView | null = null;
+  private specialUsed = false;
+  private specialFinished = false;
+  private specialClockMs = 0;
+  /** Open mid-run shop panel and its offers (index-matched to the cards). */
+  private shopPanel: ShopPanel | null = null;
+  private shopOfferList: readonly ShopOffer[] = [];
   private save: SaveData | null = null;
   private saveRepo: SaveRepository | null = null;
 
@@ -390,6 +421,12 @@ export class Bootstrap extends Component {
     // report `cleared` forever here, so this phase steps the player alone.
     if (this.doorPhase) {
       this.updateDoorPhase(rawDeltaMs);
+      return;
+    }
+
+    // A special room (#40) has no enemies: step the player alone and watch for the NPC/chest.
+    if (this.specialRoom !== null) {
+      this.updateSpecialPhase(rawDeltaMs);
       return;
     }
 
@@ -579,6 +616,8 @@ export class Bootstrap extends Component {
     this.doorOfferList = [];
     this.doorView?.destroy();
     this.doorView = null;
+    this.clearSpecialRoom();
+    this.pendingSpecial = null;
     // The combat RNG stream is separate from skill rolls: crit/boss patterns do not
     // change with the card the player picks.
     this.combatRng = SeededRng.fromSeed((seed ^ 0x85ebca6b) >>> 0);
@@ -646,7 +685,8 @@ export class Bootstrap extends Component {
     if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
     this.hud?.setSkills(this.skills.entries);
     this.displayedGold = 0;
-    this.hud?.setGold(0);
+    // The HUD shows the gold the player can actually spend: meta gold + this run's banked gold.
+    this.hud?.setGold(this.hudGoldTotal());
     console.log(
       `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} rooms in the ` +
         `pool, playing 9 from resources/${folder}. Starting room ${run.roomLabel} ` +
@@ -850,6 +890,8 @@ export class Bootstrap extends Component {
     // Bullet sheets are loaded by `BulletView.init` from the manifest (one per loadout/chapter).
     sheets.add(TELEGRAPH_RING_SHEET);
     sheets.add(HEART_SHEET);
+    // Special rooms (#40): the NPC/chest sheets, so the first frame of the room has no pop.
+    for (const key of SPECIAL_ACTOR_KEYS) sheets.add(resolve(manifest, key).sheet);
     for (const sheet of obstacleSheets(chapter.chapter)) sheets.add(sheet);
 
     // Chapter atmosphere + living decor (#6): preload so the first frame of a room has no pop.
@@ -1418,8 +1460,13 @@ export class Bootstrap extends Component {
     this.doorView?.destroy();
     this.doorView = null;
     this.doorOfferList = [];
-    // `boss` carries no clear reward; the next room is the boss arena.
+    // `boss` carries no clear reward; the next room is the boss arena. A special door replaces
+    // the next slot with a heal/shop/chest room (`enterRoom` reads `pendingSpecial`).
     this.roomReward = chosen === 'boss' ? null : chosen;
+    if (isSpecialDoor(chosen)) {
+      this.pendingSpecial = chosen;
+      this.roomReward = null;
+    }
     playSfx('ui-confirm');
     console.log(`[YokaiField] Took the ${chosen} door.`);
     this.advanceRoom();
@@ -1448,6 +1495,14 @@ export class Bootstrap extends Component {
       return;
     }
 
+    this.clearSpecialRoom();
+    const specialKind = this.pendingSpecial;
+    this.pendingSpecial = null;
+    if (specialKind !== null) {
+      this.enterSpecialRoom(roomNumber, specialKind, level);
+      return;
+    }
+
     this.createRoom(level);
     this.combat?.enterRoom(level);
     this.player?.teleport(level.playerStart);
@@ -1473,6 +1528,310 @@ export class Bootstrap extends Component {
       `[YokaiField] Entering room ${run.roomLabel} (${level.waves.length} waves` +
         `${level.isBossRoom ? ', boss' : ''}).`,
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Special rooms (#40)
+  // -------------------------------------------------------------------------
+
+  /** Drop the live special room state (room change, teardown, new run). */
+  private clearSpecialRoom(): void {
+    this.specialView?.destroy();
+    this.specialView = null;
+    this.shopPanel?.destroy();
+    this.shopPanel = null;
+    this.shopOfferList = [];
+    this.specialRoom = null;
+    this.specialUsed = false;
+    this.specialFinished = false;
+    this.specialClockMs = 0;
+  }
+
+  /**
+   * Enter a special slot: the drawn room is only the **floor** source (32×18 of the chapter's
+   * tiles), while the actual room has no enemies, one NPC/chest and one door out.
+   */
+  private enterSpecialRoom(roomNumber: number, kind: SpecialKind, drawn: LevelData): void {
+    const run = this.run;
+    if (run === null) return;
+
+    const asset = this.chapterAssets.get(drawn.room);
+    if (asset === undefined) {
+      this.fail(new Error(`TiledMapAsset not loaded for the ${kind} room (floor room ${drawn.room})`));
+      return;
+    }
+
+    const level = specialRoomLevel(run.chapter, kind, 100 + roomNumber);
+    this.createRoom(level, asset);
+    this.combat?.enterRoom(level);
+    this.player?.teleport(level.playerStart);
+    this.hud?.setRoomLabel(run.roomLabel);
+    this.hud?.setBoss(null);
+    this.persistBest(roomNumber);
+    this.audio?.playMusic(chapterMusic(level.chapter));
+
+    this.specialRoom = kind;
+    this.specialUsed = false;
+    this.specialFinished = false;
+    this.specialClockMs = 0;
+
+    const actorLayer = this.actorLayer;
+    const manifest = this.manifest;
+    if (actorLayer !== null && manifest !== null) {
+      this.specialView = new SpecialRoomView(actorLayer, kind, manifest);
+    }
+
+    this.status = 'playing';
+    this.screens.setScreen('playing');
+    const player = this.player;
+    if (this.hud !== null && player !== null) syncCombatHud(this.hud, player, this.combat);
+    console.log(
+      `[YokaiField] Entering the ${kind} room in slot ${run.roomLabel} ` +
+        `(floor from pool room ${drawn.room}, no enemies).`,
+    );
+  }
+
+  /** Step the player alone in a special room and use the NPC/chest when walked into. */
+  private updateSpecialPhase(deltaMs: number): void {
+    const player = this.player;
+    const level = this.currentLevel;
+    const view = this.specialView;
+    if (player === null || level === null || view === null) return;
+
+    this.specialClockMs += deltaMs;
+    player.step(this.specialClockMs, deltaMs, [], level);
+    this.fx?.update(deltaMs);
+    this.updateDepthAndCover(deltaMs);
+    if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
+
+    if (this.specialUsed) return;
+    const gap = Math.hypot(
+      player.position.x - view.position.x,
+      player.position.y - view.position.y,
+    );
+    if (gap <= SPECIAL_USE_TILES) this.useSpecialRoom();
+  }
+
+  /** Run the interaction of the current special room (also the debug `useSpecial()` hook). */
+  private useSpecialRoom(): boolean {
+    const kind = this.specialRoom;
+    if (kind === null || this.specialUsed) return false;
+
+    if (kind === 'heal') this.useHealNpc();
+    else if (kind === 'chest') this.useChest();
+    else this.openMidRunShop();
+    return true;
+  }
+
+  /** Heal NPC: restore the tuned hearts once, then open the exit door. */
+  private useHealNpc(): void {
+    this.specialUsed = true;
+    const player = this.player;
+    if (player !== null) {
+      const hearts = healHearts(
+        player.hearts,
+        player.maxHearts,
+        SPECIAL_ROOMS_TUNING.healHearts,
+      );
+      player.heal(hearts - player.hearts);
+      this.hud?.setHearts(player.hearts);
+    }
+    const position = this.specialView?.position;
+    if (position !== undefined) {
+      this.fx?.spawn('fx.boost', position, { drawUnits: 2, lifetimeMs: 600 });
+    }
+    playSfx('skill-acquired');
+    console.log(
+      `[YokaiField] Heal room: +${SPECIAL_ROOMS_TUNING.healHearts} hearts ` +
+        `(now ${player?.hearts ?? 0}/${player?.maxHearts ?? 0}).`,
+    );
+    this.finishSpecialRoom();
+  }
+
+  /** Chest: the seeded reward is a free skill pick or run gold. */
+  private useChest(): void {
+    this.specialUsed = true;
+    this.specialView?.markUsed();
+    const run = this.run;
+    if (run === null) return;
+
+    const reward = chestReward(this.runSeed, run.room);
+    if (reward.kind === 'gold') {
+      this.rewards.awardBonus(reward.amount);
+      this.flyGold(reward.amount, this.specialView?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
+      playSfx('gold');
+      console.log(`[YokaiField] Chest: +${reward.amount} gold.`);
+      this.finishSpecialRoom();
+      return;
+    }
+
+    console.log('[YokaiField] Chest: a free skill pick.');
+    const choices = this.skills.roll();
+    if (choices.length === 0) {
+      this.finishSpecialRoom();
+      return;
+    }
+    this.status = 'skill-pick';
+    this.screens.setScreen('skill-pick');
+    const canvas = this.ensureUiRoot();
+    void this.skills
+      .open(canvas, choices, (index) => this.chooseChestSkill(index))
+      .catch((error: unknown) => this.fail(error));
+  }
+
+  /** Free pick from a chest: no door is opened here, `finishSpecialRoom` does that. */
+  private chooseChestSkill(index: number): boolean {
+    if (this.status !== 'skill-pick' || this.specialRoom === null) return false;
+    const picked = this.skills.choose(index);
+    if (picked === null) return false;
+
+    this.applyLoadout(picked.result.healNow);
+    this.player?.playSkillBoost();
+    console.log(`[YokaiField] Chest skill: ${picked.def.name} → stack ${picked.result.stacks}.`);
+    this.finishSpecialRoom();
+    return true;
+  }
+
+  /** Shop NPC: build the panel; each purchase writes the save before the reward is applied. */
+  private openMidRunShop(): void {
+    this.specialUsed = true;
+    const run = this.run;
+    if (run === null) return;
+
+    const offers = shopOffers(this.runSeed, run.room, this.skills.snapshot());
+    this.shopOfferList = offers;
+    this.status = 'special';
+    this.screens.setScreen('playing');
+
+    const canvas = this.ensureUiRoot();
+    void buildShopPanel({
+      parent: canvas,
+      offers,
+      owned: this.skills.snapshot(),
+      gold: this.save?.gold ?? 0,
+      onBuy: (index) => this.buyShopOffer(index),
+      onClose: () => this.closeMidRunShop(),
+    })
+      .then((panel) => {
+        // Esc during the texture load already closed the shop: drop the late panel.
+        if (this.status === 'special') this.shopPanel = panel;
+        else panel.destroy();
+      })
+      .catch((error: unknown) => this.fail(error));
+    console.log(`[YokaiField] Shop room: ${offers.map((offer) => offer.item).join(', ')}.`);
+  }
+
+  /**
+   * Buy one shop offer. **Sole** writer of the mid-run shop's gold: `buyFromShop` decides, then
+   * the save is written before the skill/refill is applied, so a quit keeps the purchase.
+   */
+  private buyShopOffer(index: number): ShopBuyResult {
+    const save = this.save;
+    const repo = this.saveRepo;
+    const offer = this.shopOfferList[index];
+    const gold = save?.gold ?? 0;
+    if (save === null || repo === null || offer === undefined) {
+      return { ok: false, gold, message: 'SHOP UNAVAILABLE' };
+    }
+
+    if (offer.item !== 'heart-refill') {
+      const def = safeSkill(offer.item);
+      if (def === null || this.skills.stacks(def.id) >= def.maxStacks) {
+        return { ok: false, gold, message: 'ALREADY MAXED' };
+      }
+    }
+
+    const result = buyFromShop(save, offer);
+    if (!result.ok) return { ok: false, gold: result.save.gold, message: 'NOT ENOUGH GOLD' };
+
+    try {
+      repo.save(result.save);
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] Could not write the shop purchase: ${errorMessage(error)}`);
+      return { ok: false, gold, message: 'COULD NOT SAVE' };
+    }
+    this.save = result.save;
+
+    if (offer.item === 'heart-refill') {
+      const player = this.player;
+      if (player !== null) {
+        player.heal(player.maxHearts);
+        this.hud?.setHearts(player.hearts);
+      }
+    } else {
+      const grant = this.skills.grant(offer.item);
+      this.applyLoadout(grant.healNow);
+      this.player?.playSkillBoost();
+    }
+    this.hud?.setGold(this.hudGoldTotal());
+    console.log(
+      `[YokaiField] Bought ${offer.item} for ${offer.price} meta gold ` +
+        `(${result.save.gold} left).`,
+    );
+    return { ok: true, gold: result.save.gold, message: null };
+  }
+
+  /** Leave the shop (Esc / a successful purchase): back to the room, then the exit door. */
+  private closeMidRunShop(): void {
+    if (this.shopPanel !== null) {
+      this.shopPanel.destroy();
+      this.shopPanel = null;
+    }
+    this.shopOfferList = [];
+    if (this.status === 'special') this.status = 'playing';
+    this.finishSpecialRoom();
+  }
+
+  /** The special room is used: pay the slot's clear gold, mark it cleared and open one door out. */
+  private finishSpecialRoom(): void {
+    if (this.specialFinished || this.specialRoom === null) return;
+    this.specialFinished = true;
+
+    const run = this.run;
+    if (run === null) return;
+
+    this.specialView?.markUsed();
+    run.onRoomCleared();
+    this.persistBest(run.room);
+
+    const gold = this.rewards.awardRoomClear(
+      false,
+      this.player?.derivedStats.goldMultiplier ?? 1,
+    );
+    this.flyGold(gold, this.specialView?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
+    if (this.hud !== null && this.player !== null) {
+      syncCombatHud(this.hud, this.player, this.combat);
+    }
+    this.hud?.setSkills(this.skills.entries);
+    this.openSpecialExit();
+  }
+
+  /** One door out of a special room: the boss door on the last slot, a plain exit otherwise. */
+  private openSpecialExit(): void {
+    const run = this.run;
+    const level = this.currentLevel;
+    const parent = this.overlayLayer;
+    if (run === null || level === null || parent === null) return;
+
+    const offers: readonly DoorReward[] =
+      run.room >= run.roomsTotal - 1 ? ['boss'] : ['skill'];
+    const spots: DoorSpot[] = offers.map((reward, index) => ({
+      reward,
+      at: this.doorPosition(level, index),
+    }));
+
+    this.doorView?.destroy();
+    this.doorView = new DoorView(parent, spots);
+    this.doorOfferList = offers;
+    this.doorClockMs = this.specialClockMs;
+    this.combat?.clear();
+    this.bulletView?.sync();
+    this.doorPhase = true;
+    this.status = 'playing';
+    this.screens.setScreen('playing');
+    this.roomClearBanner?.destroy();
+    this.roomClearBanner = null;
+    console.log(`[YokaiField] Special room exit: ${offers.join(', ')}.`);
   }
 
   private finishLoss(): void {
@@ -1521,7 +1880,13 @@ export class Bootstrap extends Component {
   private onCoinArrived(amount: number): void {
     if (!(amount > 0)) return;
     this.displayedGold = Math.min(Number.MAX_SAFE_INTEGER, this.displayedGold + amount);
-    this.hud?.setGold(this.displayedGold);
+    this.hud?.setGold(this.hudGoldTotal());
+  }
+
+  /** Spendable gold shown on the HUD: the save's meta gold plus this run's arrived coins. */
+  private hudGoldTotal(): number {
+    const save = this.save?.gold ?? 0;
+    return Math.min(Number.MAX_SAFE_INTEGER, save + this.displayedGold);
   }
 
   /** Accessibility flags (shake, damage numbers) + effects mode applied immediately. */
@@ -1559,6 +1924,8 @@ export class Bootstrap extends Component {
     this.doorPhase = false;
     this.roomReward = null;
     this.clearReward = null;
+    this.pendingSpecial = null;
+    this.clearSpecialRoom();
     this.bossPhases.destroy();
 
     this.combat?.destroy();
@@ -1684,6 +2051,8 @@ export class Bootstrap extends Component {
       menuBackdrop: () => this.menuBackdrop?.snapshot() ?? null,
       doors: () => this.debugDoors(),
       takeDoor: (index) => this.debugTakeDoor(index),
+      special: () => this.debugSpecial(),
+      useSpecial: () => this.debugUseSpecial(),
     });
   }
 
@@ -1705,6 +2074,26 @@ export class Bootstrap extends Component {
 
     this.player?.teleport({ x: door.x, y: door.y });
     return this.takeDoor(index);
+  }
+
+  /** Debug `special()`: the live special room, its interaction point and used flags. */
+  private debugSpecial(): DebugSpecialSnapshot {
+    const view = this.specialView;
+    return {
+      kind: this.specialRoom,
+      x: view?.position.x ?? null,
+      y: view?.position.y ?? null,
+      used: this.specialUsed,
+      finished: this.specialFinished,
+    };
+  }
+
+  /** Debug `useSpecial()`: walk onto the NPC/chest and use it (shop opens its panel). */
+  private debugUseSpecial(): boolean {
+    if (this.specialRoom === null) return false;
+    const view = this.specialView;
+    if (view !== null) this.player?.teleport(view.position);
+    return this.useSpecialRoom();
   }
 
 
@@ -1871,6 +2260,15 @@ export class Bootstrap extends Component {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** `getSkill` throws on an unknown id; a stale shop offer must not crash the panel. */
+function safeSkill(id: string): ReturnType<typeof getSkill> | null {
+  try {
+    return getSkill(id);
+  } catch {
+    return null;
+  }
 }
 
 function chapterMusic(chapter: number): MusicId {

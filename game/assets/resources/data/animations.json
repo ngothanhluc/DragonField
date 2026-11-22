@@ -6060,6 +6060,42 @@
       "loop": true,
       "anchor": "feet",
       "footPx": 1
+    },
+    "npc.heal": {
+      "sheet": "resources/art/npc/heal.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shop": {
+      "sheet": "resources/art/npc/shop.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.chest": {
+      "sheet": "resources/art/npc/chest.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 2,
+      "fps": 4,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 1
     }
   }
 }
