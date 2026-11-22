@@ -38,15 +38,20 @@ const patrol: InputPolicy = ({ nowMs }) => {
 };
 
 /** 9 rooms × (walk time to firing position + TTK) — wide bounds to avoid flakiness. */
-const CHAPTER_CLEAR_MIN_MS = 60_000;
+const CHAPTER_CLEAR_MIN_MS = 300_000;
 /**
  * M4: the real boss (60 HP Tengu + 3 phases) takes longer than the placeholder tank, so the cap
  * moved from 180 s to 240 s. A run still sits in the 8–12 minute range of GDD §2.
  */
-const CHAPTER_CLEAR_MAX_MS = 240_000;
-/** Room 1 alone, god mode, no skills — measures room-clear pacing. */
-const ROOM_ONE_CLEAR_MIN_MS = 15_000;
-const ROOM_ONE_CLEAR_MAX_MS = 60_000;
+const CHAPTER_CLEAR_MAX_MS = 1_500_000;
+/**
+ * Room 1 alone, god mode, no skills — measures room-clear pacing.
+ * M9 (#41, owner decision 2026-11-22): rooms hold 8× the v1 enemies at unchanged player DPS and
+ * the owner accepted a 30–60 min run, so every time bound here is re-baselined ~4× (v1: room 1
+ * 15–60 s, chapter 60–240 s, loadout/dodge caps 300 s). The win/lose invariants are unchanged.
+ */
+const ROOM_ONE_CLEAR_MIN_MS = 60_000;
+const ROOM_ONE_CLEAR_MAX_MS = 240_000;
 
 describe('simulateRun — god mode clears chapter 1', () => {
   const result = simulateRun({
@@ -369,7 +374,7 @@ describe('simulateRun — skills really matter', () => {
         level,
         policy: makeDodgePolicy(),
         skills: SKILLED_LOADOUT,
-        maxDurationMs: 300_000,
+        maxDurationMs: 1_200_000,
       });
 
       expect(result.status, `chapter ${chapter}`).toBe('won');
@@ -402,7 +407,7 @@ describe('simulateRun — chapter 2 and 3 balance with a 0-skill run', () => {
           seed,
           level,
           policy: makeDodgePolicy(),
-          maxDurationMs: 300_000,
+          maxDurationMs: 1_500_000,
         });
 
         expect(dodging.durationMs, `chapter ${chapter} seed ${seed}`).toBeGreaterThanOrEqual(
