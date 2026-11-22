@@ -914,6 +914,7 @@ function planPath(
   doors: readonly Vec2[],
   playerStart: Vec2,
   water: readonly WaterArea[],
+  villageRoom: boolean,
 ): PathPlan {
   const bottom = doors.find((door) => door.y > ROWS / 2);
   const top = doors.find((door) => door.y <= ROWS / 2);
@@ -955,7 +956,10 @@ function planPath(
   // A village street: a straight horizontal run joined to the trail, with clear ground for the
   // houses above it. The village is built on this street (R5 of the #67 review), so the trail
   // really passes the doors instead of happening to end up near them.
-  const street = planStreet(rng, raw, doors, playerStart, water);
+  // `planStreet` always runs (it owns a fixed slice of the room seed); only a village room grows
+  // the street, so a grove room keeps one clean trail with no dead-end arm.
+  const planned = planStreet(rng, raw, doors, playerStart, water);
+  const street = villageRoom ? planned : null;
   if (street !== null) {
     for (let y = street.y; y <= street.y + 1; y += 1) {
       for (let x = street.x; x < street.x + street.width; x += 1) add(x, y);
@@ -1890,7 +1894,7 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
       const water = chapter === 2 ? planRiver(rng) : [];
 
       const border = planBorder(chapter, rng, doors);
-      const path = planPath(chapter, rng, doors, playerStart, water);
+      const path = planPath(chapter, rng, doors, playerStart, water, room % 2 === 0);
       const patches = planPatches(rng, water);
 
       const blocked = new Set<string>([...border.blocked, ...path.blocked]);
