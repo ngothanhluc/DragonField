@@ -1,24 +1,28 @@
 /**
  * Cull the room's **static** world sprites that are off screen (ticket #37, ADR-018).
  *
- * A 128×72 room holds ~16 screens of water tiles, obstacles, decor and under-actors atmosphere.
- * The engine draws every active `Sprite` in the scene graph whether or not the camera sees it, so
- * moving the camera over such a room would cost 16× a 32×18 room. This pass deactivates the
- * leaf sprites of the room tree that sit outside the view + a 2-tile margin, so a big room costs
- * about one screen.
+ * A 128×72 room holds ~16 screens of water tiles, obstacles, decor, under-actors atmosphere and
+ * tile chunks. The engine draws every active `Sprite`/`TiledMap` in the scene graph whether or
+ * not the camera sees it, so moving the camera over such a room would cost 16× a 32×18 room.
+ * This pass deactivates what sits outside the view + a 2-tile margin, so a big room costs about
+ * one screen.
  *
  * Scope is deliberately narrow:
- * - only the **room tree** (tiles are excluded: `TiledMap` keeps its own layers);
- * - only **leaf nodes**, which are plain static sprites (obstacles, water tiles, decor items,
- *   under-actors particles) — their parents own the `update` components, so deactivating a leaf
- *   never stops logic. Actors, bullets and the FX pool are **not** touched: their node `active`
- *   flag is game state (the FX pool uses it as its lifetime flag) and their count does not grow
- *   with room area.
+ * - **tile chunks** (the `tile-chunk-*` nodes built by `level-view` for a multi-screen room) are
+ *   toggled as a whole;
+ * - the rest of the **room tree** is walked and only **leaf nodes** are toggled — those are plain
+ *   static sprites (obstacles, water tiles, decor items, under-actors particles), and their
+ *   parents own the `update` components, so deactivating a leaf never stops logic;
+ * - actors, bullets and the FX pool are **not** touched: their node `active` flag is game state
+ *   (the FX pool uses it as its lifetime flag) and their count does not grow with room area.
  *
  * Positions are local: every container of the room tree (room root, water/decor/obstacles
- * groups) sits at the world origin with scale 1, so a leaf's local position is its world position.
+ * groups, the `tile-map` group) sits at the world origin with scale 1, so a leaf's local
+ * position is its world position.
  */
 import type { Node as CocosNode } from 'cc';
+import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
+import { TILE_CHUNK_PREFIX, TILE_MAP_NODE } from './level-view';
 
 type Node = InstanceType<typeof CocosNode>;
 
@@ -33,11 +37,15 @@ export interface CullRect {
 /** Tiles of margin around the view: a sprite may be half off screen and still drawn. */
 export const CULL_MARGIN_TILES = 2;
 
-/** Name of the `TiledMap` child; its layers are the engine's business, never toggled here. */
-const TILE_MAP_NODE = 'tile-map';
+/**
+ * Every tile chunk is at most one screen; using that half extent for all of them is correct
+ * (chunks tile the room contiguously) and only over-includes the smaller chunks at the edges.
+ */
+const CHUNK_HALF_COLS = ROOM_COLS / 2;
+const CHUNK_HALF_ROWS = ROOM_ROWS / 2;
 
 /**
- * Toggle the leaf sprites of `root` by whether they intersect `view` + margin.
+ * Toggle the room's static sprites and tile chunks by whether they intersect `view` + margin.
  * Returns how many leaves are currently hidden (debug/measurement only).
  */
 export function cullWorld(root: Node | null, view: CullRect, marginTiles = CULL_MARGIN_TILES): number {
@@ -49,7 +57,11 @@ function cullChildren(node: Node, view: CullRect, margin: number): number {
   let hidden = 0;
   for (const child of node.children) {
     if (!child.isValid) continue;
-    if (child.name === TILE_MAP_NODE) continue;
+
+    if (child.name === TILE_MAP_NODE) {
+      hidden += cullChunks(child, view, margin);
+      continue;
+    }
 
     if (child.children.length > 0) {
       hidden += cullChildren(child, view, margin);
@@ -57,13 +69,54 @@ function cullChildren(node: Node, view: CullRect, margin: number): number {
     }
 
     const position = child.position;
-    const visible =
-      position.x >= view.x - margin &&
-      position.x <= view.x + view.width + margin &&
-      position.y >= view.y - margin &&
-      position.y <= view.y + view.height + margin;
+    const visible = intersects(
+      position.x,
+      position.y,
+      0,
+      0,
+      view,
+      margin,
+    );
     if (child.active !== visible) child.active = visible;
     if (!visible) hidden += 1;
   }
   return hidden;
+}
+
+/** One chunk node per 32×18 screen; compare its full tile extent, not just its centre. */
+function cullChunks(group: Node, view: CullRect, margin: number): number {
+  let hidden = 0;
+  for (const chunk of group.children) {
+    if (!chunk.isValid || !chunk.name.startsWith(TILE_CHUNK_PREFIX)) continue;
+
+    const position = chunk.position;
+    const visible = intersects(
+      position.x,
+      position.y,
+      CHUNK_HALF_COLS,
+      CHUNK_HALF_ROWS,
+      view,
+      margin,
+    );
+    if (chunk.active !== visible) chunk.active = visible;
+    if (!visible) hidden += 1;
+  }
+  return hidden;
+}
+
+/** A point (or an axis-aligned box around it) intersects the view grown by `margin`. */
+function intersects(
+  x: number,
+  y: number,
+  halfWidth: number,
+  halfHeight: number,
+  view: CullRect,
+  margin: number,
+): boolean {
+  return (
+    x + halfWidth >= view.x - margin &&
+    x - halfWidth <= view.x + view.width + margin &&
+    y + halfHeight >= view.y - margin &&
+    y - halfHeight <= view.y + view.height + margin
+  );
 }
