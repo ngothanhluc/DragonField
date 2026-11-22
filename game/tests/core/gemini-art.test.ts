@@ -18,11 +18,14 @@ import {
   upscaleFactor,
   fitColumnsToCells,
   fitCells,
+  fitPoint,
   footPxFor,
   inspectCells,
   limitColors,
   mirrorColumn,
   kindDefaults,
+  nativeBlockSize,
+  removeMarker,
   type AssetSpec,
   type Rgb,
 } from '../../scripts/lib/gemini-art';
@@ -529,5 +532,122 @@ describe('#20 footPxFor', () => {
 
   it('returns the frame height for a fully transparent feet sheet', () => {
     expect(footPxFor('feet', image(new Array<Pixel>(9).fill(CLEAR), 3, 3), 3)).toBe(3);
+  });
+});
+
+describe('#22 fitPoint', () => {
+  it('agrees with fitCells for the feet anchor and clamps points outside the sprite', () => {
+    const red: Pixel = [200, 0, 0, 255];
+    const pixels: Pixel[] = new Array<Pixel>(16 * 16).fill(CLEAR);
+    for (let y = 5; y < 14; y += 1) for (let x = 2; x < 13; x += 1) pixels[y * 16 + x] = red;
+    const sheet = image(pixels, 16, 16);
+    const options = {
+      columns: 1,
+      rows: 1,
+      frameWidth: 16,
+      frameHeight: 16,
+      anchor: 'feet' as const,
+      share: 'cell' as const,
+    };
+    const out = fitCells(sheet, options);
+
+    // Every source pixel of the sprite maps to an opaque pixel of the fitted sheet.
+    for (const [x, y] of [
+      [2, 5],
+      [7, 9],
+      [12, 13],
+    ] as const) {
+      const [px, py] = fitPoint(sheet, options, [x + 0.5, y + 0.5]);
+      expect(out.data[(py * 16 + px) * 4 + 3]).toBe(255);
+    }
+    expect(fitPoint(sheet, options, [-30, -30])).toEqual([0, 0]);
+    expect(fitPoint(sheet, options, [99, 99])).toEqual([15, 15]);
+  });
+});
+
+describe('#22 removeMarker', () => {
+  it('matches a slightly off shade and fills a plate wider than the search ring', () => {
+    const blue: Pixel = [0, 0, 200, 255];
+    const nearCyan: Pixel = [12, 240, 245, 255];
+    const pixels: Pixel[] = new Array<Pixel>(64 * 64).fill(CLEAR);
+    for (let y = 8; y < 56; y += 1) for (let x = 8; x < 56; x += 1) pixels[y * 64 + x] = blue;
+    for (let y = 28; y < 36; y += 1) for (let x = 28; x < 36; x += 1) pixels[y * 64 + x] = nearCyan;
+
+    const { image: cleaned, centres } = removeMarker(image(pixels, 64, 64), [0, 255, 255], 1, 1);
+
+    expect(centres[0]).toEqual([32, 32]);
+    for (let y = 28; y < 36; y += 1) {
+      for (let x = 28; x < 36; x += 1) {
+        expect(Array.from(cleaned.data.subarray((y * 64 + x) * 4, (y * 64 + x) * 4 + 4))).toEqual([...blue]);
+      }
+    }
+  });
+});
+
+describe('#22 removeMarker halo', () => {
+  it('recolours the blended ring around the plate and keeps the grip at the plate centre', () => {
+    const blue: Pixel = [0, 0, 200, 255];
+    const blend: Pixel = [30, 150, 165, 255]; // cyan mixed into the item: ~142 from the marker
+    const width = 64;
+    const pixels: Pixel[] = new Array<Pixel>(width * width).fill(CLEAR);
+    for (let y = 20; y < 40; y += 1) for (let x = 20; x < 40; x += 1) pixels[y * width + x] = blue;
+    for (let y = 29; y < 35; y += 1) for (let x = 29; x < 35; x += 1) pixels[y * width + x] = [0, 255, 255, 255];
+    for (let y = 28; y < 36; y += 1) {
+      for (let x = 28; x < 36; x += 1) {
+        if (x >= 29 && x < 35 && y >= 29 && y < 35) continue;
+        pixels[y * width + x] = blend;
+      }
+    }
+
+    const { image: cleaned, centres } = removeMarker(image(pixels, width, width), [0, 255, 255], 1, 1);
+
+    expect(centres[0]).toEqual([32, 32]);
+    for (let y = 28; y < 36; y += 1) {
+      for (let x = 28; x < 36; x += 1) {
+        expect(Array.from(cleaned.data.subarray((y * width + x) * 4, (y * width + x) * 4 + 4))).toEqual([...blue]);
+      }
+    }
+  });
+});
+
+describe('#22 nativeBlockSize through noise', () => {
+  it('still finds 16 px blocks when a tenth of the pixels are anti-alias specks', () => {
+    const colours: Pixel[] = [
+      [242, 234, 241, 255],
+      [45, 105, 123, 255],
+      [59, 54, 67, 255],
+      [252, 226, 202, 255],
+      [143, 239, 241, 255],
+    ];
+    const seam: Pixel = [20, 27, 27, 255];
+    const width = 512;
+    const pixels: Pixel[] = new Array<Pixel>(width * width).fill(CLEAR);
+    const put = (x: number, y: number, colour: Pixel): void => {
+      pixels[y * width + x] = colour;
+    };
+    // 30×30 blocks of 16 px from (7, 3), with a 1 px seam on some block edges.
+    for (let by = 0; by < 30; by += 1) {
+      for (let bx = 0; bx < 30; bx += 1) {
+        const colour = colours[(bx * 7 + by * 11 + bx * by) % colours.length]!;
+        for (let dy = 0; dy < 16; dy += 1) {
+          for (let dx = 0; dx < 16; dx += 1) put(7 + bx * 16 + dx, 3 + by * 16 + dy, colour);
+        }
+        if (bx % 3 === 0 && by % 2 === 0) {
+          for (let dy = 0; dy < 16; dy += 1) put(7 + bx * 16, 3 + by * 16 + dy, seam);
+        }
+      }
+    }
+    // Anti-aliased specks, as the real downloads have after the palette mapping.
+    let seed = 99;
+    const rand = (): number => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    for (let index = 0; index < pixels.length; index += 1) {
+      if (rand() >= 0.1) continue;
+      pixels[index] = colours[Math.floor(rand() * colours.length)]!;
+    }
+
+    expect(nativeBlockSize(image(pixels, width, width))).toBe(16);
   });
 });

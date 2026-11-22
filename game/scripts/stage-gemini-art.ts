@@ -34,6 +34,7 @@ import {
   directionKey,
   dropStrayBlobs,
   fitCells,
+  fitPoint,
   footPxFor,
   frameBob,
   inspectCells,
@@ -43,15 +44,19 @@ import {
   paletteColors,
   parseSpec,
   quantize,
+  removeMarker,
   resamplePixelArt,
+  resolutionIssues,
   salienceWeights,
   sliceTiles,
   spriteFrameMeta,
   type AssetKind,
   type AssetSpec,
   type AttachPoints,
+  type FitCellsOptions,
   type NineSlice,
   type Point,
+  type PointMap,
 } from './lib/gemini-art';
 import { buildTsx } from './lib/room-layout';
 import { readPng, writePng } from './lib/png';
@@ -92,6 +97,12 @@ interface StagedAsset {
 interface Registration {
   readonly kind: AssetKind;
   readonly name: string;
+}
+
+/** Palette-mapped source grid, plus the grip-marker centres read from the keyed download. */
+interface Prepared {
+  readonly image: PngImage;
+  readonly markerCentres: ReadonlyArray<readonly [number, number] | null>;
 }
 
 interface AttachmentsFile {
@@ -180,27 +191,38 @@ function sourceCells(asset: AssetSpec): { readonly columns: number; readonly row
 
 /**
  * Raw download → palette-mapped source grid, with the quality gate. Chroma key only runs
- * when the spec names a background, so tilesets (drawn opaque) are untouched.
+ * when the spec names a background, so tilesets (drawn opaque) are untouched. A
+ * `gripMarker` is read and removed here, on the keyed image, before the palette mapping
+ * can fold its colour into a sprite colour.
  */
-function prepare(asset: AssetSpec, palette: readonly (readonly [number, number, number])[], force: boolean): PngImage {
+function prepare(
+  asset: AssetSpec,
+  palette: readonly (readonly [number, number, number])[],
+  force: boolean,
+): Prepared {
   const source = resolve(ROOT, asset.source);
   if (!inside(source, join(ROOT, 'art-source', 'gemini'))) {
     throw new Error(`${asset.key}: source must live under art-source/gemini`);
   }
   if (!existsSync(source)) throw new Error(`${asset.key}: missing source image ${source}`);
 
+  const defaults = kindDefaults(asset.kind);
+  const cells = sourceCells(asset);
   const raw = readPng(source);
-  const keyed =
+  let keyed =
     asset.background === undefined
       ? raw
       : chromaKey(raw, asset.background === 'auto' ? cornerColor(raw) : asset.background);
+  let markerCentres: ReadonlyArray<readonly [number, number] | null> = [];
+  if (asset.gripMarker !== undefined) {
+    const removed = removeMarker(keyed, asset.gripMarker, cells.columns, cells.rows);
+    keyed = removed.image;
+    markerCentres = removed.centres;
+  }
 
   const maxColors = asset.maxColors ?? (asset.kind === 'tileset' ? undefined : DEFAULT_MAX_COLORS);
   let mapped = clusterToPalette(keyed, palette);
   if (maxColors !== undefined) mapped = limitColors(mapped, maxColors);
-
-  const defaults = kindDefaults(asset.kind);
-  const cells = sourceCells(asset);
 
   if (asset.layout === 'grid' || asset.kind === 'icon') {
     mapped = dropStrayBlobs(mapped, cells.columns, cells.rows);
@@ -218,7 +240,7 @@ function prepare(asset: AssetSpec, palette: readonly (readonly [number, number, 
       throw new Error(`${asset.key}: ${issues.length} quality issue(s); regenerate, or pass --force to stage anyway`);
     }
   }
-  return mapped;
+  return { image: mapped, markerCentres };
 }
 
 function cropCell(image: PngImage, column: number, row: number, width: number, height: number): PngImage {
@@ -272,7 +294,9 @@ function stage(
   attachments: AttachmentsFile,
 ): StagedAsset[] {
   const defaults = kindDefaults(asset.kind);
-  const mapped = prepare(asset, palette, force);
+  const prepared = prepare(asset, palette, force);
+  const mapped = prepared.image;
+  const cells = sourceCells(asset);
 
   if (defaults.register === 'tileset') {
     const columns = asset.columns ?? 1;
@@ -293,7 +317,6 @@ function stage(
   }
 
   if (asset.kind === 'icon') {
-    const cells = sourceCells(asset);
     const processed = quantize(
       despeckle(
         fitCells(mapped, {
@@ -320,8 +343,7 @@ function stage(
     });
   }
 
-  const cells = sourceCells(asset);
-  const fitted = fitCells(mapped, {
+  const fitOptions: FitCellsOptions = {
     columns: cells.columns,
     rows: cells.rows,
     frameWidth: asset.frameWidth,
@@ -330,19 +352,41 @@ function stage(
     share: defaults.share,
     weights: salienceWeights(mapped),
     ...(asset.fitBox === undefined ? {} : { fitBox: asset.fitBox }),
-  });
-  let prepared = despeckle(fitted);
-  for (const [target, from] of Object.entries(asset.mirror ?? {})) {
-    prepared = mirrorColumn(prepared, asset.frameWidth, asset.directions.indexOf(from), asset.directions.indexOf(target));
+  };
+
+  // A download drawn with more native blocks than its frame has pixels loses its 1-block
+  // details in the downscale. Warn; never fail — this never changes the staged pixels.
+  const fitBox: readonly [number, number] =
+    asset.fitBox ??
+    (defaults.anchor === 'feet'
+      ? [asset.frameWidth - 1, asset.frameHeight - 1]
+      : [asset.frameWidth, asset.frameHeight]);
+  if (asset.directions.length > 0) {
+    for (const issue of resolutionIssues(mapped, cells.columns, cells.rows, fitBox)) {
+      const direction = asset.directions[issue.column] ?? `column ${issue.column}`;
+      console.warn(`warn  ${asset.key} ${direction}: resolution — ${issue.detail}`);
+    }
   }
+
+  const fitted = fitCells(mapped, fitOptions);
+  let shaded = despeckle(fitted);
+  for (const [target, from] of Object.entries(asset.mirror ?? {})) {
+    shaded = mirrorColumn(shaded, asset.frameWidth, asset.directions.indexOf(from), asset.directions.indexOf(target));
+  }
+  // Resolve marker grips before writing anything: a missing marker must fail the asset
+  // without leaving a half-staged PNG behind.
+  const markerGrips =
+    asset.kind === 'attachment' && asset.gripMarker !== undefined
+      ? gripFromMarker(asset, mapped, fitOptions, prepared.markerCentres)
+      : {};
   // The input is already on the palette; this only re-asserts binary alpha.
-  const processed = quantize(prepared, palette);
+  const processed = quantize(shaded, palette);
   writeImage(asset.sheet, processed);
 
   const entry = entryFor(asset, `resources/art/${asset.sheet}`, processed);
 
   if (asset.kind === 'character' && asset.attach !== undefined) recordCharacter(attachments, asset, processed, cells);
-  if (asset.kind === 'attachment') recordItem(attachments, asset);
+  if (asset.kind === 'attachment') recordItem(attachments, asset, markerGrips);
 
   if (asset.directions.length <= 1) return [{ key: asset.key, entry }];
   return asset.directions.map((direction) => ({ key: directionKey(asset.key, direction), entry }));
@@ -374,12 +418,38 @@ function recordCharacter(
   };
 }
 
+/**
+ * Output-frame grip points of an attachment, read from the marker in each direction cell.
+ * Explicit `grip[direction]` entries still win in `recordItem`; a cell without a marker is
+ * an authoring mistake, so it fails with the direction named.
+ */
+function gripFromMarker(
+  asset: AssetSpec,
+  image: PngImage,
+  fitOptions: FitCellsOptions,
+  centres: ReadonlyArray<readonly [number, number] | null>,
+): PointMap {
+  const grips: Record<string, Point> = {};
+  asset.directions.forEach((direction, index) => {
+    const centre = centres[index];
+    if (centre === null || centre === undefined) {
+      throw new Error(
+        `${asset.key}: no ${String(asset.gripMarker)} gripMarker pixel in the ${direction} cell — paint one small marker block on the item, or drop gripMarker`,
+      );
+    }
+    grips[direction] = fitPoint(image, fitOptions, centre);
+  });
+  return grips;
+}
+
 /** Record an attachment's slot, grip and draw-order override. */
-function recordItem(file: AttachmentsFile, asset: AssetSpec): void {
+function recordItem(file: AttachmentsFile, asset: AssetSpec, markerGrips: PointMap = {}): void {
   const name = asset.key.split('.')[1] ?? asset.key;
   const centre: Point = [Math.floor(asset.frameWidth / 2), Math.floor(asset.frameHeight / 2)];
   const grip: Record<string, Point> = {};
-  for (const direction of DIRECTIONS) grip[direction] = asset.grip?.[direction] ?? centre;
+  for (const direction of DIRECTIONS) {
+    grip[direction] = asset.grip?.[direction] ?? markerGrips[direction] ?? centre;
+  }
   file.items[name] = {
     sprite: asset.key,
     slot: asset.slot ?? 'hand',

@@ -88,6 +88,8 @@ export interface AssetSpec {
   readonly slot?: AttachSlot;
   /** `attachment`: direction → grip point in the output frame. Defaults to the frame centre. */
   readonly grip?: PointMap;
+  /** `attachment`: colour of the grip marker Gemini paints on the item (ticket #22). */
+  readonly gripMarker?: Rgb;
   /** `attachment`: directions where the item is drawn behind the body. */
   readonly behind?: readonly string[];
   /** `character`: attach points for a weapon/prop, in output-frame pixels. */
@@ -335,6 +337,14 @@ function parseAsset(value: unknown, index: number): AssetSpec {
   }
   const gripRaw = field('grip');
   const grip = gripRaw === undefined ? undefined : pointMap(gripRaw, `${key}.grip`);
+  const gripMarkerRaw = field('gripMarker');
+  let gripMarker: Rgb | undefined;
+  if (gripMarkerRaw !== undefined) {
+    if (typeof gripMarkerRaw !== 'string' || !HEX_COLOUR.test(gripMarkerRaw)) {
+      throw new Error(`${key}.gripMarker must be "#rrggbb"`);
+    }
+    gripMarker = hexToRgb(gripMarkerRaw);
+  }
   const behindRaw = field('behind');
   let behind: readonly string[] | undefined;
   if (behindRaw !== undefined) {
@@ -409,6 +419,7 @@ function parseAsset(value: unknown, index: number): AssetSpec {
     ...(slice === undefined ? {} : { nineSlice: slice }),
     ...(slotRaw === undefined ? {} : { slot: slotRaw as AttachSlot }),
     ...(grip === undefined ? {} : { grip }),
+    ...(gripMarker === undefined ? {} : { gripMarker }),
     ...(behind === undefined ? {} : { behind }),
     ...(attach === undefined ? {} : { attach }),
     ...(tsx === undefined ? {} : { tsx }),
@@ -810,7 +821,7 @@ export function mirrorColumn(image: PngImage, frameWidth: number, from: number, 
 }
 
 export interface SheetIssue {
-  readonly kind: 'edge' | 'drift' | 'empty';
+  readonly kind: 'edge' | 'drift' | 'empty' | 'resolution';
   readonly column: number;
   readonly row: number;
   readonly detail: string;
@@ -1100,19 +1111,28 @@ export function footPxFor(anchor: 'feet' | 'center', image: PngImage, frameHeigh
   return image.height;
 }
 
+/** Shared crop window and scale of one `share` group, in source-cell pixels. */
+interface FitPlan {
+  readonly region: Box;
+  readonly scale: number;
+  readonly fitWidth: number;
+  readonly fitHeight: number;
+}
+
+interface Fitting {
+  readonly cellWidth: number;
+  readonly cellHeight: number;
+  readonly cells: readonly Cell[];
+  readonly groupOf: (row: number, column: number) => number;
+  readonly plans: ReadonlyMap<number, FitPlan>;
+}
+
 /**
- * Fit every cell of a source grid into output frames.
- *
- * `share` decides which cells union their crop window (and therefore share one scale):
- * - `column`: every frame of a direction column (today's character/monster behaviour),
- * - `sheet`: every cell of the sheet (an effect strip keeps its motion between frames),
- * - `cell`: each cell alone (icons each fill their own frame).
- *
- * `anchor: 'center'` centres the shared window in the frame; `'feet'` puts each frame's
- * own feet on the cell floor, exactly like `fitColumnsToCells`.
+ * The crop/scale decisions `fitCells` makes, shared with `fitPoint` so a source point maps
+ * to the pixel the fitted sheet actually shows.
  */
-export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
-  const { columns, rows, frameWidth, frameHeight, anchor, share, weights } = options;
+function planFitting(image: PngImage, options: FitCellsOptions): Fitting {
+  const { columns, rows, frameWidth, frameHeight, anchor, share } = options;
   for (const [label, value] of [
     ['columns', columns],
     ['rows', rows],
@@ -1158,7 +1178,7 @@ export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
 
   const [boxWidth, boxHeight] =
     options.fitBox ?? (anchor === 'feet' ? [frameWidth - 1, frameHeight - 1] : [frameWidth, frameHeight]);
-  const plans = new Map<number, { region: Box; scale: number; fitWidth: number; fitHeight: number }>();
+  const plans = new Map<number, FitPlan>();
   for (const [group, region] of regions) {
     if (region === null) continue;
     const regionWidth = region.x1 - region.x0;
@@ -1172,6 +1192,27 @@ export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
       fitHeight: Math.min(frameHeight, Math.max(1, Math.round(regionHeight * scale))),
     });
   }
+  return { cellWidth, cellHeight, cells, groupOf, plans };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Fit every cell of a source grid into output frames.
+ *
+ * `share` decides which cells union their crop window (and therefore share one scale):
+ * - `column`: every frame of a direction column (today's character/monster behaviour),
+ * - `sheet`: every cell of the sheet (an effect strip keeps its motion between frames),
+ * - `cell`: each cell alone (icons each fill their own frame).
+ *
+ * `anchor: 'center'` centres the shared window in the frame; `'feet'` puts each frame's
+ * own feet on the cell floor, exactly like `fitColumnsToCells`.
+ */
+export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
+  const { columns, rows, frameWidth, frameHeight, anchor, weights } = options;
+  const { cells, groupOf, plans } = planFitting(image, options);
 
   const outWidth = frameWidth * columns;
   const data = Buffer.alloc(outWidth * frameHeight * rows * 4);
@@ -1369,4 +1410,350 @@ export function frameBob(image: PngImage, columns: number, rows: number, frameWi
     result.push(bobs);
   }
   return result;
+}
+
+// ---- Ticket #22: resolution warning and grip markers. ----
+
+/** Block sizes Gemini draws pixel art with. Largest first: a 16 px block is also a valid 8 px grid. */
+const NATIVE_BLOCK_SIZES = [32, 16, 8] as const;
+/**
+ * Share of an axis' colour changes that must sit on one block grid before the grid is
+ * believed. The real downloads measure ~0.92 for their 16 px grid and ~0.50 for their 32 px
+ * candidate (which only sees every second line), so the split is wide.
+ */
+const BLOCK_GRID_SHARE = 0.65;
+/** Gemini's blocks are 15–16 px with a 1 px seam, so a change may land just beside the line. */
+const BLOCK_SEAM_SLACK = 1;
+
+/** Packed colour of a pixel, or -1 when it is transparent. */
+function packedPixel(image: PngImage, x: number, y: number): number {
+  const index = (y * image.width + x) * 4;
+  if (image.data[index + 3]! < 128) return -1;
+  return (image.data[index]! << 16) | (image.data[index + 1]! << 8) | image.data[index + 2]!;
+}
+
+/**
+ * Positions (x for `x`, y for `y`) where the colour changes between adjacent pixels, weighted
+ * by how many rows/columns change there, and **ignoring changes that touch a 1 px run**.
+ *
+ * A real block boundary repeats across the whole sprite; an anti-aliased speck is a 1 px run
+ * that changes on both sides in a single row. Weighting and dropping those runs keeps the
+ * grid measurable through the noise of a real download (which has ~10 000 of them), while a
+ * genuine pixel-art block grid still explains > 90% of the remaining changes.
+ */
+function transitionCounts(image: PngImage, axis: 'x' | 'y'): Map<number, number> {
+  const counts = new Map<number, number>();
+  const outer = axis === 'x' ? image.height : image.width;
+  const inner = axis === 'x' ? image.width : image.height;
+  const at = (index: number, other: number): number =>
+    axis === 'x' ? packedPixel(image, index, other) : packedPixel(image, other, index);
+  for (let other = 0; other < outer; other += 1) {
+    let runStart = 0;
+    let runColour = at(0, other);
+    for (let index = 1; index <= inner; index += 1) {
+      if (index < inner && at(index, other) === runColour) continue;
+      if (index < inner) {
+        let nextEnd = index + 1;
+        while (nextEnd < inner && at(nextEnd, other) === at(index, other)) nextEnd += 1;
+        if (index - runStart >= 2 && nextEnd - index >= 2) {
+          counts.set(index, (counts.get(index) ?? 0) + 1);
+        }
+      }
+      runStart = index;
+      if (index < inner) runColour = at(index, other);
+    }
+  }
+  return counts;
+}
+
+/** Share of the axis' colour changes that land within `BLOCK_SEAM_SLACK` of the best grid line. */
+function gridShare(counts: ReadonlyMap<number, number>, block: number): number {
+  let total = 0;
+  for (const count of counts.values()) total += count;
+  if (total < 8) return 0;
+  let best = 0;
+  for (let line = 0; line < block; line += 1) {
+    let onGrid = 0;
+    for (const [position, count] of counts) {
+      const residue = ((position % block) + block) % block;
+      const distance = Math.min(Math.abs(residue - line), block - Math.abs(residue - line));
+      if (distance <= BLOCK_SEAM_SLACK) onGrid += count;
+    }
+    if (onGrid > best) best = onGrid;
+  }
+  return best / total;
+}
+
+/**
+ * Size in source pixels of the pixel blocks the image was drawn with.
+ *
+ * A block size and its divisors both explain a purely block-aligned image, so the largest
+ * accepted size wins: art drawn with 16 px blocks is not "8 px art", and its 32 px candidate
+ * only covers half of the changes. Smooth (not blocky) art has no grid that explains most
+ * changes and returns 1.
+ */
+export function nativeBlockSize(image: PngImage): number {
+  const xs = transitionCounts(image, 'x');
+  const ys = transitionCounts(image, 'y');
+  for (const block of NATIVE_BLOCK_SIZES) {
+    if (gridShare(xs, block) >= BLOCK_GRID_SHARE && gridShare(ys, block) >= BLOCK_GRID_SHARE) return block;
+  }
+  return 1;
+}
+
+/**
+ * One `resolution` issue per direction column whose sprite has far more native blocks than
+ * its fitted height: below one block per output pixel, 1-block details such as eyes vanish
+ * in the downscale. Warns, never blocks — the caller prints it and stages anyway.
+ */
+export function resolutionIssues(
+  image: PngImage,
+  columns: number,
+  rows: number,
+  fitBox: readonly [number, number],
+): SheetIssue[] {
+  const blockSize = nativeBlockSize(image);
+  const cellWidth = Math.floor(image.width / columns);
+  const cellHeight = Math.floor(image.height / rows);
+  const issues: SheetIssue[] = [];
+  for (let column = 0; column < columns; column += 1) {
+    let region: Box | null = null;
+    for (let row = 0; row < rows; row += 1) {
+      const box: Box = {
+        x0: column * cellWidth,
+        y0: row * cellHeight,
+        x1: (column + 1) * cellWidth,
+        y1: (row + 1) * cellHeight,
+      };
+      const found = opaqueBox(image, box);
+      region = unionBox(
+        region,
+        found === null
+          ? null
+          : { x0: found.x0 - box.x0, y0: found.y0 - box.y0, x1: found.x1 - box.x0, y1: found.y1 - box.y0 },
+      );
+    }
+    if (region === null) continue;
+    const regionWidth = region.x1 - region.x0;
+    const regionHeight = region.y1 - region.y0;
+    if (regionWidth <= 0 || regionHeight <= 0) continue;
+    const scale = Math.min(fitBox[0] / regionWidth, fitBox[1] / regionHeight);
+    const fittedHeight = Math.round(regionHeight * scale);
+    const blocksTall = Math.round(regionHeight / blockSize);
+    if (blocksTall > fittedHeight * 1.5) {
+      issues.push({
+        kind: 'resolution',
+        column,
+        row: 0,
+        detail: `drawn ${blocksTall} blocks tall, staged ${fittedHeight} px — 1-block details (eyes) will be lost; ask for fewer, larger blocks`,
+      });
+    }
+  }
+  return issues;
+}
+
+/** RGB euclidean distance under which a pixel counts as the grip marker (Gemini's shades drift). */
+const MARKER_TOLERANCE = 60;
+/**
+ * Blends of marker and item around the plate count as marker up to this distance. They no
+ * longer match the marker colour (a cyan marker's blends land on the palette's aqua), but a
+ * halo left behind folds into an aqua pixel in the staged sheet.
+ */
+const MARKER_HALO_TOLERANCE = 160;
+/** How far around a marker pixel the replacement colour is searched, and how thick the halo is. */
+const MARKER_RING = 2;
+
+/**
+ * Remove the grip marker Gemini painted on an attachment and read where it was.
+ *
+ * Marker pixels take the most common opaque, non-marker colour in the ring around them —
+ * that restores the item's own colour where the marker covered it — or vanish when only the
+ * keyed backdrop surrounds them. A marker plate wider than the ring inherits from its edge,
+ * so a whole block is removed without leaving a hole. The anti-aliased ring Gemini blends
+ * around the plate is removed too, but only where a pixel is closer to the marker than to
+ * the item colour beside it, so a genuinely aqua detail next to the marker survives.
+ * `centres` is per cell in row-major order, in absolute source pixels (pixel (x, y) has
+ * centre (x + 0.5, y + 0.5)), or null.
+ */
+export function removeMarker(
+  image: PngImage,
+  marker: Rgb,
+  columns: number,
+  rows: number,
+): { readonly image: PngImage; readonly centres: Array<readonly [number, number] | null> } {
+  const { width, height } = image;
+  const cellWidth = Math.floor(width / columns);
+  const cellHeight = Math.floor(height / rows);
+  const coreLimit = MARKER_TOLERANCE * MARKER_TOLERANCE;
+  const haloLimit = MARKER_HALO_TOLERANCE * MARKER_HALO_TOLERANCE;
+
+  /** Squared RGB distance of a pixel to the marker colour, or -1 when it is transparent. */
+  const markerDistance = (index: number): number => {
+    const from = index * 4;
+    if (image.data[from + 3]! < 128) return -1;
+    const dr = image.data[from]! - marker[0];
+    const dg = image.data[from + 1]! - marker[1];
+    const db = image.data[from + 2]! - marker[2];
+    return dr * dr + dg * dg + db * db;
+  };
+
+  const core = new Uint8Array(width * height);
+  for (let index = 0; index < core.length; index += 1) {
+    const distance = markerDistance(index);
+    if (distance >= 0 && distance <= coreLimit) core[index] = 1;
+  }
+
+  const centres: Array<readonly [number, number] | null> = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      let count = 0;
+      let sumX = 0;
+      let sumY = 0;
+      for (let y = row * cellHeight; y < (row + 1) * cellHeight; y += 1) {
+        for (let x = column * cellWidth; x < (column + 1) * cellWidth; x += 1) {
+          if (core[y * width + x] !== 1) continue;
+          count += 1;
+          sumX += x + 0.5;
+          sumY += y + 0.5;
+        }
+      }
+      centres.push(count === 0 ? null : [sumX / count, sumY / count]);
+    }
+  }
+
+  const data = Buffer.from(image.data);
+  const resolved = new Uint8Array(width * height);
+  const queue: number[] = [];
+  const replace = (index: number, colour: number): void => {
+    data[index * 4] = (colour >> 16) & 0xff;
+    data[index * 4 + 1] = (colour >> 8) & 0xff;
+    data[index * 4 + 2] = colour & 0xff;
+    data[index * 4 + 3] = 255;
+  };
+  const clear = (index: number): void => {
+    data.fill(0, index * 4, index * 4 + 4);
+  };
+
+  /** Most common opaque item colour in the ring, skipping the marker and its halo. */
+  const itemColourAround = (x: number, y: number): number | null => {
+    const counts = new Map<number, number>();
+    for (let dy = -MARKER_RING; dy <= MARKER_RING; dy += 1) {
+      for (let dx = -MARKER_RING; dx <= MARKER_RING; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbour = ny * width + nx;
+        const distance = markerDistance(neighbour);
+        if (distance >= 0 && distance <= haloLimit) continue;
+        const from = neighbour * 4;
+        if (image.data[from + 3]! < 128) continue;
+        const packed = (image.data[from]! << 16) | (image.data[from + 1]! << 8) | image.data[from + 2]!;
+        counts.set(packed, (counts.get(packed) ?? 0) + 1);
+      }
+    }
+    let best: number | null = null;
+    let bestCount = -1;
+    for (const [packed, count] of counts) {
+      if (count > bestCount || (count === bestCount && best !== null && packed < best)) {
+        best = packed;
+        bestCount = count;
+      }
+    }
+    return best;
+  };
+
+  // The halo: blends of marker and item that sit on the plate but no longer match the marker
+  // colour. They are excluded from `centres`, so the grip does not move towards them.
+  const halo = new Set<number>();
+  for (let index = 0; index < core.length; index += 1) {
+    if (core[index] !== 1) continue;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    for (let dy = -MARKER_RING; dy <= MARKER_RING; dy += 1) {
+      for (let dx = -MARKER_RING; dx <= MARKER_RING; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbour = ny * width + nx;
+        if (core[neighbour] === 1) continue;
+        const distance = markerDistance(neighbour);
+        if (distance < 0 || distance > haloLimit) continue;
+        halo.add(neighbour);
+      }
+    }
+  }
+  for (const index of halo) {
+    const colour = itemColourAround(index % width, Math.floor(index / width));
+    if (colour === null) {
+      clear(index);
+      continue;
+    }
+    const fill = unpack(colour);
+    const from = index * 4;
+    const toFill = (image.data[from]! - fill[0]) ** 2 + (image.data[from + 1]! - fill[1]) ** 2 + (image.data[from + 2]! - fill[2]) ** 2;
+    if (markerDistance(index) < toFill) replace(index, colour);
+  }
+
+  // Each plate pixel that can see the item takes the ring's most common colour.
+  for (let index = 0; index < core.length; index += 1) {
+    if (core[index] !== 1) continue;
+    const colour = itemColourAround(index % width, Math.floor(index / width));
+    if (colour === null) continue;
+    replace(index, colour);
+    resolved[index] = 1;
+    queue.push(index);
+  }
+
+  // A plate wider than the ring inherits from its resolved edge.
+  for (let head = 0; head < queue.length; head += 1) {
+    const pixel = queue[head]!;
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    const colour = (data[pixel * 4]! << 16) | (data[pixel * 4 + 1]! << 8) | data[pixel * 4 + 2]!;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbour = ny * width + nx;
+        if (core[neighbour] !== 1 || resolved[neighbour] === 1) continue;
+        replace(neighbour, colour);
+        resolved[neighbour] = 1;
+        queue.push(neighbour);
+      }
+    }
+  }
+
+  // Whatever is left of the plate sat on the backdrop: remove it.
+  for (let index = 0; index < core.length; index += 1) {
+    if (core[index] === 1 && resolved[index] === 0) clear(index);
+  }
+
+  return { image: { width, height, data }, centres };
+}
+
+/**
+ * Map a source point to the frame-local output pixel `fitCells` puts it in: same cell
+ * lookup, shared region, scale and placement, floored and clamped inside the frame.
+ * Staging uses it to turn a marker centre into an attachment grip.
+ */
+export function fitPoint(image: PngImage, options: FitCellsOptions, point: readonly [number, number]): Point {
+  const { columns, rows, frameWidth, frameHeight, anchor } = options;
+  const { cellWidth, cellHeight, cells, groupOf, plans } = planFitting(image, options);
+  const column = clamp(Math.floor(point[0] / cellWidth), 0, columns - 1);
+  const row = clamp(Math.floor(point[1] / cellHeight), 0, rows - 1);
+  const cell = cells[row * columns + column]!;
+  const plan = plans.get(groupOf(row, column));
+  const middle: Point = [Math.floor(frameWidth / 2), Math.floor(frameHeight / 2)];
+  if (plan === undefined || cell.local === null) return middle;
+  const { region, scale, fitWidth, fitHeight } = plan;
+  const left = Math.floor((frameWidth - fitWidth) / 2);
+  const top =
+    anchor === 'feet'
+      ? Math.max(0, frameHeight - Math.round((cell.local.y1 - region.y0) * scale))
+      : Math.floor((frameHeight - fitHeight) / 2);
+  return [
+    clamp(left + Math.floor((point[0] - (cell.box.x0 + region.x0)) * scale), 0, frameWidth - 1),
+    clamp(top + Math.floor((point[1] - (cell.box.y0 + region.y0)) * scale), 0, frameHeight - 1),
+  ];
 }
