@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
 import { makeDodgePolicy } from '../helpers/dodge-policy';
+import { TYPICAL_LOADOUT } from '../helpers/sim-table';
 import { CHASER_CONTACT_RANGE_TILES } from '../../assets/scripts/core/enemies/behaviours';
 import { parseLevelData, type ChapterData, type LevelData } from '../../assets/scripts/core/level/level-data';
 import { ROOMS_PER_CHAPTER } from '../../assets/scripts/core/run/run-state';
@@ -342,18 +343,6 @@ describe('simulateRun — balance chapter 1', () => {
   });
 });
 
-/** A typical loadout of a player who picked up a few cards during the run. */
-const SKILLED_LOADOUT: ReadonlyMap<string, number> = new Map([
-  ['sharpen', 2],
-  ['rapid-fire', 2],
-  ['twin-shot', 1],
-  ['vitality', 1],
-  ['swift', 1],
-  ['piercing', 1],
-  ['crit-eye', 1],
-  ['shield', 1],
-]);
-
 describe('simulateRun — skills really matter', () => {
   it('a DPS skill clears room 1 clearly faster (god mode, standing still)', () => {
     const singleRoom: ChapterData = { chapter: 1, rooms: chapterOne.rooms.slice(0, 1) };
@@ -384,7 +373,7 @@ describe('simulateRun — skills really matter', () => {
         seed: 7,
         level,
         policy: makeDodgePolicy(),
-        skills: SKILLED_LOADOUT,
+        skills: TYPICAL_LOADOUT,
         maxDurationMs: 1_200_000,
       });
 
