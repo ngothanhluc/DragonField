@@ -289,6 +289,9 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
  * - off screen, an attack that would **start** this frame (a telegraph, or the charge a tank /
  *   elite chaser releases from one) becomes a walk toward the player instead — the player is
  *   never shot, charged or pounced from outside the screen;
+ * - off screen, the **release** of a caster/sniper telegraph (`telegraph -> idle`, i.e. the
+ *   shot) becomes a walk instead of the idle that would fire it: an enemy that crosses the edge
+ *   while winding up must come back into view, not shoot from beyond it;
  * - an in-flight charge keeps running (it already committed while visible);
  * - a walk from beyond the aggro radius becomes idle: enemies across a 16-screen room stay put
  *   until the player comes closer (the edge arrows / enemies-left counter point them out).
@@ -300,7 +303,11 @@ function gateToView(
   view: ViewRect,
   level: LevelData,
 ): EnemyAction {
-  if (next.kind === 'telegraph' || (next.kind === 'charge' && state.action.kind !== 'charge')) {
+  const attacking =
+    next.kind === 'telegraph' || (next.kind === 'charge' && state.action.kind !== 'charge');
+  // Releasing a wind-up (telegraph -> idle) fires the shot; hold it back the same way.
+  const releasingShot = state.action.kind === 'telegraph' && next.kind === 'idle';
+  if (attacking || releasingShot) {
     if (canAttackFrom(state.position, view)) return next;
     return { kind: 'walk', target: clampToRoom(level, player) };
   }

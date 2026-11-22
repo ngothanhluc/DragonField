@@ -13,8 +13,12 @@ import {
   enemyStateFromSpawn,
   roomEnemyTotal,
 } from '../../assets/scripts/core/enemies/wave-scheduler';
-import { decideAction, type EnemyState } from '../../assets/scripts/core/enemies/behaviours';
-import { WAVES_TUNING } from '../../assets/scripts/core/enemies/tuning';
+import {
+  attackReleased,
+  decideAction,
+  type EnemyState,
+} from '../../assets/scripts/core/enemies/behaviours';
+import { ENEMY_TUNING, WAVES_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import { obstacleAt, type LevelData } from '../../assets/scripts/core/level/level-data';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import { distance, type Vec2 } from '../../assets/scripts/core/math/vec2';
@@ -242,6 +246,31 @@ describe('decideAction with a view', () => {
       view,
     });
     expect(next.kind).toBe('charge');
+  });
+
+  it('a caster that leaves the view while telegraphing does not fire from off screen', () => {
+    const player = { x: 64, y: 36 };
+    const view = viewAround(player, empty);
+    const caster: EnemyState = {
+      id: 'caster',
+      role: 'caster',
+      elite: false,
+      position: { x: 90, y: 36 }, // walked out of the right edge while winding up
+      health: 4,
+      maxHealth: 4,
+      action: { kind: 'telegraph', sinceMs: 0 },
+      actionStartedMs: 0,
+    };
+    const next = decideAction({
+      state: caster,
+      player,
+      nowMs: ENEMY_TUNING.roles.caster.telegraphMs,
+      level: empty,
+      view,
+    });
+    // The telegraph is over, but a release here would put a shot on screen from outside it.
+    expect(attackReleased(caster.action, next)).toBeNull();
+    expect(next.kind).toBe('walk');
   });
 
   it('without a view the decision is the pre-#41 one (far chaser walks)', () => {
