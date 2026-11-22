@@ -154,6 +154,38 @@ export interface EnemiesTuning {
   readonly roles: Readonly<Record<EnemyRole, EnemyRoleTuning>>;
 }
 
+/** Enemy total range of one chapter's normal rooms (index 0 = chapter 1). */
+export interface ChapterWaveTotal {
+  /** Fewest enemies a normal room of this chapter spawns. */
+  readonly min: number;
+  /** Most enemies a normal room of this chapter spawns. */
+  readonly max: number;
+}
+
+/**
+ * Wave delivery of a normal room (#41, GDD §13.2): the 8× enemy count arrives over time under an
+ * alive cap, with fair spawn/attack rules. Read by `core/enemies/wave-scheduler.ts` and by
+ * `core/enemies/behaviours.ts` (aggro radius).
+ */
+export interface WavesTuning {
+  /** Most enemies alive at once in a normal room. */
+  readonly aliveCap: number;
+  /** Simulated time between two spawn batches, ms. */
+  readonly spawnIntervalMs: number;
+  /** Enemies per batch; the alive cap still wins when fewer slots are free. */
+  readonly spawnBatchSize: number;
+  /** Seeded scatter around a room's authored spawn point, tiles. */
+  readonly spawnJitterTiles: number;
+  /** How long an on-screen spawn shows its telegraph before it becomes active, ms. */
+  readonly telegraphMs: number;
+  /** A spawn is never closer to the player than this, tiles. */
+  readonly minSpawnDistanceTiles: number;
+  /** Enemies farther from the player than this idle instead of walking toward it, tiles. */
+  readonly aggroRadiusTiles: number;
+  /** Per chapter: the room total range (one entry per chapter). */
+  readonly chapterTotals: readonly ChapterWaveTotal[];
+}
+
 export interface TuningConfig {
   /** Bump when a field changes meaning, so old saves/replays can tell. */
   readonly version: number;
@@ -165,6 +197,8 @@ export interface TuningConfig {
   readonly navigation: NavigationTuning;
   /** Follow camera (#37): deadzone, look-ahead and smoothing rates. */
   readonly camera: CameraTuning;
+  /** Wave delivery of a normal room (#41): alive cap, pacing, spawn/attack fairness. */
+  readonly waves: WavesTuning;
   /** "Juice" numbers (ticket #2): shake, squash, coins, damage numbers, muzzle. */
   readonly feel: FeelTuning;
   /** Depth/see-through canopies and walk-in grass (#36). Visual only — no stealth. */
@@ -434,6 +468,17 @@ const NAVIGATION_FIELDS = [
   'stuckWindowMs',
   'stuckDistanceTiles',
   'detourMs',
+] as const;
+
+const WAVES_FIELDS = [
+  'aliveCap',
+  'spawnIntervalMs',
+  'spawnBatchSize',
+  'spawnJitterTiles',
+  'telegraphMs',
+  'minSpawnDistanceTiles',
+  'aggroRadiusTiles',
+  'chapterTotals',
 ] as const;
 
 const CAMERA_FIELDS = [
@@ -963,6 +1008,85 @@ function parseNavigation(
 }
 
 /**
+ * Read the per-chapter room totals: one `{ min, max }` per chapter, both whole numbers > 0.
+ * A chapter whose entry is broken falls back to the first valid pair so the game still runs.
+ */
+function parseWaveTotals(
+  value: unknown,
+  problems: ProblemList,
+): readonly ChapterWaveTotal[] {
+  const fallback: ChapterWaveTotal[] = Array.from({ length: CHAPTERS_PER_RUN }, () => ({
+    min: 1,
+    max: 1,
+  }));
+  if (!Array.isArray(value)) {
+    problems.add(
+      'waves.chapterTotals',
+      `must be an array of ${CHAPTERS_PER_RUN} { min, max } objects, got ${describe(value)}`,
+    );
+    return fallback;
+  }
+  if (value.length !== CHAPTERS_PER_RUN) {
+    problems.add(
+      'waves.chapterTotals',
+      `must have exactly ${CHAPTERS_PER_RUN} entries (one per chapter), got ${value.length}`,
+    );
+  }
+
+  const totals: ChapterWaveTotal[] = [];
+  value.forEach((entry, index) => {
+    const path = `waves.chapterTotals[${index}]`;
+    if (!isRecord(entry)) {
+      problems.add(path, `must be { min, max }, got ${describe(entry)}`);
+      totals.push({ min: 1, max: 1 });
+      return;
+    }
+    const min = readNumber(entry, 'min', path, problems, { integer: true, positive: true }) ?? 1;
+    const max = readNumber(entry, 'max', path, problems, { integer: true, positive: true }) ?? min;
+    if (max < min) {
+      problems.add(`${path}.max`, `must be >= min (${min}), got ${max}`);
+    }
+    totals.push({ min, max: Math.max(min, max) });
+  });
+  return totals;
+}
+
+function zeroWaves(): WavesTuning {
+  return {
+    aliveCap: 1,
+    spawnIntervalMs: 0,
+    spawnBatchSize: 1,
+    spawnJitterTiles: 0,
+    telegraphMs: 0,
+    minSpawnDistanceTiles: 0,
+    aggroRadiusTiles: 0,
+    chapterTotals: Array.from({ length: CHAPTERS_PER_RUN }, () => ({ min: 1, max: 1 })),
+  };
+}
+
+function parseWaves(raw: Record<string, unknown>, problems: ProblemList): WavesTuning {
+  const source = readObject(raw, 'waves', '', problems, WAVES_FIELDS);
+  if (source === undefined) return zeroWaves();
+
+  const path = 'waves';
+  return {
+    aliveCap:
+      readNumber(source, 'aliveCap', path, problems, { integer: true, positive: true }) ?? 1,
+    spawnIntervalMs:
+      readNumber(source, 'spawnIntervalMs', path, problems, { positive: true }) ?? 0,
+    spawnBatchSize:
+      readNumber(source, 'spawnBatchSize', path, problems, { integer: true, positive: true }) ?? 1,
+    spawnJitterTiles: readNumber(source, 'spawnJitterTiles', path, problems) ?? 0,
+    telegraphMs: readNumber(source, 'telegraphMs', path, problems) ?? 0,
+    minSpawnDistanceTiles:
+      readNumber(source, 'minSpawnDistanceTiles', path, problems) ?? 0,
+    aggroRadiusTiles:
+      readNumber(source, 'aggroRadiusTiles', path, problems, { positive: true }) ?? 1,
+    chapterTotals: parseWaveTotals(source.chapterTotals, problems),
+  };
+}
+
+/**
  * Trauma is a 0..1 ratio: > 1 makes the offset exceed the declared amplitude, which is hard
  * to reason about while tuning. Going over is reported and clamped to 1.
  */
@@ -1315,6 +1439,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     enemies: parseEnemies(raw, problems),
     navigation: parseNavigation(raw, problems),
     camera: parseCamera(raw, problems),
+    waves: parseWaves(raw, problems),
     feel: parseFeel(raw, problems),
     cover: parseCover(raw, problems),
     doors: parseDoors(raw, problems),

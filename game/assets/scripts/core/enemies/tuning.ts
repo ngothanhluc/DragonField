@@ -41,6 +41,7 @@ import {
   type NavigationTuning,
   type SpecialRoomsTuning,
   type TuningConfig,
+  type WavesTuning,
 } from './tuning-schema';
 
 export * from './tuning-schema';
@@ -68,6 +69,9 @@ export const NAVIGATION_TUNING: NavigationTuning = TUNING.navigation;
 
 /** Follow camera numbers (#37) — `game/world-camera.ts` hands them to the pure follow camera. */
 export const CAMERA_TUNING: CameraTuning = TUNING.camera;
+
+/** Wave delivery of a normal room (#41) — the scheduler and the aggro rule read them. */
+export const WAVES_TUNING: WavesTuning = TUNING.waves;
 
 /** Juice numbers (ticket #2) — the `game/` adapter reads them; `core/feel/` only takes numbers as parameters. */
 export const FEEL_TUNING: FeelTuning = TUNING.feel;

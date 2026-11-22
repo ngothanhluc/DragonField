@@ -27,11 +27,13 @@
  * are actions, so they live here.
  */
 import { isTelegraphElapsed } from '../combat/telegraph';
+import type { ViewRect } from '../camera/follow-camera';
 import type { EnemyRole, LevelData } from '../level/level-data';
-import { obstacleAt } from '../level/level-data';
+import { obstacleNear } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
+import { canAttackFrom } from '../view/view-rect';
 import { hasLineOfSight } from './navigation';
-import { ENEMY_TUNING, CHAPTER_TUNING, type EnemiesTuning, type EnemyRoleTuning } from './tuning';
+import { ENEMY_TUNING, CHAPTER_TUNING, WAVES_TUNING, type EnemiesTuning, type EnemyRoleTuning } from './tuning';
 
 export interface EnemyState {
   id: string;
@@ -150,6 +152,13 @@ const SNIPER_APPROACH_INSET_TILES = 0.75;
 
 /** A reposition walk counts as arrived within this distance of its target point, tiles. */
 const REPOSITION_ARRIVAL_TILES = 0.3;
+/**
+ * A stand-off point this close to a wall cannot be reached by a body of enemy size (the movement
+ * margin plus the hitbox). Checking it keeps casters/snipers from walking into a wall forever:
+ * a target 0.2 tiles from a prop passes `obstacleAt` but the body stops ~0.9 tiles short, so the
+ * committed walk never arrives (found by the M9 balance sim on 128×72 rooms with 8× enemies).
+ */
+const STANDOFF_CLEARANCE_TILES = 0.75;
 
 /** Walk speed, tiles/second. */
 export function speedFor(
@@ -228,6 +237,13 @@ export interface DecideActionArgs {
   readonly level: LevelData;
   /** Tuning set; defaults to `ENEMY_TUNING` (config/tuning.json). */
   readonly tuning?: EnemiesTuning;
+  /**
+   * What the player can see this frame (tiles, y down). Given, the enemy is held to the M9
+   * fairness rules (#41): it never **starts** a telegraph/charge/pounce while outside the inset
+   * view and idles instead of walking from beyond `waves.aggroRadiusTiles`. Omitted (the old
+   * callers and every unit test), the decision is exactly the pre-#41 one.
+   */
+  readonly view?: ViewRect;
 }
 
 /** Next action of the enemy at `nowMs`. Never mutates `state`. */
@@ -246,21 +262,59 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
   const role = tuning.roles[state.role];
   const elite = tuning.elite;
 
-  switch (state.role) {
-    case 'chaser':
-      return decideChaser(state, player, nowMs, level, role, elite.chaser);
-    case 'caster':
-      return decideCaster(state, player, nowMs, level, role);
-    case 'tank':
-      return decideTank(state, player, nowMs, level, role, elite.tank);
-    case 'sniper':
-      return decideSniper(state, player, nowMs, level, role);
-    case 'splitter':
-    case 'splitling':
-      // Splitters and their brood are contact-only chasers: they never telegraph.
-      return decideMelee(state, player, level, role);
-  }
+  const decided = ((): EnemyAction => {
+    switch (state.role) {
+      case 'chaser':
+        return decideChaser(state, player, nowMs, level, role, elite.chaser);
+      case 'caster':
+        return decideCaster(state, player, nowMs, level, role);
+      case 'tank':
+        return decideTank(state, player, nowMs, level, role, elite.tank);
+      case 'sniper':
+        return decideSniper(state, player, nowMs, level, role);
+      case 'splitter':
+      case 'splitling':
+        // Splitters and their brood are contact-only chasers: they never telegraph.
+        return decideMelee(state, player, level, role);
+    }
+  })();
+
+  return args.view === undefined ? decided : gateToView(decided, state, player, args.view, level);
 }
+
+/**
+ * Fairness gate (#41) applied to every decided action when the caller passes a view:
+ *
+ * - inside the view nothing changes;
+ * - off screen, an attack that would **start** this frame (a telegraph, or the charge a tank /
+ *   elite chaser releases from one) becomes a walk toward the player instead — the player is
+ *   never shot, charged or pounced from outside the screen;
+ * - an in-flight charge keeps running (it already committed while visible);
+ * - a walk from beyond the aggro radius becomes idle: enemies across a 16-screen room stay put
+ *   until the player comes closer (the edge arrows / enemies-left counter point them out).
+ */
+function gateToView(
+  next: EnemyAction,
+  state: EnemyState,
+  player: Vec2,
+  view: ViewRect,
+  level: LevelData,
+): EnemyAction {
+  if (next.kind === 'telegraph' || (next.kind === 'charge' && state.action.kind !== 'charge')) {
+    if (canAttackFrom(state.position, view)) return next;
+    return { kind: 'walk', target: clampToRoom(level, player) };
+  }
+
+  if (
+    next.kind === 'walk' &&
+    distance(state.position, player) > WAVES_TUNING.aggroRadiusTiles
+  ) {
+    return { kind: 'idle' };
+  }
+
+  return next;
+}
+
 
 /**
  * Chaser: runs straight at the player and deals damage on contact (the damage part is
@@ -519,7 +573,7 @@ function holdRangeTarget(
     y: player.y + away.y * tuning.preferredRangeMaxTiles,
   });
 
-  if (obstacleAt(level, atRange) !== null) {
+  if (obstacleNear(level, atRange, STANDOFF_CLEARANCE_TILES) !== null) {
     return clampToRoom(level, player);
   }
   return atRange;
@@ -529,6 +583,12 @@ function holdRangeTarget(
  * Sniper reposition point (#42): farther than the band it walks **to the near edge minus the
  * approach inset** (see `SNIPER_APPROACH_INSET_TILES`) so it ends up inside the player's
  * auto-aim range; closer than the band it backs off to the far edge.
+ *
+ * If that point falls inside an obstacle, walk toward the player instead of standing still: a
+ * sniper frozen at `preferredRangeMaxTiles` is outside the auto-aim range and can never be hit,
+ * so a room holding one would never clear (hit by the balance sim on a 128×72 room with 8×
+ * enemies). Closing the distance is always legal and the band check stops the walk as soon as the
+ * sniper is in range again — the same rule `holdRangeTarget` uses for the caster.
  */
 function sniperHoldTarget(
   state: EnemyState,
@@ -545,8 +605,8 @@ function sniperHoldTarget(
     y: player.y + away.y * range,
   });
 
-  if (obstacleAt(level, atRange) !== null) {
-    return { x: state.position.x, y: state.position.y };
+  if (obstacleNear(level, atRange, STANDOFF_CLEARANCE_TILES) !== null) {
+    return clampToRoom(level, player);
   }
   return atRange;
 }
