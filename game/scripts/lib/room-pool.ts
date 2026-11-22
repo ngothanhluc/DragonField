@@ -52,6 +52,12 @@ export const COLS = SCREEN_COLS * ROOM_SCREENS;
 export const ROWS = SCREEN_ROWS * ROOM_SCREENS;
 /** Normal rooms in a chapter's pool (the ticket asks for 15–18). */
 export const NORMAL_ROOMS = 16;
+/**
+ * Salt of the per-room seed: a one-line re-roll of the whole pool. Every layout change re-rolls the
+ * rooms the balance sims play, so a re-roll has to be re-validated with `bun run check` (the sims
+ * run fixed seeds; what changes is the pool, never a balance number).
+ */
+const ROOM_SEED_SALT = 17;
 /** The boss room is the last room, so `chapterFromLevels` still sees 1..N contiguous. */
 export const BOSS_ROOM = NORMAL_ROOMS + 1;
 
@@ -886,6 +892,15 @@ interface PathPlan {
   readonly tiles: number[];
   readonly cells: Set<string>;
   readonly blocked: Set<string>;
+  /** The straight street spur a village fronts onto, when this room has one. */
+  readonly street: StreetPlan | null;
+}
+
+/** A straight 2-tile-wide street joined to the trail: `x..x+width` over rows `y`, `y + 1`. */
+export interface StreetPlan {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
 }
 
 /**
@@ -893,7 +908,13 @@ interface PathPlan {
  * from the entrance to a seeded row, across the room, then up to the exit. Obstacles are placed
  * afterwards and never on a path cell, so the route always stays walkable.
  */
-function planPath(chapter: number, rng: Rng, doors: readonly Vec2[]): PathPlan {
+function planPath(
+  chapter: number,
+  rng: Rng,
+  doors: readonly Vec2[],
+  playerStart: Vec2,
+  water: readonly WaterArea[],
+): PathPlan {
   const bottom = doors.find((door) => door.y > ROWS / 2);
   const top = doors.find((door) => door.y <= ROWS / 2);
   const startX = Math.max(4, Math.min(COLS - 5, Math.floor(bottom?.x ?? COLS / 2)));
@@ -931,6 +952,16 @@ function planPath(chapter: number, rng: Rng, doors: readonly Vec2[]): PathPlan {
     add(centre + 1, y + 1);
   }
 
+  // A village street: a straight horizontal run joined to the trail, with clear ground for the
+  // houses above it. The village is built on this street (R5 of the #67 review), so the trail
+  // really passes the doors instead of happening to end up near them.
+  const street = planStreet(rng, raw, doors, playerStart, water);
+  if (street !== null) {
+    for (let y = street.y; y <= street.y + 1; y += 1) {
+      for (let x = street.x; x < street.x + street.width; x += 1) add(x, y);
+    }
+  }
+
   const mask = normalizePatchMask({ cols: COLS, rows: ROWS, cells: raw });
   const terrain = GROUND_TERRAINS[chapter];
   if (terrain === undefined) throw new Error(`chapter ${chapter} has no ground terrain`);
@@ -948,7 +979,64 @@ function planPath(chapter: number, rng: Rng, doors: readonly Vec2[]): PathPlan {
     }
   }
 
-  return { tiles, cells, blocked: cells };
+  return { tiles, cells, blocked: cells, street };
+}
+
+/** How long the street of a village is, tiles. */
+const STREET_WIDTH = 13;
+
+/**
+ * Find a stretch of straight street for the village: a row where the trail can grow a horizontal
+ * arm with five clear rows above it (room for the houses). The arm joins the trail at one end, so
+ * the trail itself never crosses the house row. Returns `null` when no spot fits (chapter 2
+ * tolerates that; the village chapters retry the room).
+ */
+function planStreet(
+  rng: Rng,
+  trail: readonly boolean[],
+  doors: readonly Vec2[],
+  playerStart: Vec2,
+  water: readonly WaterArea[],
+): StreetPlan | null {
+  const free = (x: number, y: number): boolean =>
+    x >= 0 && y >= 0 && x < COLS && y < ROWS && trail[y * COLS + x] === true;
+
+  // The street runs near the top edge of the room, so the village lines the wall and the middle of
+  // the fight stays open (the houses have south-facing doors, so the street must be below them).
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const y = 9 + int(rng, 4);
+    // The trail's columns on this row: the arm grows out of the left or the right side of it.
+    let minX = COLS;
+    let maxX = -1;
+    for (let x = 0; x < COLS; x += 1) {
+      if (!free(x, y) || !free(x, y + 1)) continue;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+    }
+    if (maxX < 0) continue;
+    const right = rng() < 0.5;
+    const x = right ? maxX + 2 : minX - 2 - STREET_WIDTH;
+    if (x < 3 || x + STREET_WIDTH > COLS - 3) continue;
+
+    // The five rows above the arm hold the houses: no trail, no doorway, water or border there.
+    const yard = { x: x - 1, y: y - 7, width: STREET_WIDTH + 2, height: 5 };
+    if (yard.y < 3 || yard.y + yard.height > ROWS - 3) continue;
+    let blockedYard = false;
+    for (let cy = yard.y; cy < yard.y + yard.height && !blockedYard; cy += 1) {
+      for (let cx = yard.x; cx < yard.x + yard.width; cx += 1) {
+        if (free(cx, cy)) {
+          blockedYard = true;
+          break;
+        }
+      }
+    }
+    if (blockedYard) continue;
+    if (water.length > 0 && overlapsWater(water, { x, y: yard.y, width: STREET_WIDTH, height: 9 })) continue;
+    if (gapToPoint(yard, playerStart) < SET_PIECE_CLEARANCE) continue;
+    if (doors.some((door) => gapToPoint(yard, door) < 2)) continue;
+    return { x, y, width: STREET_WIDTH };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1028,8 +1116,8 @@ interface GeometryArgs {
   readonly water: readonly WaterArea[];
   /** Path cells + border band: nothing solid goes there. */
   readonly blocked: ReadonlySet<string>;
-  /** The trail's cells: the village lines up beside the path, and nothing solid sits on it. */
-  readonly pathCells: ReadonlySet<string>;
+  /** The village street, when this room has one (see `planStreet`). */
+  readonly street: StreetPlan | null;
   /** The border's solid rects: interior blobs keep `MIN_OBSTACLE_GAP` clear of them. */
   readonly borderRects: readonly Rect[];
 }
@@ -1037,6 +1125,8 @@ interface GeometryArgs {
 interface GeometryResult {
   readonly obstacles: AuthoredObstacle[];
   readonly props: PlacedProp[];
+  /** `true` when the room got its village (even rooms must have one, see `generateRoom`). */
+  readonly village: boolean;
   /** Ground cells of the desert cliff plateau (its shelf joins the patch mask). */
   readonly plateauSurface: readonly string[];
   /** Extra `border-front`-layer cells: the plateau's sand-cliff face. */
@@ -1054,7 +1144,7 @@ function spriteRect(def: PropDef, x: number, y: number): Rect {
  * and the border, and `validatePlan` proves the room still plays.
  */
 function planGeometry(args: GeometryArgs): GeometryResult {
-  const { chapter, room, rng, playerStart, doors, water, blocked, pathCells, borderRects } = args;
+  const { chapter, room, rng, playerStart, doors, water, blocked, street, borderRects } = args;
   const theme = PROP_THEMES[chapter];
   if (theme === undefined) throw new Error(`chapter ${chapter} has no prop theme`);
 
@@ -1062,6 +1152,8 @@ function planGeometry(args: GeometryArgs): GeometryResult {
   const obstacles: AuthoredObstacle[] = [];
   const props: PlacedProp[] = [];
   const plateauSurface: string[] = [];
+  /** Screens the village occupies: its houses are that screen's cover, so no extra solids. */
+  const villageScreens = new Set<string>();
   const plateauFace: { index: number; value: number }[] = [];
 
   const clearOfPoints = (rect: Rect, clearance: number): boolean =>
@@ -1157,9 +1249,12 @@ function planGeometry(args: GeometryArgs): GeometryResult {
     return false;
   };
 
-  // -- Set piece: a village — one house with its furniture within 3 tiles --------------------
+  // -- Set piece: a village — two or three houses on a street, fences, well/sign/stump --------
+  /** The gap between the buildings and the fences of one village (they stand shoulder to shoulder). */
+  const VILLAGE_GAP = 1;
+
   /** Place one house at a sprite anchor; commits its prop and collider. */
-  const placeHouseAt = (key: string, x: number, y: number): boolean => {
+  const placeHouseAt = (key: string, x: number, y: number, minGap: number = MIN_OBSTACLE_GAP): boolean => {
     const def = propDef(chapter, key);
     if (def === undefined) return false;
     const width = Math.ceil(def.rect.width / TILE);
@@ -1169,19 +1264,19 @@ function planGeometry(args: GeometryArgs): GeometryResult {
     const house = spriteRect(def, x, y);
     if (gapToPoint(house, playerStart) < SET_PIECE_CLEARANCE) return false;
     const collider = def.collider === null ? house : propCollider({ key, x, y }, def) ?? house;
-    if (!colliderFits(collider, house, MIN_OBSTACLE_GAP)) return false;
+    if (!colliderFits(collider, house, minGap)) return false;
     book.rects.push(collider);
     props.push({ key, x, y });
     return true;
   };
 
-  /** Put one catalogue prop against a house wall (a fence line, a well, a stump…). */
+  /** Put one catalogue prop against a house wall (a well, a stump, a crate…). */
   const placeNearHouse = (houseRect: Rect, key: string): boolean => {
     const def = propDef(chapter, key);
     if (def === undefined) return false;
     const width = Math.ceil(def.rect.width / TILE);
     const height = Math.ceil(def.rect.height / TILE);
-    for (let tries = 0; tries < 14; tries += 1) {
+    for (let tries = 0; tries < 20; tries += 1) {
       const side = int(rng, 4);
       const x =
         side === 0 ? Math.round(houseRect.x) - width - 1
@@ -1206,73 +1301,73 @@ function planGeometry(args: GeometryArgs): GeometryResult {
   };
 
   /**
-   * A village: two or three houses in a row with a shared street, a fence run and the everyday
-   * furniture (well, sign, stump, crates) inside the 3-tile radius the acceptance test asks for.
-   * The row is anchored beside the trail, so the path passes the houses' doors.
+   * A village: two or three houses shoulder to shoulder along a fenced street, with the trail
+   * passing their doors and the everyday furniture (well, sign, stump, crates) in front (R5 of the
+   * #67 review — one hut with loose crates is not a village). The street runs along the room's
+   * trail, so a cleared room walks straight through the village on the way to the exit door.
    */
   const placeVillage = (): boolean => {
     const houses = theme.landmarks.filter((key) => propDef(chapter, key)?.kind === 'house');
-    if (houses.length === 0) return false;
+    if (houses.length === 0 || street === null) return false;
 
-    const pathPoints = [...pathCells]
-      .map((cell) => {
-        const [xs, ys] = cell.split(',');
-        return { x: Number(xs), y: Number(ys) };
-      })
-      // Chapter 3 is the busiest pool: its village sits on one side of the trail so the middle of
-      // the room stays open for the fight. Every other chapter villages along the trail.
-      .filter((point) =>
-        chapter === 3
-          ? point.y > 8 &&
-            point.y < ROWS - 12 &&
-            ((point.x > 8 && point.x < 22) || (point.x > COLS - 26 && point.x < COLS - 10))
-          : point.x > 8 && point.x < COLS - 12 && point.y > 8 && point.y < ROWS - 12,
-      );
-    if (pathPoints.length === 0) return false;
+    const panel = theme.fences.reduce<string | null>((best, key) => {
+      const def = propDef(chapter, key);
+      if (def === undefined) return best;
+      const bestDef = best === null ? undefined : propDef(chapter, best);
+      return bestDef === undefined || def.rect.width > bestDef.rect.width ? key : best;
+    }, null);
 
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const anchor = pathPoints[int(rng, pathPoints.length)];
-      if (anchor === undefined) break;
-      const propsBefore = props.length;
-      const rectsBefore = book.rects.length;
-
-      const above = rng() < 0.5;
-      const first = pick(rng, houses);
-      const firstDef = propDef(chapter, first);
-      if (firstDef === undefined) continue;
-      const firstWidth = Math.ceil(firstDef.rect.width / TILE);
-      const firstHeight = Math.ceil(firstDef.rect.height / TILE);
-      const x = anchor.x - 2 + int(rng, 5);
-      const y = above ? anchor.y - firstHeight - 2 : anchor.y + 3;
-      if (!placeHouseAt(first, x, y)) continue;
-
-      // One or two more houses in the same row, so the row reads as a village, not a hut.
-      const housesUsed = [first];
+    const propsBefore = props.length;
+    const rectsBefore = book.rects.length;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      // The houses stand on the north pavement of the street, doors toward it: two or three of
+      // them shoulder to shoulder, aligned by the street side and one tile apart.
+      const doorRow = street.y - 1;
+      const rowX = street.x + (attempt === 0 ? 0 : int(rng, 3));
+      const placed: { key: string; x: number; y: number; rect: Rect }[] = [];
+      let cursor = rowX;
       for (const key of shuffle(rng, houses)) {
-        if (housesUsed.length >= 3) break;
-        if (key === first && housesUsed.length > 1) continue;
+        if (placed.length >= 3) break;
         const def = propDef(chapter, key);
         if (def === undefined) continue;
         const width = Math.ceil(def.rect.width / TILE);
-        const next = housesUsed.length;
-        const right = next % 2 === 1;
-        const spotX = right ? x + housesUsed.length * (firstWidth + 1) : x - width - 1;
-        if (placeHouseAt(key, spotX, y)) housesUsed.push(key);
+        const height = Math.ceil(def.rect.height / TILE);
+        const y = doorRow - height;
+        if (!placeHouseAt(key, cursor, y, VILLAGE_GAP)) continue;
+        placed.push({ key, x: cursor, y, rect: spriteRect(def, cursor, y) });
+        const screen = screenOf({ x: cursor + width / 2, y: y + height / 2 });
+        villageScreens.add(`${screen.sx},${screen.sy}`);
+        cursor += width + VILLAGE_GAP;
+      }
+      if (placed.length < 2) {
+        props.length = propsBefore;
+        book.rects.length = rectsBefore;
+        continue;
       }
 
-      const houseRect = spriteRect(firstDef, x, y);
-      const furniture = [
-        ...theme.fences,
-        ...shuffle(rng, theme.furniture),
-      ];
-      let near = 0;
-      for (const key of furniture) {
-        if (near >= 4) break;
-        if (placeNearHouse(houseRect, key)) near += 1;
+      // A continuous fence run on the far side of the street: the widest fence of the pack (a
+      // 3-tile panel) repeated, so the rails join instead of leaving post-sized holes.
+      const fenceY = street.y + 2;
+      let fenced = 0;
+      if (panel !== null) {
+        const width = Math.ceil((propDef(chapter, panel)?.rect.width ?? TILE) / TILE);
+        // Panels touch their neighbours (the rails join), so the village gap floor is 0 here.
+        for (let index = 0; index < 4; index += 1) {
+          if (!placeAt(panel, rowX + index * width, fenceY, 0)) break;
+          fenced += 1;
+        }
+      }
+
+      // Furniture: the well, the sign, a stump and a crate, tucked against the houses.
+      const first = placed[0];
+      let near = fenced > 0 ? 1 : 0;
+      for (const key of shuffle(rng, theme.furniture)) {
+        if (near >= 5) break;
+        if (first !== undefined && placeNearHouse(first.rect, key)) near += 1;
       }
 
       if (near >= 3) return true;
-      // Not a village: undo everything this attempt placed and try somewhere else.
+      // Not a village: undo everything this attempt placed and try again on the same street.
       props.length = propsBefore;
       book.rects.length = rectsBefore;
     }
@@ -1308,8 +1403,8 @@ function planGeometry(args: GeometryArgs): GeometryResult {
 
   // A grove in the odd rooms, a village in the even ones: every room gets one focus, and both
   // kinds land in at least half of the pool.
+  const village = room % 2 === 0 ? placeVillage() : false;
   if (room % 2 === 1) placeGrove();
-  else placeVillage();
   // Chapter 4 adds a sand mesa in the village rooms: an elevated shelf reads as the desert's
   // second level without walling off the fight (the oasis palms own the other half).
   if (chapter === 4 && room % 2 === 0) placeCliff();
@@ -1359,6 +1454,9 @@ function planGeometry(args: GeometryArgs): GeometryResult {
       // Keep the screen holding the player start open: it needs a way out in every direction.
       const startScreen = screenOf(playerStart);
       const isStart = sx === startScreen.sx && sy === startScreen.sy;
+      // A village screen already has its cover (houses, fence, furniture): adding the per-screen
+      // solids there would wall the middle off. The fight keeps its dodging room.
+      if (villageScreens.has(`${sx},${sy}`)) continue;
       // Chapter 3 is the busiest pool: one interior solid per screen keeps the middle open.
       const targeted = isStart ? 1 : chapter === 3 ? 1 : 1 + int(rng, 2);
 
@@ -1388,7 +1486,7 @@ function planGeometry(args: GeometryArgs): GeometryResult {
     }
   }
 
-  return { obstacles, props, plateauSurface, plateauFace };
+  return { obstacles, props, village, plateauSurface, plateauFace };
 }
 
 /**
@@ -1783,7 +1881,7 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
   const failures: string[] = [];
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      const rng = mulberry32((chapter * 1_000_003 + room * 7919 + attempt * 104_729) >>> 0);
+      const rng = mulberry32((chapter * 1_000_003 + room * 7919 + attempt * 104_729) ^ (ROOM_SEED_SALT * 2_654_435_761) >>> 0);
       const playerStart = planPlayerStart(room, rng);
       const doors: Vec2[] = [
         { x: playerStart.x, y: ROWS - 0.5 },
@@ -1792,11 +1890,11 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
       const water = chapter === 2 ? planRiver(rng) : [];
 
       const border = planBorder(chapter, rng, doors);
-      const path = planPath(chapter, rng, doors);
+      const path = planPath(chapter, rng, doors, playerStart, water);
       const patches = planPatches(rng, water);
 
       const blocked = new Set<string>([...border.blocked, ...path.blocked]);
-      const { obstacles, props, plateauSurface, plateauFace } = planGeometry({
+      const { obstacles, props, village, plateauSurface, plateauFace } = planGeometry({
         chapter,
         room,
         rng,
@@ -1804,7 +1902,7 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
         doors,
         water,
         blocked,
-        pathCells: path.cells,
+        street: path.street,
         borderRects: border.rects,
       });
 
@@ -1845,6 +1943,14 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
 
       const decor = planDetails(chapter, mulberry32((chapter * 31 + room * 17 + attempt) >>> 0), reservedCells(partial, path.cells));
       const plan: RoomPlan = { ...partial, decor };
+
+      // An even room of a village chapter is a village room (R5): a room that could not fit its
+      // village retries with another seed instead of silently falling back to scatter. Chapter 2
+      // is the water/forest chapter — a riverside hamlet is welcome there, not required.
+      if (chapter !== 2 && room % 2 === 0 && !village) {
+        failures.push(`attempt ${attempt}: no village`);
+        continue;
+      }
 
       const problems = validatePlan(plan);
       if (problems.length === 0) return plan;
