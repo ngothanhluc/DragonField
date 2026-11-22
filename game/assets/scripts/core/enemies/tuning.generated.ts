@@ -10,7 +10,7 @@ export const TUNING_DATA = {
     damage: 1,
     projectiles: 1,
     projectileSpeedTilesPerSecond: 12,
-    moveSpeedTilesPerSecond: 4,
+    moveSpeedTilesPerSecond: 5,
     playerMaxHearts: 6,
     invulnerabilityMs: 800,
     contactDamage: 1,
@@ -73,7 +73,7 @@ export const TUNING_DATA = {
       caster: {
         health: 4,
         speedTilesPerSecond: 1.6,
-        attackCooldownMs: 900,
+        attackCooldownMs: 1200,
         telegraphMs: 500,
         preferredRangeMinTiles: 4,
         preferredRangeMaxTiles: 6,
@@ -85,13 +85,13 @@ export const TUNING_DATA = {
       tank: {
         health: 10,
         speedTilesPerSecond: 1.2,
-        attackCooldownMs: 900,
+        attackCooldownMs: 1600,
         telegraphMs: 700,
         preferredRangeMinTiles: 0,
         preferredRangeMaxTiles: 8,
         contactDamage: 2,
-        chargeSpeedTilesPerSecond: 7,
-        chargeDurationMs: 450,
+        chargeSpeedTilesPerSecond: 5,
+        chargeDurationMs: 350,
         scale: 1.75,
       },
       sniper: {
@@ -152,7 +152,7 @@ export const TUNING_DATA = {
   waves: {
     aliveCap: 24,
     aliveCapStart: 3,
-    aliveCapStepPerRoom: 3,
+    aliveCapStepPerRoom: 1,
     spawnIntervalMs: 1800,
     spawnBatchSize: 4,
     spawnJitterTiles: 3,

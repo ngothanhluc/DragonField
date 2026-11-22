@@ -80,8 +80,14 @@ describe('WaveScheduler', () => {
       Math.min(WAVES_TUNING.aliveCap, WAVES_TUNING.aliveCapStart + WAVES_TUNING.aliveCapStepPerRoom),
     );
     expect(aliveCapForSlot(99)).toBe(WAVES_TUNING.aliveCap);
+    expect(aliveCapForSlot(8)).toBe(
+      Math.min(
+        WAVES_TUNING.aliveCap,
+        WAVES_TUNING.aliveCapStart + WAVES_TUNING.aliveCapStepPerRoom * 7,
+      ),
+    );
     expect(new WaveScheduler(normalRoom(1), 1, 1).aliveCap).toBe(WAVES_TUNING.aliveCapStart);
-    expect(new WaveScheduler(normalRoom(1), 1, 8).aliveCap).toBe(WAVES_TUNING.aliveCap);
+    expect(new WaveScheduler(normalRoom(1), 1, 8).aliveCap).toBe(aliveCapForSlot(8));
     // A missing/odd slot must never produce a negative or unbounded cap.
     expect(aliveCapForSlot(0)).toBe(WAVES_TUNING.aliveCapStart);
     expect(aliveCapForSlot(Number.NaN)).toBe(WAVES_TUNING.aliveCap);
@@ -101,7 +107,8 @@ describe('WaveScheduler', () => {
     const level = normalRoom(3);
     const scheduler = new WaveScheduler(level, 41, 8);
     const cap = scheduler.aliveCap;
-    expect(cap).toBe(WAVES_TUNING.aliveCap);
+    expect(cap).toBe(aliveCapForSlot(8));
+    expect(cap).toBeLessThanOrEqual(WAVES_TUNING.aliveCap);
     const player = level.playerStart;
     const view = viewAround(player, level);
     let alive = 0;
