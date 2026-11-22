@@ -137,7 +137,7 @@ art-source/            # full pack, NOT committed (gitignored)
 | Compile ignores type errors | `bun run check` |
 | No headless authoring | scenes are built in the editor or in code; levels are data |
 | No native TileMap, only TiledMap (TMX) | draw maps with Tiled |
-| No Cinemachine | until M8 rooms are a single screen with a static camera; M9 normal rooms (128×72) use a hand-rolled follow in `core/camera/` (ADR-018), boss arenas stay static |
+| No Cinemachine | until M8 rooms are a single screen with a static camera; M9 normal rooms (64×36 since #66) use a hand-rolled follow in `core/camera/` (ADR-018), boss arenas stay static |
 | `tsconfig.json` is not read at compile time | use it for IDE checks + `tsc --noEmit` in CI |
 | `resources.load` needs the `/spriteFrame` suffix | use the manifest, do not load paths by hand |
 | The `cc` stub makes named imports an `any` **value**, unusable in type position | in `assets/scripts/game/`, alias `type Node = InstanceType<typeof CocosNode>` (used in 5 files); consolidate into one file once the editor provides a real `cc.d.ts` |
