@@ -27,6 +27,7 @@ import {
   type TileArea,
 } from '../core/view/cover';
 import type { PropView } from './level-view';
+import { cullNodesOutside, type CullRect } from './world-culler';
 
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
@@ -175,6 +176,16 @@ export class CoverView {
   /** Destroy every prop node this view owns (called on room change). */
   destroy(): void {
     this.clear();
+  }
+
+  /**
+   * Cull the room's prop sprites by the camera view (#41). They live on the shared actor/overlay
+   * layers since #36, outside the room tree `cullWorld` walks, so the room owner passes the view
+   * here. Grass tips are re-shown by `update` when someone stands inside, which is harmless: a
+   * tip whose patch is off screen is off screen too.
+   */
+  cullToView(view: CullRect): void {
+    cullNodesOutside(this.owned, view);
   }
 
   private clear(): void {

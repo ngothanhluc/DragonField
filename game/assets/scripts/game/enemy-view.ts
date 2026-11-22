@@ -34,6 +34,7 @@ import {
   warn,
 } from 'cc';
 import type { Direction } from '../core/art/manifest';
+import type { ViewRect } from '../core/camera/follow-camera';
 import { directionFromVector } from '../core/art/runtime';
 import { startKnockback, stepKnockback, type KnockbackState } from '../core/combat/knockback';
 import { StatusEffects } from '../core/combat/status-effects';
@@ -356,13 +357,15 @@ export class EnemyView extends Component {
    *
    * `navigation` is the room's shared flow field (one per radius class, owned by `CombatLoop`),
    * used exactly like the balance sim: straight while the target is in sight, around the wall
-   * otherwise, with the stuck guard as the last resort.
+   * otherwise, with the stuck guard as the last resort. `view` is what the player can see (#41):
+   * core refuses to start an attack from outside it.
    */
   step(
     nowMs: number,
     deltaMs: number,
     player: Vec2,
     navigation: RoomNavigation,
+    view?: ViewRect,
   ): EnemyStepResult {
     const state = this.state;
     const level = this.level;
@@ -370,7 +373,10 @@ export class EnemyView extends Component {
     if (state === null || level === null || this.dead) return result;
 
     const previous = state.action;
-    const next = decideAction({ state, player, nowMs, level });
+    const next =
+      view === undefined
+        ? decideAction({ state, player, nowMs, level })
+        : decideAction({ state, player, nowMs, level, view });
 
     // Poison ticks before the action is decided: the enemy may die this frame.
     const poison = this.statuses.poisonDamage(nowMs, deltaMs);
@@ -485,6 +491,19 @@ export class EnemyView extends Component {
     }
 
     return { slowStarted, poisonStarted };
+  }
+
+  /**
+   * Cull the drawn sprite while the enemy is off screen (#41). **Never** `node.active`: the combat
+   * loop and the cover/depth pass read the node and its state every frame, so only the renderer's
+   * `Sprite.enabled` flag may change here.
+   */
+  setCulled(culled: boolean): void {
+    const sprite = this.sprite;
+    if (sprite === null) return;
+    if (sprite.enabled !== !culled) sprite.enabled = !culled;
+    // The telegraph ring and sniper line are separate nodes; they only show while attacking, and
+    // an attack cannot start off screen (#41), so they need no culling of their own.
   }
 
   /** Whether the current dash already dealt damage — the battle loop asks to avoid double-hitting. */

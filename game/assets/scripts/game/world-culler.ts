@@ -53,6 +53,40 @@ export function cullWorld(root: Node | null, view: CullRect, marginTiles = CULL_
   return cullChildren(root, view, marginTiles);
 }
 
+/**
+ * Prop bases/overlays and grass tips live on the shared actor/overlay layers since #36, so the
+ * room-tree walk above cannot reach them: the room owner hands them here. `active` is safe for a
+ * prop (it is static art, unlike an actor node whose flag gameplay reads).
+ */
+export function cullNodesOutside(
+  nodes: Iterable<Node>,
+  view: CullRect,
+  marginTiles = CULL_MARGIN_TILES,
+): number {
+  let hidden = 0;
+  for (const node of nodes) {
+    if (!node.isValid) continue;
+    const position = node.position;
+    const visible = intersects(position.x, position.y, 0, 0, view, marginTiles);
+    if (node.active !== visible) node.active = visible;
+    if (!visible) hidden += 1;
+  }
+  return hidden;
+}
+
+/**
+ * Whether a point in **world units** (bottom-left origin, y up) is inside `view` + margin — what
+ * the actor cull uses for enemy sprites before toggling `Sprite.enabled`.
+ */
+export function pointInCullRect(
+  x: number,
+  y: number,
+  view: CullRect,
+  marginTiles = CULL_MARGIN_TILES,
+): boolean {
+  return intersects(x, y, 0, 0, view, marginTiles);
+}
+
 function cullChildren(node: Node, view: CullRect, margin: number): number {
   let hidden = 0;
   for (const child of node.children) {
