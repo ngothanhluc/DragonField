@@ -9,8 +9,9 @@
  *
  * Room anatomy (a normal room is 4×4 screens of 32×18 tiles):
  * - **Floor**: one uniform grass/sand gid, as before (`FLOOR_GID`).
- * - **Decor** (walkable tiles): grass/flower clusters (ch1/ch2), whole VillageAbandoned blocks
- *   plus flat singles (ch3) or sand cracks (ch4). Never on an obstacle, spawn, door or start.
+ * - **Decor** (walkable tiles): grass/flower clusters (ch1/ch2) or whole VillageAbandoned blocks
+ *   plus flat singles (ch3); chapter 4 keeps a plain sand floor. Never on an obstacle, spawn, door
+ *   or the player start.
  * - **Obstacles/props**: 1–3 solid props per screen from the #35 catalogue, plus an authored
  *   pillar/pit/wall in about half of the screens. Blobs are never closer than `MIN_OBSTACLE_GAP`
  *   tiles edge to edge, so the room always stays a field of cover to dodge behind, never a maze.
@@ -857,8 +858,6 @@ const VILLAGE_BLOCKS: readonly (readonly (readonly number[])[])[] = [
 
 const VILLAGE_FLAT_SINGLES: readonly number[] = [68, 88, 89, 91, 105, 106, 165, 166, 225, 226];
 const DESERT_FLAT_SINGLES: readonly number[] = [189, 190, 237, 238, 239, 240];
-/** `TilesetDesert` sand tiles with a crack/speck: walkable decor that reads on the plain floor. */
-const SAND_DETAIL_TILES: readonly number[] = [175, 177, 195, 197];
 const BORDER_VILLAGE_PROPS: readonly number[] = [148, 149, 227, 230, 231, 232, 233, 234, 235];
 const BORDER_DESERT_PROPS: readonly number[] = [215, 235, 227, 228];
 
@@ -949,18 +948,9 @@ function planDecor(
   }
 
   // Chapter 4: sparse sand cracks (the desert floor is already sand); decor never hides a prop.
-  if (chapter === 4) {
-    for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
-      for (let sx = 0; sx < ROOM_SCREENS; sx += 1) {
-        for (let step = 0; step < 3; step += 1) {
-          const x = sx * SCREEN_COLS + 1 + int(rng, SCREEN_COLS - 2);
-          const y = sy * SCREEN_ROWS + 1 + int(rng, SCREEN_ROWS - 2);
-          set(x, y, gid(4, 'desert', pick(rng, SAND_DETAIL_TILES)));
-        }
-      }
-    }
-    return data;
-  }
+  // Chapter 4 has no floor decor: `TilesetDesert` is a village object sheet (its sand tiles are
+  // outlined corner pieces of the wall/plaza blocks, not walkable detail), so the sand stays plain.
+  if (chapter === 4) return data;
 
   // Chapter 3: one whole block per screen (never a torn piece), flat singles, a sunken border.
   for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
