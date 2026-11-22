@@ -10,6 +10,7 @@
  * against those rules, `tileSizePx` strictly.
  */
 import type { Vec2 } from '../math/vec2';
+import { CHAPTERS_PER_RUN } from '../run/run-state';
 
 /**
  * One screen: the view the camera always shows, and the exact size of every boss room.
@@ -454,8 +455,11 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
   }
 
   let chapter = 1;
-  if (!isInteger(value.chapter) || value.chapter < 1 || value.chapter > 3) {
-    problems.add(`${path}.chapter`, `must be an integer 1..3, got ${describeValue(value.chapter)}`);
+  if (!isInteger(value.chapter) || value.chapter < 1 || value.chapter > CHAPTERS_PER_RUN) {
+    problems.add(
+      `${path}.chapter`,
+      `must be an integer 1..${CHAPTERS_PER_RUN}, got ${describeValue(value.chapter)}`,
+    );
   } else {
     chapter = value.chapter;
   }
@@ -586,8 +590,11 @@ function readChapter(value: unknown, problems: ProblemList): ChapterData | null 
   }
 
   let chapter = 1;
-  if (!isInteger(value.chapter) || value.chapter < 1 || value.chapter > 3) {
-    problems.add('chapter', `must be an integer 1..3, got ${describeValue(value.chapter)}`);
+  if (!isInteger(value.chapter) || value.chapter < 1 || value.chapter > CHAPTERS_PER_RUN) {
+    problems.add(
+      'chapter',
+      `must be an integer 1..${CHAPTERS_PER_RUN}, got ${describeValue(value.chapter)}`,
+    );
   } else {
     chapter = value.chapter;
   }

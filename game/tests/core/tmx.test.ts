@@ -264,8 +264,8 @@ describe('parseTmxLevel — convention errors', () => {
       /missing property "chapter"/,
     );
     expectError(
-      validTmx().replace('name="chapter" type="int" value="1"', 'name="chapter" type="int" value="4"'),
-      /chapter.*1\.\.3/,
+      validTmx().replace('name="chapter" type="int" value="1"', 'name="chapter" type="int" value="5"'),
+      /chapter.*1\.\.4/,
     );
     expectError(
       validTmx().replace('name="room" type="int" value="1"', 'name="room" type="int" value="0"'),

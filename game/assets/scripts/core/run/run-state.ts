@@ -1,5 +1,5 @@
-/** Number of chapters in a run (GDD §1). */
-export const CHAPTERS_PER_RUN = 3;
+/** Number of chapters in a run (GDD §1, §13.2: chapter 4 — desert — landed with #45). */
+export const CHAPTERS_PER_RUN = 4;
 /** Number of regular rooms per chapter, before the boss room. */
 export const NORMAL_ROOMS_PER_CHAPTER = 8;
 /** Total rooms per chapter, boss included. */

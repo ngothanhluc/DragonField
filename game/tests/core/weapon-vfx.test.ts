@@ -25,6 +25,7 @@ import {
 } from '../../assets/scripts/core/art/manifest';
 import { DEFAULT_SETTINGS, applySettings } from '../../assets/scripts/core/save/settings';
 import {
+  SAVE_VERSION,
   createDefaultSave,
   migrate,
   parseSaveData,
@@ -218,10 +219,10 @@ describe('effects setting — full / reduced', () => {
     expect(back.settings).toEqual(save.settings);
   });
 
-  it('an old save without the field migrates to full, without a version bump', () => {
+  it('an old save without the field migrates to full (the version only moves to the current one)', () => {
     const old = { version: 1, gold: 5, settings: { volume: 0.4, fullscreen: true, screenShake: false, damageNumbers: true } };
     const migrated = migrate(old);
-    expect(migrated.version).toBe(1);
+    expect(migrated.version).toBe(SAVE_VERSION);
     expect(migrated.settings.effects).toBe('full');
     expect(migrated.settings.screenShake).toBe(false);
   });

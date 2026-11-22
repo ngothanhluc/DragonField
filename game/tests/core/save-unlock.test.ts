@@ -16,7 +16,9 @@ describe('unlockNextChapter', () => {
   it('never shrinks progress and never exceeds the last chapter', () => {
     const save = { ...createDefaultSave(), chaptersUnlocked: 3 };
     expect(unlockNextChapter(save, 1).chaptersUnlocked).toBe(3);
-    expect(unlockNextChapter(save, 3).chaptersUnlocked).toBe(3);
+    // Clearing the last chapter caps at CHAPTERS_PER_RUN (4 since #45).
+    expect(unlockNextChapter(save, 3).chaptersUnlocked).toBe(4);
+    expect(unlockNextChapter({ ...save, chaptersUnlocked: 4 }, 4).chaptersUnlocked).toBe(4);
 
     const unlocked = unlockNextChapter({ ...createDefaultSave(), chaptersUnlocked: 2 }, 1);
     expect(unlocked.chaptersUnlocked).toBe(2);
@@ -27,6 +29,6 @@ describe('unlockNextChapter', () => {
     unlockNextChapter(save, 1);
     expect(save.chaptersUnlocked).toBe(1);
     expect(() => unlockNextChapter(save, 0)).toThrow();
-    expect(() => unlockNextChapter(save, 4)).toThrow();
+    expect(() => unlockNextChapter(save, 5)).toThrow();
   });
 });

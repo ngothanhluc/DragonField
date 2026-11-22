@@ -7,7 +7,7 @@ import { squashScale } from '../../assets/scripts/core/feel/squash';
 import { coinFlyPosition } from '../../assets/scripts/core/feel/coin-fly';
 import { damagePopupState, formatDamage } from '../../assets/scripts/core/feel/damage-number';
 import { DEFAULT_SETTINGS, applySettings } from '../../assets/scripts/core/save/settings';
-import { migrate, parseSaveData, serializeSave, createDefaultSave } from '../../assets/scripts/core/save/save-data';
+import { SAVE_VERSION, migrate, parseSaveData, serializeSave, createDefaultSave } from '../../assets/scripts/core/save/save-data';
 
 const isTexelMultiple = (value: number): boolean =>
   Math.abs(value / TEXEL_TILES - Math.round(value / TEXEL_TILES)) < 1e-9;
@@ -205,10 +205,10 @@ describe('Settings — screenShake / damageNumbers', () => {
     expect(back.settings.damageNumbers).toBe(true);
   });
 
-  it('an old save (volume + fullscreen only) migrates to defaults for new fields, without a version bump', () => {
+  it('an old save (volume + fullscreen only) migrates to defaults for new fields', () => {
     const old = { version: 1, gold: 5, settings: { volume: 0.4, fullscreen: true } };
     const migrated = migrate(old);
-    expect(migrated.version).toBe(1);
+    expect(migrated.version).toBe(SAVE_VERSION);
     expect(migrated.settings).toEqual({ volume: 0.4, fullscreen: true, screenShake: true, damageNumbers: false, effects: 'full' });
   });
 
