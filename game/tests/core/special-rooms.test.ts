@@ -57,7 +57,7 @@ describe('buyFromShop', () => {
   it('is pure and exact', () => {
     const offer = { item: 'heart-refill', price: 20 };
     const save = { ...createDefaultSave(), gold: 25 };
-    const result = buyFromShop(save, offer);
+    const result = buyFromShop(save, 0, offer);
     expect(save.gold).toBe(25);
     if (!result.ok) throw new Error('expected the purchase to succeed');
     expect(result.save.gold).toBe(5);
@@ -65,19 +65,19 @@ describe('buyFromShop', () => {
 
   it('never goes negative and refuses an invalid price', () => {
     const save = { ...createDefaultSave(), gold: 10 };
-    expect(buyFromShop(save, { item: 'x', price: 11 })).toMatchObject({
+    expect(buyFromShop(save, 0, { item: 'x', price: 11 })).toMatchObject({
       ok: false,
       reason: 'not-enough-gold',
       save,
     });
-    expect(buyFromShop(save, { item: 'x', price: Number.NaN }).ok).toBe(false);
-    expect(buyFromShop(save, { item: 'x', price: 10 }).save.gold).toBe(0);
+    expect(buyFromShop(save, 0, { item: 'x', price: Number.NaN }).ok).toBe(false);
+    expect(buyFromShop(save, 0, { item: 'x', price: 10 }).save.gold).toBe(0);
   });
 
   it('refuses a negative or fractional price instead of clamping it', () => {
     const save = { ...createDefaultSave(), gold: 50 };
     for (const price of [-1, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const result = buyFromShop(save, { item: 'x', price });
+      const result = buyFromShop(save, 0, { item: 'x', price });
       expect(result.ok, `price ${price}`).toBe(false);
       expect(result.save, `price ${price}`).toBe(save);
       expect(result.save.gold, `price ${price}`).toBe(50);

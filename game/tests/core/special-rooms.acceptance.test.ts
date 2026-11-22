@@ -39,7 +39,7 @@ describe('shop', () => {
     const offer = shopOffers(4, 3, owned)[0];
     if (offer === undefined) throw new Error('no offer');
     const save = { ...createDefaultSave(), gold: offer.price + 7 };
-    const result = buyFromShop(save, offer);
+    const result = buyFromShop(save, 0, offer);
     expect(result.ok).toBe(true);
     expect(result.save.gold).toBe(7);
     const repo = new SaveRepository(new MemorySaveStorage());
@@ -51,7 +51,7 @@ describe('shop', () => {
     const offer = shopOffers(4, 3, owned)[0];
     if (offer === undefined) throw new Error('no offer');
     const save = { ...createDefaultSave(), gold: offer.price - 1 };
-    const result = buyFromShop(save, offer);
+    const result = buyFromShop(save, 0, offer);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('not-enough-gold');
     expect(result.save.gold).toBe(offer.price - 1);
