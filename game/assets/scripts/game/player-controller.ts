@@ -24,8 +24,9 @@ import { DEFAULT_COMBAT } from '../core/config';
 import { FEEL_TUNING } from '../core/enemies/tuning';
 import { ROOM_EDGE_MARGIN_TILES } from '../core/enemies/behaviours';
 import { squashScale } from '../core/feel/squash';
-import { ROOM_COLS, ROOM_ROWS, type LevelData } from '../core/level/level-data';
+import type { LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
+import { moveWithCollision } from '../core/movement/collision';
 import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-intent';
 import { SeededRng } from '../core/rng';
 import { computeDerivedStats, type DerivedStats } from '../core/skills/derived-stats';
@@ -38,6 +39,7 @@ import {
   type VfxElement,
 } from '../core/vfx/weapon-vfx';
 import { SpriteAnimator } from './anim/sprite-animator';
+import { PLAYER_RADIUS_TILES } from './combat-loop';
 import { KeyboardMove } from './keyboard-move';
 import { playSfx } from './audio/sfx';
 import type { FxPool } from './fx/effect-pool';
@@ -284,18 +286,14 @@ export class PlayerController extends Component {
       }
       const velocity = velocityFromInput(moveIntent, this.stats.moveSpeedTilesPerSecond);
       const seconds = deltaMs / 1000;
-      this.tilePosition = {
-        x: clamp(
-          this.tilePosition.x + velocity.x * seconds,
-          ROOM_EDGE_MARGIN_TILES,
-          ROOM_COLS - ROOM_EDGE_MARGIN_TILES,
-        ),
-        y: clamp(
-          this.tilePosition.y + velocity.y * seconds,
-          ROOM_EDGE_MARGIN_TILES,
-          ROOM_ROWS - ROOM_EDGE_MARGIN_TILES,
-        ),
-      };
+      // Obstacles and the room edge are solid: same rule as the enemies and the balance sim.
+      this.tilePosition = moveWithCollision(
+        this.tilePosition,
+        { x: velocity.x * seconds, y: velocity.y * seconds },
+        PLAYER_RADIUS_TILES,
+        level,
+        ROOM_EDGE_MARGIN_TILES,
+      );
       this.syncNodePosition();
     }
 
@@ -366,6 +364,7 @@ export class PlayerController extends Component {
       deltaMs,
       level,
       ROOM_EDGE_MARGIN_TILES,
+      PLAYER_RADIUS_TILES,
     );
     this.tilePosition = result.position;
     this.knockback = result.state;
@@ -522,10 +521,4 @@ export class PlayerController extends Component {
     const world = tileToWorld(this.tilePosition);
     this.node.setPosition(world.x, world.y - ACTOR_FEET_OFFSET_TILES, 0);
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
 }

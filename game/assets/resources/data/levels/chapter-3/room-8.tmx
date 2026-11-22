@@ -91,7 +91,7 @@
     <property name="elite" type="bool" value="false"/>
    </properties>
   </object>
-  <object id="7" name="spawn" x="256" y="192">
+  <object id="7" name="spawn" x="256" y="208">
    <properties>
     <property name="role" type="string" value="tank"/>
     <property name="wave" type="int" value="3"/>
