@@ -218,8 +218,7 @@ const NATURE_PROPS: readonly PropDef[] = [
   walkOver('flower-red', { kind: 'flower', sheet: NATURE, rect: { x: 48, y: 176, width: 16, height: 16 }, collider: null }),
 ];
 
-/** Element-sheet furniture: a crate, a cart and a totem pole. */
-const ELEMENT_PROPS: readonly PropDef[] = [
+/** Element-sheet furniture: a crate, a cart and a totem pole. */const ELEMENT_PROPS: readonly PropDef[] = [
   solid('crate', {
     kind: 'structure',
     sheet: ELEMENT,
@@ -248,6 +247,42 @@ const HOUSE_PROPS: readonly PropDef[] = [
   house('house-green', HOUSE, { x: 304, y: 0, width: 64, height: 48 }, HOUSE_WALLS),
   house('hut', HOUSE, { x: 0, y: 120, width: 48, height: 40 }, { x: 2, y: 26, width: 44, height: 14 }),
   house('hut-small', HOUSE, { x: 48, y: 128, width: 48, height: 32 }, { x: 2, y: 18, width: 44, height: 14 }),
+];
+
+/**
+ * Village fences (#67 review): a three-panel run and a single post from `TilesetHouse`, so a
+ * village has a street instead of loose crates. Solid at the rails (the bottom 8 px), the same
+ * rule as every other "looks solid is solid" prop.
+ */
+const FENCE_PROPS: readonly PropDef[] = [
+  solid('fence', {
+    kind: 'structure',
+    sheet: HOUSE,
+    rect: { x: 160, y: 80, width: 48, height: 16 },
+    collider: { x: 0, y: 8, width: 48, height: 8 },
+  }),
+  solid('fence-post', {
+    kind: 'structure',
+    sheet: HOUSE,
+    rect: { x: 160, y: 64, width: 16, height: 16 },
+    collider: { x: 0, y: 8, width: 16, height: 8 },
+  }),
+];
+
+/** Camp furniture a village can use outside the desert too: a well and a signpost. */
+const VILLAGE_EXTRA_PROPS: readonly PropDef[] = [
+  solid('camp-well', {
+    kind: 'structure',
+    sheet: CAMP,
+    rect: { x: 20, y: 80, width: 28, height: 26 },
+    collider: { x: 2, y: 12, width: 24, height: 12 },
+  }),
+  solid('camp-signpost', {
+    kind: 'structure',
+    sheet: CAMP,
+    rect: { x: 96, y: 81, width: 16, height: 30 },
+    collider: { x: 5, y: 22, width: 6, height: 8 },
+  }),
 ];
 
 /** Camp corner: a tent and a log pile. */
@@ -390,18 +425,23 @@ export const PROP_CATALOGUE: Readonly<Record<number, readonly PropDef[]>> = {
     ...ELEMENT_PROPS,
     ...HOUSE_PROPS,
     ...CAMP_PROPS,
+    ...FENCE_PROPS,
+    ...VILLAGE_EXTRA_PROPS,
   ],
   2: [
     ...NATURE_PROPS,
     ...ELEMENT_PROPS,
     ...HOUSE_PROPS.filter((def) => def.key !== 'hut' && def.key !== 'hut-small'),
     ...RIVER_PROPS,
+    ...FENCE_PROPS,
   ],
   3: [
     ...NATURE_PROPS,
     ...ELEMENT_PROPS,
     ...HOUSE_PROPS,
     ...VILLAGE_PROPS,
+    ...FENCE_PROPS,
+    ...VILLAGE_EXTRA_PROPS,
   ],
   // Chapter 4 — desert: the M9 desert village tileset + camp, with the shared nature walk-overs.
   4: [

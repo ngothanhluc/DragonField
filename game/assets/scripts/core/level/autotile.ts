@@ -1,21 +1,26 @@
 /**
- * 13-piece "blob" autotiling for the ground patches (M10, ticket #67). Pure `core/`: no `cc`.
+ * 13-piece "blob" autotiling for the ground patches and the trail (M10, ticket #67). Pure `core/`:
+ * no `cc`.
  *
  * A patch is a boolean mask of map cells. Every cell of the patch is drawn with one of the 13
- * pieces of a terrain block in `TilesetField.png`; the piece is chosen from the eight
- * neighbours, so a patch edge always meets the base floor with the right corner/edge art instead
- * of ending in a hard square.
+ * pieces of a terrain block in `TilesetFloor.png`; the piece is chosen from the eight neighbours,
+ * so a patch edge always meets the base floor with the right corner/edge art instead of ending in
+ * a hard square.
  *
- * Sheet layout of one terrain block (5 columns × 3 rows, ids inside the block):
+ * `TilesetFloor.png` lays every terrain out as an 11×7 block (22-column sheet), verified from the
+ * pixel transparency:
  *
  * ```text
- *   1  2  3  4  5      outer: 1 NW, 2 N, 3 NE, 6 W, 7 centre, 8 E, 11 SW, 12 S, 13 SE
- *   6  7  8  .  .      inner: 4 NE diagonal missing, 5 NW missing, 9 SE missing, 10 SW missing
- *  11 12 13  9 10
+ *   NW  N  NE  .  .  iNE  iNW       outer 3×3 at columns 0-2, rows 0-2
+ *    W  C   E  .  .  iSE  iSW       inner corners at (6,2) NW, (5,2) NE, (6,1) SW, (5,1) SE
+ *   SW  S  SE  .  .   .    .        (the "notch" piece has the outside in that one corner)
  * ```
  *
- * Verified from the pixels: tile 4 is the notch whose only outside diagonal is the **NW** one,
- * 5 the NE, 9 the SW, 10 the SE (the naming in the layout above is the *hole*).
+ * Blob ids, as the acceptance test states them: `1 2 3 / 6 7 8 / 11 12 13` are the outer
+ * corners/edges/centre and `4 5 / 9 10` the inner corners — `4` = outside diagonal NW, `5` = NE,
+ * `9` = SW, `10` = SE. Every terrain block also has the surrounding terrain **baked in** (e.g. the
+ * dirt block's fringe is the dark grass it is meant to lie on), so a room picks the block that
+ * matches its base floor.
  *
  * The generator only ever writes cells that sit in a full 2×2 block (the 13-piece layout cannot
  * draw a 1-cell strip), which `normalizePatchMask` enforces.
@@ -30,11 +35,14 @@ export interface PatchMask {
 
 /** One terrain block of a sheet: the `.tsx` next to the rooms and its 13 local tile ids. */
 export interface GroundTerrain {
-  /** `.tsx` file name next to the rooms, e.g. `field.tsx`. */
+  /** `.tsx` file name next to the rooms, e.g. `tilefloor.tsx`. */
   readonly tileset: string;
   /** `tiles[blob - 1]` = 1-based local tile id inside `tileset`. Always 13 entries. */
   readonly tiles: readonly number[];
 }
+
+/** Columns of `TilesetFloor.png` (22 × 16 px = 352 px wide, 26 rows tall). */
+export const TILEFLOOR_COLUMNS = 22;
 
 function inside(mask: PatchMask, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= mask.cols || y >= mask.rows) return false;
@@ -107,23 +115,40 @@ export function normalizePatchMask(mask: PatchMask): PatchMask {
   }
 }
 
-/** The 13 local ids of terrain block `block` (0-based) in `TilesetField.png` (15 tiles per block). */
-function fieldBlock(block: number): readonly number[] {
-  return Array.from({ length: 13 }, (_, index) => 15 * block + index + 1);
+/**
+ * The 13 blob ids of the terrain block whose top-left tile is `(blockCol, blockRow)`, in blob
+ * order 1..13. The block layout (`outer 3×3` + four inner corners) is explained in the header.
+ */
+export function floorBlockTiles(blockCol: number, blockRow: number): readonly number[] {
+  const local = (col: number, row: number): number => (blockRow + row) * TILEFLOOR_COLUMNS + (blockCol + col) + 1;
+  return [
+    local(0, 0), // 1  NW corner
+    local(1, 0), // 2  N edge
+    local(2, 0), // 3  NE corner
+    local(6, 2), // 4  inner: outside diagonal NW
+    local(5, 2), // 5  inner: outside diagonal NE
+    local(0, 1), // 6  W edge
+    local(1, 1), // 7  centre
+    local(2, 1), // 8  E edge
+    local(6, 1), // 9  inner: outside diagonal SW
+    local(5, 1), // 10 inner: outside diagonal SE
+    local(0, 2), // 11 SW corner
+    local(1, 2), // 12 S edge
+    local(2, 2), // 13 SE corner
+  ];
 }
 
 /**
- * The patch terrain of each chapter, over that chapter's base floor:
- * - ch1 the village dirt path over dark grass,
- * - ch2 the light grass clearing over dark grass,
- * - ch3 light grass growing through the ruined plaza sand,
- * - ch4 the pale sand plateau over the tan desert sand.
+ * The patch terrain of each chapter, chosen so its baked fringe matches that chapter's base floor:
+ * - ch1/ch2 dark dirt over dark grass (the floor is TilesetField's dark-grass centre),
+ * - ch3 stone paving over light tan (the ruined village plaza),
+ * - ch4 light sand over orange (the demo's pale sand shelf on tan desert sand).
  *
- * `field.tsx` names the sheet block; ch3/ch4 carry their own `field.tsx` next to the rooms.
+ * The trail reuses the same terrain, so a path is the same ground as the patches around it.
  */
 export const GROUND_TERRAINS: Readonly<Record<number, GroundTerrain>> = {
-  1: { tileset: 'field.tsx', tiles: fieldBlock(0) },
-  2: { tileset: 'field.tsx', tiles: fieldBlock(1) },
-  3: { tileset: 'field.tsx', tiles: fieldBlock(1) },
-  4: { tileset: 'field.tsx', tiles: fieldBlock(3) },
+  1: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 7) },
+  2: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 7) },
+  3: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 14) },
+  4: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(0, 0) },
 };

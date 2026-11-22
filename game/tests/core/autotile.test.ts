@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GROUND_TERRAINS,
+  floorBlockTiles,
   normalizePatchMask,
   pickBlobTile,
   type PatchMask,
@@ -50,13 +51,32 @@ describe('normalizePatchMask', () => {
 });
 
 describe('GROUND_TERRAINS', () => {
-  it('gives every chapter a 13-piece terrain from a sheet next to the rooms', () => {
+  it('gives every chapter a 13-piece terrain from the sheet next to the rooms', () => {
     for (const chapter of [1, 2, 3, 4]) {
       const terrain = GROUND_TERRAINS[chapter];
       expect(terrain, `chapter ${chapter}`).toBeDefined();
-      expect(terrain?.tileset).toBe('field.tsx');
+      expect(terrain?.tileset).toBe('tilefloor.tsx');
       expect(terrain?.tiles).toHaveLength(13);
       expect(new Set(terrain?.tiles).size).toBe(13);
     }
+  });
+
+  it('places the outer blob in the 3×3 the template shows and the inner corners at (6,2)/(5,2)/(6,1)/(5,1)', () => {
+    // Block origin (11, 7) on a 22-column sheet: NW = row 7, col 11 → 7*22 + 11 + 1 = 166.
+    const at = (col: number, row: number): number => (7 + row) * 22 + (11 + col) + 1;
+    const tiles = floorBlockTiles(11, 7);
+    expect(tiles[0]).toBe(at(0, 0)); // 1  NW corner
+    expect(tiles[1]).toBe(at(1, 0)); // 2  N edge
+    expect(tiles[2]).toBe(at(2, 0)); // 3  NE corner
+    expect(tiles[3]).toBe(at(6, 2)); // 4  inner corner, outside diagonal NW
+    expect(tiles[4]).toBe(at(5, 2)); // 5  inner corner, outside diagonal NE
+    expect(tiles[5]).toBe(at(0, 1)); // 6  W edge
+    expect(tiles[6]).toBe(at(1, 1)); // 7  centre
+    expect(tiles[7]).toBe(at(2, 1)); // 8  E edge
+    expect(tiles[8]).toBe(at(6, 1)); // 9  inner corner, outside diagonal SW
+    expect(tiles[9]).toBe(at(5, 1)); // 10 inner corner, outside diagonal SE
+    expect(tiles[10]).toBe(at(0, 2)); // 11 SW corner
+    expect(tiles[11]).toBe(at(1, 2)); // 12 S edge
+    expect(tiles[12]).toBe(at(2, 2)); // 13 SE corner
   });
 });
