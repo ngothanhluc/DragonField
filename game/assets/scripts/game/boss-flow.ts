@@ -5,7 +5,7 @@
  * Split from `bootstrap.ts` so the run-flow file needs one line to call the boss. There are
  * no patterns/AI here — everything lives in `core/boss/` and `boss-view.ts`.
  */
-import { bossForSpriteName, type BossDef } from '../core/boss/boss-defs';
+import { BOSSES, bossForSpriteName, type BossDef, type BossId } from '../core/boss/boss-defs';
 import type { LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { playSfx } from './audio/sfx';
@@ -28,19 +28,14 @@ export interface DestroyableNode {
 export const BOSS_START_FALLBACK: Vec2 = { x: 16, y: 5 };
 
 /**
- * Spawn the room's real boss. Returns the def so the caller can log; throws if the TMX lacks
- * `boss` or the sprite name is not in `BOSSES` (bad data must surface immediately).
+ * Spawn the room's real boss. `bossId` is the run's pick from `boss-pool.ts` (#43); without it
+ * the TMX `boss` sprite name is used. Throws if neither resolves (bad data must surface immediately).
  */
-export function spawnBossForRoom(combat: CombatLoop, level: LevelData): BossDef {
-  const bossName = level.boss?.name;
-  if (bossName === undefined) {
-    throw new Error(`Room ${level.room} is a boss room but is missing the map property "boss"`);
-  }
-
-  const def = bossForSpriteName(bossName);
+export function spawnBossForRoom(combat: CombatLoop, level: LevelData, bossId?: BossId): BossDef {
+  const def = bossId === undefined ? bossForSpriteName(level.boss?.name ?? '') : BOSSES[bossId];
   if (def === undefined) {
     throw new Error(
-      `No boss "${bossName}" in BOSSES (TMX room-${level.room}); ` +
+      `No boss "${level.boss?.name ?? ''}" in BOSSES (TMX room-${level.room}); ` +
         'the "boss" map property must be a spriteName, e.g. TenguBlue.',
     );
   }

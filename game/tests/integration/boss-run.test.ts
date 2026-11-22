@@ -199,7 +199,7 @@ describe('boss run — Squid summons', () => {
 });
 
 describe('boss hitbox', () => {
-  it('has a radius for all 3 bosses, within sensible arena bounds', () => {
+  it('has a radius for every boss, within sensible arena bounds', () => {
     for (const id of BOSS_IDS) {
       const radius = BOSSES[id].hitboxRadiusTiles;
       expect(radius).toBeGreaterThan(0);
@@ -210,8 +210,8 @@ describe('boss hitbox', () => {
   });
 
   it('the hitbox is a proxy smaller than half the largest sprite frame (no hitting air)', () => {
-    // Largest boss frames: 82 px Tengu, 76 px Squid, 96 px Samurai (GDD §5).
-    const framePx = { tengu: 82, squid: 76, samurai: 96 };
+    // Largest boss frames: 82 px Tengu, 76 px Squid, 96 px Samurai, 40 px Frog, 62 px Slime.
+    const framePx = { tengu: 82, squid: 76, samurai: 96, frog: 40, slime: 62 };
 
     for (const id of BOSS_IDS) {
       expect(BOSSES[id].hitboxRadiusTiles).toBeLessThan(framePx[id] / 2 / 16);

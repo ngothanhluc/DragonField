@@ -114,6 +114,9 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
     'samurai.charge.right',
     'samurai.hit',
   ],
+  // Ticket #43 — boss pool alternatives.
+  frog: ['frog.idle', 'frog.jump', 'frog.charge', 'frog.attack', 'frog.hit'],
+  slime: ['slime.idle', 'slime.jump', 'slime.hit'],
   fx: [
     'fx.shuriken',
     'fx.coin',
