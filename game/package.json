@@ -25,6 +25,7 @@
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "sim:table": "bun run scripts/sim-table.ts",
     "lint": "eslint \"assets/scripts/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"assets/scripts/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.ts\" \"*.{json,md}\"",
     "deploy:prepare": "bun run scripts/prepare-deploy.ts",
