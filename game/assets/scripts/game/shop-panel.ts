@@ -254,7 +254,7 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
   const hint = createLabel(
     root,
     'shop-hint',
-    'Click a card, 1 / 2 / 3, ←/→ + Enter, or Esc / LEAVE',
+    'Click a card, 1 / 2 / 3, Arrows + Enter, or Esc / LEAVE',
   );
   hint.fontSize = 10;
   hint.color = MUTED_COLOR;
