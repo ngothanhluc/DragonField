@@ -61,7 +61,7 @@ import {
   type FlowField,
   type SeparationBody,
 } from '../enemies/navigation';
-import { DOORS_TUNING, NAVIGATION_TUNING } from '../enemies/tuning';
+import { DOORS_TUNING, NAVIGATION_TUNING, SPECIAL_ROOMS_TUNING } from '../enemies/tuning';
 import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
@@ -77,6 +77,12 @@ import {
   type DoorReward,
 } from '../run/doors';
 import { goldForKill, goldForRoomClear } from '../run/rewards';
+import {
+  chestReward,
+  healHearts,
+  isSpecialDoor,
+  type SpecialKind,
+} from '../run/special-rooms';
 import { computeDerivedStats } from '../skills/derived-stats';
 import { simulateBossRun } from './boss-run';
 
@@ -160,6 +166,8 @@ export type SimulationEvent =
   | (SimEventBase & { readonly kind: 'door'; readonly offers: readonly DoorReward[]; readonly chosen: DoorReward })
   /** The clear reward of room `room`; `gold` is the door bonus paid for a `gold` reward, else 0. */
   | (SimEventBase & { readonly kind: 'reward'; readonly reward: DoorReward; readonly gold: number })
+  /** A special room used in slot `room` (#40): heal / shop (never buys) / chest reward. */
+  | (SimEventBase & { readonly kind: 'special'; readonly reward: SpecialKind })
   | { readonly kind: 'run-won' | 'run-lost'; readonly nowMs: number };
 
 export interface SimulationResult {
@@ -665,6 +673,73 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       const chosen = chooseDoorFrom(options.chooseDoor, offers, roomPosition);
       events.push({ kind: 'door', nowMs: durationMs, room: roomPosition, offers, chosen });
       doorReward = chosen;
+
+      if (isSpecialDoor(chosen)) {
+        // The special room takes slot `roomPosition + 1`: the drawn normal room there is not
+        // played, and after the room the run continues to the next slot (the slot count and the
+        // HUD's x/9 never change). The special slot still pays a room clear, like every slot.
+        const specialSlot = roomPosition + 1;
+        let bonusGold = 0;
+        if (chosen === 'heal') {
+          health.heal(
+            healHearts(health.current, stats.maxHearts, SPECIAL_ROOMS_TUNING.healHearts),
+          );
+        }
+        if (chosen === 'chest') {
+          const chest = chestReward(options.seed, specialSlot);
+          if (chest.kind === 'gold') bonusGold = chest.amount;
+        }
+        const slotGold =
+          Math.round(goldForRoomClear(false) * stats.goldMultiplier) + bonusGold;
+        goldEarned += slotGold;
+        roomsCleared += 1;
+        events.push({
+          kind: 'room-cleared',
+          nowMs: durationMs,
+          room: nextRoom.room,
+          gold: slotGold,
+        });
+        events.push({ kind: 'special', nowMs: durationMs, room: specialSlot, reward: chosen });
+
+        // One door out: the boss door when the special is the last normal slot, otherwise a
+        // plain exit (its room keeps the default `skill` clear reward — there is no choice).
+        const exitOffers: readonly DoorReward[] =
+          specialSlot >= normalRoomCount ? ['boss'] : ['skill'];
+        const exitChosen = exitOffers[0] ?? 'skill';
+        events.push({
+          kind: 'door',
+          nowMs: durationMs,
+          room: specialSlot,
+          offers: exitOffers,
+          chosen: exitChosen,
+        });
+        doorReward = exitChosen;
+
+        // Skip the drawn room the special replaced; the next slot is the one after it.
+        roomIndex += 2;
+        const afterSpecial = runRooms[roomIndex];
+        if (afterSpecial === undefined) {
+          status = 'won';
+          events.push({ kind: 'run-won', nowMs: durationMs });
+          break;
+        }
+        room = afterSpecial;
+        waveIndex = 0;
+        navigation = createRoomNavigation(room);
+        stuckGuard.clear();
+
+        if (room.isBossRoom) {
+          const bossRun = runBossRoom(room, roomIndex);
+          durationMs += bossRun.bossDurationMs;
+          status = bossRun.won ? 'won' : 'lost';
+          break;
+        }
+
+        player = { x: room.playerStart.x, y: room.playerStart.y };
+        enemies = spawnRoomWave(room, waveIndex);
+        bullets.clear();
+        continue;
+      }
 
       roomIndex += 1;
       room = nextRoom;

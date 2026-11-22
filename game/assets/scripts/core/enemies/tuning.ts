@@ -39,6 +39,7 @@ import {
   type EnemiesTuning,
   type FeelTuning,
   type NavigationTuning,
+  type SpecialRoomsTuning,
   type TuningConfig,
 } from './tuning-schema';
 
@@ -76,3 +77,6 @@ export const COVER_TUNING: CoverTuning = TUNING.cover;
 
 /** Door-choice numbers (#39) — the run flow and the balance sim read them. */
 export const DOORS_TUNING: DoorsTuning = TUNING.doors;
+
+/** Heal / mid-run shop / chest numbers (#40) — `core/run/special-rooms.ts` reads them. */
+export const SPECIAL_ROOMS_TUNING: SpecialRoomsTuning = TUNING.specialRooms;
