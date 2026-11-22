@@ -1,9 +1,9 @@
 /**
  * Cull the room's **static** world sprites that are off screen (ticket #37, ADR-018).
  *
- * A 128×72 room holds ~16 screens of water tiles, obstacles, decor, under-actors atmosphere and
+ * A 64×36 room holds 4 screens of water tiles, obstacles, decor, under-actors atmosphere and
  * tile chunks. The engine draws every active `Sprite`/`TiledMap` in the scene graph whether or
- * not the camera sees it, so moving the camera over such a room would cost 16× a 32×18 room.
+ * not the camera sees it, so moving the camera over such a room would cost 4× a 32×18 room.
  * This pass deactivates what sits outside the view + a 2-tile margin, so a big room costs about
  * one screen.
  *

@@ -1,5 +1,5 @@
 /**
- * Ticket #45 acceptance: chapter 4 (desert) — a 15–18 room 128×72 pool + a 32×18 boss arena using
+ * Ticket #45 acceptance: chapter 4 (desert) — a 15–18 room 64×36 pool + a 32×18 boss arena using
  * the ch4 boss pool, a prop catalogue, unlocked after clearing ch3, and the save v1 → v2 migration.
  */
 import { join } from 'node:path';
@@ -23,13 +23,13 @@ function chapterFour() {
 }
 
 describe('chapter 4 content', () => {
-  it('has a pool of 15–18 normal 128×72 rooms and one 32×18 boss room, last', () => {
+  it('has a pool of 15–18 normal 64×36 rooms and one 32×18 boss room, last', () => {
     const chapter = chapterFour();
     expect(chapter.chapter).toBe(4);
     const normal = chapter.rooms.filter((room) => !room.isBossRoom);
     expect(normal.length).toBeGreaterThanOrEqual(15);
     expect(normal.length).toBeLessThanOrEqual(18);
-    for (const room of normal) expect(room.size, room.id).toEqual({ cols: 128, rows: 72 });
+    for (const room of normal) expect(room.size, room.id).toEqual({ cols: 64, rows: 36 });
     const last = chapter.rooms[chapter.rooms.length - 1];
     expect(last?.isBossRoom).toBe(true);
     expect(last?.size).toEqual({ cols: 32, rows: 18 });

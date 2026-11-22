@@ -1662,8 +1662,8 @@ export class Bootstrap extends Component {
    * one door out.
    *
    * The floor comes from the chapter's **boss room**, not from the drawn normal room: normal
-   * rooms are 128×72 (ADR-018), and `buildRoom` draws a one-screen `LevelData` through a single
-   * `TiledMap`, which overflows the 2D batcher on a 128×72 asset (Error 9004, #37). The boss
+   * rooms are 64×36 (ADR-018), and `buildRoom` draws a one-screen `LevelData` through a single
+   * `TiledMap`, which overflows the 2D batcher on a multi-screen asset (Error 9004, #37). The boss
    * room is exactly 32×18, so its asset is safe in the one-screen path.
    */
   private enterSpecialRoom(roomNumber: number, kind: SpecialKind): void {

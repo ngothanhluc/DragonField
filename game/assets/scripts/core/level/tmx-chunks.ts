@@ -5,7 +5,8 @@
  * must fit the 2D batcher's buffer (`macro.BATCHER2D_MEM_INCREMENT` = 144 KB → 4096 vertices with
  * the 36-byte pos/uv/color format). A 128×72 layer is 9216 tiles = 36 864 vertices = 1.33 MB, so
  * the engine throws `Error 9004` ("Failed to allocate chunk in StaticVBAccessor") and the canvas
- * freezes. One 32×18 chunk is 576 tiles = 2304 vertices — safely under the limit, whatever the
+ * freezes (M9 rooms were 128×72; since #66 a normal room is 64×36, still chunked per screen).
+ * One 32×18 chunk is 576 tiles = 2304 vertices — safely under the limit, whatever the
  * window aspect (engine culling can add a reserve row/column on top).
  *
  * This module is pure (no `cc`): it slices the CSV of every `<layer>` into a self-contained

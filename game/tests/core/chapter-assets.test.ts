@@ -18,7 +18,7 @@ describe('chapter assets', () => {
       const normal = rooms.filter((room) => !room.isBossRoom);
       expect(normal.length, `chapter ${chapter} normal rooms`).toBeGreaterThanOrEqual(15);
       expect(normal.length, `chapter ${chapter} normal rooms`).toBeLessThanOrEqual(18);
-      for (const room of normal) expect(room.size, room.id).toEqual({ cols: 128, rows: 72 });
+      for (const room of normal) expect(room.size, room.id).toEqual({ cols: 64, rows: 36 });
     }
 
     const bosses = [1, 2, 3, 4].map((chapter) => {

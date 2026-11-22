@@ -162,7 +162,7 @@ export function sliceFrame(texture: Texture2D, rect: TileRect): SpriteFrame {
  * milestone's unit coordinates instead of switching to pixels.
  *
  * **Room bigger than one screen** (ticket #37, ADR-018): the floor is split into one `TiledMap`
- * node per 32×18 screen (`core/level/tmx-chunks.ts`). A single 128×72 layer is 36 864 vertices,
+ * node per 32×18 screen (`core/level/tmx-chunks.ts`). A single 128×72 layer was 36 864 vertices,
  * over the 2D batcher's 4096-vertex chunk (`Error 9004`, canvas freezes); one screen is 2304.
  * `world-culler.ts` deactivates off-screen chunks. A one-screen room keeps exactly today's
  * single map node, so chapter 1–3 rooms render byte-identically.

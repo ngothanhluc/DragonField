@@ -15,7 +15,8 @@ export default defineConfig({
     environment: 'node',
     // Logic in core/ does not depend on the engine, so jsdom is not needed.
     globals: false,
-    // M9 rooms are 128×72 and bosses/roles grew: whole-chapter sims take 5–12 s on the CI runner,
+    // M9 rooms are multi-screen (64×36 since #66) and bosses/roles grew: whole-chapter sims take
+    // 5–12 s on the CI runner,
     // over vitest's 5 s default. A slow test is not a broken one; a hang still fails at 60 s.
     testTimeout: 60_000,
   },

@@ -1165,7 +1165,7 @@ export class CombatLoop {
   }
 
   /**
-   * Cull enemy sprites by the camera view (#41): a 128×72 room with 24 enemies + their nodes is
+   * Cull enemy sprites by the camera view (#41): a multi-screen room with 24 enemies + their nodes is
    * cheap only if the off-screen ones do not draw. Only `Sprite.enabled` changes — the node stays
    * active because gameplay reads enemies every frame (unlike the FX pool, where `active` is the
    * lifetime flag).

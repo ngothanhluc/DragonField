@@ -1,5 +1,5 @@
 /**
- * Ticket #38 acceptance: each chapter has a pool of 15–18 generated 128×72 normal rooms plus its
+ * Ticket #38 acceptance: each chapter has a pool of 15–18 generated 64×36 normal rooms plus its
  * 32×18 boss room; a run draws 8 distinct normal rooms by seed, then the boss; every generated
  * room is traversable from the player start to every door and spreads its spawns.
  */
@@ -22,13 +22,13 @@ function normalRooms(chapter: ChapterData): LevelData[] {
 
 describe('room pool on disk', () => {
   for (const n of [1, 2, 3, 4]) {
-    it(`chapter ${n}: 15–18 normal rooms of 128×72, then one 32×18 boss room`, () => {
+    it(`chapter ${n}: 15–18 normal rooms of 64×36, then one 32×18 boss room`, () => {
       const chapter = chapters[n];
       if (chapter === undefined) throw new Error('chapter');
       const normal = normalRooms(chapter);
       expect(normal.length).toBeGreaterThanOrEqual(15);
       expect(normal.length).toBeLessThanOrEqual(18);
-      for (const room of normal) expect(room.size, room.id).toEqual({ cols: 128, rows: 72 });
+      for (const room of normal) expect(room.size, room.id).toEqual({ cols: 64, rows: 36 });
       const boss = chapter.rooms.filter((room) => room.isBossRoom);
       expect(boss).toHaveLength(1);
       expect(boss[0]?.size).toEqual({ cols: 32, rows: 18 });
@@ -81,15 +81,15 @@ describe('generated room geometry', () => {
           const distance = field.distanceAt(Math.floor(room.playerStart.x), Math.floor(room.playerStart.y));
           if (!Number.isFinite(distance)) problems.push(`${room.id}: door ${JSON.stringify(door.at)} unreachable`);
         }
-        // Spawn points cover at least 4 different screens of the 4×4 grid of 32×18 screens.
+        // Spawn points cover at least 4 different screens: every screen of the 2×2 room.
         const screens = new Set<string>();
         for (const wave of room.waves) {
           for (const enemy of wave.enemies) screens.add(`${Math.floor(enemy.at.x / 32)},${Math.floor(enemy.at.y / 18)}`);
         }
         if (screens.size < 4) problems.push(`${room.id}: spawns in only ${screens.size} screens`);
         // Every screen has some cover to dodge behind, and none is a maze.
-        for (let sx = 0; sx < 4; sx += 1) {
-          for (let sy = 0; sy < 4; sy += 1) {
+        for (let sx = 0; sx < 2; sx += 1) {
+          for (let sy = 0; sy < 2; sy += 1) {
             const count = room.obstacles.filter((o) => {
               const cx = o.x + o.width / 2;
               const cy = o.y + o.height / 2;

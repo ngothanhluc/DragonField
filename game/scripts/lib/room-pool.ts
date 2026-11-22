@@ -1,5 +1,5 @@
 /**
- * Generated 128×72 room pool (M9, ticket #38, ADR-018).
+ * Generated 64×36 room pool (M9, ticket #38, ADR-018).
  *
  * Every chapter now holds a **pool** of 16 generated normal rooms instead of 8 hand-dressed
  * 32×18 ones; a run plays 8 of them drawn by its seed (`core/run/room-draw.ts`) plus the boss.
@@ -7,7 +7,7 @@
  * player start, 2 doors, spawns) with a seeded RNG, **validates** it with the same core modules
  * the game and the acceptance tests use, and serialises it to `.tmx`.
  *
- * Room anatomy (a normal room is 4×4 screens of 32×18 tiles):
+ * Room anatomy (a normal room is 2×2 screens of 32×18 tiles):
  * - **Floor**: one uniform grass/sand gid, as before (`FLOOR_GID`).
  * - **Decor** (walkable tiles): grass/flower clusters (ch1/ch2) or whole VillageAbandoned blocks
  *   plus flat singles (ch3); chapter 4 keeps a plain sand floor. Never on an obstacle, spawn, door
@@ -16,7 +16,8 @@
  *   pillar/pit/wall in about half of the screens. Blobs are never closer than `MIN_OBSTACLE_GAP`
  *   tiles edge to edge, so the room always stays a field of cover to dodge behind, never a maze.
  * - **Spawns**: the chapter's per-room spawn plan (today's counts and roles, see
- *   `SPAWN_TEMPLATES`), spread over the 4 screens around the player start, 7–26 tiles away.
+ *   `SPAWN_TEMPLATES`), spread over the 4 screens of the room around the player start, 7–26
+ *   tiles away.
  * - **Doors**: 2 spots on the room edge (entrance at the bottom, exit at the top), data only
  *   until #39 gives the door choice a screen.
  *
@@ -38,8 +39,8 @@ import type { WaterArea } from '../../assets/scripts/core/level/water-layout';
 /** One screen: the camera view, and the tile of every generated room is a grid of these. */
 export const SCREEN_COLS = 32;
 export const SCREEN_ROWS = 18;
-/** Normal rooms are 4×4 screens (ADR-018): 128×72 tiles. */
-export const ROOM_SCREENS = 4;
+/** Normal rooms are 2×2 screens (ADR-018): 64×36 tiles. */
+export const ROOM_SCREENS = 2;
 export const COLS = SCREEN_COLS * ROOM_SCREENS;
 export const ROWS = SCREEN_ROWS * ROOM_SCREENS;
 /** Normal rooms in a chapter's pool (the ticket asks for 15–18). */
@@ -318,9 +319,10 @@ const SPAWN_MIN_DISTANCE = 7;
 const SPAWN_MAX_DISTANCE = 9.5;
 /**
  * Casters stand at the back of the pack: the player's auto-aim locks the **nearest** target, and
- * a stagger resets an enemy's attack cooldown, so a caster that spawns closest is held under fire
- * and never gets its (900 ms + 500 ms telegraph) shot off — the balance sim pins "every caster
- * fires before dying". Spawning it behind the melee line (just outside the 6-tile hold band, at
+ * an enemy under constant fire keeps its attack cycle but is delayed, so a caster that spawns
+ * closest is held under fire and never gets its (3000 ms + 500 ms telegraph) shot off — the
+ * balance sim pins "every caster fires before dying". Spawning it behind the melee line (just
+ * outside the 6-tile hold band, at
  * the edge of the 8-tile auto-aim range) gives it the walk-in time to fire first, then die.
  * The clear line is required so it really is in the fight, not several screens away.
  */
@@ -329,12 +331,13 @@ const CASTER_MAX_DISTANCE = 12;
 
 /**
  * Where the player starts: near the middle of the room, so a fight has room to dodge in every
- * direction. Room 1 is the room the title / chapter-select backdrop draws (`MENU_BACKDROP_ROOM`),
- * and the menu camera always shows the room's bottom-left screen; its start sits there, right of
- * the menu column, so the idle ninja is on screen and not behind the panel.
+ * direction and every one of the room's 4 screens is a fair walk away. Room 1 is the room the
+ * title / chapter-select backdrop draws (`MENU_BACKDROP_ROOM`), and the menu camera always shows
+ * the room's bottom-left screen: its start sits there, right of the menu column, so the idle ninja
+ * is on screen and not behind the panel.
  */
-const START_AREA = { minX: 60, maxX: 68, minY: 32, maxY: 40 } as const;
-const MENU_ROOM_START = { x: 28, y: 60 } as const;
+const START_AREA = { minX: 28, maxX: 34, minY: 16, maxY: 24 } as const;
+const MENU_ROOM_START = { x: 30, y: 20 } as const;
 
 function gapBetween(a: Rect, b: Rect): number {
   const dx = Math.max(0, Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width)));
@@ -394,13 +397,13 @@ function waterGap(water: readonly WaterArea[], point: Vec2): number {
 }
 
 /**
- * Chapter 2's river: a shallow 2-tile band across the room, kept below the player's start row so
- * the entrance is on dry land, plus a waterfall running down to it in some rooms.
+ * Chapter 2's river: a shallow 2-tile band across the room, above the player's start rows so the
+ * entrance is on dry land, plus a waterfall running down to it in some rooms.
  */
 function planRiver(rng: Rng): WaterArea[] {
-  const width = 40 + int(rng, 26);
+  const width = 24 + int(rng, 12);
   const x = 2 + int(rng, COLS - width - 4);
-  const y = 14 + int(rng, 34);
+  const y = 8 + int(rng, 8);
   const water: WaterArea[] = [{ kind: 'river', x, y, width, height: 2 }];
   if (rng() < 0.6) {
     const fallX = x + 2 + int(rng, Math.max(1, width - 6));
@@ -654,7 +657,7 @@ function planGeometry(
   return { obstacles, props };
 }
 
-/** Spawn points over the 4 screens around the player: 7–26 tiles away, clear of every blob. */
+/** Spawn points over the room's 4 screens around the player: 7–12 tiles away, clear of every blob. */
 function planSpawns(
   chapter: number,
   room: number,
@@ -954,7 +957,7 @@ function planDecor(
     }
   }
 
-  // Border: complete solid props on the outer row/columns (all 4 sides of the 128×72 room).
+  // Border: complete solid props on the outer row/columns (all 4 sides of the 64×36 room).
   const border: { x: number; y: number }[] = [];
   for (let x = 1; x < COLS - 1; x += 1) {
     border.push({ x, y: 0 }, { x, y: ROWS - 1 });

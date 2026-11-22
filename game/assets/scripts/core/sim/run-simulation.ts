@@ -45,12 +45,13 @@ import {
   contactDamageFor,
   decideAction,
   speedFor,
-  staggerAction,
+  staggerAfterHit,
   visualScaleFor,
   type EnemyAction,
   type EnemyState,
 } from '../enemies/behaviours';
 import { eliteVolleyAngles } from '../enemies/elite';
+import { nextActionStartedMs } from '../enemies/attack-cycle';
 import { aimDirection, sniperShotPlan } from '../combat/enemy-fire';
 import { splitOnDeath } from '../enemies/splitter';
 import {
@@ -86,7 +87,7 @@ import {
 } from '../run/special-rooms';
 import { computeDerivedStats } from '../skills/derived-stats';
 import { screenViewAround } from '../view/view-rect';
-import { simulateBossRun } from './boss-run';
+import { BOSS_TARGET_ID, simulateBossRun, type BossRunPolicy } from './boss-run';
 import type { ViewRect } from '../camera/follow-camera';
 
 export const SIM_STEP_MS = 16;
@@ -433,7 +434,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     const dealt = Math.min(amount, enemy.health);
     enemy.health = Math.max(0, enemy.health - amount);
     if (enemy.health <= 0) killEnemy(enemy, durationMs);
-    else enemy.action = staggerAction(durationMs, DEFAULT_COMBAT.enemyStaggerMs);
+    else enemy.action = staggerAfterHit(enemy.action, durationMs, DEFAULT_COMBAT.enemyStaggerMs);
     return dealt;
   };
 
@@ -454,6 +455,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       playerHearts: health.current,
       playerStart: bossRoom.playerStart,
       bossStart: bossRoom.bossStart,
+      // The same player plays the boss room: "dodge + typical loadout wins the chapter" is only
+      // true if the boss fight dodges too. The boss room used to fall back to `approachBoss`
+      // (walk into the boss), which won while the player entered with full hearts; once the
+      // 64×36 normal rooms spent some (#66) that proxy lost the boss of a run it had cleared.
+      policy: bossPolicyFor(options.policy, bossRoom),
     });
 
     for (const event of result.events) {
@@ -578,7 +584,15 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
       const before = enemy.action;
       const next = decideAction({ state: enemy, player, nowMs: durationMs, level: room, view });
-      if (next.kind !== before.kind) enemy.actionStartedMs = durationMs;
+      // Same attack-cycle rule as the game adapter (`core/enemies/attack-cycle.ts`): a stagger or
+      // ordinary transition must not restart the cooldown, or an enemy under constant fire never
+      // reaches its attack beat.
+      enemy.actionStartedMs = nextActionStartedMs(
+        before,
+        next,
+        durationMs,
+        enemy.actionStartedMs,
+      );
       enemy.action = next;
 
       if (attackReleased(before, next) === 'shot') {
@@ -952,6 +966,49 @@ function movePlayer(player: Vec2, input: MoveInput, speed: number, room: LevelDa
     room,
     ROOM_EDGE_MARGIN_TILES,
   );
+}
+
+/**
+ * Adapt a run policy to the boss room (`PolicyWorld` → `BossRunWorld`).
+ *
+ * The boss room has no `EnemyState` list, so the boss and its summons are exposed in the same
+ * shape a normal room exposes its enemies: position + health are real, `action` is `idle` (the
+ * policy reads position/health). Everything else (`nowMs`, player, hearts, bullets) is the boss
+ * room's own state, so a dodging policy dodges there too.
+ */
+function bossPolicyFor(policy: InputPolicy, bossRoom: LevelData): BossRunPolicy {
+  return (world) =>
+    policy({
+      nowMs: world.nowMs,
+      room: bossRoom.room,
+      wave: 0,
+      player: world.player,
+      hearts: world.hearts,
+      shieldCharges: 0,
+      enemies: [
+        {
+          id: BOSS_TARGET_ID,
+          role: 'chaser',
+          elite: false,
+          position: world.boss,
+          health: world.bossHealth,
+          maxHealth: 1,
+          action: { kind: 'idle' },
+          actionStartedMs: world.nowMs,
+        },
+        ...world.summoned.map((summon) => ({
+          id: summon.id,
+          role: summon.role,
+          elite: false,
+          position: summon.position,
+          health: summon.health,
+          maxHealth: summon.maxHealth,
+          action: { kind: 'idle' as const },
+          actionStartedMs: world.nowMs,
+        })),
+      ],
+      bullets: world.bullets,
+    });
 }
 
 /** Move the enemy by the action just decided; `slow` is the current Freeze factor. */

@@ -21,6 +21,7 @@ import {
   nextWaveIndex,
   spawnWave,
 } from '../../assets/scripts/core/enemies/waves';
+import { ENEMY_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import {
   parseLevelData,
   type EnemyRole,
@@ -142,7 +143,8 @@ describe('enemy behaviours — caster', () => {
 
   it('telegraphs before firing, and an attack in telegraph runs to completion', () => {
     const player = { x: 5, y: 5 };
-    const start = 1200;
+    // Cooldown derived from tuning (#66 retuned it); the timestamp only has to be past it.
+    const start = ENEMY_TUNING.roles.caster.attackCooldownMs;
     const state = enemy({ role: 'caster', x: 10, y: 5 });
 
     // 5 tiles: inside 4–6, cooldown already elapsed.
@@ -173,10 +175,14 @@ describe('enemy behaviours — caster', () => {
 
   it('does not fire again right after the previous shot — waits for the cooldown', () => {
     const player = { x: 5, y: 5 };
+    const cooldownMs = ENEMY_TUNING.roles.caster.attackCooldownMs;
     const state = enemy({ role: 'caster', x: 10, y: 5, actionStartedMs: 1000 });
 
-    expect(decideAction({ state, player, nowMs: 1500, level })).toEqual({ kind: 'idle' });
-    expect(decideAction({ state, player, nowMs: 2200, level }).kind).toBe('telegraph');
+    // Exactly one cooldown after the last shot: idle before it, telegraph at it.
+    expect(decideAction({ state, player, nowMs: 1000 + cooldownMs - 1, level })).toEqual({
+      kind: 'idle',
+    });
+    expect(decideAction({ state, player, nowMs: 1000 + cooldownMs, level }).kind).toBe('telegraph');
   });
 
   it('closes the distance when the spacing point falls inside an obstacle', () => {
@@ -211,7 +217,9 @@ describe('enemy behaviours — tank', () => {
   it('telegraphs for 700 ms then charges straight, and rests when the charge ends', () => {
     const player = { x: 10, y: 9 };
     const state = enemy({ role: 'tank', x: 10, y: 14 });
-    const start = 900;
+    // The tank's first telegraph opens exactly when its attack cooldown runs out (#66 retuned it
+    // to 1600 ms); derive the start from tuning instead of hardcoding the old 900.
+    const start = ENEMY_TUNING.roles.tank.attackCooldownMs;
 
     expect(decideAction({ state, player, nowMs: start - 1, level })).toEqual({ kind: 'idle' });
 
@@ -414,6 +422,18 @@ describe('firstHit', () => {
     const withPit = makeLevel([{ kind: 'pit', x: 10, y: 4, width: 2, height: 2 }]);
 
     expect(firstHit({ from: { x: 5, y: 5 }, to: { x: 20, y: 5 } }, withPit)).toBeNull();
+  });
+
+  it('catches a corner grazed diagonally instead of stepping over it', () => {
+    // A 1×0.5 prop collider: the segment crosses its top-right corner for ~0.06 tiles, which is
+    // shorter than any sampling step. This is the exact geometry that stalled a room (#66):
+    // the caster behind the crate saw the player, every player bullet hit the crate.
+    const withCrate = makeLevel([{ kind: 'prop', x: 27, y: 13, width: 1, height: 0.5 }]);
+
+    const hit = firstHit({ from: { x: 32, y: 16 }, to: { x: 27.41, y: 12.6 } }, withCrate);
+    expect(hit).not.toBeNull();
+    expect(hit?.obstacle.x).toBe(27);
+    expect(hit?.progress).toBeGreaterThan(0.8);
   });
 });
 

@@ -27,7 +27,6 @@
  * to kill it in the collision frame.
  */
 import type { LevelData, Obstacle } from '../level/level-data';
-import { obstacleAt } from '../level/level-data';
 import { distanceSquared, type Vec2 } from '../math/vec2';
 
 export type BulletOwner = 'player' | 'enemy';
@@ -80,9 +79,6 @@ export interface BulletSpawnArgs {
 /** Default capacity: more than 5× the M3 target of max on-screen bullets (40). */
 export const DEFAULT_BULLET_CAPACITY = 256;
 
-/** Sampling step when sweeping a bullet path through obstacles, tiles. */
-export const HIT_SAMPLE_STEP_TILES = 0.25;
-
 /**
  * Internal version uses a mutable `{ x, y }` so each frame allocates no new
  * coordinate object. It still assigns to `Bullet` because `Vec2` is only `readonly` at the type level.
@@ -112,30 +108,64 @@ export interface ObstacleHit {
 /**
  * First obstacle on the bullet path from `from` to `to`.
  *
- * Samples along the segment with step `HIT_SAMPLE_STEP_TILES` and asks `obstacleAt`, so
- * it cannot pass through the thinnest pillar (1 tile) however long the frame. Reads only
- * `level.obstacles`; no other field of `LevelData` is used.
+ * Exact segment/AABB test (slab method), so a line that only grazes a thin corner is still a hit.
+ * The old 0.25-tile sampling could step over a 1×0.5 prop corner: a caster standing just behind
+ * it believed it had line of sight to the player while the player's bullet hit the prop — the
+ * room then never cleared (found by the headless run on 64×36 rooms, #66).
  *
+ * Reads only `level.obstacles`; no other field of `LevelData` is used.
  * Pits are **not** solid for projectiles (GDD §8): they block walkers only, so a bullet flies
  * over open ground.
  */
 export function firstHit(area: SweepArea, level: LevelData): ObstacleHit | null {
-  const dx = area.to.x - area.from.x;
-  const dy = area.to.y - area.from.y;
-  const length = Math.hypot(dx, dy);
-  const steps = Math.max(1, Math.ceil(length / HIT_SAMPLE_STEP_TILES));
-
-  for (let step = 0; step <= steps; step += 1) {
-    const progress = step / steps;
-    const point = {
-      x: area.from.x + dx * progress,
-      y: area.from.y + dy * progress,
+  let best: ObstacleHit | null = null;
+  for (const obstacle of level.obstacles) {
+    if (!stopsBullets(obstacle)) continue;
+    const progress = segmentRectEntry(area.from, area.to, obstacle);
+    if (progress === null) continue;
+    if (best !== null && progress >= best.progress) continue;
+    best = {
+      obstacle,
+      point: {
+        x: area.from.x + (area.to.x - area.from.x) * progress,
+        y: area.from.y + (area.to.y - area.from.y) * progress,
+      },
+      progress,
     };
-    const obstacle = obstacleAt(level, point);
-    if (obstacle !== null && stopsBullets(obstacle)) return { obstacle, point, progress };
   }
+  return best;
+}
 
-  return null;
+interface Rect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Entry parameter `t` in [0, 1] of the segment `from → to` into `rect`, or `null` when the
+ * segment misses it. `0` when the segment starts inside. Closed rectangle: touching a face or a
+ * corner counts, the same as a projectile whose centre only grazes an obstacle.
+ */
+function segmentRectEntry(from: Vec2, to: Vec2, rect: Rect): number | null {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  let enter = 0;
+  let exit = 1;
+
+  const axis = (origin: number, delta: number, min: number, max: number): boolean => {
+    if (Math.abs(delta) < 1e-12) return origin >= min && origin <= max;
+    const first = (min - origin) / delta;
+    const second = (max - origin) / delta;
+    enter = Math.max(enter, Math.min(first, second));
+    exit = Math.min(exit, Math.max(first, second));
+    return enter <= exit;
+  };
+
+  if (!axis(from.x, dx, rect.x, rect.x + rect.width)) return null;
+  if (!axis(from.y, dy, rect.y, rect.y + rect.height)) return null;
+  return Math.max(0, Math.min(1, enter));
 }
 
 /** A pit is a hole in the floor: walkers fall in, bullets do not. */

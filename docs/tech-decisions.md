@@ -213,3 +213,5 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 
 **Consequences.** Overrides ADR-002's "no camera follow, no large maps" for normal rooms. New `core/camera/` (pure, tested) + a `game/` adapter that moves the world camera; HUD and atmosphere stay screen-space. Off-screen culling of world nodes, edge arrows, aggro radius, wave scheduler and spawn rules go in `core/`. Room generator, traversal tests, dress density and the balance sim all work on 128×72. The `stress()` gate becomes 24 enemies alive with the camera moving.
 
+**Update 2026-11-22 (#66).** Normal rooms are **64×36** tiles (2×2 screens) instead of 128×72: the walk between fights was too long and enemies could spread too thin. Enemy counts per room, the alive cap and the follow camera rules above are unchanged; the player's base speed rises 4 → 5 tiles/s. Boss arenas stay 32×18. The decision above otherwise stands.
+

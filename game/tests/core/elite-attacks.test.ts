@@ -12,6 +12,7 @@ import {
   TANK_CHARGE_SPEED_TILES_PER_SECOND,
   attackReleased,
   decideAction,
+  staggerAfterHit,
   staggerAction,
   type EnemyAction,
   type EnemyState,
@@ -200,8 +201,8 @@ describe('elite tank — extra attack: a second charge, locking a new direction'
   });
 });
 
-describe('stagger — hit by a projectile it stands still and does not finish the telegraph', () => {
-  it('a caster mid-telegraph that gets hit: stagger action, no shot fired', () => {
+describe('stagger — a hit holds the enemy still and delays a committed wind-up', () => {
+  it('a caster mid-telegraph that gets hit: the telegraph is pushed back, no shot yet', () => {
     const player = { x: 5, y: 5 };
     const telegraph: EnemyAction = { kind: 'telegraph', sinceMs: 1000 };
     const state = enemyState('caster', { x: 10, y: 5 }, false, {
@@ -212,13 +213,16 @@ describe('stagger — hit by a projectile it stands still and does not finish th
     const stagger = staggerAction(1200, DEFAULT_COMBAT.enemyStaggerMs);
     expect(stagger).toEqual({ kind: 'stagger', untilMs: 1350 });
 
-    const staggered = { ...state, action: stagger };
-    // During the stun: holds, does not move.
-    expect(decideAction({ state: staggered, player, nowMs: 1300, level })).toEqual(stagger);
-    // Telegraph -> stagger is not a "shot".
-    expect(attackReleased(telegraph, stagger)).toBeNull();
+    // A bullet hit on a running wind-up delays it by the stun instead of cancelling it (#66):
+    // otherwise constant fire makes every caster harmless and a 64×36 room never sees a shot.
+    const delayed = staggerAfterHit(telegraph, 1200, DEFAULT_COMBAT.enemyStaggerMs);
+    expect(delayed).toEqual({ kind: 'telegraph', sinceMs: 1150 });
+    // Telegraph -> delayed telegraph is not a "shot".
+    expect(attackReleased(telegraph, delayed)).toBeNull();
 
-    // Stun over: back to normal behaviour; the cooldown counts from the stagger so it is still idle.
+    // Any other action is staggered: during the stun it holds, then the cooldown gate applies.
+    const staggered = { ...state, action: stagger };
+    expect(decideAction({ state: staggered, player, nowMs: 1300, level })).toEqual(stagger);
     expect(decideAction({ state: staggered, player, nowMs: 1350, level })).toEqual({ kind: 'idle' });
   });
 

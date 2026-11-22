@@ -1,5 +1,5 @@
 /**
- * Generate the 128×72 room pool of chapters 1–4 (M9, tickets #38 and #45).
+ * Generate the 64×36 room pool of chapters 1–4 (M9, tickets #38 and #45).
  *
  * Run: `bun run gen:rooms` (`scripts/generate-rooms.ts`).
  *

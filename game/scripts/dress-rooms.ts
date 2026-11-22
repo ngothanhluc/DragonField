@@ -21,7 +21,7 @@
  * (props are stripped and regenerated; the prop rng is separate from the decor rng).
  *
  * **Superseded by `scripts/generate-rooms.ts` (M9 #38).** That script wrote the 8 hand-dressed
- * 32×18 rooms; chapters now hold a generated 16-room pool of 128×72 rooms, and this one only knows
+ * 32×18 rooms; chapters now hold a generated 16-room pool of 64×36 rooms, and this one only knows
  * the old one-screen layout. It refuses to touch a room that is not 32×18 so a stray run cannot
  * corrupt the pool.
  */
@@ -854,7 +854,7 @@ function ensureTsx(chapterDir: string, def: TilesetDef): void {
 
 function dressFile(path: string, chapter: number, room: number): WaterArea[] {
   const raw = readFileSync(path, 'utf8');
-  // This script only understands the pre-#38 one-screen layout; the pool rooms are 128×72 and
+  // This script only understands the pre-#38 one-screen layout; the pool rooms are 64×36 and
   // are written by `scripts/generate-rooms.ts`.
   if (!/width="32" height="18"/.test(raw)) {
     throw new Error(

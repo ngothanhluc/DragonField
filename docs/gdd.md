@@ -145,7 +145,7 @@ No equipment, no second character, no skill unlocks.
 
 ## 8. Rooms and level design
 
-- **Each room = exactly 1 screen** (v1–M8). Base resolution **512×288 px = 32×18 tiles of 16px**. No scrolling, no camera follow. **From M9, normal rooms are 128×72 tiles with a follow camera; boss arenas keep this rule** (§13.2, ADR-018).
+- **Each room = exactly 1 screen** (v1–M8). Base resolution **512×288 px = 32×18 tiles of 16px**. No scrolling, no camera follow. **From M9, normal rooms are larger than one screen with a follow camera (64×36 since #66); boss arenas keep this rule** (§13.2, ADR-018).
 - **The wave count is per-room data** (`assets/resources/data/levels/chapter-<n>/*.tmx`), not hardcoded per chapter. `RunState` only tracks the current wave, it does not define the total.
 - Obstacles: pillars, pits, low walls — used to dodge bullets, they never fully block line of fire.
 - **What looks solid is solid** (from M9): rocks, trees, walls, houses, crates block the player, enemies and bullets; pits block walkers only. Enemies path around obstacles instead of pushing into them. Each chapter draws on a catalogue of solid and walk-over props from the pack (§13.2). A prop blocks only at its base (a tree at its trunk); canopies and roofs draw above actors and turn see-through when someone is under them; tall grass and bushes can be walked into and show the actor faded, as if hiding. Cover is visual only — no stealth.
@@ -239,7 +239,7 @@ Agreed 2026-11-18. Tasks and detailed acceptance criteria: `docs/milestones.md` 
 | | v1 | M9 |
 |---|---|---|
 | Chapter | 3 | **4** (desert added after ch3) |
-| Room size | 32×18 tiles, 1 screen, static camera | **128×72 tiles** (16 screens), camera follows; boss arena stays 32×18 static |
+| Room size | 32×18 tiles, 1 screen, static camera | **64×36 tiles** (4 screens, #66), camera follows; boss arena stays 32×18 static |
 | Enemies per room | 3–8 (§4) | **×8** (ch1 24–32, ch2 40–48, ch3 56–64), in waves, ≤ 24 alive |
 | Rooms per chapter | 9 fixed | pool of 15–18, run draws 9 by seed |
 | Path | straight | after each room pick 1 of 2 doors, each door shows a reward icon |
@@ -249,7 +249,7 @@ Agreed 2026-11-18. Tasks and detailed acceptance criteria: `docs/milestones.md` 
 
 Boss pool: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / GiantBamboo · ch4 GiantRacoon / recoloured Tengu variant.
 
-**Big rooms (ADR-018).** The view stays 32×18 tiles at the M7 zoom and follows the player: deadzone, eased look-ahead, clamped to the room, whole-texel snap, hard cut on entry. At 4 tiles/s crossing a room takes ~32 s, so the room is a field to sweep, not an arena. Fairness: enemies only attack while on screen, spawns are telegraphed and ≥ 6 tiles from the player, edge arrows point at off-screen enemies and, after the clear, at the doors.
+**Big rooms (ADR-018).** The view stays 32×18 tiles at the M7 zoom and follows the player: deadzone, eased look-ahead, clamped to the room, whole-texel snap, hard cut on entry. At 5 tiles/s crossing a 64×36 room takes ~13 s (#66), so the room is a field to sweep, not an arena. Fairness: enemies only attack while on screen, spawns are telegraphed and ≥ 6 tiles from the player, edge arrows point at off-screen enemies and, after the clear, at the doors.
 
 **Run length** goes from ~10 min to ~30–60 min with 9 big rooms; the owner accepted this (2026-11-22).
 

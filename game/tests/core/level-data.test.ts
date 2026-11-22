@@ -106,11 +106,11 @@ describe('chapter 1 (.tmx → LevelData)', () => {
     expect(first.id).toBe('ch1-r1');
   });
 
-  it('room 1 is a 128×72 room with waves, both chaser + caster, obstacles and 2 doors', () => {
+  it('room 1 is a 64×36 room with waves, both chaser + caster, obstacles and 2 doors', () => {
     const room1 = room(1);
 
     expect(room1.isBossRoom).toBe(false);
-    expect(room1.size).toEqual({ cols: 128, rows: 72 });
+    expect(room1.size).toEqual({ cols: 64, rows: 36 });
     expect(room1.waves.length).toBeGreaterThanOrEqual(1);
 
     const roles = new Set(room1.waves.flatMap((wave) => wave.enemies.map((enemy) => enemy.role)));

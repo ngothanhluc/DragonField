@@ -193,7 +193,7 @@ describe('WaveScheduler', () => {
     for (const spawn of spawns) expect(spawn.telegraphMs).toBe(WAVES_TUNING.telegraphMs);
   });
 
-  it('enemyStateFromSpawn applies chapter health and waits a cooldown', () => {
+  it('enemyStateFromSpawn applies chapter health and waits one telegraph before its first attack', () => {
     const level = normalRoom(1);
     const state = enemyStateFromSpawn(
       level,
@@ -203,7 +203,12 @@ describe('WaveScheduler', () => {
     );
     expect(state.id).toBe('r1-s3');
     expect(state.health).toBeGreaterThan(1);
-    expect(state.actionStartedMs).toBe(12_000);
+    // The spawn wait is one telegraph, not a whole attack cycle (#66): the tank's 2.2 s cooldown
+    // minus its 0.7 s telegraph is already elapsed, so it can telegraph 0.7 s after spawning.
+    const tank = ENEMY_TUNING.roles.tank;
+    expect(state.actionStartedMs).toBe(
+      12_000 - (tank.attackCooldownMs - tank.telegraphMs),
+    );
   });
 });
 

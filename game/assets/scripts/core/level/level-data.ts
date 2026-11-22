@@ -6,7 +6,7 @@
  * Coordinate system: **tile units, top-left origin, y pointing down** — Tiled's system.
  * The Cocos adapter flips the y axis when building nodes. Tiles are 16 px
  * (`docs/gdd.md` §8); a room is a whole number of **screens** of 32×18 tiles: one screen for a
- * boss room, any multiple (e.g. 128×72 = 4×4) for a normal room (ADR-018). `size` is validated
+ * boss room, any multiple (e.g. 64×36 = 2×2) for a normal room (ADR-018). `size` is validated
  * against those rules, `tileSizePx` strictly.
  */
 import type { Vec2 } from '../math/vec2';
