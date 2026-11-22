@@ -20,6 +20,29 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(HERE, '..', '..', 'assets');
 const MANIFEST_PATH = join(ASSETS, 'resources', 'data', 'animations.json');
 
+/** Generated prefix allowlists written by staging (`config/generated-art.json`). */
+const GENERATED = JSON.parse(
+  readFileSync(join(HERE, '..', '..', 'config', 'generated-art.json'), 'utf8'),
+) as {
+  readonly icons?: readonly string[];
+  readonly ui?: readonly string[];
+  readonly attachments?: readonly string[];
+  readonly vfx?: readonly string[];
+  readonly particles?: readonly string[];
+};
+/**
+ * Prefixes whose entries anchor at the centre: pack FX, plus the generated kinds staging
+ * fits around their centre (icons, UI images, attachments, VFX and particles).
+ */
+const CENTRE_PREFIXES: ReadonlySet<string> = new Set([
+  'fx',
+  ...(GENERATED.icons ?? []),
+  ...(GENERATED.ui ?? []),
+  ...(GENERATED.attachments ?? []),
+  ...(GENERATED.vfx ?? []),
+  ...(GENERATED.particles ?? []),
+]);
+
 const manifest: AnimationManifest = validateManifest(
   JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) as unknown,
 );
@@ -75,11 +98,11 @@ describe('the manifest points at real files', () => {
 });
 
 describe('feet pivot', () => {
-  it('every actor entry anchors at the feet with footPx equal to the lowest solid pixel of the sheet', () => {
+  it('anchors actors at the feet and centre-anchored kinds at the frame centre', () => {
     const padding = new Map<string, number>();
     for (const [key, entry] of entries) {
       const actor = actorOf(key);
-      expect(entry.anchor, `${key} anchor`).toBe(actor === 'fx' ? 'center' : 'feet');
+      expect(entry.anchor, `${key} anchor`).toBe(CENTRE_PREFIXES.has(actor) ? 'center' : 'feet');
 
       let computed = padding.get(entry.sheet);
       if (computed === undefined) {

@@ -5,7 +5,7 @@ Status: **staged** into `game/assets/resources/art/` (94 PNG files, 387.567 byte
 Rules for this staging pass:
 
 - Copy only the files the game actually uses (per `docs/art/pack-inventory.md` §9 and `docs/gdd.md` §4–§6). The full pack is **not** committed.
-- **Keep the original filenames, do not re-encode, do not resize, do not crop.** Byte-for-byte copy from the pack.
+- **Keep the original filenames, do not re-encode, do not resize, do not crop.** Byte-for-byte copy from the pack. Generated art follows `docs/art/gemini-style.md` instead.
 - Do not copy `.meta` — the editor generates them on first import. The target tree currently has **0 `.meta` files**.
 - Do not edit any `.ts`, `.json`, or doc. Discrepancies found are recorded in §6 and are **not fixed here**.
 
@@ -342,4 +342,4 @@ Correct order, work from the top down:
 11. Run the gate: `cd game && bun run check` (tsc + vitest + eslint). This task changes no code, so it must pass right away.
 12. Open 1 scene/prefab, drag `characters/ninja-green/Idle.png` onto a `Sprite` → you must see 4 directions × 4 frames crisp, **not** blurry, **not** half a pixel off while previewing.
 
-Not allowed: enabling compression, leaving `Trim Type = Auto`, resizing/scaling images in the Inspector, committing `art-source/`, adding external packs.
+Not allowed: enabling compression, leaving `Trim Type = Auto`, resizing/scaling images in the Inspector, committing `art-source/`, committing raw downloads from `art-source/gemini/`.

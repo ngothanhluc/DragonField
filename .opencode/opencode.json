@@ -87,6 +87,16 @@
       "action": "skill",
       "resource": "save-systems",
       "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "create-game-assets",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "gemini-watermark-remover",
+      "effect": "allow"
     }
   ],
   "policies": [

@@ -245,3 +245,36 @@ Agreed 2026-11-18. Tasks and detailed acceptance criteria: `docs/milestones.md` 
 Boss pool: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / GiantBamboo · ch4 GiantRacoon / recoloured Tengu variant.
 
 **The mid-run shop shares meta gold** (§7): spending during a run means coming home with less gold — the trade-off of “strong now versus strong forever”. Save (§10) bumps `version` when chapter 4 lands.
+
+---
+
+## 14. Playable characters and weapons (design — future milestone)
+
+**Not implemented yet.** The game still has one playable character with its weapon baked into the attack sprites, and no character select. This section is the design the **art pipeline** targets today (ticket #20), so bodies and weapons can be authored before the game-side work of M10 lands.
+
+**Principles.**
+
+- **Monsters and bosses keep their weapons baked into the sheet.** Their weapon is part of the silhouette and reads at 16 px; splitting it would cost frames for no gameplay.
+- **A playable character is drawn unarmed.** The body sheet has no weapon in any frame, so a run can give it different weapons and the same body serves every loadout.
+- **A weapon is one of three things:**
+  | Form | How it is drawn | Examples |
+  |---|---|---|
+  | **Projectile** | its own FX sprite, spawned per shot, never attached | ninja shuriken / kunai |
+  | **Held attachment** (`hand`) | a separate sprite placed on the body's hand point every frame | archer bow, mage staff |
+  | **Worn attachment** (`back`) | a separate sprite on the back point, hideable | cultivator sword |
+- **Draw order** is a per-direction rule, not a constant:
+  - a `hand` item is drawn **behind** the body only while facing `up` (the arm is on the far side), in front for `down`, `left`, `right`;
+  - a `back` item is drawn **behind** for every direction except `up`, where it is in front of the chest but still behind the head;
+  - an item spec may override the list (`behind: ["up", "left"]`) when its silhouette needs it.
+- **Bob.** The body moves a pixel or two between frames even when idle. An attachment follows: its offset includes the body's per-frame top-row delta, recorded from the staged sheet (`frameBob`), so the sword does not float while the character breathes. Animations staged separately merge into the same rig.
+- **Hide/show.** A `back` item is a plain node the game can toggle, so a skill can hide it while its own effect is on screen.
+
+**Examples.**
+
+- **Ninja** — shuriken and kunai are projectiles (`fx.shuriken`, `fx.kunai`); the body stays unarmed, no attachment.
+- **Archer** — bow is a `hand` attachment; the arrow is a projectile. Facing `up`, the bow is drawn behind the body.
+- **Mage** — staff is a `hand` attachment; the cast VFX is a separate strip.
+- **Cultivator** — sword is a `back` attachment, in front of the chest when facing `up`. While “Ten Thousand Swords” is active the sword is **hidden** and the flying blades are projectiles; when the skill ends the sword reappears, still following the bob.
+
+**Data.** `assets/resources/data/attachments.json` holds, per character, its frame size, `hand`/`back` points (output-frame pixels) and the per-animation, per-direction bob, and, per item, its slot, sprite key, frame size, grip point and optional `behind` list. A pure module (`core/art/attachments.ts`) validates it and computes an item's offset and draw order for a given body frame; the game-side node work is M10.
+

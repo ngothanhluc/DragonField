@@ -92,25 +92,6 @@ exact string as the key and the engine looks up `tsxContentMap[source]` **with n
 
 ---
 
-## ADR-007 — Art spec
-
-**Decision.** **Use only Ninja Adventure Update #8** (pixel-boy & AAA, CC0), no outside packs, **no drawing extra assets**. Source: `art-source/ninja-adventure/` (110 MB: 1915 PNGs, 188 audio files, 23 tilesets, 66 monsters, 20 boss folders, 361 UI files, 62 skill icons). 16×16 tiles, top-down 3/4 view, 4 directions.
-
-Whatever the pack **lacks** is **cut from the design**, not made by hand:
-- **No dungeon/crypt tileset** → the 3 chapters are grassland/forest, river/waterfall, abandoned village.
-- **Dragons have no animation** (modular parts, 0 frames) → drop dragons. Bosses use Tengu / Squid / Samurai.
-- **Only 1 character has a full 4-direction set** (`CharacterAnimated/NinjaGreen`) → the player is that character, no animated skins.
-- **No monster has attack/hurt/death** → telegraph, getting hit and death are all FX + palette remap.
-- **No boss health bar / skill card frame art** → assemble from nine-path `Theme Wood`.
-
-Details + coverage table: `docs/art/pack-inventory.md`.
-
-**Rationale.** A survey found no animated top-down 16px dragons on the market, and this pack already has enemy breadth (66 monsters + 10 bosses) — exactly what a roguelite needs more than one pretty boss. Drawing dungeon tiles + dragons by hand would be the 2 biggest authoring tasks, and neither is needed for the loop.
-
-**Consequences.** Zero licence risk, zero art authoring effort. In exchange: themes are limited to the 3 available settings, and enemy expression depends entirely on FX.
-
----
-
 ## ADR-008 — Combat numbers
 
 **Decision.**
@@ -156,7 +137,7 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 2. `docs/gdd.md`
 3. `docs/tech-decisions.md` (this file)
 4. `docs/milestones.md`
-5. ~~`docs/art/asset-pack-shortlist.md`~~ — deleted after choosing Ninja Adventure (ADR-007)
+5. ~~`docs/art/asset-pack-shortlist.md`~~ — deleted after choosing Ninja Adventure
 
 **Rationale.** Avoid irreversible data loss before there is anything to replace it with.
 

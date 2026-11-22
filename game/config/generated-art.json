@@ -1,0 +1,17 @@
+{
+  "actors": [
+    "cultivator"
+  ],
+  "monsters": [
+    "sniper"
+  ],
+  "bosses": [],
+  "props": [],
+  "vfx": [],
+  "particles": [],
+  "attachments": [
+    "attachment"
+  ],
+  "icons": [],
+  "ui": []
+}
