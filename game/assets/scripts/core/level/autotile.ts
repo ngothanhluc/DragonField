@@ -39,6 +39,11 @@ export interface GroundTerrain {
   readonly tileset: string;
   /** `tiles[blob - 1]` = 1-based local tile id inside `tileset`. Always 13 entries. */
   readonly tiles: readonly number[];
+  /**
+   * 1-based local id (same `tileset`) of the flat tile the block's fringe is baked on. The room's
+   * base floor must be exactly this tile, or every patch shows the block's background as a box.
+   */
+  readonly plain: number;
 }
 
 /** Columns of `TilesetFloor.png` (22 × 16 px = 352 px wide, 26 rows tall). */
@@ -139,16 +144,19 @@ export function floorBlockTiles(blockCol: number, blockRow: number): readonly nu
 }
 
 /**
- * The patch terrain of each chapter, chosen so its baked fringe matches that chapter's base floor:
- * - ch1/ch2 dark dirt over dark grass (the floor is TilesetField's dark-grass centre),
- * - ch3 stone paving over light tan (the ruined village plaza),
- * - ch4 light sand over orange (the demo's pale sand shelf on tan desert sand).
+ * The patch terrain of each chapter, chosen so its baked fringe matches that chapter's base floor
+ * (R8 of the #67 review: a block drawn over the wrong floor shows its baked background as a hard
+ * square box around every patch and path edge):
+ * - ch1/ch2: brown dirt `a3754e` on the dark grass `74a334` the field floor already is,
+ * - ch3: stone `90775e` on the pale stone `b3957f` (`tilefloor` 430), the ruined plaza,
+ * - ch4: pale sand `ffcb8d` on the orange sand `ffad5d` (`tilefloor` 111).
  *
- * The trail reuses the same terrain, so a path is the same ground as the patches around it.
+ * `plainFloorTile(block)` is the flat tile of a block's baked background, so the generator can set
+ * the base floor from the same terrain it patches with.
  */
 export const GROUND_TERRAINS: Readonly<Record<number, GroundTerrain>> = {
-  1: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 7) },
-  2: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 7) },
-  3: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 14) },
-  4: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(0, 0) },
+  1: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 7), plain: 276 },
+  2: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 7), plain: 276 },
+  3: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 14), plain: 430 },
+  4: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(0, 0), plain: 111 },
 };

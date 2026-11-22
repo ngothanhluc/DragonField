@@ -99,8 +99,15 @@ const CHAPTER_SETS: Readonly<Record<number, readonly TilesetDef[]>> = {
   4: [TS.desert, TS.camp, TS.floordetail, TS.relief, TS.tilefloor],
 };
 
-/** Uniform background per chapter: moss green (field) / village sand (desert). */
-const FLOOR_GID: Readonly<Record<number, number>> = { 1: 37, 2: 37, 3: 176, 4: 176 };
+/**
+ * Uniform background per chapter: the patch terrain's own baked background (see
+ * `GROUND_TERRAINS[chapter].plain`), so a patch/path cell meets the floor with no box (R8).
+ */
+function floorGid(chapter: number): number {
+  const terrain = GROUND_TERRAINS[chapter];
+  if (terrain === undefined) throw new Error(`chapter ${chapter} has no ground terrain`);
+  return gid(chapter, terrain.tileset.replace(/\.tsx$/, ''), terrain.plain);
+}
 
 /**
  * Detail decals per chapter, local ids of `floordetail.tsx` (16×5 tiles): row 2 is green tufts,
@@ -229,13 +236,6 @@ function shuffle<T>(rng: Rng, items: readonly T[]): T[] {
     copy[j] = value;
   }
   return copy;
-}
-
-/** Stable 0..1 hash of a cell, so a decoration pattern does not shift when a room changes. */
-function hashCell(x: number, y: number): number {
-  let h = (x * 374761393 + y * 668265263) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 // ---------------------------------------------------------------------------
@@ -1671,8 +1671,7 @@ export function roomTmx(plan: RoomPlan): string {
 export function generateRoom(chapter: number, room: number): RoomPlan {
   const theme = PROP_THEMES[chapter];
   if (theme === undefined) throw new Error(`chapter ${chapter} has no prop theme`);
-  const floorGid = FLOOR_GID[chapter];
-  if (floorGid === undefined) throw new Error(`chapter ${chapter} has no floor tile`);
+  const baseFloor = floorGid(chapter);
 
   const failures: string[] = [];
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -1724,7 +1723,7 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
         obstacles: [...border.obstacles, ...obstacles],
         props,
         water,
-        floor: new Array<number>(COLS * ROWS).fill(floorGid),
+        floor: new Array<number>(COLS * ROWS).fill(baseFloor),
         ground: patches.tiles,
         path: path.tiles,
         border: borderTiles,
