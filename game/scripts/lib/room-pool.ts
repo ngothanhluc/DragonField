@@ -89,12 +89,14 @@ const TS = {
 /**
  * Tilesets of a chapter, in `firstgid` order. #67 appends the demo's terrain sheet (`tilefloor`,
  * patches and trail), the detail sheet (`floordetail`), and the sand cliffs (`relief`) to ch4;
- * appending keeps every existing gid (and the hand-authored boss rooms) valid.
+ * appending keeps every existing gid (and the hand-authored boss rooms) valid. Chapter 3 appends
+ * `nature` for its overgrown-ruins tree line (R2: the abandoned-village sheet only has four tree
+ * drawings, which read as one bush repeated along the edge).
  */
 const CHAPTER_SETS: Readonly<Record<number, readonly TilesetDef[]>> = {
   1: [TS.field, TS.nature, TS.relief, TS.element, TS.floordetail, TS.tilefloor],
   2: [TS.field, TS.water, TS.nature, TS.floordetail, TS.tilefloor],
-  3: [TS.ground, TS.village, TS.house, TS.towers, TS.hole, TS.floordetail, TS.tilefloor],
+  3: [TS.ground, TS.village, TS.house, TS.towers, TS.hole, TS.floordetail, TS.tilefloor, TS.nature],
   // Chapter 4 — desert (#45, #67): the desert village/camp sheets plus patches, details and cliffs.
   4: [TS.desert, TS.camp, TS.floordetail, TS.relief, TS.tilefloor],
 };
@@ -120,15 +122,10 @@ const DETAIL_TILES: Readonly<Record<number, readonly number[]>> = {
   4: [3, 5, 6, 10, 11, 13, 14, 15],
 };
 
-/** Sand cliff tiles of `relief.tsx`: the pale rim, the brown face and the sunlit shelf. */
-const CLIFF_RIM = 122;
-const CLIFF_TOP = 162;
-const CLIFF_FACE = 142;
-
 /**
- * One whole pack drawing stamped onto the `border` layer (R2 of the #67 review): the room edge
- * must read as a tree line, not a row of 16-px clover decals. `tiles` is row-major local ids of
- * `set`; a `0` leaves the cell as it is.
+ * One whole pack drawing stamped onto a border layer (R2 of the #67 review): the room edge must
+ * read as a tree line, not a row of 16-px decals. `tiles` is row-major local ids of `set`; a `0`
+ * leaves the cell as it is.
  */
 interface BorderStamp {
   readonly set: 'nature' | 'village';
@@ -150,28 +147,161 @@ function sheetStamp(set: BorderStamp['set'], columns: number, x: number, y: numb
   return { set, width: cols, height: rows, tiles };
 }
 
-/** Whole trees (2×2), 4×3 clusters and a 3×3 big tree of `TilesetNature.png` (24 columns). */
-const NATURE_STAMPS: readonly BorderStamp[] = [
+/** Whole 2×2 trees of `TilesetNature.png` (24 columns) — the everyday tree line of ch1/ch2. */
+const NATURE_TREES: readonly BorderStamp[] = [
   sheetStamp('nature', 24, 0, 0, 32, 32),
   sheetStamp('nature', 24, 32, 0, 32, 32),
-  sheetStamp('nature', 24, 256, 0, 32, 32),
   sheetStamp('nature', 24, 64, 0, 32, 32),
-  sheetStamp('nature', 24, 64, 32, 64, 48),
-  sheetStamp('nature', 24, 0, 32, 64, 48),
-  sheetStamp('nature', 24, 48, 288, 48, 48),
+  sheetStamp('nature', 24, 96, 0, 32, 32),
+  sheetStamp('nature', 24, 224, 0, 32, 32),
+  sheetStamp('nature', 24, 256, 0, 32, 32),
+  sheetStamp('nature', 24, 288, 0, 32, 32),
 ];
 
-/** Mossy trees of `TilesetVillageAbandoned.png` (20 columns) for the ruins. */
-const VILLAGE_STAMPS: readonly BorderStamp[] = [
+/** 4×3 tree clusters and 3×3 big trees: the masses that break the row of single trees. */
+const NATURE_MASSES: readonly BorderStamp[] = [
+  sheetStamp('nature', 24, 0, 32, 64, 48),
+  sheetStamp('nature', 24, 64, 32, 64, 48),
+  sheetStamp('nature', 24, 256, 32, 64, 48),
+  sheetStamp('nature', 24, 0, 288, 48, 48),
+  sheetStamp('nature', 24, 48, 288, 48, 48),
+  sheetStamp('nature', 24, 96, 288, 48, 48),
+];
+
+/** Mossy trees (2×2) and clusters (4×3) of `TilesetVillageAbandoned.png` (20 columns), ch3. */
+const VILLAGE_TREES: readonly BorderStamp[] = [
   sheetStamp('village', 20, 64, 96, 32, 32),
   sheetStamp('village', 20, 64, 144, 32, 32),
+];
+const VILLAGE_MASSES: readonly BorderStamp[] = [
   sheetStamp('village', 20, 0, 96, 64, 48),
   sheetStamp('village', 20, 0, 144, 64, 48),
 ];
 
-/** The stamps of a chapter's tree line (ch4 has a cliff ring instead). */
-function borderStamps(chapter: number): readonly BorderStamp[] {
-  return chapter === 3 ? VILLAGE_STAMPS : NATURE_STAMPS;
+/**
+ * The tree line of a chapter's room edge (ch4 rings the room with its sand cliff instead). ch3
+ * mixes the abandoned-village trees with the forest sheet: ruins swallowed by the wood.
+ */
+function borderArt(chapter: number): { readonly trees: readonly BorderStamp[]; readonly masses: readonly BorderStamp[] } {
+  if (chapter === 3) {
+    return {
+      trees: [...VILLAGE_TREES, ...NATURE_TREES.filter((stamp, index) => index % 2 === 0)],
+      masses: [...VILLAGE_MASSES, ...NATURE_MASSES],
+    };
+  }
+  return { trees: NATURE_TREES, masses: NATURE_MASSES };
+}
+
+/** One border layer: its `.tmx` layer name and the row-major gid grid. */
+interface BorderArtLayer {
+  readonly name: string;
+  readonly tiles: number[];
+}
+
+/** Border art layers, **back to front**: a later layer composites over an earlier one. */
+const BORDER_LAYER_NAMES = ['border-back', 'border-mid', 'border-front'] as const;
+
+/**
+ * Stamp whole drawings along the room edge, one layer per pass, back to front, so canopies that
+ * overlap *composite* instead of overwriting each other's 16-px slices. Every drawing is anchored
+ * so its near (bottom) row lands on the band's inner row: a 2×2 tree is a whole tree in the band,
+ * a 3-tall cluster simply runs off the outer edge. Nothing is drawn in the walkable area and no
+ * drawing is cut at the band's inner edge, which is what used to make the flat silhouette line.
+ * The only cells skipped are the door mouths (`covered`), so a door reads as a gap in the hedge.
+ */
+function paintBorderRing(
+  chapter: number,
+  rng: Rng,
+  tiles: number[],
+  stamps: readonly BorderStamp[],
+  step: number,
+  phase: number,
+  covered: (x: number, y: number) => boolean,
+): void {
+  if (stamps.length === 0) return;
+  const pickStamp = (): BorderStamp => stamps[int(rng, stamps.length)] ?? stamps[0]!;
+
+  const place = (stamp: BorderStamp, ox: number, oy: number): void => {
+    for (let row = 0; row < stamp.height; row += 1) {
+      for (let col = 0; col < stamp.width; col += 1) {
+        const x = ox + col;
+        const y = oy + row;
+        if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
+        if (!covered(x, y)) continue;
+        const local = stamp.tiles[row * stamp.width + col];
+        if (local === undefined || local === 0) continue;
+        tiles[y * COLS + x] = gid(chapter, stamp.set, local);
+      }
+    }
+  };
+
+  // Horizontal edges: jitter only forward (never back), so drawings in one pass never overlap.
+  for (let x = -BORDER_TILES + phase; x < COLS; x += step + int(rng, 2)) {
+    const stamp = pickStamp();
+    place(stamp, x, BORDER_TILES - stamp.height);
+    if (stamp.height <= BORDER_TILES) place(stamp, x, ROWS - stamp.height);
+  }
+  // Vertical edges, between the two horizontal runs.
+  for (let y = BORDER_TILES + phase; y < ROWS - BORDER_TILES; y += step + int(rng, 2)) {
+    const stamp = pickStamp();
+    place(stamp, BORDER_TILES - stamp.width, y);
+    place(stamp, COLS - BORDER_TILES, y);
+  }
+}
+
+/**
+ * Sand cliff pieces of `relief.tsx` (locals 121–187): the rock face under the pale shelf lip and
+ * the same face with its dark base rim.
+ */
+const CLIFF_LIP = [125, 126, 127, 129, 130, 131] as const;
+const CLIFF_BASE = [145, 146, 147, 149, 150, 151] as const;
+
+/**
+ * Chapter 4's room edge is a sand cliff (R2): the outer ring is the rock face under the pale shelf
+ * overhang, the inner ring the same face with its dark base rim, per cell from the fully-opaque
+ * sand-cliff tiles. The old one-tile stamping used corner tiles with transparent pixels, which is
+ * what left the checkerboard of plain-sand holes.
+ */
+function paintCliffBand(chapter: number, rng: Rng, tiles: number[], covered: (x: number, y: number) => boolean): void {
+  const pickLocal = (locals: readonly number[], fallback: number): number =>
+    gid(chapter, 'relief', locals[int(rng, locals.length)] ?? fallback);
+  for (let y = 0; y < ROWS; y += 1) {
+    for (let x = 0; x < COLS; x += 1) {
+      if (!covered(x, y)) continue;
+      const outer = x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1;
+      tiles[y * COLS + x] = outer ? pickLocal(CLIFF_LIP, 125) : pickLocal(CLIFF_BASE, 145);
+    }
+  }
+}
+
+/**
+ * Draw the border art over the band: ch4's sand-cliff ring, the other chapters' tree line.
+ * Visual only: the collision stays the `edge` rects (and the view draws nothing for them).
+ */
+function dressBorder(
+  chapter: number,
+  rng: Rng,
+  layers: readonly number[][],
+  covered: (x: number, y: number) => boolean,
+): void {
+  const back = layers[0];
+  if (back === undefined) throw new Error('dressBorder: no border layers');
+  if (chapter === 4) {
+    paintCliffBand(chapter, rng, back, covered);
+    return;
+  }
+
+  const art = borderArt(chapter);
+  // Pass 1: whole trees on the 2-tile lattice; pass 2: the same trees offset one tile, closing
+  // the notches between canopies; pass 3: clusters and big trees every few tiles.
+  const pass = (index: number, stamps: readonly BorderStamp[], step: number, phase: number): void => {
+    const tiles = layers[index];
+    if (tiles === undefined) return;
+    paintBorderRing(chapter, rng, tiles, stamps, step, phase, covered);
+  };
+  pass(0, art.trees, 2, 0);
+  pass(1, art.trees, 2, 1);
+  pass(2, art.masses, 5, 2);
 }
 
 /** Global id of 1-based local tile `local` inside tileset `name` of `chapter`. */
@@ -416,8 +546,8 @@ export interface RoomPlan {
   readonly ground: readonly number[];
   readonly path: readonly number[];
   readonly decor: readonly number[];
-  /** Dense border ring (foliage / cliffs) and the desert cliff plateau. */
-  readonly border: readonly number[];
+  /** Dense border ring (foliage / cliffs), one grid per art layer, back to front. */
+  readonly borders: readonly BorderArtLayer[];
   readonly spawns: readonly PlannedSpawn[];
 }
 
@@ -547,65 +677,10 @@ function planPlayerStart(room: number, rng: Rng): Vec2 {
 interface BorderPlan {
   readonly rects: Rect[];
   readonly obstacles: AuthoredObstacle[];
-  /** Row-major `border` layer: dense foliage / cliff tiles over the band. */
-  readonly tiles: number[];
+  /** Border art layers, back to front: whole drawings (or the cliff band) over the 2-tile ring. */
+  readonly layers: readonly BorderArtLayer[];
   /** Band cells (and the solid side rects) the interior must keep clear of. */
   readonly blocked: Set<string>;
-}
-
-/**
- * Draw the border art over the band: the desert gets a continuous sand-cliff ring (pale rim on the
- * outermost row/column, brown face inward — no plain-sand holes), the other chapters get whole
- * trees / tree clusters stamped along all four sides, two deep and overlapping, so the canopy line
- * reads as a wall. Visual only: the collision stays the `edge` rects.
- */
-function dressBorder(chapter: number, rng: Rng, tiles: number[], covered: (x: number, y: number) => boolean): void {
-  if (chapter === 4) {
-    for (let y = 0; y < ROWS; y += 1) {
-      for (let x = 0; x < COLS; x += 1) {
-        if (!covered(x, y)) continue;
-        const outer = x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1;
-        tiles[y * COLS + x] = gid(4, 'relief', outer ? CLIFF_RIM : CLIFF_FACE);
-      }
-    }
-    return;
-  }
-
-  const stamps = borderStamps(chapter);
-  const draw = (stamp: BorderStamp, ox: number, oy: number): void => {
-    for (let row = 0; row < stamp.height; row += 1) {
-      for (let col = 0; col < stamp.width; col += 1) {
-        const x = ox + col;
-        const y = oy + row;
-        if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
-        if (!covered(x, y) && !inBorderBand(x, y)) {
-          // Canopies may hang one tile into the room, but never deeper than the band + 1.
-          if (x > BORDER_TILES && y > BORDER_TILES && x < COLS - BORDER_TILES - 1 && y < ROWS - BORDER_TILES - 1) {
-            continue;
-          }
-        }
-        const local = stamp.tiles[row * stamp.width + col];
-        if (local === undefined || local === 0) continue;
-        tiles[y * COLS + x] = gid(chapter, stamp.set, local);
-      }
-    }
-  };
-
-  const pickStamp = (): BorderStamp => stamps[int(rng, stamps.length)] ?? NATURE_STAMPS[0]!;
-
-  // Two passes per side: the outer row sits on the room edge, the inner pass overlaps it.
-  for (const offset of [0, 2]) {
-    for (let x = -1; x < COLS + 1; x += 2) {
-      draw(pickStamp(), x, offset); // top edge: canopies hang into the room
-      const bottom = pickStamp();
-      draw(bottom, x, ROWS - offset - bottom.height);
-    }
-    for (let y = 2; y < ROWS - 2; y += 2) {
-      draw(pickStamp(), offset, y); // left edge
-      const right = pickStamp();
-      draw(right, COLS - offset - right.width, y);
-    }
-  }
 }
 
 /** True when `(x, y)` is inside the 2-tile ring around the room. */
@@ -619,7 +694,10 @@ function inBorderBand(x: number, y: number): boolean {
  * can walk to either door.
  */
 function planBorder(chapter: number, rng: Rng, doors: readonly Vec2[]): BorderPlan {
-  const tiles = new Array<number>(COLS * ROWS).fill(0);
+  const layers = BORDER_LAYER_NAMES.map((name) => ({
+    name,
+    tiles: new Array<number>(COLS * ROWS).fill(0),
+  }));
   const blocked = new Set<string>();
   const rects: Rect[] = [];
   const obstacles: AuthoredObstacle[] = [];
@@ -667,9 +745,14 @@ function planBorder(chapter: number, rng: Rng, doors: readonly Vec2[]): BorderPl
     }
   }
 
-  dressBorder(chapter, rng, tiles, covered);
+  dressBorder(
+    chapter,
+    rng,
+    layers.map((layer) => layer.tiles),
+    covered,
+  );
 
-  return { rects, obstacles, tiles, blocked };
+  return { rects, obstacles, layers, blocked };
 }
 
 // ---------------------------------------------------------------------------
@@ -715,21 +798,16 @@ function noiseField(rng: Rng): number[] {
 }
 
 interface PatchPlan {
-  /** Row-major `ground` layer (0 = base floor). */
-  readonly tiles: number[];
   /** Patch cells (path and detail placement avoid them where it matters). */
   readonly cells: Set<string>;
 }
 
 /**
- * The ground patches: noise → mask → `normalizePatchMask` → `pickBlobTile`. Cells over the river
- * are dropped (a patch cannot float on water) and every cell ends up in a full 2×2 block, so the
- * 13-piece sheet always has the piece the edge picker asks for.
+ * The ground patch mask: noise → top N cells → `normalizePatchMask`. Cells over the river are
+ * dropped (a patch cannot float on water) and every surviving cell sits in a full 2×2 block, so
+ * the 13-piece sheet always has the piece the edge picker asks for.
  */
-function planPatches(chapter: number, rng: Rng, water: readonly WaterArea[]): PatchPlan {
-  const terrain = GROUND_TERRAINS[chapter];
-  if (terrain === undefined) throw new Error(`chapter ${chapter} has no ground terrain`);
-
+function planPatches(rng: Rng, water: readonly WaterArea[]): PatchPlan {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const noise = noiseField(rng);
     const candidates: number[] = [];
@@ -749,8 +827,7 @@ function planPatches(chapter: number, rng: Rng, water: readonly WaterArea[]): Pa
       if (cell !== undefined) cells[cell] = true;
     }
 
-    const mask: PatchMask = normalizePatchMask({ cols: COLS, rows: ROWS, cells });
-    const tileAt = new Array<number>(COLS * ROWS).fill(0);
+    const mask = normalizePatchMask({ cols: COLS, rows: ROWS, cells });
     const patchCells = new Set<string>();
     let count = 0;
     let innerCorners = 0;
@@ -758,9 +835,6 @@ function planPatches(chapter: number, rng: Rng, water: readonly WaterArea[]): Pa
       for (let x = 0; x < COLS; x += 1) {
         const blob = pickBlobTile(mask, x, y);
         if (blob === 0) continue;
-        const local = terrain.tiles[blob - 1];
-        if (local === undefined) continue;
-        tileAt[y * COLS + x] = gid(chapter, terrain.tileset.replace(/\.tsx$/, ''), local);
         patchCells.add(`${x},${y}`);
         count += 1;
         if (blob === 4 || blob === 5 || blob === 9 || blob === 10) innerCorners += 1;
@@ -769,11 +843,38 @@ function planPatches(chapter: number, rng: Rng, water: readonly WaterArea[]): Pa
 
     const share = count / (COLS * ROWS);
     if (share >= 0.06 && share <= 0.34 && innerCorners >= 2) {
-      return { tiles: tileAt, cells: patchCells };
+      return { cells: patchCells };
     }
   }
 
-  throw new Error(`chapter ${chapter}: no patch mask with 6–34% cover and inner corners`);
+  throw new Error('no patch mask with 6–34% cover and inner corners');
+}
+
+/**
+ * The `ground` layer for a finished mask: every cell gets the 13-piece autotile the edge picker
+ * chooses. The mask is the noise patches plus the desert plateau's surface, so a plateau is a
+ * raised shelf with the same fringe/outline as a patch and never a hard-edged rectangle.
+ */
+function paintGround(chapter: number, cells: ReadonlySet<string>): number[] {
+  const terrain = GROUND_TERRAINS[chapter];
+  if (terrain === undefined) throw new Error(`chapter ${chapter} has no ground terrain`);
+  const mask: PatchMask = {
+    cols: COLS,
+    rows: ROWS,
+    cells: Array.from({ length: COLS * ROWS }, (_, index) => cells.has(`${index % COLS},${Math.floor(index / COLS)}`)),
+  };
+  const normalised = normalizePatchMask(mask);
+  const tiles = new Array<number>(COLS * ROWS).fill(0);
+  for (let y = 0; y < ROWS; y += 1) {
+    for (let x = 0; x < COLS; x += 1) {
+      const blob = pickBlobTile(normalised, x, y);
+      if (blob === 0) continue;
+      const local = terrain.tiles[blob - 1];
+      if (local === undefined) continue;
+      tiles[y * COLS + x] = gid(chapter, terrain.tileset.replace(/\.tsx$/, ''), local);
+    }
+  }
+  return tiles;
 }
 
 // ---------------------------------------------------------------------------
@@ -936,8 +1037,10 @@ interface GeometryArgs {
 interface GeometryResult {
   readonly obstacles: AuthoredObstacle[];
   readonly props: PlacedProp[];
-  /** Extra `border`-layer cells (the desert cliff plateau). */
-  readonly extraTiles: readonly { readonly index: number; readonly value: number }[];
+  /** Ground cells of the desert cliff plateau (its shelf joins the patch mask). */
+  readonly plateauSurface: readonly string[];
+  /** Extra `border-front`-layer cells: the plateau's sand-cliff face. */
+  readonly plateauFace: readonly { readonly index: number; readonly value: number }[];
 }
 
 /** Sprite rect of a prop in tiles, from its catalogue cell. */
@@ -958,7 +1061,8 @@ function planGeometry(args: GeometryArgs): GeometryResult {
   const book: ColliderBook = { rects: [] };
   const obstacles: AuthoredObstacle[] = [];
   const props: PlacedProp[] = [];
-  const extraTiles: { index: number; value: number }[] = [];
+  const plateauSurface: string[] = [];
+  const plateauFace: { index: number; value: number }[] = [];
 
   const clearOfPoints = (rect: Rect, clearance: number): boolean =>
     gapToPoint(rect, playerStart) >= clearance && doors.every((door) => gapToPoint(rect, door) >= clearance);
@@ -1175,10 +1279,10 @@ function planGeometry(args: GeometryArgs): GeometryResult {
     return false;
   };
 
-  // -- Set piece: desert cliff plateau (edges are solid, the top is a raised sand shelf) ------
+  // -- Set piece: desert cliff plateau (a raised sand shelf with a rock face at its foot) ------
   const placeCliff = (): boolean => {
-    const width = 6;
-    const height = 4;
+    const width = 8;
+    const height = 3;
     for (let attempt = 0; attempt < 24; attempt += 1) {
       const minX = BORDER_TILES + 1;
       const minY = BORDER_TILES + 1;
@@ -1189,11 +1293,13 @@ function planGeometry(args: GeometryArgs): GeometryResult {
       if (!colliderFits(rect, rect, MIN_OBSTACLE_GAP)) continue;
       book.rects.push(rect);
       obstacles.push({ kind: 'edge', ...rect });
-      for (let row = 0; row < height; row += 1) {
-        const local = row === 0 ? CLIFF_RIM : row === height - 1 ? CLIFF_FACE : CLIFF_TOP;
-        for (let col = 0; col < width; col += 1) {
-          extraTiles.push({ index: (y + row) * COLS + (x + col), value: gid(4, 'relief', local) });
-        }
+      // The shelf (all but the last row) joins the ground-patch mask, so `paintGround` gives it a
+      // fringed outer edge like every other shelf. The last row is the cliff face, drawn on the
+      // front border layer with the sand-cliff face tiles (fully opaque, base rim at the bottom).
+      for (let col = 0; col < width; col += 1) {
+        for (let row = 0; row < height - 1; row += 1) plateauSurface.push(cellKey(x + col, y + row));
+        const face = CLIFF_LIP[int(rng, CLIFF_LIP.length)] ?? 125;
+        plateauFace.push({ index: (y + height - 1) * COLS + (x + col), value: gid(chapter, 'relief', face) });
       }
       return true;
     }
@@ -1282,7 +1388,7 @@ function planGeometry(args: GeometryArgs): GeometryResult {
     }
   }
 
-  return { obstacles, props, extraTiles };
+  return { obstacles, props, plateauSurface, plateauFace };
 }
 
 /**
@@ -1638,11 +1744,12 @@ export function roomTmx(plan: RoomPlan): string {
     property('isBossRoom', 'false', 'bool'),
   ].join('\n');
 
+  const objectLayerId = 5 + plan.borders.length;
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" ` +
       `width="${COLS}" height="${ROWS}" tilewidth="${TILE}" tileheight="${TILE}" infinite="0" ` +
-      `nextlayerid="7" nextobjectid="${id}">`,
+      `nextlayerid="${objectLayerId + 1}" nextobjectid="${id}">`,
     ' <properties>',
     properties,
     ' </properties>',
@@ -1651,8 +1758,8 @@ export function roomTmx(plan: RoomPlan): string {
     layerXml(2, 'ground', plan.ground),
     layerXml(3, 'path', plan.path),
     layerXml(4, 'decor', plan.decor),
-    layerXml(5, 'border', plan.border),
-    ' <objectgroup id="6" name="objects">',
+    ...plan.borders.map((border, index) => layerXml(5 + index, border.name, border.tiles)),
+    ` <objectgroup id="${objectLayerId}" name="objects">`,
     ...objects,
     ' </objectgroup>',
     '</map>',
@@ -1686,10 +1793,10 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
 
       const border = planBorder(chapter, rng, doors);
       const path = planPath(chapter, rng, doors);
-      const patches = planPatches(chapter, rng, water);
+      const patches = planPatches(rng, water);
 
       const blocked = new Set<string>([...border.blocked, ...path.blocked]);
-      const { obstacles, props, extraTiles } = planGeometry({
+      const { obstacles, props, plateauSurface, plateauFace } = planGeometry({
         chapter,
         room,
         rng,
@@ -1712,8 +1819,13 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
       ];
       const spawns = planSpawns(chapter, room, rng, playerStart, doors, colliders, water);
 
-      const borderTiles = border.tiles.slice();
-      for (const cell of extraTiles) borderTiles[cell.index] = cell.value;
+      // The front border layer also carries the desert plateau's cliff face.
+      const borders = border.layers.map((layer, index) => {
+        if (index !== border.layers.length - 1 || plateauFace.length === 0) return layer;
+        const tiles = layer.tiles.slice();
+        for (const cell of plateauFace) tiles[cell.index] = cell.value;
+        return { name: layer.name, tiles };
+      });
 
       const partial: RoomPlan = {
         chapter,
@@ -1724,9 +1836,9 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
         props,
         water,
         floor: new Array<number>(COLS * ROWS).fill(baseFloor),
-        ground: patches.tiles,
+        ground: paintGround(chapter, new Set([...patches.cells, ...plateauSurface])),
         path: path.tiles,
-        border: borderTiles,
+        borders,
         decor: [],
         spawns,
       };

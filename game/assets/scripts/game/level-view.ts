@@ -314,7 +314,9 @@ function chunkAsset(source: TiledMapAsset, xml: string): TiledMapAsset {
 async function buildObstacles(root: Node, level: LevelData): Promise<void> {
   // A `prop` obstacle is the collider of a prop sprite; drawing it again would show a boulder
   // or crate on top of the tree/house. The prop itself is drawn by `buildProps`.
-  const drawable = level.obstacles.filter((obstacle) => obstacle.kind !== 'prop');
+  // `edge` (#67) is the room's solid border ring: its art is the `border-*` tile layers (a tree
+  // line or the sand-cliff band), so a tiled sprite here would bury that art.
+  const drawable = level.obstacles.filter((obstacle) => obstacle.kind !== 'prop' && obstacle.kind !== 'edge');
   if (drawable.length === 0) return;
 
   const sheets = obstacleSheetsCore(level.chapter);
