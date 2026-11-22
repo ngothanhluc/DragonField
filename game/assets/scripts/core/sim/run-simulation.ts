@@ -18,7 +18,9 @@
  *   (`core/sim/boss-run.ts`), i.e. `stepBoss` + phases + summon + skills.
  *
  * - Randomness only through `SeededRng` built from `seed`; no module-level state.
- * - Obstacles **only block bullets** (a balance simulation, not real collision/nav).
+ * - Movement uses the same `moveWithCollision` rule as the game: obstacles are solid for the
+ *   player and enemies (they slide along them), pits included; bullets only stop on pillars and
+ *   walls (`firstHit`).
  * - `godMode` is a test hook: skip damage to the player to measure room-clear time.
  */
 import { pickBoss } from '../boss/boss-pool';
@@ -53,6 +55,7 @@ import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
 import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
+import { moveTowardsWithCollision, moveWithCollision } from '../movement/collision';
 import { SeededRng } from '../rng';
 import { goldForKill, goldForRoomClear } from '../run/rewards';
 import { computeDerivedStats } from '../skills/derived-stats';
@@ -590,45 +593,42 @@ function nearestAlive(from: Vec2, enemies: readonly EnemyState[]): Vec2 | null {
 function movePlayer(player: Vec2, input: MoveInput, speed: number, room: LevelData): Vec2 {
   const velocity = velocityFromInput(normalizeMoveInput(input), speed);
   const seconds = SIM_STEP_MS / 1000;
-  const maxX = room.size.cols - ROOM_EDGE_MARGIN_TILES;
-  const maxY = room.size.rows - ROOM_EDGE_MARGIN_TILES;
-  return {
-    x: Math.min(Math.max(player.x + velocity.x * seconds, ROOM_EDGE_MARGIN_TILES), maxX),
-    y: Math.min(Math.max(player.y + velocity.y * seconds, ROOM_EDGE_MARGIN_TILES), maxY),
-  };
+  return moveWithCollision(
+    player,
+    { x: velocity.x * seconds, y: velocity.y * seconds },
+    PLAYER_RADIUS_TILES,
+    room,
+    ROOM_EDGE_MARGIN_TILES,
+  );
 }
 
 /** Move the enemy by the action just decided; `slow` is the current Freeze factor. */
 function advanceEnemy(enemy: EnemyState, action: EnemyAction, slow: number, level: LevelData): void {
   const seconds = SIM_STEP_MS / 1000;
   const factor = Math.max(0, Math.min(1, slow));
+  const radius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
 
   if (action.kind === 'charge') {
     const step = action.speedTilesPerSecond * factor * seconds;
-    const { x, y } = action.direction;
-    enemy.position = clampToRoom(level, {
-      x: enemy.position.x + x * step,
-      y: enemy.position.y + y * step,
-    });
+    enemy.position = moveWithCollision(
+      enemy.position,
+      { x: action.direction.x * step, y: action.direction.y * step },
+      radius,
+      level,
+      ROOM_EDGE_MARGIN_TILES,
+    );
     return;
   }
   if (action.kind !== 'walk') return;
 
-  const dx = action.target.x - enemy.position.x;
-  const dy = action.target.y - enemy.position.y;
-  const length = Math.hypot(dx, dy);
-  if (length === 0) return;
-
-  const scale = Math.min(1, (speedFor(enemy.role, enemy.elite) * factor * seconds) / length);
-  enemy.position = clampToRoom(level, {
-    x: enemy.position.x + dx * scale,
-    y: enemy.position.y + dy * scale,
-  });
-}
-
-function clampToRoom(level: LevelData, point: Vec2): Vec2 {
-  return {
-    x: Math.min(Math.max(point.x, ROOM_EDGE_MARGIN_TILES), level.size.cols - ROOM_EDGE_MARGIN_TILES),
-    y: Math.min(Math.max(point.y, ROOM_EDGE_MARGIN_TILES), level.size.rows - ROOM_EDGE_MARGIN_TILES),
-  };
+  // No overshoot in one frame (a long frame ≠ a teleport), and step around a blocker
+  // instead of pressing into it forever (pathfinding is a later ticket).
+  enemy.position = moveTowardsWithCollision(
+    enemy.position,
+    action.target,
+    speedFor(enemy.role, enemy.elite) * factor * seconds,
+    radius,
+    level,
+    ROOM_EDGE_MARGIN_TILES,
+  );
 }

@@ -52,8 +52,8 @@ import type { EnemyAction, EnemyState } from '../core/enemies/behaviours';
 import { nextActionStartedMs } from '../core/enemies/attack-cycle';
 import { eliteScale, spriteActorFor } from '../core/enemies/elite';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
-import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
+import { moveTowardsWithCollision, moveWithCollision } from '../core/movement/collision';
 import type { DerivedStats } from '../core/skills/derived-stats';
 import { squashScale } from '../core/feel/squash';
 import { FEEL_TUNING } from '../core/enemies/tuning';
@@ -439,32 +439,31 @@ export class EnemyView extends Component {
     if (state === null || level === null) return;
 
     const seconds = (deltaMs / 1000) * Math.max(0, Math.min(1, speedMultiplier));
-    let next: Vec2 = state.position;
 
+    // Obstacles are solid (all kinds, pits included): same rule as the player and the sim.
     if (action.kind === 'charge') {
       const step = action.speedTilesPerSecond * seconds;
-      next = {
-        x: state.position.x + action.direction.x * step,
-        y: state.position.y + action.direction.y * step,
-      };
-    } else if (action.kind === 'walk') {
-      const dx = action.target.x - state.position.x;
-      const dy = action.target.y - state.position.y;
-      const length = Math.hypot(dx, dy);
-      if (length > 0) {
-        // Never overshoot the target in one frame (a long frame ≠ a teleport).
-        const factor = Math.min(1, (speedFor(state.role, state.elite) * seconds) / length);
-        next = {
-          x: state.position.x + dx * factor,
-          y: state.position.y + dy * factor,
-        };
-      }
+      state.position = moveWithCollision(
+        state.position,
+        { x: action.direction.x * step, y: action.direction.y * step },
+        this.hitRadius,
+        level,
+        ROOM_EDGE_MARGIN_TILES,
+      );
+      return;
     }
+    if (action.kind !== 'walk') return;
 
-    state.position = {
-      x: clamp(next.x, ROOM_EDGE_MARGIN_TILES, ROOM_COLS - ROOM_EDGE_MARGIN_TILES),
-      y: clamp(next.y, ROOM_EDGE_MARGIN_TILES, ROOM_ROWS - ROOM_EDGE_MARGIN_TILES),
-    };
+    // No overshoot in one frame (a long frame ≠ a teleport), and step around a blocker
+    // instead of pressing into it forever (pathfinding is a later ticket).
+    state.position = moveTowardsWithCollision(
+      state.position,
+      action.target,
+      speedFor(state.role, state.elite) * seconds,
+      this.hitRadius,
+      level,
+      ROOM_EDGE_MARGIN_TILES,
+    );
   }
 
   /** Small knockback after a bullet hit; same rig as the player but a shorter distance. */
@@ -479,6 +478,7 @@ export class EnemyView extends Component {
       deltaMs,
       level,
       ROOM_EDGE_MARGIN_TILES,
+      this.hitRadius,
     );
     state.position = result.position;
     this.knockback = result.state;
@@ -644,10 +644,4 @@ export class EnemyView extends Component {
     const world = tileToWorld(this.position);
     this.node.setPosition(world.x, world.y - ACTOR_FEET_OFFSET_TILES, 0);
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
 }

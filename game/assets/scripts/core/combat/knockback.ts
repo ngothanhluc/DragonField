@@ -20,6 +20,7 @@
 import type { LevelData } from '../level/level-data';
 import { obstacleAt } from '../level/level-data';
 import type { Vec2 } from '../math/vec2';
+import { circleOverlapsObstacle } from '../movement/collision';
 
 /** Distance + duration of one push. */
 export interface KnockbackConfig {
@@ -80,6 +81,10 @@ export function startKnockback(
  *
  * `marginTiles` is the wall margin the actor centre must keep (player/enemy use
  * `ROOM_EDGE_MARGIN_TILES`); default 0 = only needs to stay inside the room.
+ *
+ * `radiusTiles` is the actor's collision radius: the **whole circle** must stay out of an
+ * obstacle, not just its centre (ticket #33). Default 0 = the centre is the circle, which is
+ * what the pre-collision behaviour did.
  */
 export function stepKnockback(
   position: Vec2,
@@ -87,9 +92,11 @@ export function stepKnockback(
   deltaMs: number,
   level: LevelData,
   marginTiles = 0,
+  radiusTiles = 0,
 ): KnockbackStepResult {
   if (!(deltaMs > 0)) return { position, state };
 
+  const radius = Math.max(0, radiusTiles);
   const elapsedMs = Math.min(deltaMs, state.remainingMs);
   const distance = state.speedTilesPerSecond * (elapsedMs / 1000);
   const steps = Math.max(1, Math.ceil(distance / KNOCKBACK_SAMPLE_STEP_TILES));
@@ -109,16 +116,16 @@ export function stepKnockback(
     };
 
     if (next.x < minX || next.x > maxX || next.y < minY || next.y > maxY) {
-      // Hit a wall: place flush against the edge (if the edge is not inside an obstacle) and stop.
+      // Hit a wall: place flush against the edge (if the edge is free) and stop.
       const edge: Vec2 = {
         x: clamp(next.x, minX, maxX),
         y: clamp(next.y, minY, maxY),
       };
-      if (obstacleAt(level, edge) === null) current = edge;
+      if (isFree(level, edge, radius)) current = edge;
       return { position: current, state: null };
     }
 
-    if (obstacleAt(level, next) !== null) {
+    if (!isFree(level, next, radius)) {
       // Keep the last valid point, do not pass through an obstacle.
       return { position: current, state: null };
     }
@@ -131,6 +138,14 @@ export function stepKnockback(
     position: current,
     state: remainingMs > 0 ? { ...state, remainingMs } : null,
   };
+}
+
+/** No obstacle centre-inside and no overlap with the actor's circle. */
+function isFree(level: LevelData, point: Vec2, radiusTiles: number): boolean {
+  if (obstacleAt(level, point) !== null) return false;
+  return level.obstacles.every(
+    (obstacle) => !circleOverlapsObstacle(point, radiusTiles, obstacle),
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {
