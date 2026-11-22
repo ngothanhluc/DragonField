@@ -584,6 +584,32 @@ describe('#22 removeMarker', () => {
   });
 });
 
+describe('#22 removeMarker halo', () => {
+  it('recolours the blended ring around the plate and keeps the grip at the plate centre', () => {
+    const blue: Pixel = [0, 0, 200, 255];
+    const blend: Pixel = [30, 150, 165, 255]; // cyan mixed into the item: ~142 from the marker
+    const width = 64;
+    const pixels: Pixel[] = new Array<Pixel>(width * width).fill(CLEAR);
+    for (let y = 20; y < 40; y += 1) for (let x = 20; x < 40; x += 1) pixels[y * width + x] = blue;
+    for (let y = 29; y < 35; y += 1) for (let x = 29; x < 35; x += 1) pixels[y * width + x] = [0, 255, 255, 255];
+    for (let y = 28; y < 36; y += 1) {
+      for (let x = 28; x < 36; x += 1) {
+        if (x >= 29 && x < 35 && y >= 29 && y < 35) continue;
+        pixels[y * width + x] = blend;
+      }
+    }
+
+    const { image: cleaned, centres } = removeMarker(image(pixels, width, width), [0, 255, 255], 1, 1);
+
+    expect(centres[0]).toEqual([32, 32]);
+    for (let y = 28; y < 36; y += 1) {
+      for (let x = 28; x < 36; x += 1) {
+        expect(Array.from(cleaned.data.subarray((y * width + x) * 4, (y * width + x) * 4 + 4))).toEqual([...blue]);
+      }
+    }
+  });
+});
+
 describe('#22 nativeBlockSize through noise', () => {
   it('still finds 16 px blocks when a tenth of the pixels are anti-alias specks', () => {
     const colours: Pixel[] = [

@@ -1554,7 +1554,13 @@ export function resolutionIssues(
 
 /** RGB euclidean distance under which a pixel counts as the grip marker (Gemini's shades drift). */
 const MARKER_TOLERANCE = 60;
-/** How far around a marker pixel the replacement colour is searched. */
+/**
+ * Blends of marker and item around the plate count as marker up to this distance. They no
+ * longer match the marker colour (a cyan marker's blends land on the palette's aqua), but a
+ * halo left behind folds into an aqua pixel in the staged sheet.
+ */
+const MARKER_HALO_TOLERANCE = 160;
+/** How far around a marker pixel the replacement colour is searched, and how thick the halo is. */
 const MARKER_RING = 2;
 
 /**
@@ -1562,9 +1568,12 @@ const MARKER_RING = 2;
  *
  * Marker pixels take the most common opaque, non-marker colour in the ring around them —
  * that restores the item's own colour where the marker covered it — or vanish when only the
- * keyed backdrop surrounds them. A marker larger than the ring inherits from its edge, so a
- * whole block is removed without leaving a hole. `centres` is per cell in row-major order,
- * in absolute source pixels (pixel (x, y) has centre (x + 0.5, y + 0.5)), or null.
+ * keyed backdrop surrounds them. A marker plate wider than the ring inherits from its edge,
+ * so a whole block is removed without leaving a hole. The anti-aliased ring Gemini blends
+ * around the plate is removed too, but only where a pixel is closer to the marker than to
+ * the item colour beside it, so a genuinely aqua detail next to the marker survives.
+ * `centres` is per cell in row-major order, in absolute source pixels (pixel (x, y) has
+ * centre (x + 0.5, y + 0.5)), or null.
  */
 export function removeMarker(
   image: PngImage,
@@ -1575,21 +1584,23 @@ export function removeMarker(
   const { width, height } = image;
   const cellWidth = Math.floor(width / columns);
   const cellHeight = Math.floor(height / rows);
-  const limit = MARKER_TOLERANCE * MARKER_TOLERANCE;
-  const isMarker = (x: number, y: number): boolean => {
-    const index = (y * width + x) * 4;
-    if (image.data[index + 3]! < 128) return false;
-    const dr = image.data[index]! - marker[0];
-    const dg = image.data[index + 1]! - marker[1];
-    const db = image.data[index + 2]! - marker[2];
-    return dr * dr + dg * dg + db * db <= limit;
+  const coreLimit = MARKER_TOLERANCE * MARKER_TOLERANCE;
+  const haloLimit = MARKER_HALO_TOLERANCE * MARKER_HALO_TOLERANCE;
+
+  /** Squared RGB distance of a pixel to the marker colour, or -1 when it is transparent. */
+  const markerDistance = (index: number): number => {
+    const from = index * 4;
+    if (image.data[from + 3]! < 128) return -1;
+    const dr = image.data[from]! - marker[0];
+    const dg = image.data[from + 1]! - marker[1];
+    const db = image.data[from + 2]! - marker[2];
+    return dr * dr + dg * dg + db * db;
   };
 
-  const flagged = new Uint8Array(width * height);
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (isMarker(x, y)) flagged[y * width + x] = 1;
-    }
+  const core = new Uint8Array(width * height);
+  for (let index = 0; index < core.length; index += 1) {
+    const distance = markerDistance(index);
+    if (distance >= 0 && distance <= coreLimit) core[index] = 1;
   }
 
   const centres: Array<readonly [number, number] | null> = [];
@@ -1600,7 +1611,7 @@ export function removeMarker(
       let sumY = 0;
       for (let y = row * cellHeight; y < (row + 1) * cellHeight; y += 1) {
         for (let x = column * cellWidth; x < (column + 1) * cellWidth; x += 1) {
-          if (flagged[y * width + x] !== 1) continue;
+          if (core[y * width + x] !== 1) continue;
           count += 1;
           sumX += x + 0.5;
           sumY += y + 0.5;
@@ -1619,42 +1630,81 @@ export function removeMarker(
     data[index * 4 + 2] = colour & 0xff;
     data[index * 4 + 3] = 255;
   };
+  const clear = (index: number): void => {
+    data.fill(0, index * 4, index * 4 + 4);
+  };
 
-  // First pass: each marker pixel that can see the item takes the ring's most common colour.
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const index = y * width + x;
-      if (flagged[index] !== 1) continue;
-      const counts = new Map<number, number>();
-      for (let dy = -MARKER_RING; dy <= MARKER_RING; dy += 1) {
-        for (let dx = -MARKER_RING; dx <= MARKER_RING; dx += 1) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-          const neighbour = ny * width + nx;
-          if (flagged[neighbour] === 1) continue;
-          const from = neighbour * 4;
-          if (image.data[from + 3]! < 128) continue;
-          const packed = (image.data[from]! << 16) | (image.data[from + 1]! << 8) | image.data[from + 2]!;
-          counts.set(packed, (counts.get(packed) ?? 0) + 1);
-        }
+  /** Most common opaque item colour in the ring, skipping the marker and its halo. */
+  const itemColourAround = (x: number, y: number): number | null => {
+    const counts = new Map<number, number>();
+    for (let dy = -MARKER_RING; dy <= MARKER_RING; dy += 1) {
+      for (let dx = -MARKER_RING; dx <= MARKER_RING; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbour = ny * width + nx;
+        const distance = markerDistance(neighbour);
+        if (distance >= 0 && distance <= haloLimit) continue;
+        const from = neighbour * 4;
+        if (image.data[from + 3]! < 128) continue;
+        const packed = (image.data[from]! << 16) | (image.data[from + 1]! << 8) | image.data[from + 2]!;
+        counts.set(packed, (counts.get(packed) ?? 0) + 1);
       }
-      if (counts.size === 0) continue;
-      let best = 0;
-      let bestCount = -1;
-      for (const [packed, count] of counts) {
-        if (count > bestCount || (count === bestCount && packed < best)) {
-          best = packed;
-          bestCount = count;
-        }
+    }
+    let best: number | null = null;
+    let bestCount = -1;
+    for (const [packed, count] of counts) {
+      if (count > bestCount || (count === bestCount && best !== null && packed < best)) {
+        best = packed;
+        bestCount = count;
       }
-      replace(index, best);
-      resolved[index] = 1;
-      queue.push(index);
+    }
+    return best;
+  };
+
+  // The halo: blends of marker and item that sit on the plate but no longer match the marker
+  // colour. They are excluded from `centres`, so the grip does not move towards them.
+  const halo = new Set<number>();
+  for (let index = 0; index < core.length; index += 1) {
+    if (core[index] !== 1) continue;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    for (let dy = -MARKER_RING; dy <= MARKER_RING; dy += 1) {
+      for (let dx = -MARKER_RING; dx <= MARKER_RING; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbour = ny * width + nx;
+        if (core[neighbour] === 1) continue;
+        const distance = markerDistance(neighbour);
+        if (distance < 0 || distance > haloLimit) continue;
+        halo.add(neighbour);
+      }
     }
   }
+  for (const index of halo) {
+    const colour = itemColourAround(index % width, Math.floor(index / width));
+    if (colour === null) {
+      clear(index);
+      continue;
+    }
+    const fill = unpack(colour);
+    const from = index * 4;
+    const toFill = (image.data[from]! - fill[0]) ** 2 + (image.data[from + 1]! - fill[1]) ** 2 + (image.data[from + 2]! - fill[2]) ** 2;
+    if (markerDistance(index) < toFill) replace(index, colour);
+  }
 
-  // Second pass: a marker plate wider than the ring inherits from its resolved edge.
+  // Each plate pixel that can see the item takes the ring's most common colour.
+  for (let index = 0; index < core.length; index += 1) {
+    if (core[index] !== 1) continue;
+    const colour = itemColourAround(index % width, Math.floor(index / width));
+    if (colour === null) continue;
+    replace(index, colour);
+    resolved[index] = 1;
+    queue.push(index);
+  }
+
+  // A plate wider than the ring inherits from its resolved edge.
   for (let head = 0; head < queue.length; head += 1) {
     const pixel = queue[head]!;
     const x = pixel % width;
@@ -1666,7 +1716,7 @@ export function removeMarker(
         const ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
         const neighbour = ny * width + nx;
-        if (flagged[neighbour] !== 1 || resolved[neighbour] === 1) continue;
+        if (core[neighbour] !== 1 || resolved[neighbour] === 1) continue;
         replace(neighbour, colour);
         resolved[neighbour] = 1;
         queue.push(neighbour);
@@ -1674,9 +1724,9 @@ export function removeMarker(
     }
   }
 
-  // Whatever is left sat on the backdrop: remove it.
-  for (let index = 0; index < flagged.length; index += 1) {
-    if (flagged[index] === 1 && resolved[index] === 0) data.fill(0, index * 4, index * 4 + 4);
+  // Whatever is left of the plate sat on the backdrop: remove it.
+  for (let index = 0; index < core.length; index += 1) {
+    if (core[index] === 1 && resolved[index] === 0) clear(index);
   }
 
   return { image: { width, height, data }, centres };
