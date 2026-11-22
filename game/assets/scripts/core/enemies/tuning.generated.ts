@@ -233,6 +233,7 @@ export const TUNING_DATA = {
   doors: {
     goldBonus: 15,
     specialRoomsEnabled: true,
+    hintMs: 2000,
     weights: {
       skill: 40,
       gold: 30,
