@@ -40,8 +40,12 @@ export type EnemyRole = (typeof ENEMY_ROLES)[number];
 /**
  * `prop` is the collider of a catalogue prop (ticket #35): `LevelData.props` says what is drawn,
  * `obstacles` carries the part that blocks. It is solid for walkers and bullets like a wall.
+ *
+ * `edge` is a solid piece of scenery with no sprite of its own (#67): the room border ring and the
+ * desert cliff plateau. Their looks come from the `border` tile layer, so nothing must draw them
+ * twice.
  */
-export const OBSTACLE_KINDS = ['pillar', 'wall', 'pit', 'prop'] as const;
+export const OBSTACLE_KINDS = ['pillar', 'wall', 'pit', 'prop', 'edge'] as const;
 export type ObstacleKind = (typeof OBSTACLE_KINDS)[number];
 
 export interface RoomSize {

@@ -69,18 +69,21 @@ export const OBSTACLE_VISUALS: Readonly<
     pillarSmall: { sheet: ELEMENT, rect: BOUNDS.crate, tile: true },
     wall: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
     pit: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
+    edge: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
   },
   2: {
     pillar: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
     pillarSmall: { sheet: ELEMENT, rect: BOUNDS.crate, tile: true },
     wall: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
     pit: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
+    edge: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
   },
   3: {
     pillar: { sheet: VILLAGE, rect: BOUNDS.villageColumn, tile: false },
     pillarSmall: { sheet: VILLAGE, rect: BOUNDS.villageStone, tile: true },
     wall: { sheet: VILLAGE, rect: BOUNDS.villageBrokenStone, tile: true },
     pit: { sheet: HOLE, rect: BOUNDS.holePit, tile: false },
+    edge: { sheet: VILLAGE, rect: BOUNDS.villageBrokenStone, tile: true },
   },
   // Chapter 4 — desert (#45): the grey nature boulder reads as a sandstone rock on sand, and the
   // nature wall is the nearest "broken wall" the pack has; a pit is a 2×2 boulder pit like ch1.
@@ -89,6 +92,7 @@ export const OBSTACLE_VISUALS: Readonly<
     pillarSmall: { sheet: ELEMENT, rect: BOUNDS.crate, tile: true },
     wall: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
     pit: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
+    edge: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
   },
 };
 

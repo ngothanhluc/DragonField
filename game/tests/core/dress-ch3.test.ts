@@ -214,6 +214,9 @@ function onObstacle(room: Room, x: number, y: number): boolean {
 }
 
 function isFlat(tile: DecorTile): boolean {
+  // #67 dresses ch3 with `TilesetFloorDetail` decals (tufts, pebbles, stepping stones) and the
+  // `border` layer with foliage: every tile of that sheet is walk-over detail.
+  if (tile.set.name === 'floordetail') return true;
   return FLAT_TILES[tile.set.name]?.has(tile.local) ?? false;
 }
 
