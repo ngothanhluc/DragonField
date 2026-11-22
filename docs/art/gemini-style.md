@@ -217,6 +217,19 @@ a character canvas is `4 × frameWidth` wide and `frames × frameHeight` tall. O
 `icon` and `tileset` read a source grid that is **not** the output grid: icons are fitted
 per cell and split into one file per name, tiles are sliced whole, edge to edge.
 
+**Character — readable at 16 px.** Gemini ignores "draw it N blocks tall": it picks its own
+grain (often 30–60 blocks per figure), and staging halves or thirds that. What survives is
+**proportion**, so ask for it explicitly (what worked for the cultivator, #23):
+- chibi like the pack ninja: the head is about half the height, the body is tiny;
+- big eyes: each eye a solid outline-dark rectangle about 1/7 of the figure's height, with skin
+  on every side ("one full block inside the face"); no mouth, nose or eyebrows;
+- the figure small in its cell, with wide margins and **no grid lines between cells**;
+- side views described by image edges ("column 3 looks toward the LEFT edge of the image in
+  all 4 rows"). Gemini still often turns one row the wrong way: keep the side column that is
+  consistent and build the other with `mirror`.
+Staging's resolution warning still fires on such art (the grain is finer than the frame);
+the grid alignment and detail keeping then carry the eyes, so judge the zoomed staged sheet.
+
 **Character — unarmed, separate weapons.** Ask for the body only: no sword, bow, staff or
 shuriken in any frame. Weapons are separate `attachment` assets (held `hand` or worn
 `back`) or plain projectiles, so a run can switch or hide them (GDD §14). Record the attach
