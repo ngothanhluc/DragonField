@@ -254,4 +254,7 @@ export const TUNING_DATA = {
       },
     },
   },
+  roomArt: {
+    detailDensity: 0.08,
+  },
 } as const;

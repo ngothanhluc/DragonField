@@ -236,5 +236,8 @@
         "epic": 40
       }
     }
+  },
+  "roomArt": {
+    "detailDensity": 0.08
   }
 }

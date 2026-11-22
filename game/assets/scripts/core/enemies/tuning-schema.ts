@@ -222,6 +222,16 @@ export interface TuningConfig {
   readonly doors: DoorsTuning;
   /** Heal / mid-run shop / chest rooms (#40). */
   readonly specialRooms: SpecialRoomsTuning;
+  /** Room composition art (#67): how many walkable details a generated room scatters. */
+  readonly roomArt: RoomArtTuning;
+}
+
+/**
+ * Room art density (#67). `detailDensity` is the share of a room's tiles that carry a walkable
+ * detail (grass tuft, pebble, bone): 0.12 means about one tile in eight.
+ */
+export interface RoomArtTuning {
+  readonly detailDensity: number;
 }
 
 /** One weight per door reward (skills and gold are the two fights). */
@@ -517,6 +527,8 @@ const DOOR_WEIGHT_FIELDS = ['skill', 'gold', 'heal', 'shop', 'chest'] as const;
 const SPECIAL_ROOMS_FIELDS = ['healHearts', 'chestGold', 'shop'] as const;
 
 const SHOP_FIELDS = ['heartRefill', 'skillPrices'] as const;
+
+const ROOM_ART_FIELDS = ['detailDensity'] as const;
 
 const SHOP_PRICE_FIELDS = ['common', 'rare', 'epic'] as const;
 
@@ -1071,6 +1083,22 @@ function parseWaveTotals(
   return totals;
 }
 
+/**
+ * Room art (#67): the detail density must stay a real share of the room — 0 means no scatter,
+ * and above 0.3 the floor turns into a carpet of pebbles.
+ */
+function parseRoomArt(raw: Record<string, unknown>, problems: ProblemList): RoomArtTuning {
+  const source = readObject(raw, 'roomArt', '', problems, ROOM_ART_FIELDS);
+  if (source === undefined) return { detailDensity: 0.12 };
+
+  const detailDensity =
+    readNumber(source, 'detailDensity', 'roomArt', problems, { positive: true }) ?? 0.12;
+  if (detailDensity > 0.3) {
+    problems.add('roomArt.detailDensity', `must be <= 0.3, got ${detailDensity}`);
+  }
+  return { detailDensity };
+}
+
 function zeroWaves(): WavesTuning {
   return {
     aliveCap: 1,
@@ -1486,6 +1514,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     cover: parseCover(raw, problems),
     doors: parseDoors(raw, problems),
     specialRooms: parseSpecialRooms(raw, problems),
+    roomArt: parseRoomArt(raw, problems),
   };
 
   problems.throwIfAny();

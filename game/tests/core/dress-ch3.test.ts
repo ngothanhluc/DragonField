@@ -224,31 +224,6 @@ function describeTile(room: Room, tile: DecorTile): string {
   return `${room.file.name} (${tile.x},${tile.y}) ${tile.set.name}#${tile.local}`;
 }
 
-/** Village tiles grouped into drawn props: map-adjacent AND art-connected in that direction. */
-function villageBlocks(room: Room): DecorTile[][] {
-  const seen = new Set<string>();
-  const blocks: DecorTile[][] = [];
-  for (const start of room.decor) {
-    if (start === null || start.set.name !== 'village' || seen.has(`${start.x},${start.y}`)) continue;
-    const block: DecorTile[] = [];
-    const queue = [start];
-    seen.add(`${start.x},${start.y}`);
-    while (queue.length > 0) {
-      const tile = queue.pop()!;
-      block.push(tile);
-      for (const direction of Object.keys(STEP) as Direction[]) {
-        if (!artConnected(tile.set, tile.local, direction)) continue;
-        const next = at(room, tile.x + STEP[direction][0], tile.y + STEP[direction][1]);
-        if (next === null || next.set.name !== 'village' || seen.has(`${next.x},${next.y}`)) continue;
-        seen.add(`${next.x},${next.y}`);
-        queue.push(next);
-      }
-    }
-    blocks.push(block);
-  }
-  return blocks;
-}
-
 // ---------------------------------------------------------------------------
 // Obstacle visuals seam (core/level/obstacle-visuals.ts)
 // ---------------------------------------------------------------------------
@@ -285,6 +260,10 @@ function sheetPath(sheet: string): string {
 
 /** Same rule as `level-view.ts`: a 1×1 pillar uses the `pillarSmall` visual. */
 function visualKey(obstacle: Obstacle & { kind: Exclude<Obstacle['kind'], 'prop'> }): ObstacleVisualKey {
+  // #67 added the solid `edge` kind (room border ring, desert cliff plateau). It has no sprite of
+  // its own — the `border` tile layer draws it — so it is checked against the cliff/wall tile it
+  // would use, which keeps the frame-opacity assertion meaningful.
+  if (obstacle.kind === 'edge') return 'wall';
   return obstacle.kind === 'pillar' && obstacle.width <= 1 && obstacle.height <= 1 ? 'pillarSmall' : obstacle.kind;
 }
 // ---------------------------------------------------------------------------
@@ -403,28 +382,22 @@ describe('#7 chapter 3 decor follows collision', () => {
 describe('#7 chapter 3 is re-dressed', () => {
   const rooms = chapterRooms(3);
 
-  it.each(rooms.map((room) => [room.file.name, room] as const))(
-    '%s uses VillageAbandoned per block: >= 2 multi-tile blocks and >= 8 village tiles',
-    (_name, room) => {
-      const blocks = villageBlocks(room);
-      const multiTile = blocks.filter((block) => block.length >= 2);
-      const villageTiles = blocks.reduce((sum, block) => sum + block.length, 0);
-
-      expect(multiTile.length, 'multi-tile VillageAbandoned blocks').toBeGreaterThanOrEqual(2);
-      expect(villageTiles, 'VillageAbandoned decor tiles').toBeGreaterThanOrEqual(8);
-    },
-  );
-
-  it.each(rooms.map((room) => [room.file.name, room] as const))(
-    '%s frames the room with solid props on the border (>= 4, the boss arena >= 8)',
-    (_name, room) => {
-      const props = room.decor.filter(
-        (tile): tile is DecorTile => tile !== null && !isFlat(tile) && isBorder(room, tile.x, tile.y),
+  // #67 replaces the old VillageAbandoned decor blocks and the border prop frame: a ch3 room is
+  // now dressed with `TilesetFloorDetail` decals and ringed by one solid `edge` border per side
+  // (drawn by the `border` layer), so this pins the new room art instead of the retired one.
+  it('dresses every room with the detail sheet inside a solid border ring', () => {
+    for (const room of rooms) {
+      if (room.room === 17) continue; // boss arena: hand-authored, not generated
+      const decals = room.decor.filter(
+        (tile): tile is DecorTile => tile !== null && tile.set.name === 'floordetail',
       );
-
-      expect(props.length).toBeGreaterThanOrEqual(room.room === 9 ? 8 : 4);
-    },
-  );
+      expect(decals.length, `${room.file.name}: detail decals`).toBeGreaterThan(0);
+      expect(
+        room.obstacles.filter((obstacle) => obstacle.kind === 'edge').length,
+        `${room.file.name}: border ring`,
+      ).toBeGreaterThanOrEqual(4);
+    }
+  });
 });
 
 describe('#7 obstacle visuals', () => {

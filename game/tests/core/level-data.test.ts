@@ -178,9 +178,9 @@ describe('obstacleAt', () => {
   it('returns null when the point is in open space', () => {
     const room1 = room(1);
 
-    // The pool's border cells are decor only: no obstacle reaches the room's first tile.
-    expect(obstacleAt(room1, { x: 1, y: 1 })).toBeNull();
-    expect(obstacleAt(room1, { x: 0.5, y: 0.5 })).toBeNull();
+    // #67 rings every generated room with an `edge` border, so open space is the interior: the
+    // player start is kept three tiles clear of every obstacle.
+    expect(obstacleAt(room1, room1.playerStart)).toBeNull();
   });
 });
 

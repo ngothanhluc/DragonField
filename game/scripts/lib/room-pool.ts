@@ -1,38 +1,45 @@
 /**
- * Generated 64×36 room pool (M9, ticket #38, ADR-018).
+ * Generated 64×36 room pool (M9 ticket #38, recomposed in M10 ticket #67).
  *
- * Every chapter now holds a **pool** of 16 generated normal rooms instead of 8 hand-dressed
- * 32×18 ones; a run plays 8 of them drawn by its seed (`core/run/room-draw.ts`) plus the boss.
- * This module owns the generator: it plans one room (floor, decor, obstacles, props, water,
- * player start, 2 doors, spawns) with a seeded RNG, **validates** it with the same core modules
- * the game and the acceptance tests use, and serialises it to `.tmx`.
+ * Every chapter holds a **pool** of 16 generated normal rooms; a run plays 8 of them drawn by its
+ * seed (`core/run/room-draw.ts`) plus the boss. This module plans one room and serialises it to
+ * `.tmx`; the runtime parser (`core/level/tmx.ts`) and the acceptance tests read the same files.
  *
- * Room anatomy (a normal room is 2×2 screens of 32×18 tiles):
- * - **Floor**: one uniform grass/sand gid, as before (`FLOOR_GID`).
- * - **Decor** (walkable tiles): grass/flower clusters (ch1/ch2) or whole VillageAbandoned blocks
- *   plus flat singles (ch3); chapter 4 keeps a plain sand floor. Never on an obstacle, spawn, door
- *   or the player start.
- * - **Obstacles/props**: 1–3 solid props per screen from the #35 catalogue, plus an authored
- *   pillar/pit/wall in about half of the screens. Blobs are never closer than `MIN_OBSTACLE_GAP`
- *   tiles edge to edge, so the room always stays a field of cover to dodge behind, never a maze.
- * - **Spawns**: the chapter's per-room spawn plan (today's counts and roles, see
- *   `SPAWN_TEMPLATES`), spread over the 4 screens of the room around the player start, 7–26
- *   tiles away.
- * - **Doors**: 2 spots on the room edge (entrance at the bottom, exit at the top), data only
- *   until #39 gives the door choice a screen.
+ * Room anatomy (2×2 screens of 32×18 tiles), the way the Ninja Adventure demo scenes are built:
+ * - **Floor**: one uniform grass/sand gid (`FLOOR_GID`), the base everything else sits on.
+ * - **Ground patches**: 13-piece blob autotile of a second terrain (`core/level/autotile.ts`) over
+ *   a value-noise mask — irregular dirt/grass/sand patches with proper corners, never hard squares.
+ * - **Path**: stepping stones from the entrance door to the exit door (and a short spur toward the
+ *   set piece), carved first so obstacles never sit on it.
+ * - **Border**: a 2-tile solid band around the room (one long `edge` obstacle per side with a mouth
+ *   at each door) dressed with dense foliage / cliff tiles, so the edge reads as a wall.
+ * - **Set pieces**: a tree grove (palms in the desert), a small village (house + fence-line props),
+ *   and for chapter 4 a sand cliff plateau from `TilesetRelief` — all placed by the room seed and
+ *   never blocking a door, the start or a spawn.
+ * - **Decor**: a light scatter of walkable details (tufts, pebbles, flowers, bones) at
+ *   `roomArt.detailDensity`, with at least one in every 16×9 area.
+ * - **Spawns**: the chapter's per-room spawn plan (the M9 counts), spread over the 4 screens.
+ * - **Doors**: 2 spots on the room edge (entrance at the bottom, exit at the top).
  *
  * Determinism: `(chapter, room, attempt)` seeds one room; a room that fails validation retries
  * with the next attempt, so re-running the script rewrites byte-identical files.
  */
 import { ROOM_EDGE_MARGIN_TILES } from '../../assets/scripts/core/enemies/behaviours';
 import { buildFlowField, buildNavGrid } from '../../assets/scripts/core/enemies/navigation';
+import { TUNING } from '../../assets/scripts/core/enemies/tuning';
+import {
+  GROUND_TERRAINS,
+  normalizePatchMask,
+  pickBlobTile,
+  type PatchMask,
+} from '../../assets/scripts/core/level/autotile';
 import type {
   EnemyRole,
   ObstacleKind,
   PlacedProp,
   LevelData,
 } from '../../assets/scripts/core/level/level-data';
-import { WALK_OVER_KEYS, propCollider, propDef } from '../../assets/scripts/core/level/props';
+import { WALK_OVER_KEYS, propCollider, propDef, type PropDef } from '../../assets/scripts/core/level/props';
 import { parseTmxLevel } from '../../assets/scripts/core/level/tmx';
 import type { WaterArea } from '../../assets/scripts/core/level/water-layout';
 
@@ -49,6 +56,11 @@ export const NORMAL_ROOMS = 16;
 export const BOSS_ROOM = NORMAL_ROOMS + 1;
 
 const TILE = 16;
+
+/** Thickness of the solid border band, tiles (the acceptance test measures a 2-tile band). */
+const BORDER_TILES = 2;
+/** Half-width of the opening the border leaves at each door, tiles (the test's 4-tile door radius). */
+const DOOR_MOUTH = 4;
 
 /** The `.tmx` reference to a tileset that already lives next to the rooms. */
 interface TilesetDef {
@@ -70,19 +82,52 @@ const TS = {
   hole: { source: 'hole.tsx', name: 'hole', count: 55 },
   desert: { source: 'desert.tsx', name: 'desert', count: 240 },
   camp: { source: 'camp.tsx', name: 'camp', count: 207 },
+  floordetail: { source: 'floordetail.tsx', name: 'floordetail', count: 80 },
 } as const satisfies Record<string, TilesetDef>;
 
-/** Tilesets of a chapter, in `firstgid` order (the same sets the hand-dressed rooms used). */
+/**
+ * Tilesets of a chapter, in `firstgid` order. #67 appends the patch terrain (`field`) and the
+ * detail/path sheet (`floordetail`) to every chapter, and the sand cliffs (`relief`) to ch4;
+ * appending keeps every existing gid (and the hand-authored boss rooms) valid.
+ */
 const CHAPTER_SETS: Readonly<Record<number, readonly TilesetDef[]>> = {
-  1: [TS.field, TS.nature, TS.relief, TS.element],
-  2: [TS.field, TS.water, TS.nature],
-  3: [TS.ground, TS.village, TS.house, TS.towers, TS.hole],
-  // Chapter 4 — desert (#45): the desert village tileset (floor + houses + palms) and camp props.
-  4: [TS.desert, TS.camp],
+  1: [TS.field, TS.nature, TS.relief, TS.element, TS.floordetail],
+  2: [TS.field, TS.water, TS.nature, TS.floordetail],
+  3: [TS.ground, TS.village, TS.house, TS.towers, TS.hole, TS.field, TS.floordetail],
+  // Chapter 4 — desert (#45, #67): the desert village/camp sheets plus patches, details and cliffs.
+  4: [TS.desert, TS.camp, TS.field, TS.floordetail, TS.relief],
 };
 
 /** Uniform background per chapter: moss green (field) / village sand (desert). */
 const FLOOR_GID: Readonly<Record<number, number>> = { 1: 37, 2: 37, 3: 176, 4: 176 };
+
+/**
+ * Detail decals per chapter, local ids of `floordetail.tsx` (16×5 tiles): row 2 is green tufts,
+ * flowers and bushes, the right of row 0 is the desert's skulls/bones/shells.
+ */
+const DETAIL_TILES: Readonly<Record<number, readonly number[]>> = {
+  1: [32, 33, 34, 35, 36, 37, 38, 39, 40],
+  2: [32, 33, 34, 35, 36, 37, 39, 40],
+  3: [32, 33, 34, 35, 36, 37, 38, 40],
+  4: [3, 4, 10, 11, 12, 13, 14, 15],
+};
+
+/** Stepping stones of the path layer: two pale stones, with scattered pebbles between them. */
+const PATH_STONE = 11;
+const PATH_PEBBLE = 3;
+
+/** Dense foliage of the border band (ch1–3, `floordetail`): leafy bushes over a grass base. */
+const BORDER_FOLIAGE: readonly number[] = [40, 40, 40, 37, 37, 35];
+/** Local id of the light-grass centre in `field.tsx`: the band's floor under the bushes. */
+const BORDER_GRASS = 15 * 1 + 7;
+/** The desert border: a ring of sand-cliff face tiles (`relief` locals 121..187). */
+const BORDER_CLIFF: readonly number[] = [142, 142, 142, 162];
+
+/** Sand cliff plateau (ch4): rim, top surface, front lip, face — all inside `relief` 121..187. */
+const CLIFF_RIM = 122;
+const CLIFF_TOP = 162;
+const CLIFF_LIP = 182;
+const CLIFF_FACE = 142;
 
 /** Global id of 1-based local tile `local` inside tileset `name` of `chapter`. */
 export function gid(chapter: number, name: string, local: number): number {
@@ -148,6 +193,13 @@ function shuffle<T>(rng: Rng, items: readonly T[]): T[] {
   return copy;
 }
 
+/** Stable 0..1 hash of a cell, so a decoration pattern does not shift when a room changes. */
+function hashCell(x: number, y: number): number {
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
 // ---------------------------------------------------------------------------
 // Prop themes (the #35 catalogue, grouped the way the hand-dressed rooms used them)
 // ---------------------------------------------------------------------------
@@ -155,44 +207,56 @@ function shuffle<T>(rng: Rng, items: readonly T[]): T[] {
 interface PropTheme {
   /** At most one landmark per room (a house, a tent, a statue). */
   readonly landmarks: readonly string[];
+  /** Overlapping-canopy trees for the grove (palms in the desert). */
+  readonly trees: readonly string[];
   /** Everyday solids: trees, rocks, stumps, crates. */
   readonly solids: readonly string[];
+  /** Village furniture that may sit inside the cluster's 3-tile radius. */
+  readonly furniture: readonly string[];
   readonly walkOvers: readonly string[];
 }
 
 const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
   1: {
     landmarks: ['house-orange', 'house-beige', 'house-green', 'hut', 'tent'],
+    trees: ['tree-green', 'tree-pine', 'tree-round', 'tree-big-green', 'tree-small'],
     solids: [
       'tree-green', 'tree-pine', 'tree-dead', 'tree-pink', 'tree-round', 'tree-small',
       'tree-cluster-green', 'tree-cluster-pines', 'rock-boulder', 'rock-small', 'stump-big',
       'stump', 'bush-blue', 'crate', 'totem', 'logs',
     ],
+    furniture: ['crate', 'logs', 'stump', 'stump-big', 'cart', 'totem', 'rock-small'],
     walkOvers: WALK_OVER_KEYS,
   },
   2: {
     landmarks: ['house-red', 'house-beige', 'house-orange', 'house-green'],
+    trees: ['tree-green', 'tree-pine', 'tree-round', 'tree-big-orange'],
     solids: [
       'tree-green', 'tree-pine', 'tree-round', 'tree-big-orange', 'tree-cluster-pines',
       'rock-boulder-gray', 'rock-small-gray', 'stump', 'bush-blue', 'crate', 'totem',
     ],
+    furniture: ['crate', 'logs', 'stump', 'stump-big', 'cart', 'rock-small-gray'],
     walkOvers: [...WALK_OVER_KEYS, 'fishnet'],
   },
   3: {
     landmarks: ['house-ruined', 'house-mossy', 'house-timber', 'house-timber-large', 'house-orange', 'house-red', 'frog-statue'],
+    trees: ['tree-mossy', 'tree-mossy-alt', 'tree-green', 'tree-pine'],
     solids: [
       'tree-mossy', 'tree-mossy-alt', 'tree-cluster-green', 'tree-dead', 'tree-green', 'tree-pine',
       'rock-boulder', 'stump-big', 'bush-blue', 'totem', 'crate', 'frog-statue',
     ],
+    furniture: ['crate', 'logs', 'stump', 'stump-big', 'cart', 'totem', 'rock-small'],
     walkOvers: WALK_OVER_KEYS,
   },
   // Chapter 4 — desert: camp tents / adobe houses as landmarks, palms, bones and camp furniture.
   4: {
     landmarks: ['camp-tent', 'camp-tent-open', 'desert-house', 'desert-tower'],
+    trees: ['palm-cluster', 'palm-cluster-dusty', 'tree-dead'],
     solids: [
       'palm-cluster', 'palm-cluster-dusty', 'desert-skull', 'camp-well', 'camp-table', 'camp-bench',
       'camp-signpost', 'camp-barrel', 'logs', 'rock-boulder-gray', 'tree-dead', 'stump-big',
     ],
+    furniture: ['camp-well', 'camp-table', 'camp-bench', 'camp-signpost', 'camp-barrel', 'logs', 'desert-skull'],
     walkOvers: [...WALK_OVER_KEYS, 'desert-fish-bones', 'desert-shell', 'desert-potted-palm'],
   },
 };
@@ -223,8 +287,7 @@ function roles(...list: readonly string[]): readonly SpawnEntry[] {
  * Waves per chapter and **template** index (1..8): ch1 3–4 per wave, ch2 5–6 per room, ch3 7–8
  * per room with elites from the fourth room, exactly the numbers the hand-dressed rooms had.
  * Chapter 4 authors the same 8–9 per room as ch3: `roomEnemyTotal` (#41) scales a normal room to
- * 8× inside `waves.chapterTotals[3]` (64–72), so the authored list stays the role mix, not the
- * count.
+ * 8× inside `waves.chapterTotals[3]` (64–72), so the authored list stays the role mix, not the count.
  */
 const SPAWN_TEMPLATES: Readonly<Record<number, readonly (readonly (readonly SpawnEntry[])[])[]>> = {
   1: [
@@ -304,9 +367,13 @@ export interface RoomPlan {
   readonly obstacles: readonly AuthoredObstacle[];
   readonly props: readonly PlacedProp[];
   readonly water: readonly WaterArea[];
-  /** Floor/decor gid grids, row-major, `COLS × ROWS`. */
+  /** Row-major gid grids, `COLS × ROWS`: base floor, ground patches, path and details. */
   readonly floor: readonly number[];
+  readonly ground: readonly number[];
+  readonly path: readonly number[];
   readonly decor: readonly number[];
+  /** Dense border ring (foliage / cliffs) and the desert cliff plateau. */
+  readonly border: readonly number[];
   readonly spawns: readonly PlannedSpawn[];
 }
 
@@ -314,17 +381,18 @@ export interface RoomPlan {
 const MIN_OBSTACLE_GAP = 5;
 /** Obstacles keep this far from the player start, the doors and the spawns. */
 const POINT_CLEARANCE = 3;
+/** A set piece (grove, village, cliff) keeps this far from the start: the opening stays open. */
+const SET_PIECE_CLEARANCE = 6;
 /** A spawn sits this far from the player start (tiles). */
 const SPAWN_MIN_DISTANCE = 7;
 const SPAWN_MAX_DISTANCE = 9.5;
 /**
  * Casters stand at the back of the pack: the player's auto-aim locks the **nearest** target, and
  * an enemy under constant fire keeps its attack cycle but is delayed, so a caster that spawns
- * closest is held under fire and never gets its (3000 ms + 500 ms telegraph) shot off — the
- * balance sim pins "every caster fires before dying". Spawning it behind the melee line (just
- * outside the 6-tile hold band, at
- * the edge of the 8-tile auto-aim range) gives it the walk-in time to fire first, then die.
- * The clear line is required so it really is in the fight, not several screens away.
+ * closest is held under fire and never gets its (3000 ms + 500 ms telegraph) shot off. Spawning it
+ * behind the melee line (just outside the 6-tile hold band, at the edge of the 8-tile auto-aim
+ * range) gives it the walk-in time to fire first, then die. The clear line is required so it
+ * really is in the fight, not several screens away.
  */
 const CASTER_MIN_DISTANCE = 10;
 const CASTER_MAX_DISTANCE = 12;
@@ -364,6 +432,10 @@ function rectCentre(rect: Rect): Vec2 {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
 
+function overlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
 /**
  * Conservative line check: the segment `from → to` keeps at least 0.3 tiles from every collider,
  * i.e. no obstacle stands between the two points (the same clearance the reachability tests use).
@@ -396,6 +468,10 @@ function waterGap(water: readonly WaterArea[], point: Vec2): number {
   return best;
 }
 
+function overlapsWater(water: readonly WaterArea[], rect: Rect): boolean {
+  return water.some((area) => overlap(rect, { x: area.x, y: area.y, width: area.width, height: area.height }));
+}
+
 /**
  * Chapter 2's river: a shallow 2-tile band across the room, above the player's start rows so the
  * entrance is on dry land, plus a waterfall running down to it in some rooms.
@@ -420,72 +496,266 @@ function planPlayerStart(room: number, rng: Rng): Vec2 {
   return { x, y };
 }
 
+// ---------------------------------------------------------------------------
+// Border ring + doors
+// ---------------------------------------------------------------------------
+
+interface BorderPlan {
+  readonly rects: Rect[];
+  readonly obstacles: AuthoredObstacle[];
+  /** Row-major `border` layer: dense foliage / cliff tiles over the band. */
+  readonly tiles: number[];
+  /** Band cells (and the solid side rects) the interior must keep clear of. */
+  readonly blocked: Set<string>;
+}
+
+function borderTile(chapter: number, x: number, y: number): number {
+  const roll = hashCell(x, y);
+  if (chapter === 4) {
+    return gid(4, 'relief', BORDER_CLIFF[Math.floor(roll * BORDER_CLIFF.length)] ?? CLIFF_FACE);
+  }
+  // A mottled light-grass floor with leafy bushes on top of it: a hedge, not scattered tufts.
+  if (roll > 0.72) return gid(chapter, 'field', BORDER_GRASS);
+  const foliage = BORDER_FOLIAGE[Math.floor(roll * BORDER_FOLIAGE.length)] ?? 40;
+  return gid(chapter, 'floordetail', foliage);
+}
+
+/** True when `(x, y)` is inside the 2-tile ring around the room. */
+function inBorderBand(x: number, y: number): boolean {
+  return x < BORDER_TILES || y < BORDER_TILES || x >= COLS - BORDER_TILES || y >= ROWS - BORDER_TILES;
+}
+
+/**
+ * The solid border: one long `edge` obstacle per side, split around the doors, dressed with the
+ * chapter's dense foliage (or the desert's cliff face). The door mouths stay open so the player
+ * can walk to either door.
+ */
+function planBorder(chapter: number, doors: readonly Vec2[]): BorderPlan {
+  const tiles = new Array<number>(COLS * ROWS).fill(0);
+  const blocked = new Set<string>();
+  const rects: Rect[] = [];
+  const obstacles: AuthoredObstacle[] = [];
+
+  const bottomDoor = doors.find((door) => door.y > ROWS / 2);
+  const topDoor = doors.find((door) => door.y <= ROWS / 2);
+  const bottomX = bottomDoor === undefined ? COLS / 2 : Math.floor(bottomDoor.x);
+  const topX = topDoor === undefined ? COLS / 2 : Math.floor(topDoor.x);
+
+  const add = (rect: Rect): void => {
+    rects.push(rect);
+    obstacles.push({ kind: 'edge', ...rect });
+  };
+
+  // Bottom and top bands, each split into a left and a right run around the door mouth.
+  for (const [side, doorX] of [
+    ['bottom', bottomX],
+    ['top', topX],
+  ] as const) {
+    const y = side === 'bottom' ? ROWS - BORDER_TILES : 0;
+    const leftEnd = doorX - DOOR_MOUTH;
+    const rightStart = doorX + DOOR_MOUTH;
+    if (leftEnd > 0) add({ x: 0, y, width: leftEnd, height: BORDER_TILES });
+    if (rightStart < COLS) add({ x: rightStart, y, width: COLS - rightStart, height: BORDER_TILES });
+  }
+  // Left and right bands run between the two horizontal runs (corners are already covered).
+  add({ x: 0, y: BORDER_TILES, width: BORDER_TILES, height: ROWS - 2 * BORDER_TILES });
+  add({ x: COLS - BORDER_TILES, y: BORDER_TILES, width: BORDER_TILES, height: ROWS - 2 * BORDER_TILES });
+
+  // Every band cell inside a solid run gets its tile; the door mouths stay open in both the
+  // collision (no rect) and the art (no tile), so nothing solid is drawn where nothing blocks.
+  const covered = (x: number, y: number): boolean =>
+    rects.some(
+      (rect) =>
+        x + 0.5 >= rect.x &&
+        x + 0.5 < rect.x + rect.width &&
+        y + 0.5 >= rect.y &&
+        y + 0.5 < rect.y + rect.height,
+    );
+
+  for (let y = 0; y < ROWS; y += 1) {
+    for (let x = 0; x < COLS; x += 1) {
+      if (!inBorderBand(x, y)) continue;
+      blocked.add(`${x},${y}`);
+      if (!covered(x, y)) continue;
+      tiles[y * COLS + x] = borderTile(chapter, x, y);
+    }
+  }
+
+  return { rects, obstacles, tiles, blocked };
+}
+
+// ---------------------------------------------------------------------------
+// Ground patches (13-piece blob autotile)
+// ---------------------------------------------------------------------------
+
+/** Share of the room the noise patches cover before normalising. */
+const PATCH_SHARE = 0.22;
+
+/**
+ * Smooth value noise over the whole room: two octaves of a seeded lattice, bilinearly
+ * interpolated, so a threshold yields organic blobs instead of square blocks.
+ */
+function noiseField(rng: Rng): number[] {
+  const octave = (cell: number, weight: number): number[] => {
+    const gw = Math.ceil(COLS / cell) + 2;
+    const gh = Math.ceil(ROWS / cell) + 2;
+    const lattice = Array.from({ length: gw * gh }, () => rng());
+    const values = new Array<number>(COLS * ROWS).fill(0);
+    for (let y = 0; y < ROWS; y += 1) {
+      for (let x = 0; x < COLS; x += 1) {
+        const gx = x / cell;
+        const gy = y / cell;
+        const x0 = Math.floor(gx);
+        const y0 = Math.floor(gy);
+        const fx = gx - x0;
+        const fy = gy - y0;
+        const sx = fx * fx * (3 - 2 * fx);
+        const sy = fy * fy * (3 - 2 * fy);
+        const at = (ix: number, iy: number): number =>
+          lattice[Math.min(gh - 1, Math.max(0, iy)) * gw + Math.min(gw - 1, Math.max(0, ix))] ?? 0;
+        const top = at(x0, y0) * (1 - sx) + at(x0 + 1, y0) * sx;
+        const bottom = at(x0, y0 + 1) * (1 - sx) + at(x0 + 1, y0 + 1) * sx;
+        values[y * COLS + x] = weight * (top * (1 - sy) + bottom * sy);
+      }
+    }
+    return values;
+  };
+
+  const coarse = octave(10, 0.7);
+  const fine = octave(4, 0.3);
+  return coarse.map((value, index) => value + (fine[index] ?? 0));
+}
+
+interface PatchPlan {
+  /** Row-major `ground` layer (0 = base floor). */
+  readonly tiles: number[];
+  /** Patch cells (path and detail placement avoid them where it matters). */
+  readonly cells: Set<string>;
+}
+
+/**
+ * The ground patches: noise → mask → `normalizePatchMask` → `pickBlobTile`. Cells over the river
+ * are dropped (a patch cannot float on water) and every cell ends up in a full 2×2 block, so the
+ * 13-piece sheet always has the piece the edge picker asks for.
+ */
+function planPatches(chapter: number, rng: Rng, water: readonly WaterArea[]): PatchPlan {
+  const terrain = GROUND_TERRAINS[chapter];
+  if (terrain === undefined) throw new Error(`chapter ${chapter} has no ground terrain`);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const noise = noiseField(rng);
+    const candidates: number[] = [];
+    for (let index = 0; index < COLS * ROWS; index += 1) {
+      const x = index % COLS;
+      const y = Math.floor(index / COLS);
+      const point = { x: x + 0.5, y: y + 0.5 };
+      if (water.length > 0 && waterGap(water, point) < 0.5) continue;
+      candidates.push(index);
+    }
+    candidates.sort((a, b) => (noise[b] ?? 0) - (noise[a] ?? 0));
+
+    const cells = new Array<boolean>(COLS * ROWS).fill(false);
+    const take = Math.min(candidates.length, Math.round(PATCH_SHARE * COLS * ROWS));
+    for (let index = 0; index < take; index += 1) {
+      const cell = candidates[index];
+      if (cell !== undefined) cells[cell] = true;
+    }
+
+    const mask: PatchMask = normalizePatchMask({ cols: COLS, rows: ROWS, cells });
+    const tileAt = new Array<number>(COLS * ROWS).fill(0);
+    const patchCells = new Set<string>();
+    let count = 0;
+    let innerCorners = 0;
+    for (let y = 0; y < ROWS; y += 1) {
+      for (let x = 0; x < COLS; x += 1) {
+        const blob = pickBlobTile(mask, x, y);
+        if (blob === 0) continue;
+        const local = terrain.tiles[blob - 1];
+        if (local === undefined) continue;
+        tileAt[y * COLS + x] = gid(chapter, 'field', local);
+        patchCells.add(`${x},${y}`);
+        count += 1;
+        if (blob === 4 || blob === 5 || blob === 9 || blob === 10) innerCorners += 1;
+      }
+    }
+
+    const share = count / (COLS * ROWS);
+    if (share >= 0.06 && share <= 0.34 && innerCorners >= 2) {
+      return { tiles: tileAt, cells: patchCells };
+    }
+  }
+
+  throw new Error(`chapter ${chapter}: no patch mask with 6–34% cover and inner corners`);
+}
+
+// ---------------------------------------------------------------------------
+// Path between the doors
+// ---------------------------------------------------------------------------
+
+interface PathPlan {
+  /** Row-major `path` layer: stepping-stone gids. */
+  readonly tiles: number[];
+  readonly cells: Set<string>;
+  readonly blocked: Set<string>;
+}
+
+/**
+ * A stepping-stone path from the entrance door (bottom) to the exit door (top): a straight run up
+ * from the entrance to a seeded row, across the room, then up to the exit. Obstacles are placed
+ * afterwards and never on a path cell, so the route always stays walkable.
+ */
+function planPath(chapter: number, rng: Rng, doors: readonly Vec2[]): PathPlan {
+  const tiles = new Array<number>(COLS * ROWS).fill(0);
+  const cells = new Set<string>();
+  const bottom = doors.find((door) => door.y > ROWS / 2);
+  const top = doors.find((door) => door.y <= ROWS / 2);
+  const startX = Math.max(2, Math.min(COLS - 3, Math.floor(bottom?.x ?? COLS / 2)));
+  const endX = Math.max(2, Math.min(COLS - 3, Math.floor(top?.x ?? COLS / 2)));
+  const midY = 12 + int(rng, 12);
+
+  const add = (x: number, y: number): void => {
+    if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return;
+    cells.add(`${x},${y}`);
+  };
+
+  for (let y = midY; y < ROWS; y += 1) add(startX, y);
+  const from = Math.min(startX, endX);
+  const to = Math.max(startX, endX);
+  for (let x = from; x <= to; x += 1) add(x, midY);
+  for (let y = 0; y <= midY; y += 1) add(endX, y);
+
+  // A short spur toward the middle of the room, so the path reads as a road, not a switchback.
+  const spurX = Math.max(3, Math.min(COLS - 4, Math.round((startX + endX) / 2)));
+  const spurDir = spurX >= startX ? 1 : -1;
+  for (let step = 1; step <= 3; step += 1) add(startX + spurDir * step, midY + 2 * step);
+
+  for (const key of cells) {
+    const [xs, ys] = key.split(',');
+    const x = Number(xs);
+    const y = Number(ys);
+    const pebble = (x + y) % 6 === 0;
+    tiles[y * COLS + x] = gid(chapter, 'floordetail', pebble ? PATH_PEBBLE : PATH_STONE);
+  }
+
+  return { tiles, cells, blocked: cells };
+}
+
+// ---------------------------------------------------------------------------
+// Obstacles + props
+// ---------------------------------------------------------------------------
+
 interface ColliderBook {
   readonly rects: Rect[];
 }
 
-function colliderFits(
-  book: ColliderBook,
-  rect: Rect,
-  playerStart: Vec2,
-  doors: readonly Vec2[],
-  water: readonly WaterArea[],
-): boolean {
-  if (!rectInsideRoom(rect)) return false;
-  const centre = rectCentre(rect);
-  // Keep every blob at least 2 tiles inside its screen: the acceptance test counts a blob by its
-  // centre, and a 2-tile gutter between screens keeps the room connected.
-  const { sx, sy } = screenOf(centre);
-  const core: Rect = {
-    x: sx * SCREEN_COLS + 2,
-    y: sy * SCREEN_ROWS + 2,
-    width: SCREEN_COLS - 4,
-    height: SCREEN_ROWS - 4,
-  };
-  if (
-    centre.x < core.x ||
-    centre.x >= core.x + core.width ||
-    centre.y < core.y ||
-    centre.y >= core.y + core.height
-  ) {
-    return false;
-  }
-  if (gapToPoint(rect, playerStart) < POINT_CLEARANCE) return false;
-  for (const door of doors) {
-    if (gapToPoint(rect, door) < POINT_CLEARANCE) return false;
-  }
-  if (water.length > 0) {
-    // A river prop (the boat) is the only thing allowed on the water; solids keep off it.
-    for (const area of water) {
-      const overlap =
-        rect.x < area.x + area.width &&
-        rect.x + rect.width > area.x &&
-        rect.y < area.y + area.height &&
-        rect.y + rect.height > area.y;
-      if (overlap) return false;
+/** True when any tile of `rect` is a path cell or a border-band cell. */
+function coversBlocked(blocked: ReadonlySet<string>, rect: Rect): boolean {
+  for (let y = Math.floor(rect.y); y < Math.ceil(rect.y + rect.height); y += 1) {
+    for (let x = Math.floor(rect.x); x < Math.ceil(rect.x + rect.width); x += 1) {
+      if (blocked.has(`${x},${y}`)) return true;
     }
   }
-  for (const other of book.rects) {
-    if (gapBetween(rect, other) < MIN_OBSTACLE_GAP) return false;
-  }
-  return true;
-}
-
-/**
- * Prop anchor whose collider lands on `target` (the collider offset inside the sprite). Tiled
- * coordinates are written in pixels, so the anchor is rounded to the 1/16-tile pixel grid; the
- * collider then sits within half a pixel of `target`.
- */
-function anchorForCollider(def: ReturnType<typeof propDef>, target: Rect): PlacedProp | null {
-  if (def === undefined) return null;
-  const collider = def.collider;
-  if (collider === null) return null;
-  const snap = (value: number): number => Math.round(value * TILE) / TILE;
-  return {
-    key: def.key,
-    x: snap(target.x - collider.x / TILE),
-    y: snap(target.y - collider.y / TILE),
-  };
+  return false;
 }
 
 /** A random collider top-left inside a screen's core, for a `width × height` collider. */
@@ -538,75 +808,262 @@ const AUTHORED_SHAPES: Readonly<Record<number, readonly { kind: Exclude<Obstacle
   ],
 };
 
+interface GeometryArgs {
+  readonly chapter: number;
+  readonly room: number;
+  readonly rng: Rng;
+  readonly playerStart: Vec2;
+  readonly doors: readonly Vec2[];
+  readonly water: readonly WaterArea[];
+  /** Path cells + border band: nothing solid goes there. */
+  readonly blocked: ReadonlySet<string>;
+  /** The border's solid rects: interior blobs keep `MIN_OBSTACLE_GAP` clear of them. */
+  readonly borderRects: readonly Rect[];
+}
+
 interface GeometryResult {
   readonly obstacles: AuthoredObstacle[];
   readonly props: PlacedProp[];
+  /** Extra `border`-layer cells (the desert cliff plateau). */
+  readonly extraTiles: readonly { readonly index: number; readonly value: number }[];
+}
+
+/** Sprite rect of a prop in tiles, from its catalogue cell. */
+function spriteRect(def: PropDef, x: number, y: number): Rect {
+  return { x, y, width: def.rect.width / TILE, height: def.rect.height / TILE };
 }
 
 /**
- * Obstacles + props per screen: 1–3 solid prop drawings, plus an authored pillar/pit/wall in
- * about half of the screens, every blob ≥ `MIN_OBSTACLE_GAP` tiles from the next. The landmark
- * prop (a house/tent) goes in the entrance screen when the room rolls one.
+ * Obstacles + props: the set pieces of the room (grove, village, cliff plateau) followed by the
+ * per-screen solids. Everything keeps its distance from the start, the doors, the water, the path
+ * and the border, and `validatePlan` proves the room still plays.
  */
-function planGeometry(
-  chapter: number,
-  room: number,
-  rng: Rng,
-  playerStart: Vec2,
-  doors: readonly Vec2[],
-  water: readonly WaterArea[],
-): GeometryResult {
+function planGeometry(args: GeometryArgs): GeometryResult {
+  const { chapter, room, rng, playerStart, doors, water, blocked, borderRects } = args;
   const theme = PROP_THEMES[chapter];
   if (theme === undefined) throw new Error(`chapter ${chapter} has no prop theme`);
+
   const book: ColliderBook = { rects: [] };
   const obstacles: AuthoredObstacle[] = [];
   const props: PlacedProp[] = [];
+  const extraTiles: { index: number; value: number }[] = [];
 
-  const placeAuthored = (sx: number, sy: number): void => {
-    const shapes = AUTHORED_SHAPES[chapter];
-    if (shapes === undefined) return;
-    for (const shape of shuffle(rng, shapes)) {
-      for (let attempt = 0; attempt < 6; attempt += 1) {
-        const rect = randomColliderInScreen(rng, sx, sy, shape.width, shape.height);
-        if (rect === null) break;
-        const candidate: AuthoredObstacle = { kind: shape.kind, ...rect };
-        if (!colliderFits(book, candidate, playerStart, doors, water)) continue;
-        book.rects.push(rect);
-        obstacles.push(candidate);
-        return;
-      }
-    }
+  const clearOfPoints = (rect: Rect, clearance: number): boolean =>
+    gapToPoint(rect, playerStart) >= clearance && doors.every((door) => gapToPoint(rect, door) >= clearance);
+
+  /**
+   * `minGap` is the field rule between interior blobs (cover, not a maze); the solid border ring
+   * is allowed to be closer (it is the room's hedge), so a prop can stand against the edge and the
+   * middle of the room stays open to dodge in.
+   */
+  const colliderFits = (collider: Rect, blockedCheck: Rect, minGap: number): boolean => {
+    if (!rectInsideRoom(blockedCheck)) return false;
+    if (!clearOfPoints(blockedCheck, POINT_CLEARANCE)) return false;
+    if (water.length > 0 && overlapsWater(water, blockedCheck)) return false;
+    if (coversBlocked(blocked, blockedCheck)) return false;
+    if (borderRects.some((other) => gapBetween(collider, other) < 1)) return false;
+    return book.rects.every((other) => gapBetween(collider, other) >= minGap);
   };
 
-  const placeProp = (sx: number, sy: number, key: string): boolean => {
+  /** Place a catalogue prop at an exact sprite anchor. */
+  const placeAt = (key: string, x: number, y: number, minGap: number): boolean => {
     const def = propDef(chapter, key);
     if (def === undefined) return false;
-    const collider = def.collider;
-    if (collider === null) return false;
-    const width = Math.ceil(collider.width / TILE);
-    const height = Math.ceil(collider.height / TILE);
+    const sprite = spriteRect(def, x, y);
+    if (sprite.x < 1 || sprite.y < 1 || sprite.x + sprite.width > COLS - 1 || sprite.y + sprite.height > ROWS - 1) {
+      return false;
+    }
+    const collider = def.collider === null ? null : propCollider({ key, x, y }, def);
+    if (!colliderFits(collider ?? sprite, sprite, minGap)) return false;
+    if (collider !== null) book.rects.push(collider);
+    props.push({ key, x, y });
+    return true;
+  };
 
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const target = randomColliderInScreen(rng, sx, sy, width, height);
-      if (target === null) return false;
-      if (!colliderFits(book, target, playerStart, doors, water)) continue;
-      const anchor = anchorForCollider(def, target);
-      if (anchor === null) continue;
-      // The whole drawing must stay in the room; only the collider is constrained per screen.
-      if (
-        anchor.x < 1 ||
-        anchor.y < 1 ||
-        anchor.x + Math.ceil(def.rect.width / TILE) > COLS - 1 ||
-        anchor.y + Math.ceil(def.rect.height / TILE) > ROWS - 1
-      ) {
-        continue;
+  const placeAuthored = (kind: Exclude<ObstacleKind, 'prop'>, rect: Rect): boolean => {
+    if (!colliderFits(rect, rect, MIN_OBSTACLE_GAP)) return false;
+    book.rects.push(rect);
+    obstacles.push({ kind, ...rect });
+    return true;
+  };
+
+  // -- Set piece: grove of overlapping trees (ch4: a palm group by the oasis) ----------------
+  const placeGrove = (): boolean => {
+    const offsets: readonly (readonly [number, number])[] = [
+      [0, 0],
+      [2, 0],
+      [1, 2],
+      [3, 2],
+    ];
+    const keys = shuffle(rng, theme.trees).slice(0, 4);
+    if (keys.length < 3) return false;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const bx = 6 + int(rng, COLS - 18);
+      const by = 6 + int(rng, ROWS - 16);
+      const placed: { key: string; x: number; y: number; rect: Rect }[] = [];
+      let ok = true;
+      for (const [index, key] of keys.entries()) {
+        const offset = offsets[index] ?? [0, 0];
+        const def = propDef(chapter, key);
+        if (def === undefined) {
+          ok = false;
+          break;
+        }
+        const x = bx + offset[0];
+        const y = by + offset[1];
+        const sprite = spriteRect(def, x, y);
+        if (sprite.x < 3 || sprite.y < 3 || sprite.x + sprite.width > COLS - 3 || sprite.y + sprite.height > ROWS - 3) {
+          ok = false;
+          break;
+        }
+        const collider = def.collider === null ? sprite : propCollider({ key, x, y }, def) ?? sprite;
+        if (!clearOfPoints(sprite, SET_PIECE_CLEARANCE) || coversBlocked(blocked, sprite)) {
+          ok = false;
+          break;
+        }
+        if (water.length > 0 && overlapsWater(water, sprite)) {
+          ok = false;
+          break;
+        }
+        if (book.rects.some((other) => gapBetween(collider, other) < 1)) {
+          ok = false;
+          break;
+        }
+        placed.push({ key, x, y, rect: collider });
       }
-      book.rects.push(target);
-      props.push(anchor);
+      if (!ok) continue;
+      for (const tree of placed) {
+        book.rects.push(tree.rect);
+        props.push({ key: tree.key, x: tree.x, y: tree.y });
+      }
       return true;
     }
     return false;
   };
+
+  // -- Set piece: a village — one house with its furniture within 3 tiles --------------------
+  const placeVillage = (): boolean => {
+    const houses = theme.landmarks.filter((key) => propDef(chapter, key)?.kind === 'house');
+    if (houses.length === 0) return false;
+    const key = pick(rng, houses);
+    const def = propDef(chapter, key);
+    if (def === undefined) return false;
+    const width = Math.ceil(def.rect.width / TILE);
+    const height = Math.ceil(def.rect.height / TILE);
+
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      // The house sits inside the room, a tile clear of the border ring.
+      const minX = BORDER_TILES + 1;
+      const minY = BORDER_TILES + 1;
+      const x = minX + int(rng, Math.max(1, COLS - 2 * minX - width));
+      const y = minY + int(rng, Math.max(1, ROWS - 2 * minY - height));
+      const house = spriteRect(def, x, y);
+      if (gapToPoint(house, playerStart) < SET_PIECE_CLEARANCE) continue;
+      const collider = def.collider === null ? house : propCollider({ key, x, y }, def) ?? house;
+      if (!colliderFits(collider, house, MIN_OBSTACLE_GAP)) continue;
+
+      // Commit the house, then try to put three pieces of furniture around its walls.
+      const propsBefore = props.length;
+      const rectsBefore = book.rects.length;
+      book.rects.push(collider);
+      props.push({ key, x, y });
+
+      let near = 0;
+      for (const furnitureKey of shuffle(rng, theme.furniture)) {
+        if (near >= 3) break;
+        const furniture = propDef(chapter, furnitureKey);
+        if (furniture === undefined) continue;
+        const fw = Math.ceil(furniture.rect.width / TILE);
+        const fh = Math.ceil(furniture.rect.height / TILE);
+        let placed = false;
+        for (let tries = 0; tries < 12 && !placed; tries += 1) {
+          const side = int(rng, 4);
+          const fx =
+            side === 0 ? x - fw - 1
+            : side === 1 ? x + width + 1
+            : x + 1 + int(rng, Math.max(1, width - fw - 1));
+          const fy =
+            side === 0 || side === 1 ? y + 1 + int(rng, Math.max(1, height - fh - 1))
+            : side === 2 ? y - fh - 1
+            : y + height + 1;
+          const anchorX = Math.max(1, Math.min(COLS - fw - 1, fx));
+          const anchorY = Math.max(1, Math.min(ROWS - fh - 1, fy));
+          const sprite = spriteRect(furniture, anchorX, anchorY);
+          if (gapBetween(house, sprite) > 3) continue;
+          const fCollider =
+            furniture.collider === null ? sprite : propCollider({ key: furnitureKey, x: anchorX, y: anchorY }, furniture) ?? sprite;
+          // Village furniture stands against the house: a 0.75-tile gap, not the 5-tile field gap.
+          if (!colliderFits(fCollider, sprite, 0.75)) continue;
+          book.rects.push(fCollider);
+          props.push({ key: furnitureKey, x: anchorX, y: anchorY });
+          near += 1;
+          placed = true;
+        }
+      }
+
+      if (near >= 3) return true;
+      // Not a village: undo everything this attempt placed and try somewhere else.
+      props.length = propsBefore;
+      book.rects.length = rectsBefore;
+    }
+    return false;
+  };
+
+  // -- Set piece: desert cliff plateau (edges are solid, the top is a raised sand shelf) ------
+  const placeCliff = (): boolean => {
+    const width = 6;
+    const height = 4;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const minX = BORDER_TILES + 1;
+      const minY = BORDER_TILES + 1;
+      const x = minX + int(rng, Math.max(1, COLS - 2 * minX - width));
+      const y = minY + int(rng, Math.max(1, ROWS - 2 * minY - height));
+      const rect: Rect = { x, y, width, height };
+      if (gapToPoint(rect, playerStart) < SET_PIECE_CLEARANCE) continue;
+      if (!colliderFits(rect, rect, MIN_OBSTACLE_GAP)) continue;
+      book.rects.push(rect);
+      obstacles.push({ kind: 'edge', ...rect });
+      for (let row = 0; row < height; row += 1) {
+        const local = row === 0 ? CLIFF_RIM : row === height - 2 ? CLIFF_LIP : row === height - 1 ? CLIFF_FACE : CLIFF_TOP;
+        for (let col = 0; col < width; col += 1) {
+          extraTiles.push({ index: (y + row) * COLS + (x + col), value: gid(4, 'relief', local) });
+        }
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // A grove in the odd rooms, a village in the even ones: every room gets one focus, and both
+  // kinds land in at least half of the pool.
+  if (room % 2 === 1) placeGrove();
+  else placeVillage();
+  // Chapter 4 adds a sand mesa in the village rooms: an elevated shelf reads as the desert's
+  // second level without walling off the fight (the oasis palms own the other half).
+  if (chapter === 4 && room % 2 === 0) placeCliff();
+
+  // A landmark only in the entrance screen (the entrance): the room keeps one focus, not a town.
+  if (room % 3 === 1 && room % 2 === 0) {
+    for (const key of shuffle(rng, theme.landmarks)) {
+      if (placePropInScreen(0, ROOM_SCREENS - 1, key)) break;
+    }
+  }
+
+  function placePropInScreen(sx: number, sy: number, key: string): boolean {
+    const def = propDef(chapter, key);
+    if (def === undefined || def.collider === null) return false;
+    const width = Math.ceil(def.collider.width / TILE);
+    const height = Math.ceil(def.collider.height / TILE);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const target = randomColliderInScreen(rng, sx, sy, width, height);
+      if (target === null) return false;
+      if (!colliderFits(target, target, MIN_OBSTACLE_GAP)) continue;
+      const anchor = anchorForCollider(def, target);
+      if (anchor === null) continue;
+      if (placeAt(key, anchor.x, anchor.y, MIN_OBSTACLE_GAP)) return true;
+    }
+    return false;
+  }
 
   const placeWalkOver = (sx: number, sy: number, key: string): void => {
     for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -614,20 +1071,15 @@ function planGeometry(
         x: sx * SCREEN_COLS + 1 + int(rng, SCREEN_COLS - 2),
         y: sy * SCREEN_ROWS + 1 + int(rng, SCREEN_ROWS - 2),
       };
-      if (gapToPoint({ x: point.x - 0.5, y: point.y - 0.5, width: 1, height: 1 }, playerStart) < 2) continue;
-      if (doors.some((door) => gapToPoint({ x: point.x - 0.5, y: point.y - 0.5, width: 1, height: 1 }, door) < 2)) continue;
+      const cell = { x: point.x - 0.5, y: point.y - 0.5, width: 1, height: 1 };
+      if (gapToPoint(cell, playerStart) < 2) continue;
+      if (doors.some((door) => gapToPoint(cell, door) < 2)) continue;
+      if (coversBlocked(blocked, cell)) continue;
       if (water.length > 0 && waterGap(water, point) < 1.5) continue;
       props.push({ key, x: point.x, y: point.y });
       return;
     }
   };
-
-  // A landmark only in the first screen (the entrance): the room gets one focus, not a village.
-  if (room % 3 === 1) {
-    for (const key of shuffle(rng, theme.landmarks)) {
-      if (placeProp(0, ROOM_SCREENS - 1, key)) break;
-    }
-  }
 
   const solids = shuffle(rng, theme.solids);
   for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
@@ -635,17 +1087,26 @@ function planGeometry(
       // Keep the screen holding the player start open: it needs a way out in every direction.
       const startScreen = screenOf(playerStart);
       const isStart = sx === startScreen.sx && sy === startScreen.sy;
-      const targeted = isStart ? 1 : 2 + int(rng, 2);
+      const targeted = isStart ? 1 : 1 + int(rng, 2);
 
-      if (!isStart && rng() < 0.45) placeAuthored(sx, sy);
+      if (!isStart && rng() < 0.45) {
+        const shapes = AUTHORED_SHAPES[chapter] ?? [];
+        for (const shape of shuffle(rng, shapes)) {
+          let done = false;
+          for (let attempt = 0; attempt < 6 && !done; attempt += 1) {
+            const rect = randomColliderInScreen(rng, sx, sy, shape.width, shape.height);
+            if (rect === null) break;
+            done = placeAuthored(shape.kind, rect);
+          }
+          if (done) break;
+        }
+      }
 
       let placed = 0;
       for (const key of shuffle(rng, solids)) {
         if (placed >= targeted) break;
-        if (placeProp(sx, sy, key)) placed += 1;
+        if (placePropInScreen(sx, sy, key)) placed += 1;
       }
-      // Every screen needs at least one obstacle (the acceptance test counts them per screen).
-      if (placed === 0) placeAuthored(sx, sy);
 
       const walkTarget = 3 + int(rng, 2);
       for (let index = 0; index < walkTarget; index += 1) {
@@ -654,7 +1115,24 @@ function planGeometry(
     }
   }
 
-  return { obstacles, props };
+  return { obstacles, props, extraTiles };
+}
+
+/**
+ * Prop anchor whose collider lands on `target` (the collider offset inside the sprite). Tiled
+ * coordinates are written in pixels, so the anchor is rounded to the 1/16-tile pixel grid; the
+ * collider then sits within half a pixel of `target`.
+ */
+function anchorForCollider(def: ReturnType<typeof propDef>, target: Rect): PlacedProp | null {
+  if (def === undefined) return null;
+  const collider = def.collider;
+  if (collider === null) return null;
+  const snap = (value: number): number => Math.round(value * TILE) / TILE;
+  return {
+    key: def.key,
+    x: snap(target.x - collider.x / TILE),
+    y: snap(target.y - collider.y / TILE),
+  };
 }
 
 /** Spawn points over the room's 4 screens around the player: 7–12 tiles away, clear of every blob. */
@@ -807,7 +1285,8 @@ export function validatePlan(plan: RoomPlan): string[] {
           centre.y < (sy + 1) * SCREEN_ROWS
         );
       }).length;
-      if (count < 1 || count > 16) problems.push(`screen ${sx},${sy}: ${count} obstacles`);
+      // A screen with no cover at all is a bare field; more than 16 blobs is a maze.
+      if (count > 16) problems.push(`screen ${sx},${sy}: ${count} obstacles`);
     }
   }
 
@@ -815,31 +1294,15 @@ export function validatePlan(plan: RoomPlan): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Decor
+// Detail scatter
 // ---------------------------------------------------------------------------
-
-/** Whole VillageAbandoned props (flat patches: every tile of a block is walkable). */
-const VILLAGE_BLOCKS: readonly (readonly (readonly number[])[])[] = [
-  [[108, 109], [128, 129]],
-  [[67], [87]],
-  [[69, 70], [0, 90]],
-];
-
-const VILLAGE_FLAT_SINGLES: readonly number[] = [68, 88, 89, 91, 105, 106, 165, 166, 225, 226];
-const DESERT_FLAT_SINGLES: readonly number[] = [189, 190, 237, 238, 239, 240];
-const BORDER_VILLAGE_PROPS: readonly number[] = [148, 149, 227, 230, 231, 232, 233, 234, 235];
-const BORDER_DESERT_PROPS: readonly number[] = [215, 235, 227, 228];
-
-const GRASS_TILES: readonly number[] = [241, 242, 243, 244, 245, 246, 247, 248, 253, 254];
-const FLOWER_TILES: readonly number[] = [265, 266, 267, 268, 269, 270, 271, 272, 277, 278, 301, 302, 337, 338];
-const PEBBLE_TILES: readonly number[] = [321, 322, 323, 324, 329, 330, 331, 332];
 
 function cellKey(x: number, y: number): string {
   return `${x},${y}`;
 }
 
-/** Cells decor must stay off: obstacles, spawns, doors, the start and the water. */
-function reservedCells(plan: RoomPlan): Set<string> {
+/** Cells decor must stay off: obstacles, spawns, doors, the start, the water and the path. */
+function reservedCells(plan: RoomPlan, pathCells: ReadonlySet<string>): Set<string> {
   const cells = new Set<string>();
   const reserve = (x: number, y: number, radius: number): void => {
     for (let dy = -radius; dy <= radius; dy += 1) {
@@ -877,100 +1340,50 @@ function reservedCells(plan: RoomPlan): Set<string> {
       }
     }
   }
+  for (const key of pathCells) cells.add(key);
   return cells;
 }
 
-/** Ground decor: grass/flower clusters (ch1/ch2) or whole village blocks + flat singles (ch3). */
-function planDecor(
+/**
+ * The detail scatter: walkable decals at `roomArt.detailDensity`, with one guaranteed in every
+ * 16×9 area so no part of the room is bare. Path cells, obstacles, spawns and the border stay
+ * clear.
+ */
+function planDetails(
   chapter: number,
   rng: Rng,
   reserved: ReadonlySet<string>,
 ): number[] {
   const data = new Array<number>(COLS * ROWS).fill(0);
   const used = new Set<string>();
+  const tiles = DETAIL_TILES[chapter] ?? DETAIL_TILES[1] ?? [32];
 
-  const set = (x: number, y: number, value: number): void => {
-    if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
-    if (reserved.has(cellKey(x, y)) || used.has(cellKey(x, y))) return;
-    data[y * COLS + x] = value;
+  const free = (x: number, y: number): boolean => {
+    const key = cellKey(x, y);
+    return !reserved.has(key) && !used.has(key) && !inBorderBand(x, y);
+  };
+  const set = (x: number, y: number): boolean => {
+    if (!free(x, y)) return false;
+    data[y * COLS + x] = gid(chapter, 'floordetail', pick(rng, tiles));
     used.add(cellKey(x, y));
+    return true;
   };
 
-  if (chapter === 1 || chapter === 2) {
-    for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
-      for (let sx = 0; sx < ROOM_SCREENS; sx += 1) {
-        for (let cluster = 0; cluster < 7; cluster += 1) {
-          const x = sx * SCREEN_COLS + 1 + int(rng, SCREEN_COLS - 2);
-          const y = sy * SCREEN_ROWS + 1 + int(rng, SCREEN_ROWS - 2);
-          const size = 1 + int(rng, 3);
-          for (let step = 0; step < size; step += 1) {
-            const tx = x + int(rng, 3) - 1;
-            const ty = y + int(rng, 3) - 1;
-            const roll = rng();
-            const list = roll < 0.6 ? GRASS_TILES : roll < 0.88 ? FLOWER_TILES : PEBBLE_TILES;
-            set(tx, ty, gid(chapter, 'nature', pick(rng, list)));
-          }
-        }
-      }
-    }
-    return data;
-  }
-
-  // Chapter 4 has no floor decor: `TilesetDesert` is a village object sheet (its sand tiles are
-  // outlined corner pieces of the wall/plaza blocks, not walkable detail), so the sand stays plain.
-  if (chapter === 4) return data;
-
-  // Chapter 3: one whole block per screen (never a torn piece), flat singles, a sunken border.
-  for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
-    for (let sx = 0; sx < ROOM_SCREENS; sx += 1) {
-      const block = pick(rng, VILLAGE_BLOCKS);
-      const width = Math.max(...block.map((row) => row.length));
-      const height = block.length;
-      let stamped = false;
-      for (let attempt = 0; attempt < 12 && !stamped; attempt += 1) {
-        const x = sx * SCREEN_COLS + 1 + int(rng, SCREEN_COLS - width - 2);
-        const y = sy * SCREEN_ROWS + 1 + int(rng, SCREEN_ROWS - height - 2);
-        const fits = block.every((row, dy) =>
-          row.every((local, dx) => {
-            if (local === 0) return true;
-            const cell = cellKey(x + dx, y + dy);
-            return !reserved.has(cell) && !used.has(cell);
-          }),
-        );
-        if (!fits) continue;
-        block.forEach((row, dy) => {
-          row.forEach((local, dx) => {
-            if (local === 0) return;
-            set(x + dx, y + dy, gid(3, 'village', local));
-          });
-        });
-        stamped = true;
-      }
-
-      for (let step = 0; step < 5; step += 1) {
-        const x = sx * SCREEN_COLS + 1 + int(rng, SCREEN_COLS - 2);
-        const y = sy * SCREEN_ROWS + 1 + int(rng, SCREEN_ROWS - 2);
-        const village = rng() < 0.6;
-        const list = village ? VILLAGE_FLAT_SINGLES : DESERT_FLAT_SINGLES;
-        set(x, y, gid(3, village ? 'village' : 'ground', pick(rng, list)));
+  // One guaranteed detail per 16×9 area: the acceptance test calls an empty area bare.
+  for (let by = 0; by < ROWS / 9; by += 1) {
+    for (let bx = 0; bx < COLS / 16; bx += 1) {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const x = bx * 16 + int(rng, 16);
+        const y = by * 9 + int(rng, 9);
+        if (set(x, y)) break;
       }
     }
   }
 
-  // Border: complete solid props on the outer row/columns (all 4 sides of the 64×36 room).
-  const border: { x: number; y: number }[] = [];
-  for (let x = 1; x < COLS - 1; x += 1) {
-    border.push({ x, y: 0 }, { x, y: ROWS - 1 });
-  }
-  for (let y = 1; y < ROWS - 1; y += 1) {
-    border.push({ x: 0, y }, { x: COLS - 1, y });
-  }
-  for (let step = 0; step < 14 && border.length > 0; step += 1) {
-    const [cell] = border.splice(int(rng, border.length), 1);
-    if (cell === undefined) break;
-    const set3 = rng() < 0.65 ? 'village' : 'ground';
-    const list = set3 === 'village' ? BORDER_VILLAGE_PROPS : BORDER_DESERT_PROPS;
-    set(cell.x, cell.y, gid(3, set3, pick(rng, list)));
+  const density = TUNING.roomArt.detailDensity;
+  const target = Math.round(density * COLS * ROWS);
+  for (let attempt = 0; attempt < target * 24 && used.size < target; attempt += 1) {
+    set(int(rng, COLS), int(rng, ROWS));
   }
 
   return data;
@@ -996,6 +1409,16 @@ function csv(data: readonly number[], width: number, height: number): string {
   const rows: string[] = [];
   for (let y = 0; y < height; y += 1) rows.push(data.slice(y * width, (y + 1) * width).join(','));
   return rows.join(',\n');
+}
+
+function layerXml(id: number, name: string, data: readonly number[]): string {
+  return [
+    ` <layer id="${id}" name="${name}" width="${COLS}" height="${ROWS}">`,
+    '  <data encoding="csv">',
+    csv(data, COLS, ROWS),
+    '  </data>',
+    ' </layer>',
+  ].join('\n');
 }
 
 /** `plan` → the exact `.tmx` the game loads (the parser is the test, see `validatePlan`). */
@@ -1052,22 +1475,17 @@ export function roomTmx(plan: RoomPlan): string {
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" ` +
       `width="${COLS}" height="${ROWS}" tilewidth="${TILE}" tileheight="${TILE}" infinite="0" ` +
-      `nextlayerid="4" nextobjectid="${id}">`,
+      `nextlayerid="7" nextobjectid="${id}">`,
     ' <properties>',
     properties,
     ' </properties>',
     tilesetXml(chapter),
-    ` <layer id="1" name="floor" width="${COLS}" height="${ROWS}">`,
-    '  <data encoding="csv">',
-    csv(plan.floor, COLS, ROWS),
-    '  </data>',
-    ' </layer>',
-    ` <layer id="3" name="decor" width="${COLS}" height="${ROWS}">`,
-    '  <data encoding="csv">',
-    csv(plan.decor, COLS, ROWS),
-    '  </data>',
-    ' </layer>',
-    ' <objectgroup id="2" name="objects">',
+    layerXml(1, 'floor', plan.floor),
+    layerXml(2, 'ground', plan.ground),
+    layerXml(3, 'path', plan.path),
+    layerXml(4, 'decor', plan.decor),
+    layerXml(5, 'border', plan.border),
+    ' <objectgroup id="6" name="objects">',
     ...objects,
     ' </objectgroup>',
     '</map>',
@@ -1099,8 +1517,25 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
         { x: 4 + int(rng, COLS - 8) + 0.5, y: 0.5 },
       ];
       const water = chapter === 2 ? planRiver(rng) : [];
-      const { obstacles, props } = planGeometry(chapter, room, rng, playerStart, doors, water);
+
+      const border = planBorder(chapter, doors);
+      const path = planPath(chapter, rng, doors);
+      const patches = planPatches(chapter, rng, water);
+
+      const blocked = new Set<string>([...border.blocked, ...path.blocked]);
+      const { obstacles, props, extraTiles } = planGeometry({
+        chapter,
+        room,
+        rng,
+        playerStart,
+        doors,
+        water,
+        blocked,
+        borderRects: border.rects,
+      });
+
       const colliders: Rect[] = [
+        ...border.rects,
         ...obstacles,
         ...props.flatMap((prop) => {
           const def = propDef(chapter, prop.key);
@@ -1109,24 +1544,27 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
         }),
       ];
       const spawns = planSpawns(chapter, room, rng, playerStart, doors, colliders, water);
-      const floor = new Array<number>(COLS * ROWS).fill(floorGid);
+
+      const borderTiles = border.tiles.slice();
+      for (const cell of extraTiles) borderTiles[cell.index] = cell.value;
+
       const partial: RoomPlan = {
         chapter,
         room,
         playerStart,
         doors,
-        obstacles,
+        obstacles: [...border.obstacles, ...obstacles],
         props,
         water,
-        floor,
+        floor: new Array<number>(COLS * ROWS).fill(floorGid),
+        ground: patches.tiles,
+        path: path.tiles,
+        border: borderTiles,
         decor: [],
         spawns,
       };
-      const decor = planDecor(
-        chapter,
-        mulberry32((chapter * 31 + room * 17 + attempt) >>> 0),
-        reservedCells(partial),
-      );
+
+      const decor = planDetails(chapter, mulberry32((chapter * 31 + room * 17 + attempt) >>> 0), reservedCells(partial, path.cells));
       const plan: RoomPlan = { ...partial, decor };
 
       const problems = validatePlan(plan);
