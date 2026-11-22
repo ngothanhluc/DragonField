@@ -88,6 +88,8 @@ export interface AssetSpec {
   readonly slot?: AttachSlot;
   /** `attachment`: direction → grip point in the output frame. Defaults to the frame centre. */
   readonly grip?: PointMap;
+  /** `attachment`: colour of the grip marker Gemini paints on the item (ticket #22). */
+  readonly gripMarker?: Rgb;
   /** `attachment`: directions where the item is drawn behind the body. */
   readonly behind?: readonly string[];
   /** `character`: attach points for a weapon/prop, in output-frame pixels. */
@@ -810,7 +812,7 @@ export function mirrorColumn(image: PngImage, frameWidth: number, from: number, 
 }
 
 export interface SheetIssue {
-  readonly kind: 'edge' | 'drift' | 'empty';
+  readonly kind: 'edge' | 'drift' | 'empty' | 'resolution';
   readonly column: number;
   readonly row: number;
   readonly detail: string;
@@ -1369,4 +1371,36 @@ export function frameBob(image: PngImage, columns: number, rows: number, frameWi
     result.push(bobs);
   }
   return result;
+}
+
+// Ticket #22 stubs — to be implemented.
+
+/** Size in source pixels of the pixel blocks the image was drawn with. */
+export function nativeBlockSize(_image: PngImage): number {
+  return 0;
+}
+
+/** One `resolution` issue per direction column whose sprite has far more native blocks than its fitted height. */
+export function resolutionIssues(
+  _image: PngImage,
+  _columns: number,
+  _rows: number,
+  _fitBox: readonly [number, number],
+): SheetIssue[] {
+  return [];
+}
+
+/** Remove marker-coloured pixels; per cell (row-major), the marker centre in source pixels or null. */
+export function removeMarker(
+  image: PngImage,
+  _marker: Rgb,
+  _columns: number,
+  _rows: number,
+): { readonly image: PngImage; readonly centres: Array<readonly [number, number] | null> } {
+  return { image, centres: [] };
+}
+
+/** Map a source point to the frame-local output pixel `fitCells` puts it in. */
+export function fitPoint(_image: PngImage, _options: FitCellsOptions, _point: readonly [number, number]): Point {
+  return [-1, -1];
 }
