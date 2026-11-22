@@ -41,6 +41,7 @@ import type { AnimationManifest } from '../core/art/manifest';
 import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
+import { DOORS_TUNING } from '../core/enemies/tuning';
 import { nextWaveIndex } from '../core/enemies/waves';
 import { chapterFromLevels } from '../core/level/chapter';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
@@ -58,6 +59,13 @@ import { SeededRng } from '../core/rng';
 import { RunState } from '../core/run/run-state';
 import { drawRunRooms } from '../core/run/room-draw';
 import { RunRewards } from '../core/run/run-rewards';
+import {
+  COMBAT_REWARDS,
+  DOOR_REWARDS,
+  clearRewardFor,
+  doorOffers,
+  type DoorReward,
+} from '../core/run/doors';
 import { chapterGate } from '../core/save/chapter-gate';
 import { withBest } from '../core/save/save-data';
 import type { SaveData } from '../core/save/save-data';
@@ -73,8 +81,11 @@ import { CombatLoop, PLAYER_RADIUS_TILES, STRESS_ENEMY_BULLETS } from './combat-
 import { CoverView } from './cover-view';
 import type { CoverBody } from './cover-view';
 import { DepthView } from './depth-view';
+import { DoorView } from './door-view';
+import type { DoorSpot } from './door-view';
 import {
   isDebugEnabled,
+  type DebugDoorSnapshot,
   type DebugStatus,
   type DebugUiText,
   type DebugVfxSnapshot,
@@ -159,6 +170,9 @@ const DESIGN_HEIGHT = ROOM_ROWS * TILE_SIZE_PX;
 /** How long "ROOM CLEAR" stays up before the next room, in seconds. */
 const ROOM_CLEAR_BANNER_SECONDS = 1;
 
+/** How close (tiles) the player must get to a door for walking into it to count. */
+const DOOR_ENTER_TILES = 1;
+
 /**
  * Monster by role for each chapter (GDD §4). Keys must match the manifest — no
  * hyphen (`bluebat`, not `blue-bat`).
@@ -236,6 +250,18 @@ export class Bootstrap extends Component {
    */
   private runRooms: LevelData[] = [];
   private run: RunState | null = null;
+  /** Doors drawn in the cleared room (#39); `null` outside the door phase. */
+  private doorView: DoorView | null = null;
+  /** Rewards currently offered by the doors, index-matched to `doorView.doors`. */
+  private doorOfferList: readonly DoorReward[] = [];
+  /** True while the room is cleared and the player walks to a door instead of fighting. */
+  private doorPhase = false;
+  /** Reward carried by the door taken after the previous room; decides this room's clear reward. */
+  private roomReward: DoorReward | null = null;
+  /** This room's clear reward, decided on clear and consumed after the banner. */
+  private clearReward: DoorReward | null = null;
+  /** Clock for the door phase: `CombatLoop` stops advancing once the room is cleared. */
+  private doorClockMs = 0;
   private save: SaveData | null = null;
   private saveRepo: SaveRepository | null = null;
 
@@ -359,6 +385,13 @@ export class Bootstrap extends Component {
       return;
     }
     if (this.status !== 'playing') return;
+
+    // The room is cleared and the doors are open: the player walks to one. `CombatLoop` would
+    // report `cleared` forever here, so this phase steps the player alone.
+    if (this.doorPhase) {
+      this.updateDoorPhase(rawDeltaMs);
+      return;
+    }
 
     const player = this.player;
     const combat = this.combat;
@@ -539,6 +572,13 @@ export class Bootstrap extends Component {
     // Run baseline = base stats + purchased meta (hearts/damage/fire rate).
     this.skills.reset(seed, metaBaseline(DEFAULT_COMBAT, save));
     this.rewards = new RunRewards();
+    // A new run starts with no door reward and no doors on screen (#39).
+    this.roomReward = null;
+    this.clearReward = null;
+    this.doorPhase = false;
+    this.doorOfferList = [];
+    this.doorView?.destroy();
+    this.doorView = null;
     // The combat RNG stream is separate from skill rolls: crit/boss patterns do not
     // change with the card the player picks.
     this.combatRng = SeededRng.fromSeed((seed ^ 0x85ebca6b) >>> 0);
@@ -1159,6 +1199,13 @@ export class Bootstrap extends Component {
     this.hud?.setSkills(this.skills.entries);
     console.log(`[YokaiField] Room ${run.roomLabel} clear (+${roomGold} gold).`);
 
+    // Clear reward (#39): room 1 is always a skill pick; later rooms take the door's reward.
+    // A `gold` reward pays the bonus now (coin fly + sfx) and skips the pick entirely.
+    const finalRoom = run.room >= run.roomsTotal;
+    this.clearReward = finalRoom ? null : clearRewardFor(run.room, this.roomReward);
+    this.roomReward = null;
+    if (this.clearReward === 'gold') this.payDoorGold();
+
     // Stop the sim (update() returns when status is not 'playing') and hold the text for ~1 s so
     // the player can read "room clear" before the screen changes. Timing uses Cocos'
     // scheduler, not setTimeout — the callback is dropped automatically when the scene reloads.
@@ -1183,6 +1230,11 @@ export class Bootstrap extends Component {
         return;
       }
 
+      if (this.clearReward === 'gold') {
+        this.openDoors();
+        return;
+      }
+
       this.openSkillPick();
     }, ROOM_CLEAR_BANNER_SECONDS);
   }
@@ -1192,8 +1244,8 @@ export class Bootstrap extends Component {
     const choices = this.skills.roll();
 
     if (choices.length === 0) {
-      console.log('[YokaiField] Skill pool exhausted — no cards, moving to the next room.');
-      this.advanceRoom();
+      console.log('[YokaiField] Skill pool exhausted — no cards, opening the doors.');
+      this.openDoors();
       return;
     }
 
@@ -1229,7 +1281,8 @@ export class Bootstrap extends Component {
         `${result.healNow > 0 ? `, healed ${result.healNow} hearts` : ''}.`,
     );
 
-    this.advanceRoom();
+    // The reward is taken; now the door choice decides the next room.
+    this.openDoors();
     return true;
   }
 
@@ -1246,13 +1299,141 @@ export class Bootstrap extends Component {
     this.hud?.setHearts(player?.hearts ?? 0);
   }
 
-  /** Move to the next room after a skill was picked (or the pool was empty). */
+  /** Pay the `gold` door's bonus instead of a skill pick (#39): coin fly + gold SFX. */
+  private payDoorGold(): void {
+    const bonus = Math.max(0, Math.round(DOORS_TUNING.goldBonus));
+    if (!(bonus > 0)) return;
+
+    this.rewards.awardBonus(bonus);
+    const level = this.currentLevel;
+    this.flyGold(
+      bonus,
+      this.player?.position ?? {
+        x: level?.size.cols ?? ROOM_COLS / 2,
+        y: level?.size.rows ?? ROOM_ROWS / 2,
+      },
+    );
+    playSfx('gold');
+    console.log(`[YokaiField] Gold door: +${bonus} gold instead of a skill pick.`);
+  }
+
+  /** Normal rooms in this run: the door count that ends with the boss door. */
+  private drawnNormalRooms(): number {
+    return this.runRooms.filter((room) => !room.isBossRoom).length;
+  }
+
+  /** Special doors stay off until #40 ships the rooms behind them. */
+  private enabledDoorRewards(): readonly DoorReward[] {
+    return DOORS_TUNING.specialRoomsEnabled ? DOOR_REWARDS : COMBAT_REWARDS;
+  }
+
+  /**
+   * Open the doors of the room just cleared (#39). The reward taken here decides the **next**
+   * room's clear reward; walking into a door advances the run (no extra modal).
+   */
+  private openDoors(): void {
+    const run = this.run;
+    const level = this.currentLevel;
+    const parent = this.overlayLayer;
+    if (run === null || level === null || parent === null) return;
+
+    const offers = doorOffers(
+      this.runSeed,
+      run.room,
+      this.drawnNormalRooms(),
+      this.enabledDoorRewards(),
+    );
+    const spots: DoorSpot[] = offers.map((reward, index) => ({
+      reward,
+      at: this.doorPosition(level, index),
+    }));
+
+    this.doorView?.destroy();
+    this.doorView = new DoorView(parent, spots);
+    this.doorOfferList = offers;
+    this.doorClockMs = this.combat?.clockMs ?? 0;
+    // The fight is over: drop leftover bullets (the enemy is gone, but a shot may be mid-flight)
+    // so nothing frozen hangs on screen while the player walks to a door.
+    this.combat?.clear();
+    this.bulletView?.sync();
+    this.doorPhase = true;
+    this.status = 'playing';
+    this.screens.setScreen('playing');
+    this.roomClearBanner?.destroy();
+    this.roomClearBanner = null;
+    console.log(
+      `[YokaiField] Doors after room ${run.roomLabel}: ${offers.join(', ')}.`,
+    );
+  }
+
+  /**
+   * Where door `index` stands, in tile space. `#38` draws 2 door points per room; the fallbacks
+   * keep a hand-built/degenerate room playable instead of dropping the choice.
+   */
+  private doorPosition(level: LevelData, index: number): Vec2 {
+    const door = level.doors[index];
+    if (door !== undefined) return { x: door.at.x, y: door.at.y };
+
+    const first = level.doors[0];
+    const base = first?.at ?? { x: level.size.cols / 2, y: level.size.rows - 1 };
+    if (index === 0) return { x: base.x, y: base.y };
+
+    const inset = 2.5 * index;
+    return {
+      x: Math.min(level.size.cols - 1, Math.max(1, base.x + inset)),
+      y: Math.min(level.size.rows - 1, Math.max(1, base.y - inset)),
+    };
+  }
+
+  /** Door phase: the player walks to a door; enemies are already gone and the sim is idle. */
+  private updateDoorPhase(deltaMs: number): void {
+    const player = this.player;
+    const level = this.currentLevel;
+    const view = this.doorView;
+    if (player === null || level === null || view === null) return;
+
+    this.doorClockMs += deltaMs;
+    player.step(this.doorClockMs, deltaMs, [], level);
+    this.fx?.update(deltaMs);
+    this.updateDepthAndCover(deltaMs);
+
+    const doors = view.doors;
+    for (let index = 0; index < doors.length; index += 1) {
+      const door = doors[index];
+      if (door === undefined) continue;
+      const gap = Math.hypot(player.position.x - door.x, player.position.y - door.y);
+      if (gap > DOOR_ENTER_TILES) continue;
+      this.takeDoor(index);
+      return;
+    }
+  }
+
+  /** Walk through door `index`: the other door closes and the run advances to the next room. */
+  private takeDoor(index: number): boolean {
+    if (!this.doorPhase) return false;
+    const chosen = this.doorOfferList[index];
+    if (chosen === undefined) return false;
+
+    this.doorPhase = false;
+    this.doorView?.destroy();
+    this.doorView = null;
+    this.doorOfferList = [];
+    // `boss` carries no clear reward; the next room is the boss arena.
+    this.roomReward = chosen === 'boss' ? null : chosen;
+    playSfx('ui-confirm');
+    console.log(`[YokaiField] Took the ${chosen} door.`);
+    this.advanceRoom();
+    return true;
+  }
+
+  /** Move to the next room through the chosen door. */
   private advanceRoom(): void {
     const run = this.run;
     if (run === null) return;
 
     this.status = 'playing';
     this.screens.setScreen('playing');
+    this.doorPhase = false;
     run.advanceToNextRoom();
     this.enterRoom(run.room);
   }
@@ -1372,6 +1553,12 @@ export class Bootstrap extends Component {
     this.skills.destroy();
     this.roomClearBanner?.destroy();
     this.roomClearBanner = null;
+    this.doorView?.destroy();
+    this.doorView = null;
+    this.doorOfferList = [];
+    this.doorPhase = false;
+    this.roomReward = null;
+    this.clearReward = null;
     this.bossPhases.destroy();
 
     this.combat?.destroy();
@@ -1495,7 +1682,29 @@ export class Bootstrap extends Component {
       vfx: () => this.debugVfx(),
       atmosphere: () => this.atmosphereSnapshot,
       menuBackdrop: () => this.menuBackdrop?.snapshot() ?? null,
+      doors: () => this.debugDoors(),
+      takeDoor: (index) => this.debugTakeDoor(index),
     });
+  }
+
+  /** Debug `doors()`: the live offer, the door positions and the reward this room will pay. */
+  private debugDoors(): DebugDoorSnapshot {
+    return {
+      active: this.doorPhase,
+      offers: this.doorOfferList.slice(),
+      doors: this.doorView?.doors ?? [],
+      roomReward: this.roomReward,
+    };
+  }
+
+  /** Debug `takeDoor(i)`: teleport into door `i`, then take it (scriptable browser proof). */
+  private debugTakeDoor(index: number): boolean {
+    if (!this.doorPhase) return false;
+    const door = this.doorView?.doors[index];
+    if (door === undefined) return false;
+
+    this.player?.teleport({ x: door.x, y: door.y });
+    return this.takeDoor(index);
   }
 
 

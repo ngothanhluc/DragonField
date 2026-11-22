@@ -6,6 +6,7 @@
  * do not keep growing the run-flow file.
  */
 import type { DerivedStats } from '../core/skills/derived-stats';
+import type { DoorReward } from '../core/run/doors';
 import { keyLog } from './keyboard-move';
 
 export type DebugStatus =
@@ -119,6 +120,22 @@ export interface DebugMenuBackdropSnapshot {
   readonly props: number;
 }
 
+/** Doors of a cleared room (#39), read from the live adapter so the browser proof is scriptable. */
+export interface DebugDoorSnapshot {
+  /** True while the player walks to a door (the room is cleared). */
+  readonly active: boolean;
+  /** Rewards offered by the door, index-matched to `doors`. */
+  readonly offers: readonly DoorReward[];
+  /** Door positions in tile space (y down), same unit as the player position. */
+  readonly doors: readonly {
+    readonly reward: DoorReward;
+    readonly x: number;
+    readonly y: number;
+  }[];
+  /** Reward the current room will pay (from the door taken before it); `null` in room 1. */
+  readonly roomReward: DoorReward | null;
+}
+
 /** Data bootstrap supplies to the API; every method is a live closure. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
@@ -172,6 +189,10 @@ export interface DebugProvider {
   readonly menuBackdrop: () => DebugMenuBackdropSnapshot | null;
   /** Total nodes in the current scene (leak check for the menu backdrop). */
   readonly nodeCount: () => number;
+  /** Doors of the cleared room (#39): active offer, rewards and positions. */
+  readonly doors: () => DebugDoorSnapshot;
+  /** Debug: walk into door `index`; `false` outside the door phase or with a bad index. */
+  readonly takeDoor: (index: number) => boolean;
 }
 
 export type YokaiDebugApi = Omit<
@@ -224,6 +245,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
     atmosphere: { value: provider.atmosphere, enumerable: true },
     menuBackdrop: { value: provider.menuBackdrop, enumerable: true },
     nodeCount: { value: provider.nodeCount, enumerable: true },
+    doors: { value: provider.doors, enumerable: true },
+    takeDoor: { value: provider.takeDoor, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -233,7 +256,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, loadRoom, ' +
       'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
-      'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, keyLog).',
+      'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, keyLog).',
   );
   return true;
 }
