@@ -62,6 +62,12 @@ export interface FitCellsOptions {
    * one block instead of straddling two and losing both. Off by default.
    */
   readonly align?: boolean;
+  /**
+   * Give one output pixel back to each small blob (an eye) the dominant-colour vote erased.
+   * Off by default; staging turns it on with `align`, since two details closer together than
+   * one output pixel cannot all be aligned. See `keepSmallBlobs`.
+   */
+  readonly keepDetails?: boolean;
 }
 
 /** A point in output-frame pixels. */
@@ -634,6 +640,155 @@ export function resamplePixelArt(
     }
   }
   return { width, height, data };
+}
+
+/** Blob areas `keepDetails` restores, in output px²: a detail (an eye), not a speck or a limb. */
+const KEEP_DETAILS_MIN_AREA = 0.4;
+const KEEP_DETAILS_MAX_AREA = 3;
+/** Share of a blob's surroundings the target pixel's colour must reach before it is repainted. */
+const KEEP_DETAILS_SURROUND_SHARE = 0.25;
+/**
+ * How deep into a blob's surroundings to sample, in output-block widths. One output pixel is
+ * `1/scale` source px, so this lands about two pixels out — past the detail's own antialiased
+ * edge, inside the colour that surrounds it.
+ */
+const KEEP_DETAILS_RING = 0.15;
+/** The four orthogonal steps component labelling and border sampling walk. */
+const ORTHOGONAL_STEPS: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
+/**
+ * Give one output pixel back to each small blob (an eye) the dominant-colour vote erased.
+ *
+ * `source` is the window `output` was resampled from, so one source pixel covers
+ * `output.width / source.width` output pixels. A 4-connected opaque blob narrower than one
+ * output pixel loses every block it straddles: two eyes 2.5 output px apart cannot both sit on
+ * the grid, so aligning the window (#24) saves at most one of them. After the vote, a blob is
+ * restored only when all of this holds:
+ * - its area is 0.4–3 output px² (a detail, not a speck or a limb);
+ * - no output pixel under its bbox already shows its colour;
+ * - the output pixel at its centroid is opaque and not already its colour, and that pixel's
+ *   colour makes up at least a quarter of the blob's surroundings — sampled `ring` source px
+ *   inwards from every border step, transparent included. A blob whose centroid lands on a
+ *   colour it is not ringed by is a coincidence of the block grid, not a lost detail.
+ * Decisions read the vote's output, never pixels another blob painted, so each blob is
+ * judged alone. Without the option `fitCells` keeps its bytes exactly.
+ */
+export function keepSmallBlobs(source: PngImage, output: PngImage): PngImage {
+  const { width: sourceWidth, height: sourceHeight } = source;
+  const scaleX = output.width / sourceWidth;
+  const scaleY = output.height / sourceHeight;
+  const ring = Math.max(2, Math.round(KEEP_DETAILS_RING / scaleX));
+  const data = Buffer.from(output.data);
+  const seen = new Uint8Array(sourceWidth * sourceHeight);
+
+  const outputColour = (x: number, y: number): number => {
+    const from = (y * output.width + x) * 4;
+    if (output.data[from + 3]! < 128) return -1;
+    return (output.data[from]! << 16) | (output.data[from + 1]! << 8) | output.data[from + 2]!;
+  };
+
+  for (let start = 0; start < seen.length; start += 1) {
+    if (seen[start] === 1) continue;
+    const colour = packedPixel(source, start % sourceWidth, Math.floor(start / sourceWidth));
+    seen[start] = 1;
+    if (colour < 0) continue;
+
+    // 4-connected blob of one opaque colour, plus the colours it borders.
+    const pixels: number[] = [];
+    const surroundings = new Map<number, number>();
+    let borderSteps = 0;
+    const stack = [start];
+    while (stack.length > 0) {
+      const pixel = stack.pop()!;
+      pixels.push(pixel);
+      const x = pixel % sourceWidth;
+      const y = Math.floor(pixel / sourceWidth);
+      for (const [dx, dy] of ORTHOGONAL_STEPS) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= sourceWidth || ny >= sourceHeight) {
+          borderSteps += 1;
+          surroundings.set(-1, (surroundings.get(-1) ?? 0) + 1);
+          continue;
+        }
+        const next = ny * sourceWidth + nx;
+        const neighbour = packedPixel(source, nx, ny);
+        if (neighbour === colour) {
+          if (seen[next] === 0) {
+            seen[next] = 1;
+            stack.push(next);
+          }
+          continue;
+        }
+        const sample = packedPixel(source, clamp(x + dx * ring, 0, sourceWidth - 1), clamp(y + dy * ring, 0, sourceHeight - 1));
+        const surrounding = sample === colour ? neighbour : sample;
+        borderSteps += 1;
+        surroundings.set(surrounding, (surroundings.get(surrounding) ?? 0) + 1);
+      }
+    }
+
+    const area = pixels.length * scaleX * scaleY;
+    if (area < KEEP_DETAILS_MIN_AREA || area > KEEP_DETAILS_MAX_AREA) continue;
+    let dominant = -1;
+    let dominantCount = 0;
+    for (const [surrounding, count] of surroundings) {
+      if (count > dominantCount) {
+        dominant = surrounding;
+        dominantCount = count;
+      }
+    }
+    // Most of the blob borders the keyed backdrop: it is not enclosed by a detail.
+    if (dominant < 0) continue;
+
+    let sumX = 0;
+    let sumY = 0;
+    let x0 = sourceWidth;
+    let y0 = sourceHeight;
+    let x1 = -1;
+    let y1 = -1;
+    for (const pixel of pixels) {
+      const x = pixel % sourceWidth;
+      const y = Math.floor(pixel / sourceWidth);
+      sumX += x + 0.5;
+      sumY += y + 0.5;
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+
+    // Already in the output (the vote kept it in a block of its own): nothing to give back.
+    let present = false;
+    const bx1 = Math.min(output.width - 1, Math.floor((x1 + 1) * scaleX));
+    const by1 = Math.min(output.height - 1, Math.floor((y1 + 1) * scaleY));
+    for (let oy = Math.floor(y0 * scaleY); oy <= by1 && !present; oy += 1) {
+      for (let ox = Math.floor(x0 * scaleX); ox <= bx1; ox += 1) {
+        if (outputColour(ox, oy) === colour) {
+          present = true;
+          break;
+        }
+      }
+    }
+    if (present) continue;
+
+    const tx = clamp(Math.floor((sumX / pixels.length) * scaleX), 0, output.width - 1);
+    const ty = clamp(Math.floor((sumY / pixels.length) * scaleY), 0, output.height - 1);
+    const target = outputColour(tx, ty);
+    if (target === colour || target < 0) continue;
+    if ((surroundings.get(target) ?? 0) < KEEP_DETAILS_SURROUND_SHARE * borderSteps) continue;
+
+    const to = (ty * output.width + tx) * 4;
+    data[to] = (colour >> 16) & 0xff;
+    data[to + 1] = (colour >> 8) & 0xff;
+    data[to + 2] = colour & 0xff;
+    data[to + 3] = 255;
+  }
+  return { width: output.width, height: output.height, data };
 }
 
 interface Box {
@@ -1442,14 +1597,14 @@ export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
     const plan = plans.get(groupOf(row, column));
     if (plan === undefined || cell.local === null) return;
     const { region, scale, fitWidth, fitHeight, offset } = plan;
-    let piece: PngImage;
+    let windowed: PngImage;
     if (align === true) {
       // The window starts `offset` before the region and is a whole number of blocks wide, so
       // every output block is exactly one source block and the feature that straddled two
       // blocks now sits inside one.
       const windowWidth = Math.ceil(fitWidth / scale);
       const windowHeight = Math.ceil(fitHeight / scale);
-      const windowed = cropWindow(
+      windowed = cropWindow(
         image,
         cell.box.x0 + region.x0 - offset[0],
         cell.box.y0 + region.y0 - offset[1],
@@ -1457,7 +1612,6 @@ export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
         windowHeight,
         cell.box,
       );
-      piece = resamplePixelArt(windowed, fitWidth, fitHeight, weights);
     } else {
       const window: Box = {
         x0: cell.box.x0 + region.x0,
@@ -1465,8 +1619,10 @@ export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
         x1: cell.box.x0 + region.x1,
         y1: cell.box.y0 + region.y1,
       };
-      piece = resamplePixelArt(crop(image, window), fitWidth, fitHeight, weights);
+      windowed = crop(image, window);
     }
+    const voted = resamplePixelArt(windowed, fitWidth, fitHeight, weights);
+    const piece = options.keepDetails === true ? keepSmallBlobs(windowed, voted) : voted;
     const [pieceLeft, pieceTop] = piecePlacement(plan, cell.local, options);
     const left = column * frameWidth + pieceLeft;
     const top = row * frameHeight + pieceTop;

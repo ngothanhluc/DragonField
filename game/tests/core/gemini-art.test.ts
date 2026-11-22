@@ -27,6 +27,7 @@ import {
   nativeBlockSize,
   removeMarker,
   type AssetSpec,
+  type FitCellsOptions,
   type Rgb,
 } from '../../scripts/lib/gemini-art';
 import type { PngImage } from '../../scripts/lib/png';
@@ -603,6 +604,67 @@ describe('#24 align', () => {
     const [px, py] = fitPoint(sheet, OPTIONS, [17.5, 27.5]);
     expect([px, py]).toEqual([7, 8]);
     expect(out.data[(py * out.width + px) * 4 + 3]).toBe(255);
+  });
+});
+
+describe('#27 keepDetails', () => {
+  const GREEN: Pixel = [40, 140, 60, 255];
+  const RED: Pixel = [200, 30, 40, 255];
+  const SOLID_8: FitCellsOptions = { columns: 1, rows: 1, frameWidth: 8, frameHeight: 8, anchor: 'center', share: 'cell' };
+
+  /** Fill a rectangle of a `width × height` sheet with one colour. */
+  function sheet(width: number, height: number, base: Pixel): PngImage {
+    return image(new Array<Pixel>(width * height).fill(base), width, height);
+  }
+
+  function rect(imageIn: PngImage, x0: number, y0: number, w: number, h: number, pixel: Pixel): void {
+    for (let y = y0; y < y0 + h; y += 1) for (let x = x0; x < x0 + w; x += 1) imageIn.data.set(pixel, (y * imageIn.width + x) * 4);
+  }
+
+  function pixelsOf(out: PngImage, colour: Pixel): Array<[number, number]> {
+    const found: Array<[number, number]> = [];
+    for (let y = 0; y < out.height; y += 1) {
+      for (let x = 0; x < out.width; x += 1) {
+        const i = (y * out.width + x) * 4;
+        if (out.data[i] === colour[0] && out.data[i + 1] === colour[1] && out.data[i + 2] === colour[2]) found.push([x, y]);
+      }
+    }
+    return found;
+  }
+
+  it('puts one pixel back where a straddling detail was, at its centroid', () => {
+    // 2 source px per output px: a 2×2 detail straddles all four blocks it touches, so each
+    // block is 1/4 detail and the background wins every one of them.
+    const source = sheet(16, 16, GREEN);
+    rect(source, 7, 7, 2, 2, RED);
+
+    expect(pixelsOf(fitCells(source, SOLID_8), RED)).toEqual([]);
+    expect(pixelsOf(fitCells(source, { ...SOLID_8, keepDetails: true }), RED)).toEqual([[4, 4]]);
+  });
+
+  it('leaves a speck below the bound and a large erased blob above it alone', () => {
+    const source = sheet(32, 32, GREEN);
+    rect(source, 10, 10, 1, 1, RED); // 1/16 output px²
+    rect(source, 3, 10, 26, 2, RED); // 3.25 output px², erased by the vote
+
+    expect(Buffer.compare(fitCells(source, { ...SOLID_8, keepDetails: true }).data, fitCells(source, SOLID_8).data)).toBe(0);
+  });
+
+  it('leaves a small blob on the keyed backdrop alone', () => {
+    // A 3×3 island floating below the body, still inside the shared crop window.
+    const source = sheet(32, 32, CLEAR);
+    rect(source, 0, 0, 32, 28, GREEN);
+    rect(source, 2, 29, 3, 3, RED);
+
+    expect(Buffer.compare(fitCells(source, { ...SOLID_8, keepDetails: true }).data, fitCells(source, SOLID_8).data)).toBe(0);
+  });
+
+  it('changes nothing when the detail already shows', () => {
+    const source = sheet(32, 32, GREEN);
+    rect(source, 8, 8, 4, 4, RED); // exactly one output pixel: the vote keeps it
+
+    expect(pixelsOf(fitCells(source, { ...SOLID_8, keepDetails: true }), RED)).toEqual([[2, 2]]);
+    expect(Buffer.compare(fitCells(source, { ...SOLID_8, keepDetails: true }).data, fitCells(source, SOLID_8).data)).toBe(0);
   });
 });
 
