@@ -38,6 +38,7 @@ import {
 } from '../core/level/obstacle-visuals';
 import { propDef, propSheets } from '../core/level/props';
 import type { Vec2 } from '../core/math/vec2';
+import { propCoverArea, propOverlayArea, type TileArea } from '../core/view/cover';
 import { loadTexture } from './assets/texture-cache';
 
 // Kept re-exported for the UI modules that slice their own frames with `TileRect`
@@ -176,6 +177,7 @@ export function buildRoom(
   parent: Node,
   level: LevelData,
   tmxAsset: TiledMapAsset,
+  layers?: RoomLayers,
 ): Node {
   // Every actor/bullet/FX adapter flips tile → world with this; set it before any node is placed.
   roomRows = level.size.rows;
@@ -191,10 +193,12 @@ export function buildRoom(
 
   // The props container exists before any texture loads, so its depth is fixed: above the tile
   // map (and the water, which inserts itself at index 1 later), below obstacles and actors.
+  // With `layers` (the run), prop bases are parented to the actors layer instead and this
+  // container stays empty — see `RoomLayers`.
   const props = new CocosNode('props');
   props.parent = root;
 
-  void buildProps(props, level).catch((error: unknown) => {
+  void buildProps(props, level, layers).catch((error: unknown) => {
     reportLoadFailure('props', `chapter ${level.chapter}`, error);
   });
   void buildObstacles(root, level).catch((error: unknown) => {
@@ -202,6 +206,37 @@ export function buildRoom(
   });
 
   return root;
+}
+
+/**
+ * Where the run's prop sprites go (#36). Prop **bases** must be siblings of the actors so the
+ * y-sort can interleave them; canopies/roofs and grass tips go to the `overlays` layer, above
+ * every actor. Omit this (menu backdrop) and a room keeps the #35 layout: whole props in one
+ * container under the room root, no overlay split.
+ */
+export interface RoomLayers {
+  /** Actors layer — prop bases are added here so `DepthView` can sort them with actors. */
+  readonly props: Node;
+  /** Overlays layer — canopies, roofs and the grass tips drawn over an actor. */
+  readonly overlays: Node;
+  /** Receives the built props once their sheets are loaded (empty list when there are none). */
+  readonly onProps?: (views: readonly PropView[]) => void;
+}
+
+/** One placed prop as the run draws it: a base sprite, its overlay, and its grass tips. */
+export interface PropView {
+  /** Base drawing (below the overlay), parented to the actors layer. */
+  readonly base: Node;
+  /** Bottom edge of the base in room tiles (y down) — the y-sort key. */
+  readonly footY: number;
+  /** Canopy/roof sprite on the overlays layer; `null` when the prop has no overlay. */
+  readonly overlay: Node | null;
+  /** Overlay area in tiles (what fades while a body is under it). */
+  readonly overlayArea: TileArea | null;
+  /** Walk-in area in tiles (what fades an actor standing in it). */
+  readonly coverArea: TileArea | null;
+  /** Copy of the grass drawing shown over the actor while it stands inside. */
+  readonly tips: Node | null;
 }
 
 /** One screen: the single `tile-map` node the game has always built. */
@@ -328,8 +363,13 @@ async function buildObstacles(root: Node, level: LevelData): Promise<void> {
  * Props (#35): one sprite per catalogue entry, sliced **whole** from its sheet (a 32×32 tree,
  * a 64×48 house front) — never re-tiled. Nearest filtering comes from the texture cache and the
  * scale is the actor rule (1 texture px = 1/16 unit), so a prop matches the tiles it stands on.
+ *
+ * #36 splits a prop that has an `overlay` (canopy, roof) into two sprites: the base below the
+ * overlay (y-sorted with actors) and the overlay itself (on the overlays layer, faded while
+ * someone is under it). Grass (`cover: true`) also gets a copy of the drawing on the overlays
+ * layer — hidden until an actor stands in it, then drawn over the actor's legs.
  */
-async function buildProps(container: Node, level: LevelData): Promise<void> {
+async function buildProps(container: Node, level: LevelData, layers?: RoomLayers): Promise<void> {
   const wanted = level.props.flatMap((prop) => {
     const def = propDef(level.chapter, prop.key);
     return def === undefined ? [] : [{ prop, def }];
@@ -338,6 +378,8 @@ async function buildProps(container: Node, level: LevelData): Promise<void> {
 
   const sheets = Array.from(new Set(wanted.map(({ def }) => def.sheet)));
   const textures = await Promise.all(sheets.map((sheet) => loadTexture(sheet)));
+  // `container` lives under the room root: its death is the room's, even when the sprites
+  // themselves are parented to the (long-lived) actor/overlay layers.
   if (!container.isValid) return;
 
   const textureOf = new Map<string, Awaited<ReturnType<typeof loadTexture>>>();
@@ -346,24 +388,99 @@ async function buildProps(container: Node, level: LevelData): Promise<void> {
     if (texture !== undefined) textureOf.set(sheet, texture);
   });
 
-  const frames = new Map<string, SpriteFrame>();
-  for (const { def } of wanted) {
-    if (frames.has(def.key)) continue;
-    const texture = textureOf.get(def.sheet);
-    if (texture !== undefined) frames.set(def.key, sliceFrame(texture, def.rect));
-  }
+  const baseParent = layers?.props ?? container;
+  const overlayParent = layers?.overlays ?? null;
+  const views: PropView[] = [];
 
   for (const { prop, def } of wanted) {
-    const frame = frames.get(def.key);
-    if (frame === undefined) continue;
+    const texture = textureOf.get(def.sheet);
+    if (texture === undefined) continue;
 
-    const width = def.rect.width / TILE_SIZE_PX;
-    const height = def.rect.height / TILE_SIZE_PX;
-    const node = makePropNode(`prop-${prop.key}`, frame, def.rect);
-    node.parent = container;
-    // `LevelData` is top-left/y-down: the sprite's top-left sits at (x, rows - y).
-    node.setPosition(prop.x + width / 2, roomRows - prop.y - height / 2, 0);
+    // Only the run splits a prop into base + overlay (#36). Without overlay layers (menu
+    // backdrop) the whole drawing stays one sprite, exactly like #35.
+    // `def.overlay` is **drawing-relative** (0,0 = the cell's top-left, see `above()` in
+    // `props.ts`); slicing needs sheet coordinates, so both rects go through `toSheet`.
+    const overlayDrawing = overlayParent === null ? null : (def.overlay ?? null);
+    const baseDrawing =
+      overlayDrawing === null
+        ? { x: 0, y: 0, width: def.rect.width, height: def.rect.height }
+        : baseBelowDrawing(def.rect, overlayDrawing);
+    const baseRect = toSheet(def.rect, baseDrawing);
+    const base = makePropNode(`prop-${prop.key}`, sliceFrame(texture, baseRect), baseRect);
+    base.parent = baseParent;
+
+    // Bottom edge of the base in room tiles: the prop's top-left plus the base's offset inside
+    // the drawing (a sheet cell can sit anywhere in the sheet; only its offset matters here).
+    const footY = prop.y + (baseDrawing.y + baseDrawing.height) / TILE_SIZE_PX;
+    placePropNode(base, prop, def.rect, baseRect);
+
+    let overlay: Node | null = null;
+    let overlayArea: TileArea | null = null;
+    if (overlayDrawing !== null && overlayParent !== null) {
+      const overlayRect = toSheet(def.rect, overlayDrawing);
+      overlay = makePropNode(`prop-${prop.key}-overlay`, sliceFrame(texture, overlayRect), overlayRect);
+      overlay.parent = overlayParent;
+      placePropNode(overlay, prop, def.rect, overlayRect);
+      overlayArea = propOverlayArea(prop, def);
+    }
+
+    const coverArea = propCoverArea(prop, def);
+    let tips: Node | null = null;
+    if (coverArea !== null && overlayParent !== null) {
+      tips = makePropNode(`prop-${prop.key}-tips`, sliceFrame(texture, def.rect), def.rect);
+      tips.parent = overlayParent;
+      placePropNode(tips, prop, def.rect, def.rect);
+    }
+
+    views.push({
+      base,
+      footY,
+      overlay,
+      overlayArea: overlay === null ? null : overlayArea,
+      coverArea,
+      tips,
+    });
   }
+
+  if (container.isValid) layers?.onProps?.(views);
+}
+
+/**
+ * The part of a prop **drawing** below its overlay (canopy/roof), all rects drawing-relative.
+ * The catalogue always declares the overlay as a full-width strip at the top (`above()` in
+ * `props.ts`); anything else keeps the whole drawing so a prop never disappears.
+ */
+function baseBelowDrawing(cell: TileRect, overlay: TileRect): TileRect {
+  const fullWidth = overlay.x <= 0 && overlay.x + overlay.width >= cell.width;
+  if (!fullWidth || overlay.y > 0) return { x: 0, y: 0, width: cell.width, height: cell.height };
+
+  const top = overlay.y + overlay.height;
+  return { x: 0, y: top, width: cell.width, height: cell.height - top };
+}
+
+/** A drawing-relative rect → the sheet rect `sliceFrame` needs. */
+function toSheet(cell: TileRect, rect: TileRect): TileRect {
+  return { x: cell.x + rect.x, y: cell.y + rect.y, width: rect.width, height: rect.height };
+}
+
+/**
+ * Place one slice of a prop: `LevelData` is top-left/y-down and the prop's sprite top-left sits
+ * at `(prop.x, prop.y)`. `slice` is a rect inside the prop's sheet cell, so only its offset from
+ * `cell` moves it (the cell's position in the sheet is irrelevant).
+ */
+function placePropNode(
+  node: Node,
+  prop: { readonly x: number; readonly y: number },
+  cell: TileRect,
+  slice: TileRect,
+): void {
+  const offsetX = (slice.x - cell.x) / TILE_SIZE_PX;
+  const offsetY = (slice.y - cell.y) / TILE_SIZE_PX;
+  node.setPosition(
+    prop.x + offsetX + slice.width / (2 * TILE_SIZE_PX),
+    roomRows - prop.y - offsetY - slice.height / (2 * TILE_SIZE_PX),
+    0,
+  );
 }
 
 /** Prop sprite: `SIMPLE` (the drawing is the frame), content size = the sheet rect in pixels. */

@@ -184,6 +184,11 @@ export class BossView {
     return this.def.hitboxRadiusTiles;
   }
 
+  /** Sprite node in the actors layer — depth sorting/cover read it (#36, visual only). */
+  get spriteNode(): Node {
+    return this.node;
+  }
+
   get isDefeated(): boolean {
     return isBossDefeated(this.state) || this.defeated;
   }
