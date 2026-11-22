@@ -68,6 +68,7 @@ import { distance, type Vec2 } from '../math/vec2';
 import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
 import { moveWithCollision } from '../movement/collision';
 import { SeededRng } from '../rng';
+import { drawRunRooms } from '../run/room-draw';
 import { goldForKill, goldForRoomClear } from '../run/rewards';
 import { computeDerivedStats } from '../skills/derived-stats';
 import { simulateBossRun } from './boss-run';
@@ -119,7 +120,7 @@ export type InputPolicy = (world: PolicyWorld) => MoveInput;
 
 export interface SimulationOptions {
   readonly seed: number;
-  /** A full chapter; rooms are taken in `level.rooms` order. */
+  /** A full chapter; the run plays `drawRunRooms(level, seed)` (8 normal rooms + the boss). */
   readonly level: ChapterData;
   readonly policy: InputPolicy;
   /** Defaults to `SIM_DEFAULT_MAX_DURATION_MS`; when time runs out it returns `timeout`. */
@@ -160,7 +161,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) {
     throw new Error(`simulateRun needs a finite maxDurationMs > 0, got ${maxDurationMs}`);
   }
-  const firstRoom = options.level.rooms[0];
+  // The run plays the same 9 rooms the game would (`#38`): 8 drawn from the pool by the run
+  // seed, then the boss — not every room of the chapter.
+  const runRooms = drawRunRooms(options.level, options.seed);
+  const firstRoom = runRooms[0];
   if (firstRoom === undefined) throw new Error('simulateRun needs a chapter with at least 1 room');
 
   const rng = new SeededRng(options.seed);
@@ -617,7 +621,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       events.push({ kind: 'room-cleared', nowMs: durationMs, room: room.room, gold: roomGold });
       healPlayer(stats.healPerRoom ?? 0);
 
-      const nextRoom = options.level.rooms[roomIndex + 1];
+      const nextRoom = runRooms[roomIndex + 1];
       if (nextRoom === undefined) {
         status = 'won';
         events.push({ kind: 'run-won', nowMs: durationMs });

@@ -56,6 +56,7 @@ import type { Vec2 } from '../core/math/vec2';
 import { metaBaseline } from '../core/meta/run-stats';
 import { SeededRng } from '../core/rng';
 import { RunState } from '../core/run/run-state';
+import { drawRunRooms } from '../core/run/room-draw';
 import { RunRewards } from '../core/run/run-rewards';
 import { chapterGate } from '../core/save/chapter-gate';
 import { withBest } from '../core/save/save-data';
@@ -228,6 +229,12 @@ export class Bootstrap extends Component {
   private atmosphereConfig: AtmosphereConfig | null = null;
   private chapter: ChapterData | null = null;
   private chapterAssets: ReadonlyMap<number, TiledMapAsset> = new Map();
+  /**
+   * The rooms of the current run, in play order: 8 normal rooms drawn from the chapter's pool by
+   * the run seed + the boss (#38). `RunState.room` is a position in this list (1..9), not a
+   * `.tmx` room number; `levelFor` does that lookup.
+   */
+  private runRooms: LevelData[] = [];
   private run: RunState | null = null;
   private save: SaveData | null = null;
   private saveRepo: SaveRepository | null = null;
@@ -542,7 +549,9 @@ export class Bootstrap extends Component {
     const loaded = await this.loadChapter(folder);
     this.chapter = loaded.chapter;
     this.chapterAssets = loaded.assets;
-    const run = new RunState(loaded.chapter.chapter, loaded.chapter.rooms.length);
+    // The run's room list is drawn **once** from the chapter pool by the run seed (#38).
+    this.runRooms = drawRunRooms(loaded.chapter, seed);
+    const run = new RunState(loaded.chapter.chapter, this.runRooms.length);
     this.run = run;
 
     // Preload **before** building anything: all art/JSON errors surface in one place, with full paths.
@@ -592,16 +601,17 @@ export class Bootstrap extends Component {
     combat.setEffectsMode(save.settings.effects);
     this.status = 'playing';
     this.screens.setScreen('playing');
-    this.persistBest(firstRoom.room);
+    this.persistBest(run.room);
     this.combat.startWave(0);
     if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
     this.hud?.setSkills(this.skills.entries);
     this.displayedGold = 0;
     this.hud?.setGold(0);
     console.log(
-      `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} rooms from ` +
-        `resources/${folder}. Starting room ${run.roomLabel} ` +
-        `(${firstRoom.waves.length} waves). seed=${seed} player=${JSON.stringify(player.position)}`,
+      `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} rooms in the ` +
+        `pool, playing 9 from resources/${folder}. Starting room ${run.roomLabel} ` +
+        `(${firstRoom.waves.length} waves, pool room ${firstRoom.room}). seed=${seed} ` +
+        `player=${JSON.stringify(player.position)}`,
     );
   }
 
@@ -1131,7 +1141,7 @@ export class Bootstrap extends Component {
     }
 
     run.onRoomCleared();
-    this.persistBest(level.room);
+    this.persistBest(run.room);
 
     // Room-clear reward (GDD §7): boss 50, normal room 5, times Greed.
     const roomGold = this.rewards.awardRoomClear(
@@ -1397,6 +1407,7 @@ export class Bootstrap extends Component {
     this.lastFocus = null;
     this.chapter = null;
     this.chapterAssets = new Map();
+    this.runRooms = [];
     this.run = null;
     this.rewards = new RunRewards();
     this.fpsMeter.clear();
@@ -1632,12 +1643,8 @@ export class Bootstrap extends Component {
   // -------------------------------------------------------------------------
 
   private levelFor(roomNumber: number): LevelData | null {
-    const chapter = this.chapter;
-    if (chapter === null) return null;
-
-    for (const room of chapter.rooms) {
-      if (room.room === roomNumber) return room;
-    }
+    const level = this.runRooms[roomNumber - 1];
+    if (level !== undefined) return level;
     return null;
   }
 
