@@ -406,6 +406,12 @@ describe('firstHit', () => {
     const hit = firstHit({ from: { x: 10.5, y: 5 }, to: { x: 20, y: 5 } }, withObstacles);
     expect(hit?.progress).toBe(0);
   });
+
+  it('flies over a pit (only pillars and walls stop a projectile)', () => {
+    const withPit = makeLevel([{ kind: 'pit', x: 10, y: 4, width: 2, height: 2 }]);
+
+    expect(firstHit({ from: { x: 5, y: 5 }, to: { x: 20, y: 5 } }, withPit)).toBeNull();
+  });
 });
 
 describe('waves', () => {

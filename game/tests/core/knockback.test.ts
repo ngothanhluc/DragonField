@@ -151,6 +151,25 @@ describe('knockback — collision and room bounds', () => {
     expect(result.position.y).toBeCloseTo(18 - PLAYER_MARGIN);
     expect(result.position.x).toBeCloseTo(10);
   });
+
+  it('keeps the whole circle out of an obstacle when a radius is given', () => {
+    const radius = 0.25;
+    const level = makeLevel([{ kind: 'pillar', x: 11, y: 9, width: 1, height: 2 }]);
+    const state = startKnockback({ x: 10, y: 10 }, { x: 8, y: 10 }, config(1.5, 180));
+    expect(state).not.toBeNull();
+    if (state === null) return;
+
+    let position: Vec2 = { x: 10, y: 10 };
+    let active: KnockbackState | null = state;
+    while (active !== null) {
+      const result = stepKnockback(position, active, STEP_MS, level, PLAYER_MARGIN, radius);
+      position = result.position;
+      active = result.state;
+      // The centre must stay a full radius away from the pillar's left face (x = 11).
+      expect(position.x).toBeLessThanOrEqual(11 - radius + 1e-9);
+    }
+    expect(position.x).toBeGreaterThan(11 - radius - 0.1);
+  });
 });
 
 describe('knockback — tuning from config/tuning.json', () => {

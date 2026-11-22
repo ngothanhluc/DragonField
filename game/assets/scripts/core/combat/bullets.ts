@@ -115,6 +115,9 @@ export interface ObstacleHit {
  * Samples along the segment with step `HIT_SAMPLE_STEP_TILES` and asks `obstacleAt`, so
  * it cannot pass through the thinnest pillar (1 tile) however long the frame. Reads only
  * `level.obstacles`; no other field of `LevelData` is used.
+ *
+ * Pits are **not** solid for projectiles (GDD §8): they block walkers only, so a bullet flies
+ * over open ground.
  */
 export function firstHit(area: SweepArea, level: LevelData): ObstacleHit | null {
   const dx = area.to.x - area.from.x;
@@ -129,10 +132,15 @@ export function firstHit(area: SweepArea, level: LevelData): ObstacleHit | null 
       y: area.from.y + dy * progress,
     };
     const obstacle = obstacleAt(level, point);
-    if (obstacle !== null) return { obstacle, point, progress };
+    if (obstacle !== null && stopsBullets(obstacle)) return { obstacle, point, progress };
   }
 
   return null;
+}
+
+/** A pit is a hole in the floor: walkers fall in, bullets do not. */
+function stopsBullets(obstacle: Obstacle): boolean {
+  return obstacle.kind !== 'pit';
 }
 
 export class BulletPool {
