@@ -163,8 +163,25 @@ export interface TuningConfig {
   readonly enemies: EnemiesTuning;
   /** Enemy navigation (#34): flow-field rebuild throttle and the stuck guard. */
   readonly navigation: NavigationTuning;
+  /** Follow camera (#37): deadzone, look-ahead and smoothing rates. */
+  readonly camera: CameraTuning;
   /** "Juice" numbers (ticket #2): shake, squash, coins, damage numbers, muzzle. */
   readonly feel: FeelTuning;
+}
+
+/**
+ * Follow camera numbers (#37, ADR-018). Read by `game/world-camera.ts` and handed to the pure
+ * `core/camera/follow-camera.ts`, which takes them as parameters.
+ */
+export interface CameraTuning {
+  /** Half extents of the box deadzone around the focus, tiles. */
+  readonly deadzoneHalfTiles: { readonly x: number; readonly y: number };
+  /** How far ahead of the player's motion the camera aims, tiles. */
+  readonly lookAheadTiles: number;
+  /** Exponential smoothing rate of the centre, 1/s. */
+  readonly followRate: number;
+  /** Exponential smoothing rate of the look-ahead offset, 1/s. */
+  readonly lookAheadRate: number;
 }
 
 /**
@@ -350,6 +367,13 @@ const NAVIGATION_FIELDS = [
   'stuckWindowMs',
   'stuckDistanceTiles',
   'detourMs',
+] as const;
+
+const CAMERA_FIELDS = [
+  'deadzoneHalfTiles',
+  'lookAheadTiles',
+  'followRate',
+  'lookAheadRate',
 ] as const;
 
 const SHAKE_FIELDS = [
@@ -878,8 +902,35 @@ function readTrauma(
   return value;
 }
 
-function zeroFeel(): FeelTuning {
+function zeroCamera(): CameraTuning {
   return {
+    deadzoneHalfTiles: { x: 0, y: 0 },
+    lookAheadTiles: 0,
+    followRate: 0,
+    lookAheadRate: 0,
+  };
+}
+
+function parseCamera(raw: Record<string, unknown>, problems: ProblemList): CameraTuning {
+  const source = readObject(raw, 'camera', '', problems, CAMERA_FIELDS);
+  if (source === undefined) return zeroCamera();
+
+  const path = 'camera';
+  const deadzoneSource =
+    readObject(source, 'deadzoneHalfTiles', path, problems, ['x', 'y']) ?? {};
+
+  return {
+    deadzoneHalfTiles: {
+      x: readNumber(deadzoneSource, 'x', `${path}.deadzoneHalfTiles`, problems) ?? 0,
+      y: readNumber(deadzoneSource, 'y', `${path}.deadzoneHalfTiles`, problems) ?? 0,
+    },
+    lookAheadTiles: readNumber(source, 'lookAheadTiles', path, problems) ?? 0,
+    followRate: readNumber(source, 'followRate', path, problems, { positive: true }) ?? 0,
+    lookAheadRate: readNumber(source, 'lookAheadRate', path, problems, { positive: true }) ?? 0,
+  };
+}
+
+function zeroFeel(): FeelTuning {  return {
     shake: {
       maxOffsetTiles: 0,
       decayPerSecond: 0,
@@ -1055,6 +1106,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     chapters: parseChapters(raw, problems),
     enemies: parseEnemies(raw, problems),
     navigation: parseNavigation(raw, problems),
+    camera: parseCamera(raw, problems),
     feel: parseFeel(raw, problems),
   };
 

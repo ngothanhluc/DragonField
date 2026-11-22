@@ -4,11 +4,18 @@
  * mapper adapter turns an object layer into `LevelData` via `parseTmxLevel` → `parseLevelData`.
  *
  * Coordinate system: **tile units, top-left origin, y pointing down** — Tiled's system.
- * The Cocos adapter flips the y axis when building nodes. A room is always exactly 32×18 tiles of 16 px
- * (`docs/gdd.md` §8), so `size` and `tileSizePx` are validated strictly.
+ * The Cocos adapter flips the y axis when building nodes. Tiles are 16 px
+ * (`docs/gdd.md` §8); a room is a whole number of **screens** of 32×18 tiles: one screen for a
+ * boss room, any multiple (e.g. 128×72 = 4×4) for a normal room (ADR-018). `size` is validated
+ * against those rules, `tileSizePx` strictly.
  */
 import type { Vec2 } from '../math/vec2';
 
+/**
+ * One screen: the view the camera always shows, and the exact size of every boss room.
+ * A normal room is a whole multiple of this (ADR-018); its real size lives in `LevelData.size`,
+ * so never use these constants where "this room's size" is meant.
+ */
 export const ROOM_COLS = 32;
 export const ROOM_ROWS = 18;
 export const TILE_SIZE_PX = 16;
@@ -37,10 +44,11 @@ export const OBSTACLE_KINDS = ['pillar', 'wall', 'pit', 'prop'] as const;
 export type ObstacleKind = (typeof OBSTACLE_KINDS)[number];
 
 export interface RoomSize {
-  readonly cols: typeof ROOM_COLS;
-  readonly rows: typeof ROOM_ROWS;
+  readonly cols: number;
+  readonly rows: number;
 }
 
+/** One screen; still exported for the code that builds a 32×18 room by hand (menus, tests). */
 export const ROOM_SIZE: RoomSize = { cols: ROOM_COLS, rows: ROOM_ROWS };
 
 export interface EnemySpawn {
@@ -187,19 +195,77 @@ function readVec2(value: unknown, path: string, problems: ProblemList): Vec2 | n
 }
 
 /** A valid point lies inside the closed rectangle [0, cols] × [0, rows]. */
-function checkPointInRoom(point: Vec2, path: string, problems: ProblemList): void {
-  if (point.x < 0 || point.x > ROOM_COLS) {
-    problems.add(path, `x=${point.x} is outside the room (0..${ROOM_COLS})`);
+function checkPointInRoom(point: Vec2, path: string, problems: ProblemList, size: RoomSize): void {
+  if (point.x < 0 || point.x > size.cols) {
+    problems.add(path, `x=${point.x} is outside the room (0..${size.cols})`);
   }
-  if (point.y < 0 || point.y > ROOM_ROWS) {
-    problems.add(path, `y=${point.y} is outside the room (0..${ROOM_ROWS})`);
+  if (point.y < 0 || point.y > size.rows) {
+    problems.add(path, `y=${point.y} is outside the room (0..${size.rows})`);
   }
+}
+
+/**
+ * Room size rules (ADR-018): whole multiples of the 32×18 screen, at least one screen.
+ * Boss rooms are exactly one screen. Returns the declared size, or the fallback when invalid,
+ * so the rest of the room can still be validated with usable bounds.
+ */
+function readSize(
+  value: unknown,
+  path: string,
+  problems: ProblemList,
+  isBossRoom: boolean,
+): RoomSize {
+  if (!isRecord(value)) {
+    problems.add(
+      path,
+      `must be { cols, rows } — whole multiples of ${ROOM_COLS}×${ROOM_ROWS}, got ${describeValue(value)}`,
+    );
+    return ROOM_SIZE;
+  }
+
+  const cols = value.cols;
+  const rows = value.rows;
+  const colsOk = isInteger(cols) && isRoomDimension(cols, ROOM_COLS);
+  const rowsOk = isInteger(rows) && isRoomDimension(rows, ROOM_ROWS);
+
+  if (!colsOk) {
+    problems.add(
+      `${path}.cols`,
+      `must be a whole multiple of ${ROOM_COLS} (>= ${ROOM_COLS}), got ${describeValue(cols)}`,
+    );
+  }
+  if (!rowsOk) {
+    problems.add(
+      `${path}.rows`,
+      `must be a whole multiple of ${ROOM_ROWS} (>= ${ROOM_ROWS}), got ${describeValue(rows)}`,
+    );
+  }
+
+  const size: RoomSize = {
+    cols: colsOk ? cols : ROOM_COLS,
+    rows: rowsOk ? rows : ROOM_ROWS,
+  };
+
+  if (isBossRoom && (size.cols !== ROOM_COLS || size.rows !== ROOM_ROWS)) {
+    problems.add(
+      path,
+      `a boss room is exactly ${ROOM_COLS}×${ROOM_ROWS}, got ${size.cols}×${size.rows}`,
+    );
+  }
+
+  return size;
+}
+
+/** Positive whole multiple of `unit` (e.g. 64 is 2×32, 40 is not). */
+function isRoomDimension(value: number, unit: number): boolean {
+  return value >= unit && value % unit === 0;
 }
 
 function readEnemy(
   value: unknown,
   path: string,
   problems: ProblemList,
+  size: RoomSize,
 ): EnemySpawn | null {
   if (!isRecord(value)) {
     problems.add(path, `must be an object EnemySpawn, got ${describeValue(value)}`);
@@ -216,7 +282,7 @@ function readEnemy(
   }
 
   const at = readVec2(value.at, `${path}.at`, problems);
-  if (at !== null) checkPointInRoom(at, `${path}.at`, problems);
+  if (at !== null) checkPointInRoom(at, `${path}.at`, problems, size);
 
   const elite = value.elite;
   const eliteOk = typeof elite === 'boolean';
@@ -228,7 +294,12 @@ function readEnemy(
   return { role, at, elite };
 }
 
-function readWave(value: unknown, path: string, problems: ProblemList): Wave | null {
+function readWave(
+  value: unknown,
+  path: string,
+  problems: ProblemList,
+  size: RoomSize,
+): Wave | null {
   if (!isRecord(value)) {
     problems.add(path, `must be an object Wave, got ${describeValue(value)}`);
     return null;
@@ -245,7 +316,7 @@ function readWave(value: unknown, path: string, problems: ProblemList): Wave | n
   }
 
   value.enemies.forEach((rawEnemy, index) => {
-    const enemy = readEnemy(rawEnemy, `${path}.enemies[${index}]`, problems);
+    const enemy = readEnemy(rawEnemy, `${path}.enemies[${index}]`, problems, size);
     if (enemy !== null) enemies.push(enemy);
   });
 
@@ -256,6 +327,7 @@ function readObstacle(
   value: unknown,
   path: string,
   problems: ProblemList,
+  size: RoomSize,
 ): Obstacle | null {
   if (!isRecord(value)) {
     problems.add(path, `must be an object Obstacle, got ${describeValue(value)}`);
@@ -284,12 +356,12 @@ function readObstacle(
   const outsideRoom =
     x < 0 ||
     y < 0 ||
-    x + width > ROOM_COLS + EPSILON ||
-    y + height > ROOM_ROWS + EPSILON;
+    x + width > size.cols + EPSILON ||
+    y + height > size.rows + EPSILON;
   if (outsideRoom) {
     problems.add(
       path,
-      `extends outside the room 0..${ROOM_COLS} × 0..${ROOM_ROWS} ` +
+      `extends outside the room 0..${size.cols} × 0..${size.rows} ` +
         `(x=${x}, y=${y}, width=${width}, height=${height})`,
     );
   }
@@ -321,14 +393,19 @@ function readPlacedProp(value: unknown, path: string, problems: ProblemList): Pl
   return { key, x, y };
 }
 
-function readDoor(value: unknown, path: string, problems: ProblemList): Door | null {
+function readDoor(
+  value: unknown,
+  path: string,
+  problems: ProblemList,
+  size: RoomSize,
+): Door | null {
   if (!isRecord(value)) {
     problems.add(path, `must be an object Door, got ${describeValue(value)}`);
     return null;
   }
 
   const at = readVec2(value.at, `${path}.at`, problems);
-  if (at !== null) checkPointInRoom(at, `${path}.at`, problems);
+  if (at !== null) checkPointInRoom(at, `${path}.at`, problems, size);
 
   let toRoom: number | null = null;
   let toRoomOk = true;
@@ -400,17 +477,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     isBossRoom = value.isBossRoom;
   }
 
-  const size = value.size;
-  if (!isRecord(size)) {
-    problems.add(`${path}.size`, `must be { cols: ${ROOM_COLS}, rows: ${ROOM_ROWS} }`);
-  } else {
-    if (size.cols !== ROOM_COLS) {
-      problems.add(`${path}.size.cols`, `must equal ${ROOM_COLS}, got ${describeValue(size.cols)}`);
-    }
-    if (size.rows !== ROOM_ROWS) {
-      problems.add(`${path}.size.rows`, `must equal ${ROOM_ROWS}, got ${describeValue(size.rows)}`);
-    }
-  }
+  const size = readSize(value.size, `${path}.size`, problems, isBossRoom);
 
   if (value.tileSizePx !== TILE_SIZE_PX) {
     problems.add(
@@ -420,7 +487,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
   }
 
   const playerStart = readVec2(value.playerStart, `${path}.playerStart`, problems);
-  if (playerStart !== null) checkPointInRoom(playerStart, `${path}.playerStart`, problems);
+  if (playerStart !== null) checkPointInRoom(playerStart, `${path}.playerStart`, problems, size);
 
   const waves: Wave[] = [];
   if (!Array.isArray(value.waves)) {
@@ -430,7 +497,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
       problems.add(`${path}.waves`, 'must have at least 1 wave');
     }
     value.waves.forEach((rawWave, index) => {
-      const wave = readWave(rawWave, `${path}.waves[${index}]`, problems);
+      const wave = readWave(rawWave, `${path}.waves[${index}]`, problems, size);
       if (wave !== null) waves.push(wave);
     });
   }
@@ -443,7 +510,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     );
   } else {
     value.obstacles.forEach((rawObstacle, index) => {
-      const obstacle = readObstacle(rawObstacle, `${path}.obstacles[${index}]`, problems);
+      const obstacle = readObstacle(rawObstacle, `${path}.obstacles[${index}]`, problems, size);
       if (obstacle !== null) obstacles.push(obstacle);
     });
   }
@@ -453,7 +520,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     problems.add(`${path}.doors`, `must be an array of Door, got ${describeValue(value.doors)}`);
   } else {
     value.doors.forEach((rawDoor, index) => {
-      const door = readDoor(rawDoor, `${path}.doors[${index}]`, problems);
+      const door = readDoor(rawDoor, `${path}.doors[${index}]`, problems, size);
       if (door !== null) doors.push(door);
     });
   }
@@ -487,7 +554,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
   if (value.bossStart !== undefined) {
     const parsedStart = readVec2(value.bossStart, `${path}.bossStart`, problems);
     if (parsedStart !== null) {
-      checkPointInRoom(parsedStart, `${path}.bossStart`, problems);
+      checkPointInRoom(parsedStart, `${path}.bossStart`, problems, size);
       bossStart = parsedStart;
     }
   }
@@ -500,7 +567,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     chapter,
     room,
     isBossRoom,
-    size: { cols: ROOM_COLS, rows: ROOM_ROWS },
+    size,
     tileSizePx: TILE_SIZE_PX,
     playerStart: playerStart ?? { x: 0, y: 0 },
     waves,

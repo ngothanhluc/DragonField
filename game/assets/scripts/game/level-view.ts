@@ -10,7 +10,7 @@
  * Other files (`player-controller`, `enemy-view`, `bullet-view`) reuse these exact
  * functions so the room has **one** axis-flip convention.
  *
- * `TiledMap` draws the tile layer in **pixels** (512×288 px map, bottom-left origin, row 0
+ * `TiledMap` draws the tile layer in **pixels** (cols×rows×16 px map, bottom-left origin, row 0
  * at the top). The map node is scaled `1/16` and placed at the room centre, so it matches
  * world units exactly: cell `(col,row)` covers exactly `[col, col+1) × [rows-row-1, rows-row)`.
  *
@@ -24,12 +24,13 @@ import {
   Sprite as CocosSprite,
   SpriteFrame as CocosSpriteFrame,
   TiledMap as CocosTiledMap,
+  TiledMapAsset as CocosTiledMapAsset,
   UITransform as CocosUITransform,
   Vec2 as EngineVec2,
 } from 'cc';
-import type { TiledMapAsset as CocosTiledMapAsset } from 'cc';
 import type { LevelData, Obstacle } from '../core/level/level-data';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
+import { splitTmxLayers } from '../core/level/tmx-chunks';
 import {
   obstacleSheets as obstacleSheetsCore,
   obstacleVisual,
@@ -68,6 +69,11 @@ type UITransform = InstanceType<typeof CocosUITransform>;
 /** 1 tile = 1 world unit (the milestone's world convention). */
 export const TILE_WORLD_UNITS = 1;
 
+/** Name of the tile-map node (one map, or the group holding `tile-chunk-*` nodes). */
+export const TILE_MAP_NODE = 'tile-map';
+/** Prefix of one 32×18 chunk node under the `tile-map` group (a room bigger than one screen). */
+export const TILE_CHUNK_PREFIX = 'tile-chunk-';
+
 const OBSTACLE_KEYS = ['pillar', 'pillarSmall', 'wall', 'pit'] as const;
 
 // ---------------------------------------------------------------------------
@@ -75,15 +81,19 @@ const OBSTACLE_KEYS = ['pillar', 'pillarSmall', 'wall', 'pit'] as const;
 // ---------------------------------------------------------------------------
 
 /**
- * Point in `LevelData` (tiles, top-left origin, y down) → world (units, bottom-left origin, y up).
- * `worldX = x`, `worldY = 18 - y` — exactly the world convention formula.
+ * Room height in tiles used by `tileToWorld`, set once per room by `buildRoom`. The axis flip is
+ * the **room's** height (a 72-tall room flips at 72), but every actor/bullet/FX adapter converts
+ * tile → world without carrying a `LevelData`; the game has one live room, so it lives here.
  */
+let roomRows = ROOM_ROWS;
+
+/** Point in `LevelData` (tiles, top-left origin, y down) → world (units, bottom-left origin, y up). */
 export function tileToWorld(point: Vec2): Vec2 {
-  return { x: point.x, y: ROOM_ROWS - point.y };
+  return { x: point.x, y: roomRows - point.y };
 }
 
 /** World rectangle of an obstacle: bottom-left corner + size, both in units. */
-function obstacleWorldRect(obstacle: Obstacle): {
+function obstacleWorldRect(obstacle: Obstacle, rows: number): {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -91,7 +101,7 @@ function obstacleWorldRect(obstacle: Obstacle): {
 } {
   return {
     x: obstacle.x,
-    y: ROOM_ROWS - obstacle.y - obstacle.height,
+    y: rows - obstacle.y - obstacle.height,
     width: obstacle.width,
     height: obstacle.height,
   };
@@ -146,12 +156,18 @@ export function sliceFrame(texture: Texture2D, rect: TileRect): SpriteFrame {
  * Build a room from `LevelData` + `TiledMapAsset` and return the **root node** (destroying
  * the room = `root.destroy()`; the engine cleans every child, including TiledMap layers).
  *
- * The root stays in **world units** (1 tile = 1 unit) like every actor/bullet; only the child
- * `tile-map` node is scaled `1/16` (`ACTOR_SCALE`) so TMX pixels match world units. Obstacles
- * therefore reuse the milestone's unit coordinates instead of switching to pixels.
+ * The root stays in **world units** (1 tile = 1 unit) like every actor/bullet; tile nodes are
+ * scaled `1/16` (`ACTOR_SCALE`) so TMX pixels match world units. Obstacles therefore reuse the
+ * milestone's unit coordinates instead of switching to pixels.
  *
- * Culling is off because a room is only 576 tiles and the world camera is letterboxed
- * (`Camera.rect`), a case where culling easily clips the wrong things.
+ * **Room bigger than one screen** (ticket #37, ADR-018): the floor is split into one `TiledMap`
+ * node per 32×18 screen (`core/level/tmx-chunks.ts`). A single 128×72 layer is 36 864 vertices,
+ * over the 2D batcher's 4096-vertex chunk (`Error 9004`, canvas freezes); one screen is 2304.
+ * `world-culler.ts` deactivates off-screen chunks. A one-screen room keeps exactly today's
+ * single map node, so chapter 1–3 rooms render byte-identically.
+ *
+ * Engine `TiledMap.enableCulling` stays off (the world camera is letterboxed via `Camera.rect`,
+ * a case where it clips the wrong things); chunk culling is ours.
  *
  * Obstacles: 1×1 unit sprites as before, with rectangles from the object layer (already parsed
  * into `LevelData.obstacles`) — there is no second pipeline.
@@ -161,27 +177,17 @@ export function buildRoom(
   level: LevelData,
   tmxAsset: TiledMapAsset,
 ): Node {
+  // Every actor/bullet/FX adapter flips tile → world with this; set it before any node is placed.
+  roomRows = level.size.rows;
+
   const root = new CocosNode(`room-${level.id}`);
   root.parent = parent;
 
-  const mapNode = new CocosNode('tile-map');
-  mapNode.parent = root;
-
-  // TiledMap's `@requireComponent(UITransform)` adds UITransform as soon as addComponent runs.
-  const map: TiledMap = mapNode.addComponent(CocosTiledMap);
-
-  const transform: UITransform | null = mapNode.getComponent(CocosUITransform);
-  if (transform !== null) transform.setAnchorPoint(0.5, 0.5);
-
-  const scale = TILE_WORLD_UNITS / TILE_SIZE_PX;
-  mapNode.setScale(scale, scale, 1);
-  // Map centre = room centre: 512×288 px map × 1/16 = 32×18 units.
-  mapNode.setPosition(ROOM_COLS / 2, ROOM_ROWS / 2, 0);
-
-  // Assign the asset AFTER the node has its anchor/scale/parent: `_buildLayerAndGroup`
-  // creates the layers under this node and reads the map anchor once.
-  map.tmxAsset = tmxAsset;
-  map.enableCulling = false;
+  if (level.size.cols <= ROOM_COLS && level.size.rows <= ROOM_ROWS) {
+    buildWholeMap(root, level, tmxAsset);
+  } else {
+    buildChunkedMap(root, level, tmxAsset);
+  }
 
   // The props container exists before any texture loads, so its depth is fixed: above the tile
   // map (and the water, which inserts itself at index 1 later), below obstacles and actors.
@@ -196,6 +202,77 @@ export function buildRoom(
   });
 
   return root;
+}
+
+/** One screen: the single `tile-map` node the game has always built. */
+function buildWholeMap(root: Node, level: LevelData, tmxAsset: TiledMapAsset): void {
+  const mapNode = new CocosNode(TILE_MAP_NODE);
+  mapNode.parent = root;
+
+  // TiledMap's `@requireComponent(UITransform)` adds UITransform as soon as addComponent runs.
+  const map: TiledMap = mapNode.addComponent(CocosTiledMap);
+
+  const transform: UITransform | null = mapNode.getComponent(CocosUITransform);
+  if (transform !== null) transform.setAnchorPoint(0.5, 0.5);
+
+  const scale = TILE_WORLD_UNITS / TILE_SIZE_PX;
+  mapNode.setScale(scale, scale, 1);
+  // Map centre = room centre: (cols×rows)×16 px map × 1/16 = cols×rows units.
+  mapNode.setPosition(level.size.cols / 2, level.size.rows / 2, 0);
+
+  // Assign the asset AFTER the node has its anchor/scale/parent: `_buildLayerAndGroup`
+  // creates the layers under this node and reads the map anchor once.
+  map.tmxAsset = tmxAsset;
+  map.enableCulling = false;
+}
+
+/**
+ * Several screens: one `TiledMap` per 32×18 chunk of the same `.tmx`, under a `tile-map` group
+ * at the world origin. Each chunk node sits at its world centre (units) and is scaled 1/16, so
+ * its local position is also its world position — what `world-culler` needs.
+ */
+function buildChunkedMap(root: Node, level: LevelData, tmxAsset: TiledMapAsset): void {
+  const group = new CocosNode(TILE_MAP_NODE);
+  group.parent = root;
+
+  const scale = TILE_WORLD_UNITS / TILE_SIZE_PX;
+  const chunks = splitTmxLayers(tmxAsset.tmxXmlStr);
+
+  for (const chunk of chunks) {
+    const node = new CocosNode(`${TILE_CHUNK_PREFIX}${chunk.col}-${chunk.row}`);
+    node.parent = group;
+    node.setScale(scale, scale, 1);
+    node.setPosition(
+      chunk.col + chunk.cols / 2,
+      level.size.rows - chunk.row - chunk.rows / 2,
+      0,
+    );
+
+    const map: TiledMap = node.addComponent(CocosTiledMap);
+    const transform: UITransform | null = node.getComponent(CocosUITransform);
+    if (transform !== null) transform.setAnchorPoint(0.5, 0.5);
+
+    map.tmxAsset = chunkAsset(tmxAsset, chunk.xml);
+    map.enableCulling = false;
+  }
+}
+
+/**
+ * A `TiledMapAsset` for one chunk: its own XML, but the source asset's sprite frames and `.tsx`
+ * files. Reusing those references (they are the editor's import result) keeps the tilesets
+ * resolvable without copying textures; `TiledMap._applyFile` only reads these fields.
+ */
+function chunkAsset(source: TiledMapAsset, xml: string): TiledMapAsset {
+  const asset: TiledMapAsset = new CocosTiledMapAsset();
+  asset.tmxXmlStr = xml;
+  asset.spriteFrames = source.spriteFrames;
+  asset.spriteFrameNames = source.spriteFrameNames;
+  asset.spriteFrameSizes = source.spriteFrameSizes;
+  asset.tsxFiles = source.tsxFiles;
+  asset.tsxFileNames = source.tsxFileNames;
+  asset.imageLayerSpriteFrame = source.imageLayerSpriteFrame;
+  asset.imageLayerSpriteFrameNames = source.imageLayerSpriteFrameNames;
+  return asset;
 }
 
 /** Obstacles: one tiled sprite per `Obstacle`, exactly its tile size. */
@@ -233,7 +310,7 @@ async function buildObstacles(root: Node, level: LevelData): Promise<void> {
     const visual = frames.get(key);
     if (visual === undefined) return;
 
-    const rect = obstacleWorldRect(obstacle);
+    const rect = obstacleWorldRect(obstacle, level.size.rows);
     const node = makeObstacleNode(
       `obstacle-${index}-${obstacle.kind}`,
       visual.frame,
@@ -285,7 +362,7 @@ async function buildProps(container: Node, level: LevelData): Promise<void> {
     const node = makePropNode(`prop-${prop.key}`, frame, def.rect);
     node.parent = container;
     // `LevelData` is top-left/y-down: the sprite's top-left sits at (x, rows - y).
-    node.setPosition(prop.x + width / 2, ROOM_ROWS - prop.y - height / 2, 0);
+    node.setPosition(prop.x + width / 2, roomRows - prop.y - height / 2, 0);
   }
 }
 

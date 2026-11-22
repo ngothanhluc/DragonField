@@ -9,7 +9,7 @@
  * Placement and movement are seeded (`SeededRng`, never `Math.random`) so a room looks the
  * same every time it is entered in a run.
  */
-import { ROOM_COLS, ROOM_ROWS, type LevelData, type Obstacle } from '../level/level-data';
+import { type LevelData, type Obstacle } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
 import { SeededRng } from '../rng';
 import type { AnimalTuning, DecorSpec } from './atmosphere';
@@ -52,18 +52,18 @@ function footprintHits(at: Vec2, obstacle: Obstacle): boolean {
   );
 }
 
-function insideRoom(at: Vec2): boolean {
+function insideRoom(at: Vec2, level: LevelData): boolean {
   return (
     at.x >= 0.5 - EPSILON &&
-    at.x <= ROOM_COLS - 0.5 + EPSILON &&
+    at.x <= level.size.cols - 0.5 + EPSILON &&
     at.y >= 0.5 - EPSILON &&
-    at.y <= ROOM_ROWS - 0.5 + EPSILON
+    at.y <= level.size.rows - 0.5 + EPSILON
   );
 }
 
 /** Free floor for a decor footprint: inside the room and off every obstacle. */
 function isFree(at: Vec2, level: LevelData): boolean {
-  if (!insideRoom(at)) return false;
+  if (!insideRoom(at, level)) return false;
   for (const obstacle of level.obstacles) {
     if (footprintHits(at, obstacle)) return false;
   }
@@ -104,8 +104,8 @@ export function placeDecor(level: LevelData, spec: DecorSpec, seed: number): Dec
   // Every tile centre of the room that is free and far enough from a reserved point.
   // Distinct tiles are ≥ 1 apart on an axis, so two picked candidates never overlap.
   const candidates: Vec2[] = [];
-  for (let tileY = 0; tileY < ROOM_ROWS; tileY += 1) {
-    for (let tileX = 0; tileX < ROOM_COLS; tileX += 1) {
+  for (let tileY = 0; tileY < level.size.rows; tileY += 1) {
+    for (let tileX = 0; tileX < level.size.cols; tileX += 1) {
       const at = { x: tileX + 0.5, y: tileY + 0.5 };
       if (!isFree(at, level)) continue;
       if (reserved.some((point) => distance(at, point) < DECOR_SPAWN_CLEARANCE_TILES)) continue;

@@ -138,6 +138,15 @@ export const TUNING_DATA = {
     stuckDistanceTiles: 0.5,
     detourMs: 1000,
   },
+  camera: {
+    deadzoneHalfTiles: {
+      x: 2,
+      y: 1.5,
+    },
+    lookAheadTiles: 2,
+    followRate: 8,
+    lookAheadRate: 4,
+  },
   feel: {
     shake: {
       maxOffsetTiles: 0.5,

@@ -17,6 +17,7 @@
     "stage:audio": "bun run scripts/stage-m8-audio.ts",
     "stage:gen": "bun run scripts/stage-gemini-art.ts",
     "build:room": "bun run scripts/build-room.ts",
+    "build:dev-room": "bun run scripts/build-dev-room.ts",
     "prep:refs": "bun run scripts/prep-gemini-refs.ts",
     "remove:watermark": "bun x gwr remove",
     "fix:font": "bun run scripts/fix-font-spacing.ts",

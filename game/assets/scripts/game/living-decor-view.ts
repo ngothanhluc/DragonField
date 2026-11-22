@@ -28,7 +28,6 @@ import {
 import { resolve, type AnimationManifest, type SpriteEntry } from '../core/art/manifest';
 import { entryAnchorY } from '../core/art/runtime';
 import type { LevelData } from '../core/level/level-data';
-import { ROOM_ROWS } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { SeededRng } from '../core/rng';
 import { getFrame } from './assets/sprite-frame-cache';
@@ -66,8 +65,8 @@ interface DecorConfig {
  * Tile position → world position of the footprint's **bottom centre** (the sprite's feet).
  * A decor footprint is 1×1 centred on `at`, so its bottom edge is `at.y + 0.5`.
  */
-function feetOf(at: Vec2): Vec2 {
-  return { x: at.x, y: ROOM_ROWS - (at.y + 0.5) };
+function feetOf(at: Vec2, rows: number): Vec2 {
+  return { x: at.x, y: rows - (at.y + 0.5) };
 }
 
 @ccclass('LivingDecor')
@@ -79,6 +78,8 @@ export class LivingDecor extends Component {
   private level: LevelData | null = null;
   private tuning: AnimalTuning | null = null;
   private playerOf: (() => Vec2 | null) | null = null;
+  /** Room height, for the tile → world flip. */
+  private rows = 18;
 
   /** Create the sprites the effects mode allows; returns how many were created. */
   async init(
@@ -89,6 +90,7 @@ export class LivingDecor extends Component {
     this.level = config.level;
     this.tuning = config.tuning;
     this.playerOf = config.playerOf;
+    this.rows = config.level.size.rows;
     this.rng = new SeededRng(config.seed);
 
     for (const item of items) {
@@ -140,7 +142,7 @@ export class LivingDecor extends Component {
         tuning,
         rng: this.rng,
       });
-      const feet = feetOf(animal.state.at);
+      const feet = feetOf(animal.state.at, this.rows);
       animal.node.setPosition(feet.x, feet.y, 0);
       animal.node.setScale(ACTOR_SCALE * animal.state.facing, ACTOR_SCALE, 1);
       this.animateFrame(animal, 0);
@@ -182,7 +184,7 @@ export class LivingDecor extends Component {
     }
 
     node.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
-    const feet = feetOf(at);
+    const feet = feetOf(at, this.rows);
     node.setPosition(feet.x, feet.y, 0);
 
     return {

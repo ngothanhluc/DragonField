@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseTmxLevel } from '../../assets/scripts/core/level/tmx';
 import { firstChild, parseXml } from '../../assets/scripts/core/level/xml';
-import { CHAPTER_ONE_DIR, findTmxFiles, loadChapterOne } from '../helpers/tmx-levels';
+import { CHAPTER_ONE_DIR, findTmxFiles, LEVELS_ROOT, loadChapterOne } from '../helpers/tmx-levels';
 
 const FLOOR_CSV = Array.from({ length: 32 * 18 }, () => '22').join(',');
 
@@ -224,13 +224,26 @@ describe('parseTmxLevel — convention errors', () => {
   });
 
   it('rejects a wrong map/tile size', () => {
-    expectError(validTmx().replace('width="32" height="18"', 'width="31" height="18"'), /width must equal 32/);
+    expectError(validTmx().replace('width="32" height="18"', 'width="31" height="18"'), /width must be a whole multiple of 32/);
     expectError(validTmx().replace('tilewidth="16"', 'tilewidth="32"'), /tilewidth must equal 16/);
     expectError(validTmx().replace('orientation="orthogonal"', 'orientation="isometric"'), /orthogonal/);
   });
 
+  it('accepts a 4×4-screen room (128×72)', () => {
+    const big = Array.from({ length: 128 * 72 }, () => '22').join(',');
+    const xml = validTmx()
+      .replace('width="32" height="18"', 'width="128" height="72"')
+      .replace('name="floor" width="32" height="18"', 'name="floor" width="128" height="72"')
+      .replace(FLOOR_CSV, big);
+
+    const level = parse(xml);
+
+    expect(level.size).toEqual({ cols: 128, rows: 72 });
+    expect(level.playerStart).toEqual({ x: 16, y: 16 });
+  });
+
   it('rejects a layer of the wrong size or CSV with too few cells', () => {
-    expectError(validTmx().replace('name="floor" width="32"', 'name="floor" width="16"'), /width must equal 32/);
+    expectError(validTmx().replace('name="floor" width="32"', 'name="floor" width="16"'), /width must equal the map width 32/);
     expectError(validTmx().replace(FLOOR_CSV, '22,22'), /CSV has 2 cells/);
   });
 
@@ -276,6 +289,19 @@ describe('assets/resources/data/levels — every real .tmx file', () => {
     expect(chapterOne).toHaveLength(9);
   });
 
+  it('the dev room is a valid 128×72 room the chapter tree never loads', () => {
+    const dev = findTmxFiles(join(LEVELS_ROOT, 'dev'));
+    expect(dev).toHaveLength(1);
+
+    const file = dev[0]!;
+    const level = parseTmxLevel(file.xml, { source: file.name });
+    expect(level.size).toEqual({ cols: 128, rows: 72 });
+    expect(level.isBossRoom).toBe(false);
+
+    // Chapter discovery skips it: a run's rooms are chapter data only.
+    expect(files.some((candidate) => candidate.name.startsWith('dev/'))).toBe(false);
+  });
+
   it('every file parses and validates with the same runtime parser', () => {
     for (const file of files) {
       expect(
@@ -300,7 +326,7 @@ describe('assets/resources/data/levels — every real .tmx file', () => {
   });
 
   it('every .tmx points at a real .tsx, and the .tsx points at a real PNG', () => {
-    for (const file of files) {
+    for (const file of findTmxFiles(LEVELS_ROOT, { includeDev: true })) {
       const root = parseXml(file.xml);
       const tileset = firstChild(root, 'tileset');
       const source = tileset?.attributes['source'];

@@ -143,6 +143,8 @@ export interface DebugProvider {
   readonly boss: () => DebugBossSnapshot | null;
   readonly setBossHp: (fraction: number) => boolean;
   readonly startChapter: (chapter: number, seed?: number) => Promise<boolean>;
+  /** Debug: load a standalone dev room by id (`dev-big`); `false` when unknown/failed. */
+  readonly loadRoom: (id: string) => Promise<boolean>;
   /** Current screen (title/chapter-select/playing/...). */
   readonly screen: () => DebugScreenId;
   /** The save in use (an object, not a string). */
@@ -207,6 +209,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
     boss: { value: provider.boss, enumerable: true },
     setBossHp: { value: provider.setBossHp, enumerable: true },
     startChapter: { value: provider.startChapter, enumerable: true },
+    loadRoom: { value: provider.loadRoom, enumerable: true },
     screen: { value: provider.screen, enumerable: true },
     save: { value: provider.save, enumerable: true },
     setGold: { value: provider.setGold, enumerable: true },
@@ -228,7 +231,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
   console.log(
     '[YokaiField] debug=1: window.__yokai ready ' +
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
-      'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, ' +
+      'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, loadRoom, ' +
       'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
       'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, keyLog).',
   );

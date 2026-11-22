@@ -26,14 +26,28 @@ export interface TmxFile {
   readonly xml: string;
 }
 
-/** Every `.tmx` file under `root` (recursive), sorted by path so tests are deterministic. */
-export function findTmxFiles(root: string = LEVELS_ROOT): TmxFile[] {
+/** Folders under `levels/` that are not chapter data (debug rooms for the browser proof). */
+const NON_CHAPTER_FOLDERS = new Set(['dev']);
+
+/**
+ * Every chapter `.tmx` file under `root` (recursive), sorted by path so tests are deterministic.
+ *
+ * Standalone dev rooms (`data/levels/dev/`, ticket #37) are **not** chapter data: they are
+ * skipped when scanning the whole `levels/` tree, so "every room of a chapter" tests keep their
+ * meaning. Pass `includeDev` (or a direct folder) to inspect them.
+ */
+export function findTmxFiles(
+  root: string = LEVELS_ROOT,
+  options: { readonly includeDev?: boolean } = {},
+): TmxFile[] {
   const files: TmxFile[] = [];
+  const skipDev = root === LEVELS_ROOT && options.includeDev !== true;
 
   const visit = (directory: string): void => {
     for (const entry of readdirSync(directory)) {
       const path = join(directory, entry);
       if (statSync(path).isDirectory()) {
+        if (skipDev && NON_CHAPTER_FOLDERS.has(entry)) continue;
         visit(path);
         continue;
       }

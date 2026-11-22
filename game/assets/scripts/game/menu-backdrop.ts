@@ -235,7 +235,7 @@ export class MenuBackdrop {
     const container = new CocosNode('menu-room');
     container.parent = roomLayer;
     const roomRoot = buildRoom(container, level, asset);
-    attachRoomWater(roomRoot, areas);
+    attachRoomWater(roomRoot, areas, level.size.rows);
 
     const ninja = this.createNinja(actorLayer, world);
     const atmosphere = attachRoomAtmosphere({

@@ -47,6 +47,7 @@ export interface DebugWiringHost {
   readonly boss: () => DebugBossSnapshot | null;
   readonly setBossHp: (fraction: number) => boolean;
   readonly startChapter: (chapter: number, seed?: number) => Promise<boolean>;
+  readonly loadRoom: (id: string) => Promise<boolean>;
   readonly screen: () => DebugScreenId;
   readonly save: () => unknown;
   readonly setGold: (gold: number) => boolean;
@@ -93,6 +94,7 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     boss: host.boss,
     setBossHp: host.setBossHp,
     startChapter: host.startChapter,
+    loadRoom: host.loadRoom,
     screen: host.screen,
     save: host.save,
     setGold: host.setGold,

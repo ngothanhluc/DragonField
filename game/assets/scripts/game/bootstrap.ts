@@ -91,6 +91,8 @@ import { ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
 import { PlayerController } from './player-controller';
 import { attachRoomWater } from './room-water';
 import { WorldCamera } from './world-camera';
+import { cullWorld } from './world-culler';
+import type { CameraFocus } from './world-camera';
 import { AudioManager, bossMusicId } from './audio/audio-manager';
 import type { MusicId } from './audio/audio-manager';
 import { playSfx } from './audio/sfx';
@@ -125,6 +127,14 @@ const CHAPTER_FOLDERS: Readonly<Record<number, string>> = {
   1: 'data/levels/chapter-1',
   2: 'data/levels/chapter-2',
   3: 'data/levels/chapter-3',
+};
+
+/**
+ * Standalone rooms for the browser proof (`?debug=1`, `__yokai.loadRoom(id)`), **not** part of
+ * any chapter: `data/levels/dev/` is never in `CHAPTER_FOLDERS`, so no run can load them.
+ */
+const DEV_ROOMS: Readonly<Record<string, string>> = {
+  'dev-big': 'data/levels/dev/room-big',
 };
 
 /**
@@ -268,6 +278,8 @@ export class Bootstrap extends Component {
   });
 
   private currentLevel: LevelData | null = null;
+  /** Player position of the previous frame, for the follow camera's velocity (tiles/s). */
+  private lastFocus: Vec2 | null = null;
   /** Real frame time of the last N frames — the debug `fps()` reads from here. */
   private readonly fpsMeter = new FpsMeter();
   private status: BootstrapStatus = 'loading';
@@ -316,8 +328,9 @@ export class Bootstrap extends Component {
     const rawDeltaMs = Math.min(Math.max(deltaTime, 0) * 1000, MAX_STEP_MS);
     // Shake/coin/damage numbers run on real time, before every status gate:
     // freezing mid-effect (hitstop/pause) looks like lag, and an offset camera
-    // would stay offset.
-    this.camera?.update(rawDeltaMs);
+    // would stay offset. The follow itself uses the player's last known position.
+    this.camera?.update(rawDeltaMs, this.cameraFocus(rawDeltaMs));
+    this.cullWorldToView();
     this.feel?.update(rawDeltaMs);
 
     // Death: the sim stands still but death FX keep running until result opens.
@@ -348,6 +361,45 @@ export class Bootstrap extends Component {
     if (result.cleared) {
       this.onWaveCleared();
     }
+  }
+
+  /**
+   * What the follow camera should track this frame: the player (tile units) and its velocity
+   * derived from the previous frame, so the camera can look ahead of the motion.
+   */
+  private cameraFocus(deltaMs: number): CameraFocus | null {
+    const player = this.player;
+    if (player === null) return null;
+
+    const position = player.position;
+    const seconds = Math.max(0, deltaMs) / 1000;
+    const previous = this.lastFocus;
+    this.lastFocus = { x: position.x, y: position.y };
+
+    if (previous === null || seconds <= 0) {
+      return { target: position, velocity: { x: 0, y: 0 } };
+    }
+    return {
+      target: position,
+      velocity: {
+        x: (position.x - previous.x) / seconds,
+        y: (position.y - previous.y) / seconds,
+      },
+    };
+  }
+
+  /**
+   * Keep only the room sprites the camera can see (big rooms only). A 32×18 room needs no
+   * culling: everything is inside the view, and the pass would be pure overhead.
+   */
+  private cullWorldToView(): void {
+    const camera = this.camera;
+    const level = this.currentLevel;
+    const root = this.roomRoot;
+    if (camera === null || level === null || root === null) return;
+    if (level.size.cols <= ROOM_COLS && level.size.rows <= ROOM_ROWS) return;
+
+    cullWorld(root, camera.worldViewRect());
   }
 
   /** Death: in-place FX + hold player.dead for ~1.4 s, then open result (GDD §9). */
@@ -494,6 +546,8 @@ export class Bootstrap extends Component {
     // Meta max HP is above 6: a run starts with full hearts, not 6/7.
     player.heal(player.maxHearts);
     this.createRoom(firstRoom);
+    // The room build sets the tile → world flip for this room's height (a room may be > one screen).
+    player.teleport(firstRoom.playerStart);
 
     await this.createBullets(player);
     await this.createHud();
@@ -610,6 +664,61 @@ export class Bootstrap extends Component {
         },
       );
     });
+  }
+
+  /** `resources.load` of one `TiledMapAsset`, naming the path in the error like `loadJson`. */
+  private loadTiledMap(path: string): Promise<TiledMapAsset> {
+    return new Promise<TiledMapAsset>((onLoad, onFail) => {
+      resources.load(
+        path,
+        CocosTiledMapAsset,
+        (error: Error | null | undefined, asset: TiledMapAsset | null | undefined) => {
+          if (error || !asset) {
+            const cause = error ? error.message : 'asset came back empty';
+            onFail(new Error(`Could not load "resources/${path}.tmx". Cause: ${cause}`));
+            return;
+          }
+          onLoad(asset);
+        },
+      );
+    });
+  }
+
+  /**
+   * Debug: load a standalone dev room (`data/levels/dev/`) into the live world so the browser
+   * proof can run along its walls and into its corners. Hosted by a chapter-1 run when none is
+   * active, because the player/combat/HUD already exist there.
+   */
+  private async loadRoom(id: string): Promise<boolean> {
+    const path = DEV_ROOMS[id];
+    if (path === undefined || this.status === 'loading') return false;
+
+    try {
+      if (this.run === null || this.currentLevel === null) {
+        await this.launchChapter(1);
+      }
+
+      const asset = await this.loadTiledMap(path);
+      const level = parseTmxLevel(asset.tmxXmlStr, { source: `resources/${path}.tmx` });
+
+      this.status = 'playing';
+      this.screens.setScreen('playing');
+      this.createRoom(level, asset);
+      this.combat?.enterRoom(level);
+      this.player?.teleport(level.playerStart);
+      this.combat?.startWave(0);
+      const player = this.player;
+      if (this.hud !== null && player !== null) syncCombatHud(this.hud, player, this.combat);
+
+      console.log(
+        `[YokaiField] Dev room '${id}': ${level.size.cols}×${level.size.rows} tiles, ` +
+          `${level.waves.length} wave(s), ${level.obstacles.length} obstacle(s).`,
+      );
+      return true;
+    } catch (error: unknown) {
+      this.fail(error);
+      return false;
+    }
   }
 
   /**
@@ -738,11 +847,11 @@ export class Bootstrap extends Component {
   }
 
   /** Build the new room and replace the old one (old node `destroy()` lets the engine clean children). */
-  private createRoom(level: LevelData): void {
+  private createRoom(level: LevelData, assetOverride?: TiledMapAsset): void {
     const roomLayer = this.roomLayer;
     if (roomLayer === null) throw new Error('Bootstrap: no room-layer');
 
-    const asset = this.chapterAssets.get(level.room);
+    const asset = assetOverride ?? this.chapterAssets.get(level.room);
     if (asset === undefined) {
       throw new Error(`TiledMapAsset not loaded for room ${level.room} (${level.id})`);
     }
@@ -751,11 +860,18 @@ export class Bootstrap extends Component {
     this.roomRoot = buildRoom(roomLayer, level, asset);
     const water = this.waterLayout;
     if (water !== null) {
-      attachRoomWater(this.roomRoot, waterAreasFor(water, level.chapter, level.room));
+      attachRoomWater(
+        this.roomRoot,
+        waterAreasFor(water, level.chapter, level.room),
+        level.size.rows,
+      );
     }
     // Atmosphere and living decor are rebuilt with the room; their nodes die with `roomRoot`.
     this.rebuildRoomAtmosphere(level);
     this.currentLevel = level;
+    // Hard cut on room entry: the new room's size, centred on the player's start.
+    this.camera?.enterRoom(level);
+    this.lastFocus = null;
   }
 
   /**
@@ -768,6 +884,8 @@ export class Bootstrap extends Component {
   private rebuildRoomAtmosphere(level: LevelData): void {
     this.roomAtmosphere?.destroy();
     this.roomAtmosphere = null;
+    // The old over-actors node is gone (or about to be replaced): stop pinning it first.
+    this.camera?.setScreenSpaceNode(null);
 
     const config = this.atmosphereConfig;
     const manifest = this.manifest;
@@ -796,6 +914,8 @@ export class Bootstrap extends Component {
 
     this.roomAtmosphere = parts;
     this.atmosphereSnapshot = parts.snapshot;
+    // Raylight/fog/ashes/vignette are screen-space: they follow the camera instead of scrolling.
+    this.camera?.setScreenSpaceNode(parts.atmosphere.over);
   }
 
   private createPlayer(startAt: Vec2): PlayerController {
@@ -864,6 +984,7 @@ export class Bootstrap extends Component {
     await feel.init(canvas, {
       goldAnchor: () => this.hud?.goldAnchor() ?? { x: 0, y: 0 },
       onCoinArrive: (amount) => this.onCoinArrived(amount),
+      cameraCentre: () => this.camera?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 },
     });
     feel.setHudScale(hudScale);
     this.feel = feel;
@@ -937,7 +1058,7 @@ export class Bootstrap extends Component {
       level.isBossRoom,
       this.player?.derivedStats.goldMultiplier ?? 1,
     );
-    this.flyGold(roomGold, this.player?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
+    this.flyGold(roomGold, this.player?.position ?? { x: level.size.cols / 2, y: level.size.rows / 2 });
 
     // Second Wind: heal hearts on every room clear (GDD §6).
     const healPerRoom = this.player?.derivedStats.healPerRoom ?? 0;
@@ -1184,8 +1305,12 @@ export class Bootstrap extends Component {
     // explicitly (otherwise ch1 shafts/leaves stay drawn over the next chapter and the menus).
     this.roomAtmosphere?.destroy();
     this.roomAtmosphere = null;
+    this.camera?.setScreenSpaceNode(null);
+    // Menus draw a one-screen room: put the camera back at its static centre.
+    this.camera?.showScreen();
     this.atmosphereSnapshot = { chapter: 0, layers: [], animals: 0, props: 0 };
     this.currentLevel = null;
+    this.lastFocus = null;
     this.chapter = null;
     this.chapterAssets = new Map();
     this.run = null;
@@ -1258,6 +1383,7 @@ export class Bootstrap extends Component {
           return false;
         }
       },
+      loadRoom: (id) => this.loadRoom(id),
       screen: () => this.screens.screenId,
       save: () => this.save,
       setGold: (gold) => this.screens.setGold(gold),

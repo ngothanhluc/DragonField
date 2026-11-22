@@ -27,6 +27,7 @@ import type {
   AtmosphereConfig,
   AtmosphereLayer,
   AtmosphereLayerKind,
+  DecorSpec,
   VisibleAtmosphere,
 } from '../core/atmosphere/atmosphere';
 import { chapterAtmosphere, visibleAtmosphere } from '../core/atmosphere/atmosphere';
@@ -50,7 +51,11 @@ const { ccclass } = _decorator;
 
 type Motion = 'still' | 'fall' | 'wind' | 'fog';
 
-/** Per-kind draw size (world units = tiles) and motion; `still` layers only animate frames. */
+/**
+ * Per-kind draw size (world units = tiles) and motion; `still` layers only animate frames.
+ * Over-actors particles are laid out in **one view** of `ROOM_COLS × ROOM_ROWS` local units and
+ * the adapter pins the node to the camera (#37), so these numbers mean "the screen", not the room.
+ */
 const STYLE: Readonly<
   Record<AtmosphereLayerKind, { readonly motion: Motion; readonly drawUnits: number; readonly tint: readonly [number, number, number] }>
 > = {
@@ -102,6 +107,8 @@ export class AtmosphereLayers extends Component {
   private readonly layers: LayerRuntime[] = [];
   private rippleAreas: readonly RippleArea[] = [];
   private elapsedMs = 0;
+  /** Room height, for the tile → world flip of world-space layers (ripples). */
+  private rows = ROOM_ROWS;
 
   /** Build the layers that `visibleAtmosphere` allows; returns the kinds actually created. */
   async init(
@@ -109,9 +116,11 @@ export class AtmosphereLayers extends Component {
     manifest: AnimationManifest,
     seed: number,
     rippleAreas: readonly RippleArea[] = [],
+    rows: number = ROOM_ROWS,
   ): Promise<AtmosphereLayerKind[]> {
     const rng = new SeededRng(seed);
     this.rippleAreas = rippleAreas;
+    this.rows = rows;
     const created: AtmosphereLayerKind[] = [];
 
     for (const layer of visible.layers) {
@@ -305,7 +314,7 @@ export class AtmosphereLayers extends Component {
           // The 1×1 ripple sprite must stay fully inside the water: keep half a tile off each edge.
           particle.x = area.x + 0.5 + rng.next() * Math.max(0, area.width - 1);
           // Tile y (down) → world y (up): the ripple sits on the water surface.
-          particle.y = ROOM_ROWS - (area.y + 0.5 + rng.next() * Math.max(0, area.height - 1));
+          particle.y = this.rows - (area.y + 0.5 + rng.next() * Math.max(0, area.height - 1));
         } else {
           particle.x = 1 + rng.next() * (ROOM_COLS - 2);
           particle.y = 1 + rng.next() * (ROOM_ROWS - 2);
@@ -389,12 +398,19 @@ function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
+/** How many 32×18 screens a room covers (1 for every chapter/boss room today). */
+function roomScreens(size: { readonly cols: number; readonly rows: number }): number {
+  return Math.max(1, (size.cols / ROOM_COLS) * (size.rows / ROOM_ROWS));
+}
+
 export interface AtmosphereAttachOptions {
   readonly visible: VisibleAtmosphere;
   readonly manifest: AnimationManifest;
   readonly seed: number;
   /** Water rectangles of this room (ch2), so ripples land on water instead of the floor. */
   readonly rippleAreas?: readonly RippleArea[];
+  /** Room height (tiles): the tile → world flip for world-space layers. */
+  readonly rows: number;
 }
 
 export interface AtmosphereHandle {
@@ -428,7 +444,7 @@ export function attachAtmosphere(
     if (siblingIndex !== null) node.setSiblingIndex(siblingIndex);
     const view: AtmosphereLayers = node.addComponent(AtmosphereLayers);
     void view
-      .init(visible, options.manifest, options.seed, options.rippleAreas ?? [])
+      .init(visible, options.manifest, options.seed, options.rippleAreas ?? [], options.rows)
       .catch((error: unknown) => {
         warn(`[YokaiField] Could not build the atmosphere: ${String(error)}`);
       });
@@ -515,10 +531,20 @@ export function attachRoomAtmosphere(options: RoomAtmosphereOptions): RoomAtmosp
   if (atmosphere === null) return null;
 
   const visible = visibleAtmosphere(atmosphere, options.effects);
+  // Living decor is a world thing: keep the same density per screen when the room is bigger
+  // than one screen (#37). A 32×18 room keeps exactly the chapter's number.
+  const screens = roomScreens(options.level.size);
+  const decorSpec: DecorSpec = {
+    ...atmosphere.decor,
+    animalsPerRoom: Math.round(atmosphere.decor.animalsPerRoom * screens),
+    propsPerRoom: Math.round(atmosphere.decor.propsPerRoom * screens),
+  };
+
   const handle = attachAtmosphere(options.roomRoot, options.overLayer, {
     visible,
     manifest: options.manifest,
     seed: options.seed,
+    rows: options.level.size.rows,
     ...(options.rippleAreas !== undefined ? { rippleAreas: options.rippleAreas } : {}),
   });
 
@@ -529,14 +555,14 @@ export function attachRoomAtmosphere(options: RoomAtmosphereOptions): RoomAtmosp
     seed: (options.seed + 1) >>> 0,
     playerOf: options.playerOf,
     visible,
-    spec: atmosphere.decor,
+    spec: decorSpec,
   });
 
   const snapshot: RoomAtmosphereSnapshot = {
     chapter: options.level.chapter,
     layers: handle.kinds,
-    animals: visible.animals ? atmosphere.decor.animalsPerRoom : 0,
-    props: visible.animatedProps ? atmosphere.decor.propsPerRoom : 0,
+    animals: visible.animals ? decorSpec.animalsPerRoom : 0,
+    props: visible.animatedProps ? decorSpec.propsPerRoom : 0,
   };
   void decor.ready.then((counts) => {
     snapshot.animals = counts.animals;
