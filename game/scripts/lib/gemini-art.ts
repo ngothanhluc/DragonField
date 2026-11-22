@@ -56,6 +56,8 @@ export interface FitCellsOptions {
    * behaviour: `frameWidth - 1 × frameHeight - 1` for `feet`, the frame for `center`.
    */
   readonly fitBox?: readonly [number, number];
+  /** Ticket #24 (stub): shift the crop window to line the output grid up with the source's pixel grid. */
+  readonly align?: boolean;
 }
 
 /** A point in output-frame pixels. */
