@@ -82,6 +82,14 @@ export const OBSTACLE_VISUALS: Readonly<
     wall: { sheet: VILLAGE, rect: BOUNDS.villageBrokenStone, tile: true },
     pit: { sheet: HOLE, rect: BOUNDS.holePit, tile: false },
   },
+  // Chapter 4 — desert (#45): the grey nature boulder reads as a sandstone rock on sand, and the
+  // nature wall is the nearest "broken wall" the pack has; a pit is a 2×2 boulder pit like ch1.
+  4: {
+    pillar: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
+    pillarSmall: { sheet: ELEMENT, rect: BOUNDS.crate, tile: true },
+    wall: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
+    pit: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
+  },
 };
 
 /** Visual for one obstacle in a chapter; unknown chapters fall back to chapter 1. */

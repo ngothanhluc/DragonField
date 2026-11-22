@@ -183,6 +183,8 @@ export interface DebugProvider {
   readonly save: () => unknown;
   /** Debug-only: set gold for shop tests; `false` when the value is invalid. */
   readonly setGold: (gold: number) => boolean;
+  /** Debug-only: credit a chapter clear (unlock the next chapter + best) and persist it (#45). */
+  readonly markChapterCleared: (chapter: number) => boolean;
   /** Every visible Label + rect, so tests can assert nothing is clipped. */
   readonly uiText: () => readonly DebugUiText[];
   /** Debug: open a preview of N skills (no grant) to test text fitting. */
@@ -253,6 +255,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
     screen: { value: provider.screen, enumerable: true },
     save: { value: provider.save, enumerable: true },
     setGold: { value: provider.setGold, enumerable: true },
+    markChapterCleared: { value: provider.markChapterCleared, enumerable: true },
     uiText: { value: provider.uiText, enumerable: true },
     skillPreview: { value: provider.skillPreview, enumerable: true },
     closeSkillPreview: { value: provider.closeSkillPreview, enumerable: true },
@@ -276,7 +279,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
     '[YokaiField] debug=1: window.__yokai ready ' +
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, loadRoom, ' +
-      'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
+      'screen, save, setGold, markChapterCleared, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
       'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, keyLog).',
   );
   return true;

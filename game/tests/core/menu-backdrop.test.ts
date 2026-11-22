@@ -47,8 +47,8 @@ describe('menuBackdropChapter — which room is behind the menu', () => {
     ).toBe(1);
   });
 
-  it('chapter select shows the focused chapter (ch1 / ch2 / ch3)', () => {
-    for (const chapter of [1, 2, 3]) {
+  it('chapter select shows the focused chapter (ch1 … ch4)', () => {
+    for (const chapter of [1, 2, 3, 4]) {
       expect(
         menuBackdropChapter({
           screen: 'chapter-select',
@@ -113,8 +113,8 @@ describe('menuPlayerSpot — the idle ninja stays visible beside the panel', () 
     }
   });
 
-  it('finds a visible, free spot in the real room 1 of chapters 1–3, deterministically', () => {
-    for (const chapter of [1, 2, 3]) {
+  it('finds a visible, free spot in the real room 1 of chapters 1–4, deterministically', () => {
+    for (const chapter of [1, 2, 3, 4]) {
       const levels = loadTmxLevels(join(LEVELS_ROOT, `chapter-${chapter}`));
       const room = levels.find((level) => level.room === MENU_BACKDROP_ROOM);
       expect(room, `chapter ${chapter} room ${MENU_BACKDROP_ROOM}`).toBeDefined();

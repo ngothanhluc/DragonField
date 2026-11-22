@@ -29,9 +29,9 @@ describe('chapterGate', () => {
     expect(gate.reason).toMatch(/level data/);
   });
 
-  it('blocks a chapter outside 1..3 / not an integer', () => {
-    const save = { ...createDefaultSave(), chaptersUnlocked: 3 };
-    for (const chapter of [0, 4, 1.5, Number.NaN]) {
+  it('blocks a chapter outside 1..4 / not an integer', () => {
+    const save = { ...createDefaultSave(), chaptersUnlocked: 4 };
+    for (const chapter of [0, 5, 1.5, Number.NaN]) {
       expect(chapterGate(save, chapter, true).allowed).toBe(false);
     }
   });
@@ -42,9 +42,10 @@ describe('chapterGate', () => {
     expect(chapterGate(save, 2, true).allowed).toBe(false);
   });
 
-  it('unlocked greater than 3 does not open chapter 4', () => {
+  it('an unlocked count above the cap does not open a chapter beyond the run', () => {
     const save = { ...createDefaultSave(), chaptersUnlocked: 99 };
     expect(chapterGate(save, 3, true).allowed).toBe(true);
-    expect(chapterGate(save, 4, true).allowed).toBe(false);
+    expect(chapterGate(save, 4, true).allowed).toBe(true);
+    expect(chapterGate(save, 5, true).allowed).toBe(false);
   });
 });

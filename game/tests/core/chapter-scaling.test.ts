@@ -8,7 +8,7 @@ import { TUNING_SOURCE } from '../../assets/scripts/core/enemies/tuning';
 import { spawnWave } from '../../assets/scripts/core/enemies/waves';
 import { parseLevelData } from '../../assets/scripts/core/level/level-data';
 
-const HEALTH = [1, 1.05, 1.05];
+const HEALTH = [1, 1.05, 1.05, 1.1];
 
 function roomForChapter(chapter: number) {
   return parseLevelData({
@@ -36,7 +36,7 @@ function roomForChapter(chapter: number) {
 describe('chapter scaling', () => {
   it('enemy health rises per chapter by the factors in tuning.json', () => {
     for (const role of ['chaser', 'caster', 'tank'] as const) {
-      for (const chapter of [1, 2, 3]) {
+      for (const chapter of [1, 2, 3, 4]) {
         const base = maxHealthFor(role, false);
         const scaled = maxHealthFor(role, false, undefined, chapter);
         expect(scaled, `${role} chapter ${chapter}`).toBe(
@@ -47,7 +47,7 @@ describe('chapter scaling', () => {
   });
 
   it('enemy damage does not scale per chapter (difficulty comes from count/elites)', () => {
-    for (const chapter of [1, 2, 3]) {
+    for (const chapter of [1, 2, 3, 4]) {
       expect(contactDamageFor('tank', false, undefined, chapter)).toBe(2);
       expect(contactDamageFor('chaser', false, undefined, chapter)).toBe(1);
     }
@@ -70,7 +70,7 @@ describe('chapter scaling', () => {
       chapters: { enemyHealthMultipliers: number[] };
     };
     raw.chapters.enemyHealthMultipliers = [1, 1.2];
-    expect(() => parseTuning(raw)).toThrow(/exactly 3 elements|3 elements/);
+    expect(() => parseTuning(raw)).toThrow(/exactly 4 elements|4 elements/);
 
     const negative = JSON.parse(JSON.stringify(TUNING_SOURCE)) as {
       chapters: { enemyDamageMultipliers: number[] };

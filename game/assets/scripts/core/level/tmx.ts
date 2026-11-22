@@ -30,7 +30,7 @@
  *
  *   | name         | type   | required | meaning |
  *   |--------------|--------|----------|---------|
- *   | `chapter`    | int    | yes      | 1..3 |
+ *   | `chapter`    | int    | yes      | 1..4 |
  *   | `room`       | int    | yes      | ≥ 1, unique within the same folder |
  *   | `isBossRoom` | bool   | no       | defaults to false |
  *   | `boss`       | string | for boss | sprite name in `BOSSES` (e.g. `TenguBlue`) |
@@ -58,6 +58,7 @@ import type {
   PlacedProp,
   Wave,
 } from './level-data';
+import { CHAPTERS_PER_RUN } from '../run/run-state';
 import { propCollider, propDef } from './props';
 import { childrenNamed, elementText, firstChild, parseXml } from './xml';
 import type { XmlElement } from './xml';
@@ -613,8 +614,11 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
   const isBossRoom = readBooleanProperty(mapProperties, 'isBossRoom', false, problems);
   const bossName = readStringProperty(mapProperties, 'boss', problems);
 
-  if (chapter !== null && (chapter < 1 || chapter > 3)) {
-    problems.add('map.properties.chapter', `must be an integer 1..3, got ${chapter}`);
+  if (chapter !== null && (chapter < 1 || chapter > CHAPTERS_PER_RUN)) {
+    problems.add(
+      'map.properties.chapter',
+      `must be an integer 1..${CHAPTERS_PER_RUN}, got ${chapter}`,
+    );
   }
   if (room !== null && room < 1) {
     problems.add('map.properties.room', `must be an integer >= 1, got ${room}`);

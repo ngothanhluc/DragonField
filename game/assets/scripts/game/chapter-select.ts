@@ -62,8 +62,9 @@ export interface ChapterSelectScreen {
 /** A light dim over the living room; the panel itself stays opaque (alpha 255). */
 const CHAPTER_BACKDROP_ALPHA = 96;
 const BUTTON_WIDTH = MENU_COLUMN_WIDTH - 40;
-const BUTTON_HEIGHT = 40;
-const BUTTON_GAP = 8;
+/** 32×4 + 4×3 gaps + Back fit inside the 268 px column with four chapters (#45). */
+const BUTTON_HEIGHT = 32;
+const BUTTON_GAP = 4;
 const PANEL_HEIGHT = 268;
 
 /** Record as text: "Best: chapter 2 · room 4" or "Best: —". */
@@ -128,7 +129,7 @@ export async function buildChapterSelect(
         activate: () => options.onSelect(chapter.chapter),
       },
       frames,
-      { width: BUTTON_WIDTH, height: BUTTON_HEIGHT, fontSize: 13 },
+      { width: BUTTON_WIDTH, height: BUTTON_HEIGHT, fontSize: 12 },
     );
     handle.node.setPosition(0, firstCenter - index * (BUTTON_HEIGHT + BUTTON_GAP), 0);
     handles.push(handle);
@@ -141,7 +142,7 @@ export async function buildChapterSelect(
     frames,
     { width: BUTTON_WIDTH, height: 30, fontSize: 12 },
   );
-  back.node.setPosition(0, -102, 0);
+  back.node.setPosition(0, -106, 0);
   handles.push(back);
 
   const panel = createMenuPanel(

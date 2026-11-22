@@ -14,8 +14,8 @@ function clearAndAdvance(run: RunState): void {
 }
 
 describe('RunState — constants', () => {
-  it('matches the GDD: 3 chapters, each 8 regular rooms + 1 boss', () => {
-    expect(CHAPTERS_PER_RUN).toBe(3);
+  it('matches the GDD: 4 chapters, each 8 regular rooms + 1 boss', () => {
+    expect(CHAPTERS_PER_RUN).toBe(4);
     expect(NORMAL_ROOMS_PER_CHAPTER).toBe(8);
     expect(ROOMS_PER_CHAPTER).toBe(9);
   });
@@ -37,10 +37,10 @@ describe('RunState — initial state', () => {
     expect(new RunState(3).chapter).toBe(3);
   });
 
-  it('rejects a chapter outside 1..3', () => {
-    expect(() => new RunState(0)).toThrow(/1\.\.3/);
-    expect(() => new RunState(4)).toThrow(/1\.\.3/);
-    expect(() => new RunState(1.5)).toThrow(/1\.\.3/);
+  it('rejects a chapter outside 1..4', () => {
+    expect(() => new RunState(0)).toThrow(/1\.\.4/);
+    expect(() => new RunState(5)).toThrow(/1\.\.4/);
+    expect(() => new RunState(1.5)).toThrow(/1\.\.4/);
   });
 });
 
@@ -189,13 +189,13 @@ describe('RunState — label and progress', () => {
     expect(run.progress).toBe(0);
 
     run.onRoomCleared();
-    expect(run.progress).toBeCloseTo(1 / 27, 10);
+    expect(run.progress).toBeCloseTo(1 / (CHAPTERS_PER_RUN * ROOMS_PER_CHAPTER), 10);
 
     run.advanceToNextRoom();
-    expect(run.progress).toBeCloseTo(1 / 27, 10);
+    expect(run.progress).toBeCloseTo(1 / (CHAPTERS_PER_RUN * ROOMS_PER_CHAPTER), 10);
 
     run.onRoomCleared();
-    expect(run.progress).toBeCloseTo(2 / 27, 10);
+    expect(run.progress).toBeCloseTo(2 / (CHAPTERS_PER_RUN * ROOMS_PER_CHAPTER), 10);
   });
 
   it('a lost run keeps the progress already reached', () => {
@@ -206,7 +206,7 @@ describe('RunState — label and progress', () => {
     run.markLost();
 
     expect(run.status).toBe('lost');
-    expect(run.progress).toBeCloseTo(2 / 27, 10);
+    expect(run.progress).toBeCloseTo(2 / (CHAPTERS_PER_RUN * ROOMS_PER_CHAPTER), 10);
   });
 });
 
@@ -258,8 +258,8 @@ describe('RunState — markWon (chapter played as its own run)', () => {
     expect(run.status).toBe('won');
     expect(run.chapter).toBe(1);
     expect(run.room).toBe(ROOMS_PER_CHAPTER);
-    // progress is computed over all 3 chapters of the run (GDD §1), so finishing chapter 1 = 1/3.
-    expect(run.progress).toBeCloseTo(1 / 3, 10);
+    // progress is computed over all chapters of the run (GDD §1), so finishing chapter 1 = 1/4.
+    expect(run.progress).toBeCloseTo(1 / CHAPTERS_PER_RUN, 10);
   });
 
   it('markWon from the playing state is valid too', () => {
@@ -296,7 +296,7 @@ describe('RunState — invalid transitions all throw', () => {
   });
 
   it('cannot advance the room after winning', () => {
-    const run = new RunState(3);
+    const run = new RunState(CHAPTERS_PER_RUN);
     for (let room = 1; room <= ROOMS_PER_CHAPTER; room += 1) {
       clearAndAdvance(run);
     }
@@ -327,7 +327,7 @@ describe('RunState — invalid transitions all throw', () => {
   });
 
   it('cannot mark lost after winning', () => {
-    const run = new RunState(3);
+    const run = new RunState(CHAPTERS_PER_RUN);
     for (let room = 1; room <= ROOMS_PER_CHAPTER; room += 1) {
       clearAndAdvance(run);
     }

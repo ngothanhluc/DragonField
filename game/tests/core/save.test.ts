@@ -221,7 +221,7 @@ describe('SaveData — withBest', () => {
 
   it('rejects a chapter/room out of range', () => {
     expect(() => withBest(createDefaultSave(), 0, 1)).toThrow(/chapter/);
-    expect(() => withBest(createDefaultSave(), 4, 1)).toThrow(/chapter/);
+    expect(() => withBest(createDefaultSave(), 5, 1)).toThrow(/chapter/);
     expect(() => withBest(createDefaultSave(), 1, 0)).toThrow(/room/);
     expect(() => withBest(createDefaultSave(), 1, 2.5)).toThrow(/room/);
   });

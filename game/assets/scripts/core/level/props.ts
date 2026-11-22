@@ -58,6 +58,7 @@ const ELEMENT = 'resources/art/tilesets/TilesetElement.png';
 const HOUSE = 'resources/art/tilesets/TilesetHouse.png';
 const VILLAGE = 'resources/art/tilesets/TilesetVillageAbandoned.png';
 const CAMP = 'resources/art/tilesets/tileset_camp.png';
+const DESERT = 'resources/art/tilesets/TilesetDesert.png';
 const PROPS = 'resources/art/props/';
 
 /** Trunk of a 32×32 tree: 1 tile wide, half a tile deep, so the canopy is walk-under. */
@@ -307,6 +308,81 @@ const RIVER_PROPS: readonly PropDef[] = [
 /** Grass/bushes/flowers shared by every chapter (the walk-over floor of the catalogue). */
 const WALK_OVER_NATURE = NATURE_PROPS.filter((def) => !def.solid);
 
+/**
+ * Desert village (`TilesetDesert`, ch4): two adobe houses, palm clusters, a skull and small
+ * bones/shells scattered on the sand. The palms block only at the middle trunk, so the fronds
+ * are walk-under (the same rule as the nature trees).
+ */
+const DESERT_PROPS: readonly PropDef[] = [
+  house('desert-house', DESERT, { x: 96, y: 0, width: 56, height: 60 }, { x: 2, y: 44, width: 52, height: 14 }),
+  house('desert-tower', DESERT, { x: 49, y: 0, width: 46, height: 80 }, { x: 4, y: 64, width: 38, height: 14 }),
+  tree('palm-cluster', DESERT, { x: 160, y: 64, width: 64, height: 42 }, { x: 26, y: 30, width: 12, height: 10 }),
+  tree('palm-cluster-dusty', DESERT, { x: 160, y: 110, width: 64, height: 42 }, { x: 26, y: 30, width: 12, height: 10 }),
+  solid('desert-skull', {
+    kind: 'structure',
+    sheet: DESERT,
+    rect: { x: 256, y: 160, width: 16, height: 16 },
+    collider: { x: 1, y: 10, width: 14, height: 6 },
+  }),
+  walkOver('desert-fish-bones', {
+    kind: 'decor',
+    sheet: DESERT,
+    rect: { x: 240, y: 176, width: 16, height: 16 },
+    collider: null,
+  }),
+  walkOver('desert-shell', {
+    kind: 'decor',
+    sheet: DESERT,
+    rect: { x: 272, y: 176, width: 16, height: 16 },
+    collider: null,
+  }),
+  walkOver('desert-potted-palm', {
+    kind: 'decor',
+    sheet: DESERT,
+    rect: { x: 224, y: 160, width: 16, height: 18 },
+    collider: null,
+  }),
+];
+
+/**
+ * Desert camp (`tileset_camp`, ch4): tents count as `house` (the brief's house rule), plus the
+ * camp furniture — a well, a table, a bench, a signpost, a barrel and the log pile.
+ */
+const DESERT_CAMP_PROPS: readonly PropDef[] = [
+  house('camp-tent', CAMP, { x: 64, y: 0, width: 48, height: 48 }, { x: 2, y: 30, width: 44, height: 18 }),
+  house('camp-tent-open', CAMP, { x: 112, y: 0, width: 48, height: 48 }, { x: 2, y: 30, width: 44, height: 18 }),
+  solid('camp-well', {
+    kind: 'structure',
+    sheet: CAMP,
+    rect: { x: 20, y: 80, width: 28, height: 26 },
+    collider: { x: 2, y: 12, width: 24, height: 12 },
+  }),
+  solid('camp-table', {
+    kind: 'structure',
+    sheet: CAMP,
+    rect: { x: 128, y: 64, width: 32, height: 16 },
+    collider: { x: 2, y: 10, width: 28, height: 6 },
+  }),
+  solid('camp-bench', {
+    kind: 'structure',
+    sheet: CAMP,
+    rect: { x: 2, y: 112, width: 44, height: 16 },
+    collider: { x: 0, y: 8, width: 44, height: 8 },
+  }),
+  solid('camp-signpost', {
+    kind: 'structure',
+    sheet: CAMP,
+    rect: { x: 96, y: 81, width: 16, height: 30 },
+    collider: { x: 5, y: 22, width: 6, height: 8 },
+  }),
+  solid('camp-barrel', {
+    kind: 'structure',
+    sheet: CAMP,
+    rect: { x: 64, y: 98, width: 32, height: 31 },
+    collider: { x: 2, y: 17, width: 28, height: 12 },
+  }),
+];
+
 /** Catalogue per chapter number. Keys are unique within a chapter. */
 export const PROP_CATALOGUE: Readonly<Record<number, readonly PropDef[]>> = {
   1: [
@@ -326,6 +402,14 @@ export const PROP_CATALOGUE: Readonly<Record<number, readonly PropDef[]>> = {
     ...ELEMENT_PROPS,
     ...HOUSE_PROPS,
     ...VILLAGE_PROPS,
+  ],
+  // Chapter 4 — desert: the M9 desert village tileset + camp, with the shared nature walk-overs.
+  4: [
+    ...NATURE_PROPS,
+    ...ELEMENT_PROPS,
+    ...CAMP_PROPS,
+    ...DESERT_PROPS,
+    ...DESERT_CAMP_PROPS,
   ],
 };
 

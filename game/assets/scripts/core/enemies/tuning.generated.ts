@@ -27,11 +27,13 @@ export const TUNING_DATA = {
       1,
       1.05,
       1.05,
+      1.1,
     ],
     enemyDamageMultipliers: [
       1,
       1,
       1,
+      1.05,
     ],
   },
   enemies: {
@@ -170,6 +172,10 @@ export const TUNING_DATA = {
       {
         min: 56,
         max: 64,
+      },
+      {
+        min: 64,
+        max: 72,
       },
     ],
   },

@@ -19,7 +19,7 @@ import { TUNING } from '../../assets/scripts/core/enemies/tuning';
 const cover = (TUNING as unknown as { cover?: { overlayAlpha: number; actorInCoverAlpha: number; fadeRate: number } }).cover;
 
 function firstDef(predicate: (def: PropDef) => boolean): PropDef {
-  for (const chapter of [1, 2, 3]) {
+  for (const chapter of [1, 2, 3, 4]) {
     const def = (PROP_CATALOGUE[chapter] ?? []).find(predicate);
     if (def !== undefined) return def;
   }

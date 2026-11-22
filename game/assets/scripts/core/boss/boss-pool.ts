@@ -3,7 +3,7 @@
  *
  * A chapter's boss is picked from its pool by the **run seed**, so two runs of the same
  * chapter can meet different bosses while a replay of the same seed stays identical.
- * Chapters 1–4 all have two bosses (#43, #44); chapter 4 has no levels yet (#45).
+ * Chapters 1–4 all have two bosses (#43, #44); chapter 4 levels landed with #45.
  *
  * Pure data + pure functions: no time, no RNG instance, no `cc` (the seed is the whole input).
  */

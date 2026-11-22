@@ -13,7 +13,12 @@ import { CHAPTERS_PER_RUN } from '../run/run-state';
 import { DEFAULT_SETTINGS, applySettings } from './settings';
 import type { Settings } from './settings';
 
-export const SAVE_VERSION = 1;
+/**
+ * v2 (#45): chapter 4 exists. The schema itself is unchanged — v1 already held every field —
+ * but a v1 save cannot record that chapter 3's boss was beaten (the old cap was 3 unlocked
+ * chapters), so migration keeps `chaptersUnlocked` as it was: ch4 opens when ch3 is cleared again.
+ */
+export const SAVE_VERSION = 2;
 
 /** Furthest record reached. `chapter`/`room` = 0 means never played. */
 export interface BestProgress {
@@ -409,8 +414,10 @@ export function migrate(raw: unknown): SaveData {
 
   const defaults = createDefaultSave();
 
-  // Only v1 exists so far, so "migrate" = patch missing fields + rename old keys. When adding
-  // SAVE_VERSION 2, add an `if (version < 2)` branch here instead of editing parseSaveData.
+  // v1 → v2 (#45): chapter 4 exists, but the schema gained no field. A v1 save could not record
+  // that chapter 3's boss was beaten (unlocks capped at 3), so `chaptersUnlocked` is kept
+  // **unchanged** — ch4 stays locked until chapter 3 is cleared again. Only patch missing fields
+  // and rename old keys here; `parseSaveData` stays the single validator.
   const migrated = {
     version: SAVE_VERSION,
     gold: pick(raw, 'gold', defaults.gold),

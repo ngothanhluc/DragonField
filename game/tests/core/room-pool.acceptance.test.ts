@@ -13,7 +13,7 @@ import { DRAWN_NORMAL_ROOMS, drawRunRooms } from '../../assets/scripts/core/run/
 import { LEVELS_ROOT, loadTmxLevels } from '../helpers/tmx-levels';
 
 const chapters: Readonly<Record<number, ChapterData>> = Object.fromEntries(
-  [1, 2, 3].map((n) => [n, chapterFromLevels(loadTmxLevels(join(LEVELS_ROOT, `chapter-${n}`)))]),
+  [1, 2, 3, 4].map((n) => [n, chapterFromLevels(loadTmxLevels(join(LEVELS_ROOT, `chapter-${n}`)))]),
 );
 
 function normalRooms(chapter: ChapterData): LevelData[] {
@@ -21,7 +21,7 @@ function normalRooms(chapter: ChapterData): LevelData[] {
 }
 
 describe('room pool on disk', () => {
-  for (const n of [1, 2, 3]) {
+  for (const n of [1, 2, 3, 4]) {
     it(`chapter ${n}: 15–18 normal rooms of 128×72, then one 32×18 boss room`, () => {
       const chapter = chapters[n];
       if (chapter === undefined) throw new Error('chapter');
@@ -67,7 +67,7 @@ describe('seeded draw', () => {
 });
 
 describe('generated room geometry', () => {
-  for (const n of [1, 2, 3]) {
+  for (const n of [1, 2, 3, 4]) {
     it(`chapter ${n}: start reaches every door, spawns spread over the room, obstacles per screen bounded`, () => {
       const chapter = chapters[n];
       if (chapter === undefined) throw new Error('chapter');
