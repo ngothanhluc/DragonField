@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="128" height="72" tilewidth="16" tileheight="16" infinite="0" nextlayerid="4" nextobjectid="166">
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="128" height="72" tilewidth="16" tileheight="16" infinite="0" nextlayerid="4" nextobjectid="112">
  <properties>
     <property name="chapter" type="int" value="4"/>
     <property name="room" type="int" value="3"/>
@@ -160,945 +160,563 @@
   </data>
  </layer>
  <objectgroup id="2" name="objects">
-  <object id="1" name="playerStart" x="1024" y="624"><point/></object>
-  <object id="2" name="spawn" x="960" y="456">
-   <properties>
-    <property name="role" value="tank"/>
-    <property name="wave" type="int" value="1"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="3" name="spawn" x="368" y="168">
+  <object id="1" name="playerStart" x="1088" y="624"><point/></object>
+  <object id="2" name="spawn" x="1136" y="744">
    <properties>
     <property name="role" value="chaser"/>
     <property name="wave" type="int" value="1"/>
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
-  <object id="4" name="spawn" x="1848" y="1072">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="1"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="5" name="spawn" x="824" y="1048">
+  <object id="3" name="spawn" x="984" y="520">
    <properties>
     <property name="role" value="chaser"/>
     <property name="wave" type="int" value="1"/>
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
-  <object id="6" name="spawn" x="1512" y="72">
-   <properties>
-    <property name="role" value="splitter"/>
-    <property name="wave" type="int" value="1"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="7" name="spawn" x="1096" y="936">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="1"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="8" name="spawn" x="976" y="80">
-   <properties>
-    <property name="role" value="sniper"/>
-    <property name="wave" type="int" value="1"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="9" name="spawn" x="88" y="832">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="1"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="10" name="spawn" x="1608" y="816">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="2"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="11" name="spawn" x="96" y="504">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="2"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="12" name="spawn" x="1160" y="728">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="2"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="13" name="spawn" x="1608" y="304">
-   <properties>
-    <property name="role" value="splitter"/>
-    <property name="wave" type="int" value="2"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="14" name="spawn" x="2016" y="248">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="2"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="15" name="spawn" x="304" y="992">
-   <properties>
-    <property name="role" value="sniper"/>
-    <property name="wave" type="int" value="2"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="16" name="spawn" x="576" y="704">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="2"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="17" name="spawn" x="1160" y="320">
+  <object id="4" name="spawn" x="1120" y="488">
    <properties>
     <property name="role" value="tank"/>
     <property name="wave" type="int" value="2"/>
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
-  <object id="18" name="spawn" x="648" y="504">
+  <object id="5" name="spawn" x="896" y="624">
+   <properties>
+    <property name="role" value="caster"/>
+    <property name="wave" type="int" value="2"/>
+    <property name="elite" type="bool" value="false"/>
+   </properties>
+  <point/></object>
+  <object id="6" name="spawn" x="1240" y="608">
+   <properties>
+    <property name="role" value="chaser"/>
+    <property name="wave" type="int" value="3"/>
+    <property name="elite" type="bool" value="false"/>
+   </properties>
+  <point/></object>
+  <object id="7" name="spawn" x="1176" y="472">
    <properties>
     <property name="role" value="caster"/>
     <property name="wave" type="int" value="3"/>
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
-  <object id="19" name="spawn" x="272" y="120">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="3"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="20" name="spawn" x="1752" y="888">
-   <properties>
-    <property name="role" value="splitter"/>
-    <property name="wave" type="int" value="3"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="21" name="spawn" x="792" y="936">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="3"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="22" name="spawn" x="1368" y="24">
+  <object id="8" name="spawn" x="1088" y="488">
    <properties>
     <property name="role" value="sniper"/>
     <property name="wave" type="int" value="3"/>
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
-  <object id="23" name="spawn" x="1464" y="912">
+  <object id="9" name="spawn" x="960" y="624">
    <properties>
-    <property name="role" value="caster"/>
+    <property name="role" value="splitter"/>
     <property name="wave" type="int" value="3"/>
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
-  <object id="24" name="spawn" x="576" y="264">
-   <properties>
-    <property name="role" value="tank"/>
-    <property name="wave" type="int" value="3"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="25" name="spawn" x="416" y="712">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="3"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="26" name="spawn" x="1856" y="632">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="4"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="27" name="spawn" x="488" y="560">
-   <properties>
-    <property name="role" value="splitter"/>
-    <property name="wave" type="int" value="4"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="28" name="spawn" x="1336" y="616">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="4"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="29" name="spawn" x="1920" y="384">
-   <properties>
-    <property name="role" value="sniper"/>
-    <property name="wave" type="int" value="4"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="30" name="spawn" x="1952" y="64">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="4"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="31" name="spawn" x="136" y="960">
-   <properties>
-    <property name="role" value="tank"/>
-    <property name="wave" type="int" value="4"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="32" name="spawn" x="632" y="712">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="4"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="33" name="spawn" x="1304" y="360">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="4"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="34" name="spawn" x="632" y="528">
-   <properties>
-    <property name="role" value="splitter"/>
-    <property name="wave" type="int" value="5"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="35" name="spawn" x="352" y="200">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="5"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="36" name="spawn" x="1968" y="1120">
-   <properties>
-    <property name="role" value="sniper"/>
-    <property name="wave" type="int" value="5"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="37" name="spawn" x="784" y="1000">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="5"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="38" name="spawn" x="1432" y="232">
-   <properties>
-    <property name="role" value="tank"/>
-    <property name="wave" type="int" value="5"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="39" name="spawn" x="1280" y="1072">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="5"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="40" name="spawn" x="944" y="24">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="5"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="41" name="spawn" x="400" y="752">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="5"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="42" name="spawn" x="1680" y="800">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="6"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="43" name="spawn" x="192" y="464">
-   <properties>
-    <property name="role" value="sniper"/>
-    <property name="wave" type="int" value="6"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="44" name="spawn" x="1328" y="736">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="6"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="45" name="spawn" x="2016" y="560">
-   <properties>
-    <property name="role" value="tank"/>
-    <property name="wave" type="int" value="6"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="46" name="spawn" x="1752" y="24">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="6"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="47" name="spawn" x="472" y="968">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="6"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="48" name="spawn" x="896" y="736">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="6"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="49" name="spawn" x="1392" y="480">
-   <properties>
-    <property name="role" value="splitter"/>
-    <property name="wave" type="int" value="6"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="50" name="spawn" x="752" y="336">
-   <properties>
-    <property name="role" value="sniper"/>
-    <property name="wave" type="int" value="7"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="51" name="spawn" x="136" y="232">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="7"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="52" name="spawn" x="1648" y="992">
-   <properties>
-    <property name="role" value="tank"/>
-    <property name="wave" type="int" value="7"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="53" name="spawn" x="560" y="928">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="7"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="54" name="spawn" x="1448" y="272">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="7"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="55" name="spawn" x="1120" y="896">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="7"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="56" name="spawn" x="752" y="208">
-   <properties>
-    <property name="role" value="splitter"/>
-    <property name="wave" type="int" value="7"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="57" name="spawn" x="288" y="760">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="7"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="58" name="spawn" x="1672" y="688">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="8"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="59" name="spawn" x="144" y="488">
-   <properties>
-    <property name="role" value="tank"/>
-    <property name="wave" type="int" value="8"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="60" name="spawn" x="1440" y="712">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="8"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="61" name="spawn" x="1760" y="392">
-   <properties>
-    <property name="role" value="caster"/>
-    <property name="wave" type="int" value="8"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="62" name="spawn" x="1600" y="152">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="8"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="63" name="spawn" x="56" y="1072">
-   <properties>
-    <property name="role" value="splitter"/>
-    <property name="wave" type="int" value="8"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="64" name="spawn" x="744" y="744">
-   <properties>
-    <property name="role" value="chaser"/>
-    <property name="wave" type="int" value="8"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="65" name="spawn" x="1160" y="440">
-   <properties>
-    <property name="role" value="sniper"/>
-    <property name="wave" type="int" value="8"/>
-    <property name="elite" type="bool" value="false"/>
-   </properties>
-  <point/></object>
-  <object id="66" name="door" x="1024" y="1144"><point/></object>
-  <object id="67" name="door" x="536" y="8"><point/></object>
-  <object id="68" name="obstacle" x="128" y="400" width="16" height="48">
+  <object id="10" name="door" x="1088" y="1144"><point/></object>
+  <object id="11" name="door" x="104" y="8"><point/></object>
+  <object id="12" name="obstacle" x="112" y="176" width="48" height="16">
    <properties>
     <property name="kind" value="wall"/>
    </properties>
   </object>
-  <object id="69" name="obstacle" x="832" y="416" width="16" height="16">
+  <object id="13" name="obstacle" x="224" y="448" width="32" height="32">
    <properties>
     <property name="kind" value="pillar"/>
    </properties>
   </object>
-  <object id="70" name="obstacle" x="1792" y="640" width="48" height="16">
+  <object id="14" name="obstacle" x="1104" y="448" width="16" height="16">
+   <properties>
+    <property name="kind" value="pillar"/>
+   </properties>
+  </object>
+  <object id="15" name="obstacle" x="1728" y="464" width="16" height="48">
    <properties>
     <property name="kind" value="wall"/>
    </properties>
   </object>
-  <object id="71" name="obstacle" x="1216" y="1040" width="16" height="16">
+  <object id="16" name="obstacle" x="576" y="640" width="32" height="32">
+   <properties>
+    <property name="kind" value="pit"/>
+   </properties>
+  </object>
+  <object id="17" name="obstacle" x="240" y="928" width="32" height="32">
    <properties>
     <property name="kind" value="pillar"/>
    </properties>
   </object>
-  <object id="72" name="prop" x="430" y="118" width="32" height="16">
+  <object id="18" name="obstacle" x="1920" y="1056" width="16" height="16">
    <properties>
-    <property name="key" value="camp-table"/>
+    <property name="kind" value="pillar"/>
    </properties>
   </object>
-  <object id="73" name="prop" x="342" y="18" width="64" height="42">
-   <properties>
-    <property name="key" value="palm-cluster-dusty"/>
-   </properties>
-  </object>
-  <object id="74" name="prop" x="86" y="18" width="64" height="42">
-   <properties>
-    <property name="key" value="palm-cluster"/>
-   </properties>
-  </object>
-  <object id="75" name="prop" x="352" y="144" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-dark"/>
-   </properties>
-  </object>
-  <object id="76" name="prop" x="400" y="48" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-shell"/>
-   </properties>
-  </object>
-  <object id="77" name="prop" x="16" y="144" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-light"/>
-   </properties>
-  </object>
-  <object id="78" name="prop" x="64" y="160" width="16" height="16">
-   <properties>
-    <property name="key" value="grass-tall"/>
-   </properties>
-  </object>
-  <object id="79" name="prop" x="893" y="130" width="32" height="32">
-   <properties>
-    <property name="key" value="stump-big"/>
-   </properties>
-  </object>
-  <object id="80" name="prop" x="574" y="175" width="32" height="31">
+  <object id="19" name="prop" x="222" y="95" width="32" height="31">
    <properties>
     <property name="key" value="camp-barrel"/>
    </properties>
   </object>
-  <object id="81" name="prop" x="880" y="16" width="16" height="16">
-   <properties>
-    <property name="key" value="grass-tall"/>
-   </properties>
-  </object>
-  <object id="82" name="prop" x="976" y="112" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-shell"/>
-   </properties>
-  </object>
-  <object id="83" name="prop" x="640" y="16" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-fish-bones"/>
-   </properties>
-  </object>
-  <object id="84" name="prop" x="880" y="16" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-fish-bones"/>
-   </properties>
-  </object>
-  <object id="85" name="prop" x="1182" y="159" width="32" height="31">
-   <properties>
-    <property name="key" value="camp-barrel"/>
-   </properties>
-  </object>
-  <object id="86" name="prop" x="1318" y="194" width="64" height="42">
-   <properties>
-    <property name="key" value="palm-cluster"/>
-   </properties>
-  </object>
-  <object id="87" name="prop" x="1343" y="70" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-skull"/>
-   </properties>
-  </object>
-  <object id="88" name="prop" x="1232" y="112" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-yellow"/>
-   </properties>
-  </object>
-  <object id="89" name="prop" x="1232" y="208" width="16" height="18">
-   <properties>
-    <property name="key" value="desert-potted-palm"/>
-   </properties>
-  </object>
-  <object id="90" name="prop" x="1104" y="160" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-yellow"/>
-   </properties>
-  </object>
-  <object id="91" name="prop" x="1232" y="256" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-sun"/>
-   </properties>
-  </object>
-  <object id="92" name="prop" x="1629" y="114" width="32" height="32">
+  <object id="20" name="prop" x="109" y="50" width="32" height="32">
    <properties>
     <property name="key" value="stump-big"/>
    </properties>
   </object>
-  <object id="93" name="prop" x="1934" y="100" width="28" height="26">
-   <properties>
-    <property name="key" value="camp-well"/>
-   </properties>
-  </object>
-  <object id="94" name="prop" x="1792" y="80" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-shell"/>
-   </properties>
-  </object>
-  <object id="95" name="prop" x="1552" y="48" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-yellow"/>
-   </properties>
-  </object>
-  <object id="96" name="prop" x="1616" y="160" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-light"/>
-   </properties>
-  </object>
-  <object id="97" name="prop" x="294" y="322" width="64" height="42">
-   <properties>
-    <property name="key" value="palm-cluster-dusty"/>
-   </properties>
-  </object>
-  <object id="98" name="prop" x="431" y="358" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-skull"/>
-   </properties>
-  </object>
-  <object id="99" name="prop" x="414" y="478" width="32" height="32">
+  <object id="21" name="prop" x="398" y="158" width="32" height="32">
    <properties>
     <property name="key" value="rock-boulder-gray"/>
    </properties>
   </object>
-  <object id="100" name="prop" x="32" y="480" width="16" height="18">
+  <object id="22" name="prop" x="176" y="128" width="16" height="16">
    <properties>
-    <property name="key" value="desert-potted-palm"/>
+    <property name="key" value="desert-fish-bones"/>
    </properties>
   </object>
-  <object id="101" name="prop" x="400" y="304" width="16" height="16">
+  <object id="23" name="prop" x="80" y="240" width="16" height="16">
    <properties>
-    <property name="key" value="flower-red"/>
+    <property name="key" value="flower-clover"/>
    </properties>
   </object>
-  <object id="102" name="prop" x="80" y="368" width="16" height="16">
+  <object id="24" name="prop" x="32" y="256" width="16" height="16">
    <properties>
-    <property name="key" value="flower-red"/>
+    <property name="key" value="flower-sun"/>
    </properties>
   </object>
-  <object id="103" name="prop" x="943" y="486" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-skull"/>
-   </properties>
-  </object>
-  <object id="104" name="prop" x="736" y="490" width="32" height="16">
-   <properties>
-    <property name="key" value="logs"/>
-   </properties>
-  </object>
-  <object id="105" name="prop" x="608" y="416" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-dark"/>
-   </properties>
-  </object>
-  <object id="106" name="prop" x="784" y="384" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-light"/>
-   </properties>
-  </object>
-  <object id="107" name="prop" x="624" y="400" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-red"/>
-   </properties>
-  </object>
-  <object id="108" name="prop" x="656" y="480" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-dark"/>
-   </properties>
-  </object>
-  <object id="109" name="prop" x="1334" y="370" width="64" height="42">
-   <properties>
-    <property name="key" value="palm-cluster-dusty"/>
-   </properties>
-  </object>
-  <object id="110" name="prop" x="1158" y="418" width="64" height="42">
-   <properties>
-    <property name="key" value="palm-cluster"/>
-   </properties>
-  </object>
-  <object id="111" name="prop" x="1328" y="464" width="16" height="16">
+  <object id="25" name="prop" x="64" y="16" width="16" height="16">
    <properties>
     <property name="key" value="bush-green"/>
    </properties>
   </object>
-  <object id="112" name="prop" x="1376" y="544" width="16" height="18">
+  <object id="26" name="prop" x="742" y="146" width="64" height="42">
    <properties>
-    <property name="key" value="desert-potted-palm"/>
+    <property name="key" value="palm-cluster"/>
    </properties>
   </object>
-  <object id="113" name="prop" x="1120" y="528" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-clover"/>
-   </properties>
-  </object>
-  <object id="114" name="prop" x="1742" y="422" width="32" height="16">
-   <properties>
-    <property name="key" value="camp-table"/>
-   </properties>
-  </object>
-  <object id="115" name="prop" x="1582" y="420" width="28" height="26">
+  <object id="27" name="prop" x="878" y="68" width="28" height="26">
    <properties>
     <property name="key" value="camp-well"/>
    </properties>
   </object>
-  <object id="116" name="prop" x="1910" y="482" width="64" height="42">
+  <object id="28" name="prop" x="928" y="224" width="16" height="16">
    <properties>
-    <property name="key" value="palm-cluster-dusty"/>
+    <property name="key" value="desert-shell"/>
    </properties>
   </object>
-  <object id="117" name="prop" x="1792" y="464" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-light"/>
-   </properties>
-  </object>
-  <object id="118" name="prop" x="1776" y="416" width="16" height="16">
+  <object id="29" name="prop" x="640" y="128" width="16" height="16">
    <properties>
     <property name="key" value="flower-clover"/>
    </properties>
   </object>
-  <object id="119" name="prop" x="1968" y="368" width="16" height="16">
+  <object id="30" name="prop" x="784" y="224" width="16" height="16">
    <properties>
-    <property name="key" value="flower-red"/>
+    <property name="key" value="flower-yellow"/>
    </properties>
   </object>
-  <object id="120" name="prop" x="93" y="770" width="32" height="32">
+  <object id="31" name="prop" x="1310" y="84" width="28" height="26">
    <properties>
-    <property name="key" value="stump-big"/>
+    <property name="key" value="camp-well"/>
    </properties>
   </object>
-  <object id="121" name="prop" x="331" y="762" width="16" height="30">
+  <object id="32" name="prop" x="1126" y="194" width="64" height="42">
+   <properties>
+    <property name="key" value="palm-cluster-dusty"/>
+   </properties>
+  </object>
+  <object id="33" name="prop" x="1152" y="32" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-clover"/>
+   </properties>
+  </object>
+  <object id="34" name="prop" x="1440" y="128" width="16" height="18">
+   <properties>
+    <property name="key" value="desert-potted-palm"/>
+   </properties>
+  </object>
+  <object id="35" name="prop" x="1296" y="208" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-dark"/>
+   </properties>
+  </object>
+  <object id="36" name="prop" x="1800" y="120" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-dead"/>
+   </properties>
+  </object>
+  <object id="37" name="prop" x="1584" y="154" width="32" height="16">
+   <properties>
+    <property name="key" value="logs"/>
+   </properties>
+  </object>
+  <object id="38" name="prop" x="1936" y="176" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-light"/>
+   </properties>
+  </object>
+  <object id="39" name="prop" x="1792" y="144" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-yellow"/>
+   </properties>
+  </object>
+  <object id="40" name="prop" x="1696" y="64" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-yellow"/>
+   </properties>
+  </object>
+  <object id="41" name="prop" x="246" y="322" width="64" height="42">
+   <properties>
+    <property name="key" value="palm-cluster"/>
+   </properties>
+  </object>
+  <object id="42" name="prop" x="398" y="358" width="32" height="16">
+   <properties>
+    <property name="key" value="camp-table"/>
+   </properties>
+  </object>
+  <object id="43" name="prop" x="16" y="528" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-dark"/>
+   </properties>
+  </object>
+  <object id="44" name="prop" x="176" y="528" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-clover"/>
+   </properties>
+  </object>
+  <object id="45" name="prop" x="304" y="336" width="16" height="16">
+   <properties>
+    <property name="key" value="desert-fish-bones"/>
+   </properties>
+  </object>
+  <object id="46" name="prop" x="224" y="544" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-yellow"/>
+   </properties>
+  </object>
+  <object id="47" name="prop" x="683" y="474" width="16" height="30">
    <properties>
     <property name="key" value="camp-signpost"/>
    </properties>
   </object>
-  <object id="122" name="prop" x="432" y="704" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-sun"/>
-   </properties>
-  </object>
-  <object id="123" name="prop" x="192" y="656" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-sun"/>
-   </properties>
-  </object>
-  <object id="124" name="prop" x="432" y="640" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-fish-bones"/>
-   </properties>
-  </object>
-  <object id="125" name="prop" x="64" y="704" width="16" height="18">
-   <properties>
-    <property name="key" value="desert-potted-palm"/>
-   </properties>
-  </object>
-  <object id="126" name="prop" x="861" y="610" width="32" height="32">
+  <object id="48" name="prop" x="893" y="482" width="32" height="32">
    <properties>
     <property name="key" value="stump-big"/>
    </properties>
   </object>
-  <object id="127" name="prop" x="622" y="718" width="32" height="32">
+  <object id="49" name="prop" x="782" y="446" width="32" height="32">
    <properties>
     <property name="key" value="rock-boulder-gray"/>
    </properties>
   </object>
-  <object id="128" name="prop" x="799" y="694" width="16" height="16">
+  <object id="50" name="prop" x="832" y="416" width="16" height="16">
    <properties>
-    <property name="key" value="desert-skull"/>
+    <property name="key" value="desert-shell"/>
    </properties>
   </object>
-  <object id="129" name="prop" x="768" y="688" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-sun"/>
-   </properties>
-  </object>
-  <object id="130" name="prop" x="896" y="672" width="16" height="16">
-   <properties>
-    <property name="key" value="grass-tall"/>
-   </properties>
-  </object>
-  <object id="131" name="prop" x="848" y="688" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-red"/>
-   </properties>
-  </object>
-  <object id="132" name="prop" x="1344" y="634" width="32" height="16">
-   <properties>
-    <property name="key" value="logs"/>
-   </properties>
-  </object>
-  <object id="133" name="prop" x="1376" y="800" width="16" height="16">
-   <properties>
-    <property name="key" value="grass-tall"/>
-   </properties>
-  </object>
-  <object id="134" name="prop" x="1504" y="736" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-green"/>
-   </properties>
-  </object>
-  <object id="135" name="prop" x="1072" y="832" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-light"/>
-   </properties>
-  </object>
-  <object id="136" name="prop" x="1720" y="712" width="32" height="32">
-   <properties>
-    <property name="key" value="tree-dead"/>
-   </properties>
-  </object>
-  <object id="137" name="prop" x="1942" y="738" width="64" height="42">
-   <properties>
-    <property name="key" value="palm-cluster-dusty"/>
-   </properties>
-  </object>
-  <object id="138" name="prop" x="1983" y="630" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-skull"/>
-   </properties>
-  </object>
-  <object id="139" name="prop" x="1968" y="640" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-light"/>
-   </properties>
-  </object>
-  <object id="140" name="prop" x="1760" y="656" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-light"/>
-   </properties>
-  </object>
-  <object id="141" name="prop" x="1920" y="736" width="16" height="16">
-   <properties>
-    <property name="key" value="grass-tall"/>
-   </properties>
-  </object>
-  <object id="142" name="prop" x="416" y="922" width="32" height="16">
-   <properties>
-    <property name="key" value="logs"/>
-   </properties>
-  </object>
-  <object id="143" name="prop" x="174" y="948" width="28" height="26">
-   <properties>
-    <property name="key" value="camp-well"/>
-   </properties>
-  </object>
-  <object id="144" name="prop" x="416" y="896" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-red"/>
-   </properties>
-  </object>
-  <object id="145" name="prop" x="304" y="1088" width="16" height="16">
+  <object id="51" name="prop" x="640" y="384" width="16" height="16">
    <properties>
     <property name="key" value="bush-dark"/>
    </properties>
   </object>
-  <object id="146" name="prop" x="208" y="1104" width="16" height="16">
-   <properties>
-    <property name="key" value="grass-tall"/>
-   </properties>
-  </object>
-  <object id="147" name="prop" x="734" y="1044" width="28" height="26">
-   <properties>
-    <property name="key" value="camp-well"/>
-   </properties>
-  </object>
-  <object id="148" name="prop" x="848" y="970" width="32" height="16">
-   <properties>
-    <property name="key" value="logs"/>
-   </properties>
-  </object>
-  <object id="149" name="prop" x="560" y="1016" width="44" height="16">
-   <properties>
-    <property name="key" value="camp-bench"/>
-   </properties>
-  </object>
-  <object id="150" name="prop" x="720" y="1024" width="16" height="16">
-   <properties>
-    <property name="key" value="bush-green"/>
-   </properties>
-  </object>
-  <object id="151" name="prop" x="656" y="960" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-shell"/>
-   </properties>
-  </object>
-  <object id="152" name="prop" x="912" y="1008" width="16" height="16">
-   <properties>
-    <property name="key" value="grass-tall"/>
-   </properties>
-  </object>
-  <object id="153" name="prop" x="752" y="928" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-shell"/>
-   </properties>
-  </object>
-  <object id="154" name="prop" x="1437" y="994" width="32" height="32">
-   <properties>
-    <property name="key" value="stump-big"/>
-   </properties>
-  </object>
-  <object id="155" name="prop" x="1328" y="904" width="44" height="16">
-   <properties>
-    <property name="key" value="camp-bench"/>
-   </properties>
-  </object>
-  <object id="156" name="prop" x="1264" y="1008" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-clover"/>
-   </properties>
-  </object>
-  <object id="157" name="prop" x="1216" y="976" width="16" height="16">
+  <object id="52" name="prop" x="544" y="528" width="16" height="16">
    <properties>
     <property name="key" value="flower-red"/>
    </properties>
   </object>
-  <object id="158" name="prop" x="1344" y="928" width="16" height="16">
-   <properties>
-    <property name="key" value="desert-fish-bones"/>
-   </properties>
-  </object>
-  <object id="159" name="prop" x="1056" y="944" width="16" height="16">
-   <properties>
-    <property name="key" value="flower-red"/>
-   </properties>
-  </object>
-  <object id="160" name="prop" x="1654" y="898" width="64" height="42">
-   <properties>
-    <property name="key" value="palm-cluster"/>
-   </properties>
-  </object>
-  <object id="161" name="prop" x="1800" y="984" width="32" height="32">
-   <properties>
-    <property name="key" value="tree-dead"/>
-   </properties>
-  </object>
-  <object id="162" name="prop" x="1878" y="1010" width="64" height="42">
+  <object id="53" name="prop" x="1334" y="354" width="64" height="42">
    <properties>
     <property name="key" value="palm-cluster-dusty"/>
    </properties>
   </object>
-  <object id="163" name="prop" x="1952" y="928" width="16" height="16">
+  <object id="54" name="prop" x="1214" y="414" width="32" height="32">
+   <properties>
+    <property name="key" value="rock-boulder-gray"/>
+   </properties>
+  </object>
+  <object id="55" name="prop" x="1056" y="384" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-sun"/>
+   </properties>
+  </object>
+  <object id="56" name="prop" x="1136" y="336" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-clover"/>
+   </properties>
+  </object>
+  <object id="57" name="prop" x="1120" y="320" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-clover"/>
+   </properties>
+  </object>
+  <object id="58" name="prop" x="1136" y="336" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-yellow"/>
+   </properties>
+  </object>
+  <object id="59" name="prop" x="1646" y="340" width="28" height="26">
+   <properties>
+    <property name="key" value="camp-well"/>
+   </properties>
+  </object>
+  <object id="60" name="prop" x="1918" y="478" width="32" height="32">
+   <properties>
+    <property name="key" value="rock-boulder-gray"/>
+   </properties>
+  </object>
+  <object id="61" name="prop" x="1616" y="442" width="32" height="16">
+   <properties>
+    <property name="key" value="logs"/>
+   </properties>
+  </object>
+  <object id="62" name="prop" x="1984" y="352" width="16" height="16">
+   <properties>
+    <property name="key" value="desert-fish-bones"/>
+   </properties>
+  </object>
+  <object id="63" name="prop" x="1584" y="352" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-dark"/>
+   </properties>
+  </object>
+  <object id="64" name="prop" x="1904" y="432" width="16" height="16">
    <properties>
     <property name="key" value="bush-light"/>
    </properties>
   </object>
-  <object id="164" name="prop" x="1760" y="1056" width="16" height="16">
+  <object id="65" name="prop" x="2016" y="480" width="16" height="16">
+   <properties>
+    <property name="key" value="grass-tall"/>
+   </properties>
+  </object>
+  <object id="66" name="prop" x="22" y="738" width="64" height="42">
+   <properties>
+    <property name="key" value="palm-cluster"/>
+   </properties>
+  </object>
+  <object id="67" name="prop" x="334" y="628" width="28" height="26">
+   <properties>
+    <property name="key" value="camp-well"/>
+   </properties>
+  </object>
+  <object id="68" name="prop" x="464" y="784" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-sun"/>
+   </properties>
+  </object>
+  <object id="69" name="prop" x="208" y="624" width="16" height="18">
+   <properties>
+    <property name="key" value="desert-potted-palm"/>
+   </properties>
+  </object>
+  <object id="70" name="prop" x="224" y="752" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-sun"/>
+   </properties>
+  </object>
+  <object id="71" name="prop" x="910" y="654" width="32" height="32">
+   <properties>
+    <property name="key" value="rock-boulder-gray"/>
+   </properties>
+  </object>
+  <object id="72" name="prop" x="672" y="712" width="44" height="16">
+   <properties>
+    <property name="key" value="camp-bench"/>
+   </properties>
+  </object>
+  <object id="73" name="prop" x="824" y="728" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-dead"/>
+   </properties>
+  </object>
+  <object id="74" name="prop" x="816" y="752" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-red"/>
+   </properties>
+  </object>
+  <object id="75" name="prop" x="560" y="624" width="16" height="18">
+   <properties>
+    <property name="key" value="desert-potted-palm"/>
+   </properties>
+  </object>
+  <object id="76" name="prop" x="752" y="672" width="16" height="16">
+   <properties>
+    <property name="key" value="desert-fish-bones"/>
+   </properties>
+  </object>
+  <object id="77" name="prop" x="1134" y="756" width="28" height="26">
+   <properties>
+    <property name="key" value="camp-well"/>
+   </properties>
+  </object>
+  <object id="78" name="prop" x="1136" y="688" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-red"/>
+   </properties>
+  </object>
+  <object id="79" name="prop" x="1344" y="736" width="16" height="18">
+   <properties>
+    <property name="key" value="desert-potted-palm"/>
+   </properties>
+  </object>
+  <object id="80" name="prop" x="1408" y="640" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-clover"/>
+   </properties>
+  </object>
+  <object id="81" name="prop" x="1614" y="606" width="32" height="32">
+   <properties>
+    <property name="key" value="rock-boulder-gray"/>
+   </properties>
+  </object>
+  <object id="82" name="prop" x="1590" y="754" width="64" height="42">
+   <properties>
+    <property name="key" value="palm-cluster"/>
+   </properties>
+  </object>
+  <object id="83" name="prop" x="1967" y="678" width="16" height="16">
+   <properties>
+    <property name="key" value="desert-skull"/>
+   </properties>
+  </object>
+  <object id="84" name="prop" x="1776" y="800" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-light"/>
+   </properties>
+  </object>
+  <object id="85" name="prop" x="1728" y="688" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-green"/>
+   </properties>
+  </object>
+  <object id="86" name="prop" x="1616" y="608" width="16" height="16">
+   <properties>
+    <property name="key" value="grass-tall"/>
+   </properties>
+  </object>
+  <object id="87" name="prop" x="1648" y="832" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-red"/>
+   </properties>
+  </object>
+  <object id="88" name="prop" x="344" y="952" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-dead"/>
+   </properties>
+  </object>
+  <object id="89" name="prop" x="102" y="978" width="64" height="42">
+   <properties>
+    <property name="key" value="palm-cluster-dusty"/>
+   </properties>
+  </object>
+  <object id="90" name="prop" x="414" y="1054" width="32" height="32">
+   <properties>
+    <property name="key" value="rock-boulder-gray"/>
+   </properties>
+  </object>
+  <object id="91" name="prop" x="352" y="944" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-dark"/>
+   </properties>
+  </object>
+  <object id="92" name="prop" x="352" y="992" width="16" height="16">
+   <properties>
+    <property name="key" value="grass-tall"/>
+   </properties>
+  </object>
+  <object id="93" name="prop" x="320" y="1056" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-green"/>
+   </properties>
+  </object>
+  <object id="94" name="prop" x="862" y="1006" width="32" height="32">
+   <properties>
+    <property name="key" value="rock-boulder-gray"/>
+   </properties>
+  </object>
+  <object id="95" name="prop" x="559" y="982" width="16" height="16">
+   <properties>
+    <property name="key" value="desert-skull"/>
+   </properties>
+  </object>
+  <object id="96" name="prop" x="742" y="930" width="64" height="42">
+   <properties>
+    <property name="key" value="palm-cluster"/>
+   </properties>
+  </object>
+  <object id="97" name="prop" x="992" y="1008" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-green"/>
+   </properties>
+  </object>
+  <object id="98" name="prop" x="880" y="1040" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-light"/>
+   </properties>
+  </object>
+  <object id="99" name="prop" x="640" y="976" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-red"/>
+   </properties>
+  </object>
+  <object id="100" name="prop" x="1328" y="1002" width="32" height="16">
+   <properties>
+    <property name="key" value="logs"/>
+   </properties>
+  </object>
+  <object id="101" name="prop" x="1078" y="978" width="64" height="42">
+   <properties>
+    <property name="key" value="palm-cluster"/>
+   </properties>
+  </object>
+  <object id="102" name="prop" x="1192" y="1032" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-dead"/>
+   </properties>
+  </object>
+  <object id="103" name="prop" x="1424" y="1120" width="16" height="16">
+   <properties>
+    <property name="key" value="grass-tall"/>
+   </properties>
+  </object>
+  <object id="104" name="prop" x="1216" y="976" width="16" height="16">
+   <properties>
+    <property name="key" value="grass-tall"/>
+   </properties>
+  </object>
+  <object id="105" name="prop" x="1264" y="992" width="16" height="16">
    <properties>
     <property name="key" value="desert-shell"/>
    </properties>
   </object>
-  <object id="165" name="prop" x="1664" y="1072" width="16" height="16">
+  <object id="106" name="prop" x="1504" y="912" width="16" height="16">
    <properties>
-    <property name="key" value="bush-light"/>
+    <property name="key" value="flower-clover"/>
+   </properties>
+  </object>
+  <object id="107" name="prop" x="1773" y="994" width="32" height="32">
+   <properties>
+    <property name="key" value="stump-big"/>
+   </properties>
+  </object>
+  <object id="108" name="prop" x="1912" y="888" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-dead"/>
+   </properties>
+  </object>
+  <object id="109" name="prop" x="1584" y="1008" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-green"/>
+   </properties>
+  </object>
+  <object id="110" name="prop" x="1680" y="992" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-sun"/>
+   </properties>
+  </object>
+  <object id="111" name="prop" x="1808" y="1088" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-sun"/>
    </properties>
   </object>
  </objectgroup>

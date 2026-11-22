@@ -31,7 +31,7 @@ describe('chapter assets', () => {
     expect(bosses).toEqual(['TenguBlue', 'SquidGreen', 'GiantBlueSamurai', 'GiantRacoon']);
   });
 
-  it('chapter 1: 3–4 enemies/wave; ch2: 5–6/room; ch3: 7–8/room + elite; ch4: 64–72/room', () => {
+  it('chapter 1: 3–4/wave; ch2: 5–6/room; ch3/ch4: 7–9 authored per room (×8 at runtime) + elites', () => {
     const chapterOne = loadChapter(1);
     for (const room of chapterOne.rooms.filter((candidate) => !candidate.isBossRoom)) {
       for (const wave of room.waves) {
@@ -43,9 +43,10 @@ describe('chapter assets', () => {
     for (const chapter of [2, 3, 4]) {
       const rooms = loadChapter(chapter).rooms.filter((room) => !room.isBossRoom);
       for (const room of rooms) {
-        // GDD §4 counts enemies per room for chapters 2–4; ch4 is the ×8 scale (#45).
+        // GDD §4 counts enemies per room for chapters 2–4. Chapter 4 authors the same 8–9 as ch3;
+        // `roomEnemyTotal` (#41) scales a normal room to 64–72 at runtime.
         const count = room.waves.reduce((total, wave) => total + wave.enemies.length, 0);
-        const range = chapter === 2 ? [5, 6] : chapter === 3 ? [7, 8] : [64, 72];
+        const range = chapter === 2 ? [5, 6] : [7, 9];
         expect(count, `chapter ${chapter} room ${room.room}`).toBeGreaterThanOrEqual(range[0] ?? 0);
         expect(count, `chapter ${chapter} room ${room.room}`).toBeLessThanOrEqual(range[1] ?? 9);
       }
@@ -57,6 +58,18 @@ describe('chapter assets', () => {
     );
     // Elites start at room 4; rooms 1–3 are the chapter entrance.
     expect(elites.length).toBeGreaterThanOrEqual(4);
+
+    const chapterFour = loadChapter(4);
+    const roles = new Set(
+      chapterFour.rooms.flatMap((room) => room.waves.flatMap((wave) => wave.enemies.map((enemy) => enemy.role))),
+    );
+    for (const role of ['chaser', 'caster', 'tank', 'sniper', 'splitter'] as const) {
+      expect(roles.has(role), `ch4 ${role}`).toBe(true);
+    }
+    const fourElites = chapterFour.rooms.flatMap((room) =>
+      room.waves.flatMap((wave) => wave.enemies.filter((enemy) => enemy.elite)),
+    );
+    expect(fourElites.length).toBeGreaterThanOrEqual(4);
   });
 
   it('rooms 1–3 of chapters 2–3 split into multiple waves so the entrance is not 7 at once', () => {

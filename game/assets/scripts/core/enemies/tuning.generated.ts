@@ -173,6 +173,10 @@ export const TUNING_DATA = {
         min: 56,
         max: 64,
       },
+      {
+        min: 64,
+        max: 72,
+      },
     ],
   },
   feel: {

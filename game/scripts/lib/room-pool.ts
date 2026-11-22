@@ -221,24 +221,10 @@ function roles(...list: readonly string[]): readonly SpawnEntry[] {
 /**
  * Waves per chapter and **template** index (1..8): ch1 3–4 per wave, ch2 5–6 per room, ch3 7–8
  * per room with elites from the fourth room, exactly the numbers the hand-dressed rooms had.
- *
- * Chapter 4 is the ×8 scale (GDD §13.2: 64–72 per room): 64 in 8 waves of 8, so at most 8 are
- * alive at once (the cap is 24) and a headless god-mode run of all 8 rooms still finishes well
- * inside the acceptance timeout. Each template cycles a different roster (every role, sniper and
- * splitter included); elites start in the fourth room, as in chapter 3.
+ * Chapter 4 authors the same 8–9 per room as ch3: `roomEnemyTotal` (#41) scales a normal room to
+ * 8× inside `waves.chapterTotals[3]` (64–72), so the authored list stays the role mix, not the
+ * count.
  */
-function chapterFourTemplate(
-  roster: readonly SpawnRole[],
-  eliteWaves = 0,
-): readonly (readonly SpawnEntry[])[] {
-  return Array.from({ length: 8 }, (_unused, wave) =>
-    Array.from({ length: 8 }, (_entry, index): SpawnEntry => ({
-      role: roster[(wave + index) % roster.length] as SpawnRole,
-      elite: eliteWaves > 0 && wave >= 8 - eliteWaves && index === 0,
-    })),
-  );
-}
-
 const SPAWN_TEMPLATES: Readonly<Record<number, readonly (readonly (readonly SpawnEntry[])[])[]>> = {
   1: [
     [roles('chaser', 'chaser', 'caster'), roles('chaser', 'chaser', 'chaser'), roles('chaser', 'caster', 'caster')],
@@ -271,14 +257,14 @@ const SPAWN_TEMPLATES: Readonly<Record<number, readonly (readonly (readonly Spaw
     [roles('chaser', 'caster'), roles('tank', 'chaser'), roles('caster', 'tank', 'chaser', 'tank')],
   ],
   4: [
-    chapterFourTemplate(['chaser', 'chaser', 'caster', 'splitter', 'chaser', 'tank', 'chaser', 'sniper']),
-    chapterFourTemplate(['chaser', 'caster', 'chaser', 'tank', 'splitter', 'chaser', 'sniper', 'chaser']),
-    chapterFourTemplate(['tank', 'chaser', 'caster', 'chaser', 'splitter', 'chaser', 'sniper', 'caster']),
-    chapterFourTemplate(['chaser', 'caster', 'splitter', 'chaser', 'tank', 'sniper', 'chaser', 'chaser'], 1),
-    chapterFourTemplate(['caster', 'chaser', 'tank', 'splitter', 'chaser', 'sniper', 'caster', 'chaser'], 2),
-    chapterFourTemplate(['chaser', 'tank', 'chaser', 'caster', 'sniper', 'chaser', 'splitter', 'chaser'], 3),
-    chapterFourTemplate(['splitter', 'chaser', 'caster', 'tank', 'chaser', 'sniper', 'chaser', 'caster'], 4),
-    chapterFourTemplate(['chaser', 'caster', 'tank', 'chaser', 'sniper', 'splitter', 'caster', 'chaser'], 5),
+    [roles('chaser', 'chaser'), roles('chaser', 'caster'), roles('caster', 'tank', 'sniper', 'splitter')],
+    [roles('chaser', 'caster'), roles('chaser', 'tank', 'sniper'), roles('caster', 'chaser', 'splitter')],
+    [roles('chaser', 'chaser'), roles('tank', 'caster'), roles('chaser', 'caster', 'sniper', 'splitter')],
+    [roles('caster', 'chaser'), roles('tank', 'chaser', 'splitter'), roles('caster', 'tank', 'caster*', 'sniper')],
+    [roles('chaser', 'tank'), roles('caster', 'chaser', 'sniper'), roles('chaser', 'tank', 'tank*', 'splitter')],
+    [roles('tank', 'caster'), roles('chaser', 'tank', 'chaser'), roles('caster', 'sniper', 'chaser', 'chaser*')],
+    [roles('chaser', 'caster'), roles('tank', 'chaser', 'splitter'), roles('caster', 'tank', 'chaser', 'caster*')],
+    [roles('chaser', 'caster'), roles('tank', 'chaser', 'sniper'), roles('caster', 'tank', 'chaser', 'splitter*')],
   ],
 };
 
@@ -684,28 +670,16 @@ function planSpawns(
   if (waves === undefined) throw new Error(`chapter ${chapter} has no spawn template for room ${room}`);
 
   const startScreen = screenOf(playerStart);
-  // Chapter 4 spawns 64 enemies per room: they do not fit the 7–9.5 tile annulus an 8-enemy room
-  // uses, so they spread over all 16 screens. Everyone stays at least `SPAWN_MIN_DISTANCE` (7)
-  // from the player — GDD fairness asks for ≥ 6 — and may stand anywhere farther; a caster with
-  // no line of sight repositions (GDD §4), so no LOS requirement is placed on a wide room.
-  const spreadRoom = chapter === 4;
-  const allScreens: { sx: number; sy: number }[] = [];
-  for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
-    for (let sx = 0; sx < ROOM_SCREENS; sx += 1) allScreens.push({ sx, sy });
-  }
   // The 2×2 block of screens around the start, preferring the side with room in the room.
   const baseSx = Math.min(ROOM_SCREENS - 2, Math.max(0, startScreen.sx - 1));
   const baseSy = Math.min(ROOM_SCREENS - 2, Math.max(0, startScreen.sy - 1));
-  const screens = (spreadRoom
-    ? allScreens
-    : [
-        { sx: startScreen.sx, sy: startScreen.sy },
-        { sx: baseSx, sy: baseSy },
-        { sx: baseSx + 1, sy: baseSy },
-        { sx: baseSx, sy: baseSy + 1 },
-        { sx: baseSx + 1, sy: baseSy + 1 },
-      ]
-  ).filter(
+  const screens = [
+    { sx: startScreen.sx, sy: startScreen.sy },
+    { sx: baseSx, sy: baseSy },
+    { sx: baseSx + 1, sy: baseSy },
+    { sx: baseSx, sy: baseSy + 1 },
+    { sx: baseSx + 1, sy: baseSy + 1 },
+  ].filter(
     (screen, index, all) =>
       all.findIndex((other) => other.sx === screen.sx && other.sy === screen.sy) === index,
   );
@@ -727,16 +701,8 @@ function planSpawns(
 
   /** A free spawn point in one screen, >= the role's near distance and <= the far one. */
   const pointIn = (screen: { sx: number; sy: number }, role: SpawnRole): Vec2 | null => {
-    const near = spreadRoom
-      ? SPAWN_MIN_DISTANCE
-      : role === 'caster'
-        ? CASTER_MIN_DISTANCE
-        : SPAWN_MIN_DISTANCE;
-    const far = spreadRoom
-      ? Number.POSITIVE_INFINITY
-      : role === 'caster'
-        ? CASTER_MAX_DISTANCE
-        : SPAWN_MAX_DISTANCE;
+    const near = role === 'caster' ? CASTER_MIN_DISTANCE : SPAWN_MIN_DISTANCE;
+    const far = role === 'caster' ? CASTER_MAX_DISTANCE : SPAWN_MAX_DISTANCE;
     for (let attempt = 0; attempt < 80; attempt += 1) {
       const point = {
         x: screen.sx * SCREEN_COLS + 1 + rng() * (SCREEN_COLS - 2),
@@ -746,7 +712,7 @@ function planSpawns(
       if (toStart < near || toStart > far) continue;
       if (!free(point, 1.2)) continue;
       // A caster opens fire from its band, so it must see the player from where it stands.
-      if (!spreadRoom && role === 'caster' && !lineClear(point, playerStart, colliders)) continue;
+      if (role === 'caster' && !lineClear(point, playerStart, colliders)) continue;
       if (doors.some((door) => Math.hypot(point.x - door.x, point.y - door.y) < 2)) continue;
       if (placed.some((other) => Math.hypot(point.x - other.x, point.y - other.y) < 2)) continue;
       return { x: Math.round(point.x * 2) / 2, y: Math.round(point.y * 2) / 2 };
