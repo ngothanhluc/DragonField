@@ -565,6 +565,47 @@ describe('#22 fitPoint', () => {
   });
 });
 
+describe('#24 align', () => {
+  const RED: Pixel = [200, 30, 40, 255];
+  const OPTIONS = {
+    columns: 1,
+    rows: 1,
+    frameWidth: 16,
+    frameHeight: 16,
+    anchor: 'feet' as const,
+    share: 'cell' as const,
+    align: true,
+  };
+
+  /** A 5×15 output-pixel sprite drawn with 3 px blocks at (x, y) — already on a 3 px grid. */
+  function alignedSheet(x: number, y: number): PngImage {
+    const pixels: Pixel[] = new Array<Pixel>(60 * 60).fill(CLEAR);
+    for (let py = 0; py < 15; py += 1) {
+      for (let px = 0; px < 5; px += 1) {
+        for (let dy = 0; dy < 3; dy += 1) {
+          for (let dx = 0; dx < 3; dx += 1) pixels[(y + py * 3 + dy) * 60 + x + px * 3 + dx] = RED;
+        }
+      }
+    }
+    return image(pixels, 60, 60);
+  }
+
+  it('keeps a source already on the output grid byte-identical to the unaligned fit', () => {
+    const sheet = alignedSheet(10, 5);
+    const aligned = fitCells(sheet, OPTIONS);
+    const plain = fitCells(sheet, { ...OPTIONS, align: false });
+    expect(Buffer.compare(aligned.data, plain.data)).toBe(0);
+  });
+
+  it('maps a grip through the same aligned window fitCells draws', () => {
+    const sheet = alignedSheet(10, 5);
+    const out = fitCells(sheet, OPTIONS);
+    const [px, py] = fitPoint(sheet, OPTIONS, [17.5, 27.5]);
+    expect([px, py]).toEqual([7, 8]);
+    expect(out.data[(py * out.width + px) * 4 + 3]).toBe(255);
+  });
+});
+
 describe('#22 removeMarker', () => {
   it('matches a slightly off shade and fills a plate wider than the search ring', () => {
     const blue: Pixel = [0, 0, 200, 255];
