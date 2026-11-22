@@ -29,7 +29,11 @@ export const ENEMY_ROLES = [
 ] as const;
 export type EnemyRole = (typeof ENEMY_ROLES)[number];
 
-export const OBSTACLE_KINDS = ['pillar', 'wall', 'pit'] as const;
+/**
+ * `prop` is the collider of a catalogue prop (ticket #35): `LevelData.props` says what is drawn,
+ * `obstacles` carries the part that blocks. It is solid for walkers and bullets like a wall.
+ */
+export const OBSTACLE_KINDS = ['pillar', 'wall', 'pit', 'prop'] as const;
 export type ObstacleKind = (typeof OBSTACLE_KINDS)[number];
 
 export interface RoomSize {
@@ -66,6 +70,18 @@ export interface Door {
   readonly toRoom: number | null;
 }
 
+/**
+ * One drawn prop in a room (ticket #35). The `.tmx` places it by catalogue key; its collider is
+ * already an `Obstacle` of kind `prop` in `level.obstacles`, so nothing else reads this.
+ */
+export interface PlacedProp {
+  /** Key in `PROP_CATALOGUE[chapter]` (e.g. `tree-green`). */
+  readonly key: string;
+  /** Top-left corner of the **sprite** (not the collider), tile units. */
+  readonly x: number;
+  readonly y: number;
+}
+
 export interface BossInfo {
   readonly name: string;
 }
@@ -80,6 +96,8 @@ export interface LevelData {
   readonly playerStart: Vec2;
   readonly waves: Wave[];
   readonly obstacles: Obstacle[];
+  /** Drawn props (M9 #35). A solid prop also contributes one `prop` obstacle; walks over otherwise. */
+  readonly props: PlacedProp[];
   readonly doors: Door[];
   /** Only present in a boss room; `name` matches an art key (e.g. `TenguBlue`). */
   readonly boss?: BossInfo;
@@ -280,6 +298,29 @@ function readObstacle(
   return { kind, x, y, width, height };
 }
 
+function readPlacedProp(value: unknown, path: string, problems: ProblemList): PlacedProp | null {
+  if (!isRecord(value)) {
+    problems.add(path, `must be an object { key, x, y }, got ${describeValue(value)}`);
+    return null;
+  }
+
+  const key = value.key;
+  if (typeof key !== 'string' || key.trim() === '') {
+    problems.add(`${path}.key`, `must be a non-empty catalogue key, got ${describeValue(key)}`);
+    return null;
+  }
+
+  const x = value.x;
+  const y = value.y;
+  const xOk = isFiniteNumber(x);
+  const yOk = isFiniteNumber(y);
+  if (!xOk) problems.add(`${path}.x`, `must be a finite number, got ${describeValue(x)}`);
+  if (!yOk) problems.add(`${path}.y`, `must be a finite number, got ${describeValue(y)}`);
+  if (!xOk || !yOk) return null;
+
+  return { key, x, y };
+}
+
 function readDoor(value: unknown, path: string, problems: ProblemList): Door | null {
   if (!isRecord(value)) {
     problems.add(path, `must be an object Door, got ${describeValue(value)}`);
@@ -417,6 +458,18 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     });
   }
 
+  const props: PlacedProp[] = [];
+  if (value.props !== undefined) {
+    if (!Array.isArray(value.props)) {
+      problems.add(`${path}.props`, `must be an array of PlacedProp, got ${describeValue(value.props)}`);
+    } else {
+      value.props.forEach((rawProp, index) => {
+        const prop = readPlacedProp(rawProp, `${path}.props[${index}]`, problems);
+        if (prop !== null) props.push(prop);
+      });
+    }
+  }
+
   let boss: BossInfo | undefined;
   if (value.boss !== undefined) {
     const parsedBoss = readBoss(value.boss, `${path}.boss`, problems);
@@ -452,6 +505,7 @@ function parseRoom(value: unknown, path: string, problems: ProblemList): LevelDa
     playerStart: playerStart ?? { x: 0, y: 0 },
     waves,
     obstacles,
+    props,
     doors,
     ...(boss !== undefined ? { boss } : {}),
     ...(bossStart !== undefined ? { bossStart } : {}),

@@ -200,9 +200,13 @@ function move(from: Vec2, dx: number, dy: number, valid: (at: Vec2) => boolean):
     const alongY = { x: current.x, y: current.y + stepY };
     const xOk = stepX !== 0 && valid(alongX);
     const yOk = stepY !== 0 && valid(alongY);
+    // Taking **both** single-axis moves composes back into the diagonal that just failed, which
+    // is how an animal used to end up inside a corner or a thin (half-tile) prop collider.
+    // When both axes are free on their own, slide along X and keep the rest of the step for
+    // the next sub-step instead of jumping into the blocked corner.
     if (xOk) current = alongX;
-    if (yOk) current = { x: current.x, y: current.y + stepY };
-    if (!xOk && !yOk) break;
+    else if (yOk) current = alongY;
+    else break;
   }
   return current;
 }

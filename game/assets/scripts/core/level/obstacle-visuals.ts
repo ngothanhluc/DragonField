@@ -25,7 +25,7 @@ export interface ObstacleVisual {
   readonly tile: boolean;
 }
 
-export type ObstacleVisualKey = ObstacleKind | 'pillarSmall';
+export type ObstacleVisualKey = Exclude<ObstacleKind, 'prop'> | 'pillarSmall';
 
 const NATURE = 'resources/art/tilesets/TilesetNature.png';
 const ELEMENT = 'resources/art/tilesets/TilesetElement.png';
