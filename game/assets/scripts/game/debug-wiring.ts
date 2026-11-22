@@ -53,6 +53,7 @@ export interface DebugWiringHost {
   readonly screen: () => DebugScreenId;
   readonly save: () => unknown;
   readonly setGold: (gold: number) => boolean;
+  readonly markChapterCleared: (chapter: number) => boolean;
   readonly uiText: () => readonly DebugUiText[];
   readonly skillPreview: (ids: readonly string[]) => Promise<boolean>;
   readonly closeSkillPreview: () => boolean;
@@ -104,6 +105,7 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     screen: host.screen,
     save: host.save,
     setGold: host.setGold,
+    markChapterCleared: host.markChapterCleared,
     uiText: host.uiText,
     skillPreview: host.skillPreview,
     closeSkillPreview: host.closeSkillPreview,

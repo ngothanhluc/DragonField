@@ -11,10 +11,11 @@
  */
 import type { Node as CocosNode } from 'cc';
 import { chapterGate } from '../core/save/chapter-gate';
+import { CHAPTERS_PER_RUN, ROOMS_PER_CHAPTER } from '../core/run/run-state';
 import { applyGold, MAX_GOLD, summariseRun } from '../core/run/rewards';
 import { applySettings } from '../core/save/settings';
 import type { Settings } from '../core/save/settings';
-import type { SaveData } from '../core/save/save-data';
+import { unlockNextChapter, withBest, type SaveData } from '../core/save/save-data';
 import type { SaveRepository } from '../core/save/storage';
 import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
 import type { UpgradeTrack } from '../core/meta/upgrades';
@@ -185,7 +186,9 @@ export class ScreenFlow {
     this.host.setStatus('menu');
     this.host.setMusic('title');
     this.applyBackdrop('title', null);
-    console.log(`[YokaiField] Title: gold ${save.gold}, unlocked ${save.chaptersUnlocked}/3.`);
+    console.log(
+      `[YokaiField] Title: gold ${save.gold}, unlocked ${save.chaptersUnlocked}/${CHAPTERS_PER_RUN}.`,
+    );
   }
 
   async showChapterSelect(): Promise<void> {
@@ -194,7 +197,7 @@ export class ScreenFlow {
 
     const token = this.nextMenuToken();
     const chapters: ChapterButton[] = [];
-    for (let chapter = 1; chapter <= 3; chapter += 1) {
+    for (let chapter = 1; chapter <= CHAPTERS_PER_RUN; chapter += 1) {
       const hasData = this.host.chapterAvailable(chapter);
       chapters.push({
         chapter,
@@ -226,7 +229,7 @@ export class ScreenFlow {
     this.host.setMusic('title');
     console.log(
       `[YokaiField] Chapter select: best chapter ${save.best.chapter} · room ${save.best.room}, ` +
-        `unlocked ${save.chaptersUnlocked}/3.`,
+        `unlocked ${save.chaptersUnlocked}/${CHAPTERS_PER_RUN}.`,
     );
   }
 
@@ -598,6 +601,35 @@ export class ScreenFlow {
         void this.showTitle().catch((error: unknown) => this.host.fail(error));
       });
       void this.showSettings(back).catch((error: unknown) => this.host.fail(error));
+    }
+  }
+
+  /**
+   * Debug-only: credit a chapter clear exactly like finishing its boss (unlock the next chapter
+   * + best record) and persist it. Lets the #45 browser proof take a migrated v1 save through
+   * "clear chapter 3 → chapter 4 opens" without playing nine rooms first.
+   */
+  markChapterCleared(chapter: number): boolean {
+    if (!Number.isInteger(chapter) || chapter < 1 || chapter > CHAPTERS_PER_RUN) {
+      console.warn(`[YokaiField] debug markChapterCleared skipped: bad chapter ${chapter}`);
+      return false;
+    }
+    const save = this.host.save();
+    const repo = this.host.repository();
+    if (save === null || repo === null) return false;
+
+    try {
+      const next = withBest(unlockNextChapter(save, chapter), chapter, ROOMS_PER_CHAPTER);
+      repo.save(next);
+      this.host.setSave(next);
+      console.log(
+        `[YokaiField] debug markChapterCleared ${chapter} → unlocked ${next.chaptersUnlocked}` +
+          ` (best ${next.best.chapter}/${next.best.room}).`,
+      );
+      return true;
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] debug markChapterCleared could not write the save: ${errorMessage(error)}`);
+      return false;
     }
   }
 

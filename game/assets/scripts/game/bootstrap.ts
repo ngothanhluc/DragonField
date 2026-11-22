@@ -151,13 +151,14 @@ type TiledMapAsset = InstanceType<typeof CocosTiledMapAsset>;
 const MANIFEST_PATH = 'data/animations';
 
 /**
- * TMX folder of each chapter **that has data in this build** (M4: all 3).
+ * TMX folder of each chapter **that has data in this build** (M4: all 3, #45 adds the desert).
  * To add a chapter, add the folder + one line here; chapter select picks it up.
  */
 const CHAPTER_FOLDERS: Readonly<Record<number, string>> = {
   1: 'data/levels/chapter-1',
   2: 'data/levels/chapter-2',
   3: 'data/levels/chapter-3',
+  4: 'data/levels/chapter-4',
 };
 
 /**
@@ -219,11 +220,12 @@ const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, st
     splitter: 'slime2',
     splitling: 'slime2',
   },
-  // #45 owns chapter 4 rooms; until then its roles reuse the chapter-3 roster.
+  // Chapter 4 — desert (#45): a snake chaser, the pack's unused floating eye as the caster,
+  // the tyrant lizard as the brute, bones (skull) as the sniper and a slime as the splitter.
   4: {
     chaser: 'snake3',
-    caster: 'lanternred',
-    tank: 'cyclope',
+    caster: 'eye',
+    tank: 'trex',
     sniper: 'skullblue',
     splitter: 'slime3',
     splitling: 'slime3',
@@ -2105,6 +2107,7 @@ export class Bootstrap extends Component {
       screen: () => this.screens.screenId,
       save: () => this.save,
       setGold: (gold) => this.screens.setGold(gold),
+      markChapterCleared: (chapter) => this.screens.markChapterCleared(chapter),
       uiText: () => this.uiText(),
       skillPreview: (ids) => this.skillPreview.show(ids),
       closeSkillPreview: () => this.skillPreview.close(),
