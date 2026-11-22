@@ -397,6 +397,90 @@ const TELEPORT: BossAction = {
   motion: { kind: 'teleport' },
 };
 
+// --- GiantFrog / GiantSlime (#43) ------------------------------------------
+
+/** Frog hop-chase: hops after the player, readable pace. */
+const FROG_HOP: BossAction = {
+  kind: 'move',
+  motion: { kind: 'chase', speedTilesPerSecond: 2.5 },
+};
+
+/** Frog phase 2/3 fast leap — closes the distance in one readable bound. */
+const FROG_LEAP: BossAction = {
+  kind: 'move',
+  motion: { kind: 'chase', speedTilesPerSecond: 9 },
+};
+
+/** Slime hop-chase: slower and heavier than the frog. */
+const SLIME_HOP: BossAction = {
+  kind: 'move',
+  motion: { kind: 'chase', speedTilesPerSecond: 2 },
+};
+
+/** Slime phase 2/3 slam leap. */
+const SLIME_SLAM: BossAction = {
+  kind: 'move',
+  motion: { kind: 'chase', speedTilesPerSecond: 8 },
+};
+
+/** Same 5-bullet fan as Tengu (spitter family). */
+const FROG_FAN: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'fan',
+    count: 5,
+    spreadRadians: 60 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 6,
+    damage: 1,
+    radiusTiles: 0.25,
+  },
+};
+
+/** Frog ring: 10 bullets, one aimed exactly at the player (`ringAimsAtPlayer`). */
+const FROG_RING: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'ring',
+    count: 10,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 5,
+    damage: 1,
+    radiusTiles: 0.25,
+  },
+};
+
+/** Same wide 5-bullet spread as Squid. */
+const SLIME_SPREAD: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'spread',
+    count: 5,
+    spreadRadians: 110 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 4.5,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
+/** Slime ring: 12 bullets, one aimed exactly at the player. */
+const SLIME_RING: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'ring',
+    count: 12,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 5,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
 function anim(animation: BossAnimKind): BossAction {
   return { kind: 'animation', animation };
 }
@@ -405,7 +489,7 @@ function face(direction: 'player' | 'opposite'): BossAction {
   return { kind: 'face', direction };
 }
 
-// --- Scripts of the 3 bosses -----------------------------------------------
+// --- Scripts of the bosses --------------------------------------------------
 
 /**
  * Patterns per GDD §5. Read by column: a step that starts with a telegraph has the real attack
@@ -537,6 +621,96 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 450, actions: [SAMURAI_SLASH] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 450, actions: [SAMURAI_SLASH] },
+        { durationMs: 600, actions: [anim('idle')] },
+      ],
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // Ch1 pool — GiantFrog: hop-chase + 5-bullet fan → leap + aimed 10-bullet ring
+  // → summon 2 chasers once, then leap + ring twice and a fan each loop.
+  // -------------------------------------------------------------------------
+  frog: {
+    1: {
+      steps: [
+        { durationMs: 1400, actions: [FROG_HOP, anim('walk')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [FROG_FAN] },
+        { durationMs: 500, actions: [anim('idle')] },
+      ],
+    },
+    2: {
+      steps: [
+        {
+          durationMs: TELEGRAPH_MS.boss,
+          actions: [face('player'), TELEGRAPH_ACTION, anim('charge')],
+        },
+        { durationMs: 700, actions: [FROG_LEAP, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [FROG_RING] },
+        { durationMs: 600, actions: [anim('idle')] },
+      ],
+    },
+    3: {
+      // Step 0 (summon) runs only once on phase entry; the loop starts at 1.
+      loopFrom: 1,
+      steps: [
+        {
+          durationMs: 500,
+          actions: [{ kind: 'summon', role: 'chaser', count: 2 }, anim('idle')],
+        },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 700, actions: [FROG_LEAP, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [FROG_RING] },
+        { durationMs: 300, actions: [anim('idle')] },
+        { durationMs: 700, actions: [FROG_LEAP, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [FROG_RING] },
+        { durationMs: 300, actions: [anim('idle')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [FROG_FAN] },
+        { durationMs: 500, actions: [anim('idle')] },
+      ],
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // Ch2 pool — GiantSlime: hop-chase + wide 5-bullet spread → slam leap + aimed
+  // 12-bullet ring → summon 3 chasers once, then a slow spiral + slam + ring.
+  // -------------------------------------------------------------------------
+  slime: {
+    1: {
+      steps: [
+        { durationMs: 1500, actions: [SLIME_HOP, anim('walk')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [SLIME_SPREAD] },
+        { durationMs: 500, actions: [anim('idle')] },
+      ],
+    },
+    2: {
+      steps: [
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('charge')] },
+        { durationMs: 800, actions: [SLIME_SLAM, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [SLIME_RING] },
+        { durationMs: 700, actions: [anim('idle')] },
+      ],
+    },
+    3: {
+      // Step 0 (summon) runs only once on phase entry; the loop starts at 1.
+      loopFrom: 1,
+      steps: [
+        {
+          durationMs: 500,
+          actions: [{ kind: 'summon', role: 'chaser', count: 3 }, anim('idle')],
+        },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 2000, actions: [anim('idle'), SQUID_SPIRAL_SLOW] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 800, actions: [SLIME_SLAM, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [SLIME_RING] },
         { durationMs: 600, actions: [anim('idle')] },
       ],
     },

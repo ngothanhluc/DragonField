@@ -21,6 +21,9 @@ const ARENAS: Readonly<Record<BossId, Arena>> = {
   squid: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 8 } },
   // Samurai charges sideways: the player stands on the same row, offset to the right (ch3 arena).
   samurai: { playerStart: { x: 27, y: 6 }, bossStart: { x: 16, y: 6 } },
+  // Pool alternatives (#43) — the same arena the acceptance test uses.
+  frog: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
+  slime: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
 };
 
 const PHASE_FRACTION: Readonly<Record<BossPhase, number>> = { 1: 1, 2: 0.6, 3: 0.2 };

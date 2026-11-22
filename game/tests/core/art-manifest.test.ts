@@ -25,7 +25,7 @@ const MONSTERS = [
   'trex',
   'cyclope',
 ] as const;
-const BOSSES = ['tengu', 'squid', 'samurai'] as const;
+const BOSSES = ['tengu', 'squid', 'samurai', 'frog', 'slime'] as const;
 
 interface GeneratedActors {
   readonly actors: readonly string[];
@@ -156,7 +156,8 @@ describe('animations.json', () => {
       } else if (MONSTER_ACTORS.has(actor)) {
         expect([entry.frameWidth, entry.frameHeight], `${key} must be a 16×16 frame`).toEqual([16, 16]);
       } else if (BOSS_ACTORS.has(actor)) {
-        expect(entry.frameWidth, `${key} is a boss frame, must be ≥ 60px`).toBeGreaterThanOrEqual(60);
+        // GiantFrog is authored at 40 px (the smallest boss art in the pack).
+        expect(entry.frameWidth, `${key} is a boss frame, must be ≥ 40px`).toBeGreaterThanOrEqual(40);
       }
     }
   });
@@ -164,7 +165,7 @@ describe('animations.json', () => {
   it('walk has at least 4 frames, idle/attack have real frames', () => {
     const walkKeys = entries.filter(([key]) => animationOf(key) === 'walk');
 
-    expect(walkKeys.length, 'must have walk for player, 9 monsters and 3 bosses').toBeGreaterThanOrEqual(
+    expect(walkKeys.length, 'must have walk for player, 9 monsters and the bosses that have one').toBeGreaterThanOrEqual(
       1 + MONSTERS.length + BOSSES.length,
     );
 
@@ -254,6 +255,15 @@ describe('animations.json', () => {
       ['samurai.charge.left', 3],
       ['samurai.charge.right', 3],
       ['samurai.hit', 4],
+      // Ticket #43 — pool bosses.
+      ['frog.idle', 5],
+      ['frog.jump', 6],
+      ['frog.charge', 7],
+      ['frog.attack', 3],
+      ['frog.hit', 3],
+      ['slime.idle', 5],
+      ['slime.jump', 13],
+      ['slime.hit', 5],
     ];
 
     for (const [key, frames] of expectedFrames) {

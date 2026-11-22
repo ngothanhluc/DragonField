@@ -1,5 +1,6 @@
 /**
- * Definitions of the 3 chapter bosses (GDD §5): TenguBlue → SquidGreen → GiantBlueSamurai.
+ * Definitions of the chapter bosses (GDD §5): TenguBlue → SquidGreen → GiantBlueSamurai,
+ * plus the pool alternatives GiantFrog (ch1) and GiantSlime (ch2) picked by the run seed (#43).
  *
  * This file has **pure data** only: no time, no RNG, no `cc`.
  * Detailed patterns live in `patterns.ts`, enemy spawning in `summon.ts`.
@@ -8,7 +9,7 @@
  * (`layout: "strip"` in `assets/resources/data/animations.json`), so core only *names*
  * animations while the adapter handles slicing and flipping.
  */
-export const BOSS_IDS = ['tengu', 'squid', 'samurai'] as const;
+export const BOSS_IDS = ['tengu', 'squid', 'samurai', 'frog', 'slime'] as const;
 export type BossId = (typeof BOSS_IDS)[number];
 
 export type BossPhase = 1 | 2 | 3;
@@ -61,6 +62,20 @@ const ANIMATION_TABLE: Readonly<
     charge: { base: 'samurai.charge', perFacing: true },
     hit: { base: 'samurai.hit' },
   },
+  // GiantFrog hops on `Jump` (walk) and leans back on `Charge` (charge intent).
+  frog: {
+    idle: { base: 'frog.idle' },
+    walk: { base: 'frog.jump' },
+    attack: { base: 'frog.attack' },
+    charge: { base: 'frog.charge' },
+    hit: { base: 'frog.hit' },
+  },
+  // GiantSlime has no separate attack sheet: `attack`/`loop` fall back to idle.
+  slime: {
+    idle: { base: 'slime.idle' },
+    walk: { base: 'slime.jump' },
+    hit: { base: 'slime.hit' },
+  },
 };
 
 /**
@@ -105,6 +120,8 @@ export interface BossDef {
    * | tengu   | 82 px | 70 %   | 1.75     |
    * | squid   | 76 px | 85 %   | 2        |
    * | samurai | 96 px | 75 %   | 2.25     |
+   * | frog    | 40 px | 80 %   | 1        |
+   * | slime   | 62 px | 70 %   | 1.5      |
    *
    * The hitbox is smaller than the sprite so the player never gets "hit by air".
    */
@@ -182,6 +199,30 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     phaseThresholds: PHASE_THRESHOLDS,
     spriteExtentTiles: { left: 2.4375, right: 2.25, up: 3.6875 },
     animations: animationsOf('samurai'),
+  },
+  frog: {
+    id: 'frog',
+    displayName: 'Giant Frog',
+    spriteName: 'GiantFrog',
+    chapter: 1,
+    maxHealth: 60,
+    hitboxRadiusTiles: 1,
+    phaseThresholds: PHASE_THRESHOLDS,
+    // Measured from the 40×40 sheets (Idle/Jump/Charge/Attack/Hit), feet anchor.
+    spriteExtentTiles: { left: 1.25, right: 1.25, up: 2.125 },
+    animations: animationsOf('frog'),
+  },
+  slime: {
+    id: 'slime',
+    displayName: 'Giant Slime',
+    spriteName: 'GiantSlime',
+    chapter: 2,
+    maxHealth: 80,
+    hitboxRadiusTiles: 1.5,
+    phaseThresholds: PHASE_THRESHOLDS,
+    // Measured from the 62×52 sheets (Idle/Jump/Hit), feet anchor.
+    spriteExtentTiles: { left: 1.875, right: 1.8125, up: 2.8125 },
+    animations: animationsOf('slime'),
   },
 };
 
