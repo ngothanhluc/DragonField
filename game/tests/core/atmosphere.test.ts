@@ -27,7 +27,6 @@ import {
 } from '../../assets/scripts/core/atmosphere/living-decor';
 import { validateManifest } from '../../assets/scripts/core/art/manifest';
 import type { LevelData, Obstacle } from '../../assets/scripts/core/level/level-data';
-import { ROOM_COLS, ROOM_ROWS } from '../../assets/scripts/core/level/level-data';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
 import { distance } from '../../assets/scripts/core/math/vec2';
 import { SeededRng } from '../../assets/scripts/core/rng';
@@ -64,10 +63,10 @@ function footprintHits(at: Vec2, obstacle: Obstacle): boolean {
   );
 }
 
-function insideRoom(at: Vec2): boolean {
+function insideRoom(at: Vec2, size: { readonly cols: number; readonly rows: number }): boolean {
   const eps = 1e-6;
   return (
-    at.x >= 0.5 - eps && at.x <= ROOM_COLS - 0.5 + eps && at.y >= 0.5 - eps && at.y <= ROOM_ROWS - 0.5 + eps
+    at.x >= 0.5 - eps && at.x <= size.cols - 0.5 + eps && at.y >= 0.5 - eps && at.y <= size.rows - 0.5 + eps
   );
 }
 
@@ -189,7 +188,8 @@ describe('decor placement — off obstacles and spawns, in every real room of ch
     it(`chapter ${chapter}: exact counts, inside the room, no obstacle, ≥ clearance from spawns/doors, no overlap`, () => {
       const spec = chapterOf(loadConfig(), chapter).decor;
       const rooms = roomsOf(chapter);
-      expect(rooms.length).toBe(9);
+      // Every room on disk: the chapter's 16-room pool + its boss (#38).
+      expect(rooms.length).toBeGreaterThanOrEqual(9);
       for (const level of rooms) {
         for (const seed of [1, 42, 20261119]) {
           const items = placeDecor(level, spec, seed);
@@ -198,7 +198,7 @@ describe('decor placement — off obstacles and spawns, in every real room of ch
           expect(items.filter((item) => item.kind === 'prop'), where).toHaveLength(spec.propsPerRoom);
           for (const item of items) {
             const at = `${where} ${item.sprite} @ ${item.at.x},${item.at.y}`;
-            expect(insideRoom(item.at), at).toBe(true);
+            expect(insideRoom(item.at, level.size), at).toBe(true);
             const allowed = item.kind === 'animal' ? spec.animals : spec.props;
             expect(allowed, at).toContain(item.sprite);
             for (const obstacle of level.obstacles) expect(footprintHits(item.at, obstacle), at).toBe(false);
@@ -278,6 +278,8 @@ describe('animals — flee when the player comes within the radius', () => {
     expect(state.mode).not.toBe('flee');
   });
 
+  // 51 rooms since #38 (16-room pools + bosses); the per-tick obstacle scan needs more than the
+  // default 5 s budget.
   it('chased or wandering in every real room, the footprint never enters an obstacle or leaves the room', () => {
     for (const chapter of [1, 2, 3]) {
       for (const level of roomsOf(chapter)) {
@@ -291,12 +293,12 @@ describe('animals — flee when the player comes within the radius', () => {
               tick < 200 ? { x: state.at.x + 1.2, y: state.at.y + 0.8 } : { x: 0.5, y: 0.5 };
             state = stepAnimal(state, { player, dtMs: 50, level, tuning, rng });
             const at = `${level.id} ${item.sprite} tick ${tick} @ ${state.at.x},${state.at.y}`;
-            expect(insideRoom(state.at), at).toBe(true);
+            expect(insideRoom(state.at, level.size), at).toBe(true);
             for (const obstacle of level.obstacles) expect(footprintHits(state.at, obstacle), at).toBe(false);
           }
         }
       }
     }
-  });
+  }, 30_000);
 });
 

@@ -12,15 +12,20 @@ function loadChapter(chapter: number): ChapterData {
 }
 
 describe('chapter assets', () => {
-  it('all 3 chapters have 9 rooms, room 9 is the boss per GDD §5', () => {
-    expect(loadChapter(1).rooms).toHaveLength(9);
-    expect(loadChapter(2).rooms).toHaveLength(9);
-    expect(loadChapter(3).rooms).toHaveLength(9);
+  it('all 3 chapters have a room pool (16 normal + boss last) per GDD §5/#38', () => {
+    for (const chapter of [1, 2, 3]) {
+      const rooms = loadChapter(chapter).rooms;
+      const normal = rooms.filter((room) => !room.isBossRoom);
+      expect(normal.length, `chapter ${chapter} normal rooms`).toBeGreaterThanOrEqual(15);
+      expect(normal.length, `chapter ${chapter} normal rooms`).toBeLessThanOrEqual(18);
+      for (const room of normal) expect(room.size, room.id).toEqual({ cols: 128, rows: 72 });
+    }
 
     const bosses = [1, 2, 3].map((chapter) => {
       const rooms = loadChapter(chapter).rooms;
       const last = rooms[rooms.length - 1];
-      expect(last?.isBossRoom).toBe(true);
+      expect(last?.isBossRoom, `chapter ${chapter} boss is last`).toBe(true);
+      expect(last?.size, `chapter ${chapter} boss size`).toEqual({ cols: 32, rows: 18 });
       return last?.boss?.name;
     });
     expect(bosses).toEqual(['TenguBlue', 'SquidGreen', 'GiantBlueSamurai']);
@@ -64,7 +69,8 @@ describe('chapter assets', () => {
   });
 
   it('chapter 3 boss arena: the player stands on the boss row so a horizontal charge is meaningful', () => {
-    const bossRoom = loadChapter(3).rooms[8];
+    const rooms = loadChapter(3).rooms;
+    const bossRoom = rooms[rooms.length - 1];
     expect(bossRoom?.bossStart?.y).toBe(bossRoom?.playerStart.y);
   });
 
@@ -98,7 +104,8 @@ describe('chapter assets', () => {
   });
 
   it('the chapter 3 boss is not blocked by a pillar on the projectile path from playerStart', () => {
-    const room = loadChapter(3).rooms[8];
+    const rooms = loadChapter(3).rooms;
+    const room = rooms[rooms.length - 1];
     if (room?.bossStart === undefined) throw new Error('missing bossStart');
     // The player and boss rows coincide; any pillar on that row would block projectiles.
     for (let x = Math.floor(room.bossStart.x); x <= Math.ceil(room.playerStart.x); x += 1) {

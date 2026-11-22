@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ROOM_COLS, ROOM_ROWS } from '../../assets/scripts/core/level/level-data';
 import {
+  MAX_ROOM_COLS,
+  MAX_ROOM_ROWS,
   areaContains,
   parseWaterLayout,
   waterAreasFor,
@@ -15,20 +17,23 @@ const MANIFEST = join(HERE, '..', '..', 'assets', 'resources', 'data', 'water-la
 const layout = parseWaterLayout(JSON.parse(readFileSync(MANIFEST, 'utf8')) as unknown);
 
 describe('water-layout.json', () => {
-  it('has only chapter 2 and exactly 9 rooms', () => {
+  it('has only chapter 2 and one entry per room of its pool', () => {
     expect(Object.keys(layout.rooms)).toEqual(['2']);
-    expect(Object.keys(layout.rooms['2'] ?? {})).toHaveLength(9);
+    // 16 generated normal rooms (#38) + the boss room.
+    expect(Object.keys(layout.rooms['2'] ?? {})).toHaveLength(17);
   });
 
-  it('every area is inside the room, has a positive size and a valid kind', () => {
+  it('every area is inside the largest room, has a positive size and a valid kind', () => {
+    expect(MAX_ROOM_COLS).toBe(ROOM_COLS * 4);
+    expect(MAX_ROOM_ROWS).toBe(ROOM_ROWS * 4);
     for (const [chapter, byRoom] of Object.entries(layout.rooms)) {
       for (const [room, areas] of Object.entries(byRoom)) {
         for (const area of areas) {
           expect(['river', 'waterfall'], `${chapter}/${room}`).toContain(area.kind);
           expect(area.width, `${chapter}/${room} width`).toBeGreaterThan(0);
           expect(area.height, `${chapter}/${room} height`).toBeGreaterThan(0);
-          expect(area.x + area.width, `${chapter}/${room} x`).toBeLessThanOrEqual(ROOM_COLS);
-          expect(area.y + area.height, `${chapter}/${room} y`).toBeLessThanOrEqual(ROOM_ROWS);
+          expect(area.x + area.width, `${chapter}/${room} x`).toBeLessThanOrEqual(MAX_ROOM_COLS);
+          expect(area.y + area.height, `${chapter}/${room} y`).toBeLessThanOrEqual(MAX_ROOM_ROWS);
         }
       }
     }

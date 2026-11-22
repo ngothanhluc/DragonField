@@ -18,56 +18,56 @@ function renumber(level: LevelData, room: number, chapter = level.chapter): Leve
   };
 }
 
+function bossOf(levels: readonly LevelData[]): LevelData {
+  const boss = levels.find((level) => level.isBossRoom);
+  if (boss === undefined) throw new Error('fixture has no boss room');
+  return boss;
+}
+
 describe('chapterFromLevels — discovers rooms from data', () => {
   it('re-sorts by room number, regardless of the order the engine returns', () => {
     const levels = loadTmxLevels();
-    const shuffled = [levels[4], levels[0], levels[8], levels[2], levels[6], levels[1], levels[7], levels[3], levels[5]]
-      .filter((level): level is LevelData => level !== undefined);
+    // Reverse-load order must give the same chapter as the sorted one.
+    const shuffled = [...levels].reverse();
 
     const chapter = chapterFromLevels(shuffled);
 
-    expect(chapter.rooms.map((room) => room.room)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(chapter.rooms.map((room) => room.room)).toEqual(
+      levels.map((room) => room.room).sort((a, b) => a - b),
+    );
     expect(chapter).toEqual(loadChapterOne());
   });
 
-  it('adding room-10.tmx gives a chapter with 10 rooms, RunState shows "x/10"', () => {
+  it('adding a room after the pool gives a chapter with one more room, RunState shows "x/(N+1)"', () => {
     const levels = loadTmxLevels();
-    const bossRoom = levels[8];
-    if (bossRoom === undefined) throw new Error('missing room 9');
+    const bossRoom = bossOf(levels);
+    const lastNormal = levels.filter((level) => !level.isBossRoom).sort((a, b) => a.room - b.room).pop();
+    if (lastNormal === undefined) throw new Error('missing the last normal room');
 
-    // The boss must be the last room (the M3 rule), so adding room 10 means moving the boss
-    // to room 10 and turning room 9 back into a regular room. This is exactly the authoring
-    // work in Tiled: edit the `boss`/`isBossRoom` property of the two .tmx files.
-    const nonBossCopy: LevelData = {
-      ...bossRoom,
-      id: 'ch1-r9',
-      room: 9,
-      isBossRoom: false,
-      doors: [],
-    };
-    delete (nonBossCopy as { boss?: unknown }).boss;
-    delete (nonBossCopy as { bossStart?: unknown }).bossStart;
+    // The boss must be the last room (the M3 rule), so adding a room means moving the boss one
+    // further and turning the pool's last room into an extra normal room. This is exactly the
+    // authoring work in Tiled: edit the `boss`/`isBossRoom` property of the two .tmx files.
+    const withoutBoss = levels.filter((level) => !level.isBossRoom);
+    const extra: LevelData = { ...renumber(lastNormal, bossRoom.room), doors: [] };
+    const chapter = chapterFromLevels([...withoutBoss, extra, renumber(bossRoom, bossRoom.room + 1)]);
 
-    const chapter = chapterFromLevels([...levels.slice(0, 8), nonBossCopy, renumber(bossRoom, 10)]);
-
-    expect(chapter.rooms).toHaveLength(10);
-    expect(chapter.rooms[8]?.room).toBe(9);
-    expect(chapter.rooms[9]?.room).toBe(10);
-    expect(chapter.rooms[9]?.isBossRoom).toBe(true);
+    expect(chapter.rooms).toHaveLength(levels.length + 1);
+    expect(chapter.rooms[chapter.rooms.length - 1]?.room).toBe(bossRoom.room + 1);
+    expect(chapter.rooms[chapter.rooms.length - 1]?.isBossRoom).toBe(true);
 
     const run = new RunState(1, chapter.rooms.length);
-    expect(run.roomLabel).toBe('1/10');
-    expect(run.roomsTotal).toBe(10);
+    expect(run.roomLabel).toBe(`1/${chapter.rooms.length}`);
+    expect(run.roomsTotal).toBe(chapter.rooms.length);
 
-    // Room 9 is no longer the last room: the run must continue to 10.
-    for (let room = 1; room < 10; room += 1) {
-      expect(run.isBossRoom).toBe(room === 10);
+    // Every room but the last is a normal room: the run must continue to the boss.
+    for (let room = 1; room < chapter.rooms.length; room += 1) {
+      expect(run.isBossRoom).toBe(room === chapter.rooms.length);
       run.onRoomCleared();
       run.advanceToNextRoom();
     }
-    expect(run.room).toBe(10);
+    expect(run.room).toBe(chapter.rooms.length);
     expect(run.isBossRoom).toBe(true);
-    expect(run.roomLabel).toBe('10/10');
+    expect(run.roomLabel).toBe(`${chapter.rooms.length}/${chapter.rooms.length}`);
   });
 
   it('rejects a boss room in the middle of a chapter', () => {
@@ -75,19 +75,19 @@ describe('chapterFromLevels — discovers rooms from data', () => {
     const first = levels[0];
     if (first === undefined) throw new Error('missing room 1');
 
-    // Add a regular room after the boss: the run would "win" at room 9 so room 10
+    // Add a regular room after the boss: the run would "win" at the boss so the extra room
     // is unreachable — the author put the boss in the wrong place.
-    expect(() => chapterFromLevels([...levels, renumber(first, 10)])).toThrow(
+    const bossRoom = bossOf(levels);
+    expect(() => chapterFromLevels([...levels, renumber(first, bossRoom.room + 1)])).toThrow(
       /boss room .* must be the last room/,
     );
   });
 
   it('rejects two boss rooms in one chapter', () => {
     const levels = loadTmxLevels();
-    const bossRoom = levels[8];
-    if (bossRoom === undefined) throw new Error('missing room 9');
+    const bossRoom = bossOf(levels);
 
-    const secondBoss = renumber(levels[7] ?? bossRoom, 10);
+    const secondBoss = renumber(bossRoom, bossRoom.room + 1);
     expect(() =>
       chapterFromLevels([
         ...levels,
@@ -122,16 +122,18 @@ describe('chapterFromLevels — discovers rooms from data', () => {
     const first = levels[0];
     if (first === undefined) throw new Error('missing room 1');
 
-    expect(() => chapterFromLevels([...levels, renumber(first, 10, 2)])).toThrow(/chapter/);
+    const bossRoom = bossOf(levels);
+    expect(() => chapterFromLevels([...levels, renumber(first, bossRoom.room + 1, 2)])).toThrow(/chapter/);
   });
 
   it('sortLevelsByRoom does not mutate the input array', () => {
     const levels = loadTmxLevels();
     const original = levels.map((level) => level.room);
+    const sortedNumbers = [...original].sort((a, b) => a - b);
 
     const sorted = sortLevelsByRoom([...levels].reverse());
 
     expect(levels.map((level) => level.room)).toEqual(original);
-    expect(sorted.map((level) => level.room)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(sorted.map((level) => level.room)).toEqual(sortedNumbers);
   });
 });

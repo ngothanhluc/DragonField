@@ -15,7 +15,6 @@ import {
   type TileRect,
 } from '../../assets/scripts/core/view/menu-backdrop';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
-import { ROOM_COLS, ROOM_ROWS } from '../../assets/scripts/core/level/level-data';
 import { LEVELS_ROOT, loadTmxLevels } from '../helpers/tmx-levels';
 
 const allData = (): boolean => true;
@@ -34,8 +33,8 @@ function clearOf(point: Vec2, rect: TileRect, margin: number): boolean {
 }
 
 /** Feet inside the room with room for the sprite: 1 tile from the sides, 2 from the top. */
-function insideRoom(point: Vec2): boolean {
-  return point.x >= 1 && point.x <= ROOM_COLS - 1 && point.y >= 2 && point.y <= ROOM_ROWS - 1;
+function insideRoom(point: Vec2, size: { readonly cols: number; readonly rows: number }): boolean {
+  return point.x >= 1 && point.x <= size.cols - 1 && point.y >= 2 && point.y <= size.rows - 1;
 }
 
 describe('menuBackdropChapter — which room is behind the menu', () => {
@@ -95,7 +94,7 @@ describe('menuPlayerSpot — the idle ninja stays visible beside the panel', () 
     const start = { x: 16, y: 16 };
     const spot = menuPlayerSpot({ playerStart: start, obstacles: [] }, COLUMN);
     expect(clearOf(spot, COLUMN, 1)).toBe(true);
-    expect(insideRoom(spot)).toBe(true);
+    expect(insideRoom(spot, { cols: 32, rows: 18 })).toBe(true);
     expect(Math.abs(spot.y - start.y)).toBeLessThanOrEqual(1);
     // Right beside the panel, not pushed into a far corner.
     expect(Math.abs(spot.x - start.x)).toBeLessThanOrEqual(10);
@@ -108,7 +107,7 @@ describe('menuPlayerSpot — the idle ninja stays visible beside the panel', () 
     ];
     const spot = menuPlayerSpot({ playerStart: { x: 16, y: 16 }, obstacles }, COLUMN);
     expect(clearOf(spot, COLUMN, 1)).toBe(true);
-    expect(insideRoom(spot)).toBe(true);
+    expect(insideRoom(spot, { cols: 32, rows: 18 })).toBe(true);
     for (const obstacle of obstacles) {
       expect(clearOf(spot, obstacle, 1)).toBe(true);
     }
@@ -123,7 +122,7 @@ describe('menuPlayerSpot — the idle ninja stays visible beside the panel', () 
 
       const spot = menuPlayerSpot(room, COLUMN);
       expect(clearOf(spot, COLUMN, 1), `chapter ${chapter}: ${JSON.stringify(spot)}`).toBe(true);
-      expect(insideRoom(spot), `chapter ${chapter}: ${JSON.stringify(spot)}`).toBe(true);
+      expect(insideRoom(spot, room.size), `chapter ${chapter}: ${JSON.stringify(spot)}`).toBe(true);
       for (const obstacle of room.obstacles) {
         expect(clearOf(spot, obstacle, 1), `chapter ${chapter} vs ${JSON.stringify(obstacle)}`).toBe(true);
       }

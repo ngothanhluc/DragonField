@@ -284,9 +284,9 @@ describe('parseTmxLevel — convention errors', () => {
 describe('assets/resources/data/levels — every real .tmx file', () => {
   const files = findTmxFiles();
 
-  it('has exactly 9 rooms in chapter 1', () => {
+  it('has 16 normal rooms + the boss in chapter 1', () => {
     const chapterOne = files.filter((file) => file.name.startsWith('chapter-1/'));
-    expect(chapterOne).toHaveLength(9);
+    expect(chapterOne).toHaveLength(17);
   });
 
   it('the dev room is a valid 128×72 room the chapter tree never loads', () => {
@@ -311,15 +311,17 @@ describe('assets/resources/data/levels — every real .tmx file', () => {
     }
   });
 
-  it('groups into chapter 1: 9 rooms in order, doors point at real rooms, boss in room 9', () => {
+  it('groups into chapter 1: rooms 1..17 in order, doors point at real rooms, boss in room 17', () => {
     const chapter = loadChapterOne();
 
     expect(chapter.chapter).toBe(1);
-    expect(chapter.rooms.map((room) => room.room)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(chapter.rooms.map((room) => room.room)).toEqual(
+      Array.from({ length: 17 }, (_value, index) => index + 1),
+    );
     expect(chapter.rooms.some((room) => room.isBossRoom)).toBe(true);
 
-    const bossRoom = chapter.rooms[8];
-    expect(bossRoom?.room).toBe(9);
+    const bossRoom = chapter.rooms[chapter.rooms.length - 1];
+    expect(bossRoom?.room).toBe(17);
     expect(bossRoom?.isBossRoom).toBe(true);
     expect(bossRoom?.boss?.name).toBe('TenguBlue');
     expect(bossRoom?.bossStart).toEqual({ x: 16, y: 5 });
