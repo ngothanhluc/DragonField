@@ -103,6 +103,14 @@ const GOLD_ROW_TOP_PX = 28;
 const HUD_PX_PER_TILE = 16;
 /** Edge arrows sit this far inside the band border so they never touch the letterbox bar. */
 const ARROW_INSET_PX = 14;
+/**
+ * Edge arrows must stay below the HUD's two top rows (room label over the hearts at
+ * `HEART_ROW_TOP_PX`, gold over the enemies counter `GOLD_ROW_TOP_PX` lower) or an up-right arrow
+ * lands on the "Enemies N" text. Row 2's bottom edge + half a label row + the arrow's own reach
+ * (`drawArrow`'s farthest vertex is √(5²+5²) ≈ 7.1 px) is the smallest inset that clears them.
+ */
+const ARROW_TOP_INSET_PX =
+  HEART_ROW_TOP_PX + GOLD_ROW_TOP_PX + (LABEL_FONT_SIZE + 2) / 2 + 8;
 /** At most three arrows (#41): the nearest off-screen enemies, or the doors once clear. */
 export const MAX_EDGE_ARROWS = 3;
 const ARROW_FILL = new CocosColor(255, 233, 170, 235);
@@ -352,12 +360,14 @@ export class Hud extends Component {
    * Border arrows (#41). Each entry is a target position **relative to the camera centre** in room
    * tiles (y down). The HUD band shows exactly one 32×18 screen, so a tile offset maps to
    * `HUD_PX_PER_TILE` design px; the ray is clamped to the band inset and the arrow turned to face
-   * the target. More than `MAX_EDGE_ARROWS` entries are ignored.
+   * the target. The top edge uses `ARROW_TOP_INSET_PX` instead, so an arrow never covers the
+   * hearts / gold / room / enemies text. More than `MAX_EDGE_ARROWS` entries are ignored.
    */
   setArrows(offsets: readonly Vec2[]): void {
     const size = view.getVisibleSize();
     const halfWidth = size.width / 2 - ARROW_INSET_PX;
-    const halfHeight = size.height / 2 - ARROW_INSET_PX;
+    const topLimit = size.height / 2 - ARROW_TOP_INSET_PX;
+    const bottomLimit = size.height / 2 - ARROW_INSET_PX;
 
     for (let index = 0; index < this.arrowNodes.length; index += 1) {
       const node = this.arrowNodes[index];
@@ -371,9 +381,10 @@ export class Hud extends Component {
       // y down (room tiles) → y up (UI px).
       const px = offset.x * HUD_PX_PER_TILE;
       const py = -offset.y * HUD_PX_PER_TILE;
+      const verticalLimit = py >= 0 ? topLimit : bottomLimit;
       const scale = Math.min(
         Math.abs(px) > 1e-6 ? halfWidth / Math.abs(px) : Number.POSITIVE_INFINITY,
-        Math.abs(py) > 1e-6 ? halfHeight / Math.abs(py) : Number.POSITIVE_INFINITY,
+        Math.abs(py) > 1e-6 ? verticalLimit / Math.abs(py) : Number.POSITIVE_INFINITY,
       );
       const clamped = Number.isFinite(scale) ? Math.min(1, scale) : 1;
 
