@@ -189,7 +189,7 @@ Branch `m9-content`. Skills used: add `game-ai`, `roguelike`, `game-docs`, `came
 
 History: 2026-11-22 — normal rooms 32×18 → 128×72 with a follow camera, enemies per room ×8 in waves (owner request, ADR-018). Same day: added solid-prop collision fix, enemies path around obstacles, more pack props; owner accepts a 30–60 min run. Then: houses and trees, trunk-only tree colliders, y-sorting, canopies/roofs that fade when an actor is under them, walk-in grass that shows actors faded (visual only, no stealth — owner decision). Skill pick per cleared room stays for M9; it will later become XP levels (level up → pick a skill), GDD §13.2.
 
-**Status: ⏳ Not started.**
+**Status: ✅ Done (2026-11-22).** M9 tickets merged (#37–#45). Balance proven by sim (ADR-013) on unchanged `tuning.json`: `bun run sim:table` (24 rows, ch1–4, both pooled bosses, 3 seeds per boss) — standing still lost room 1 in 24/24, dodge + typical loadout won 9/9 in 24/24; table in `docs/research/2026-11-m9-sim-table.md`.
 
 ---
 
