@@ -68,7 +68,10 @@ import { preloadSheets } from './assets/texture-cache';
 import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
 import { BulletView } from './bullet-view';
-import { CombatLoop, STRESS_ENEMY_BULLETS } from './combat-loop';
+import { CombatLoop, PLAYER_RADIUS_TILES, STRESS_ENEMY_BULLETS } from './combat-loop';
+import { CoverView } from './cover-view';
+import type { CoverBody } from './cover-view';
+import { DepthView } from './depth-view';
 import {
   isDebugEnabled,
   type DebugStatus,
@@ -87,9 +90,11 @@ import { FeelView } from './feel-view';
 import { FpsMeter } from './fps-meter';
 import { Hud, HEART_SHEET } from './hud';
 import { syncCombatHud } from './hud-sync';
-import { ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
+import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
+import type { PropView, RoomLayers } from './level-view';
 import { PlayerController } from './player-controller';
 import { attachRoomWater } from './room-water';
+import { WORLD_DRAW_LAYERS } from '../core/view/cover';
 import { WorldCamera } from './world-camera';
 import { cullWorld } from './world-culler';
 import type { CameraFocus } from './world-camera';
@@ -228,14 +233,21 @@ export class Bootstrap extends Component {
   private saveRepo: SaveRepository | null = null;
 
   /**
-   * Child layers of the `world` node, created exactly once in draw order: floor → actor → bullet.
+   * Child layers of the `world` node, created exactly once in draw order
+   * (`WORLD_DRAW_LAYERS`): ground → actors → overlays → bullets, then FX and atmosphere.
    * Separate layers instead of piling everything into `worldRoot`, so a room change
    * (destroy + rebuild) does not paint the new floor over the player/enemies.
    */
   private roomLayer: Node | null = null;
   private actorLayer: Node | null = null;
+  private overlayLayer: Node | null = null;
   private bulletLayer: Node | null = null;
   private fxLayer: Node | null = null;
+  /** #36: y-sorts the actors layer (prop bases + actors) and fades canopies/grass. */
+  private depth: DepthView | null = null;
+  private cover: CoverView | null = null;
+  /** Reused body list for the depth/cover pass (one frame, no per-frame array). */
+  private readonly coverBodies: CoverBody[] = [];
   private roomRoot: Node | null = null;
   private uiRoot: Node | null = null;
   private camera: WorldCamera | null = null;
@@ -336,6 +348,7 @@ export class Bootstrap extends Component {
     // Death: the sim stands still but death FX keep running until result opens.
     if (this.status === 'dying') {
       this.fx?.update(rawDeltaMs);
+      this.updateDepthAndCover(rawDeltaMs);
       return;
     }
     if (this.status !== 'playing') return;
@@ -350,6 +363,9 @@ export class Bootstrap extends Component {
     const deltaMs = rawDeltaMs;
 
     const result = combat.update(deltaMs);
+    // After the combat step: the actors moved, and their tint was just rewritten — the cover
+    // alpha must be the last word on the sprite colour for the frame (#36).
+    this.updateDepthAndCover(rawDeltaMs);
     if (result.frozen) return;
 
     if (this.hud !== null) syncCombatHud(this.hud, player, combat);
@@ -823,27 +839,86 @@ export class Bootstrap extends Component {
     }
   }
 
-  /** world → room/actor/bullet; this order is the Cocos 2D draw order. */
+  /** world → ground/actors/overlays/bullets/fx; this order is the Cocos 2D draw order. */
   private createWorldLayers(): void {
     const worldRoot = new CocosNode('world');
     // Cocos only draws a Sprite under a RenderRoot2D (Canvas is one); world is not under Canvas.
     worldRoot.addComponent(RenderRoot2D);
     worldRoot.parent = this.node;
 
-    this.roomLayer = this.addLayer('room-layer', worldRoot);
-    this.actorLayer = this.addLayer('actor-layer', worldRoot);
-    this.bulletLayer = this.addLayer('bullet-layer', worldRoot);
-    // FX above actors + bullets: explosions/impacts are not painted over by enemies.
-    this.fxLayer = this.addLayer('fx-layer', worldRoot);
+    // One node per `WORLD_DRAW_LAYERS` entry, back to front: the list in core and the scene
+    // graph cannot drift apart. Overlays sit between actors and bullets (#36).
+    for (const name of WORLD_DRAW_LAYERS) this.addLayer(name, worldRoot);
+
+    this.roomLayer = worldRoot.getChildByName('ground');
+    this.actorLayer = worldRoot.getChildByName('actors');
+    this.overlayLayer = worldRoot.getChildByName('overlays');
+    this.bulletLayer = worldRoot.getChildByName('bullets');
+    // FX above actors + bullets: explosions/impacts are not painted over by enemies, and the
+    // yield/telegraph sprites stay readable on top of a faded canopy.
+    this.fxLayer = this.addLayer('fx', worldRoot);
     // Chapter atmosphere that draws over actors (#6) stays below the HUD and at low alpha,
     // so telegraphs and bullets always read on top of it.
-    this.atmosphereLayer = this.addLayer('atmosphere-layer', worldRoot);
+    this.atmosphereLayer = this.addLayer('atmosphere', worldRoot);
+
+    const actors = this.actorLayer;
+    this.depth = actors === null ? null : new DepthView(actors);
   }
 
   private addLayer(name: string, parent: Node): Node {
     const node = new CocosNode(name);
     node.parent = parent;
     return node;
+  }
+
+  /** Prop layers for a run room (#36): bases sort with actors, canopies/roofs above them. */
+  private roomLayers(): RoomLayers | undefined {
+    const props = this.actorLayer;
+    const overlays = this.overlayLayer;
+    if (props === null || overlays === null) return undefined;
+
+    return {
+      props,
+      overlays,
+      onProps: (views) => this.attachProps(views),
+    };
+  }
+
+  /**
+   * The room's props finished loading: register them with the depth sort and start fading
+   * canopies/roofs (the nodes themselves are already parented by `buildProps`).
+   */
+  private attachProps(views: readonly PropView[]): void {
+    if (!this.isValid) return;
+    this.cover?.destroy();
+    const cover = new CoverView();
+    cover.setProps(views);
+    this.cover = cover;
+    this.depth?.setProps(views);
+  }
+
+  /**
+   * One visual frame for #36: y-sort the actors layer and fade canopies/roofs/grass. Runs on
+   * real time after the combat step (so positions and tints are final for the frame), and also
+   * while dying, so a fade keeps moving when the simulation stands still.
+   */
+  private updateDepthAndCover(deltaMs: number): void {
+    const player = this.player;
+    const depth = this.depth;
+    if (player === null || depth === null) return;
+
+    const bodies = this.coverBodies;
+    bodies.length = 0;
+    bodies.push({
+      node: player.node,
+      position: player.position,
+      radiusTiles: PLAYER_RADIUS_TILES,
+      footY: player.position.y + ACTOR_FEET_OFFSET_TILES,
+    });
+    this.combat?.collectEnemyBodies(bodies);
+
+    depth.update(bodies);
+    this.cover?.update(deltaMs, bodies);
   }
 
   /** Build the new room and replace the old one (old node `destroy()` lets the engine clean children). */
@@ -857,7 +932,12 @@ export class Bootstrap extends Component {
     }
 
     this.roomRoot?.destroy();
-    this.roomRoot = buildRoom(roomLayer, level, asset);
+    // Prop sprites of the old room live on the shared actor/overlay layers, not under `roomRoot`
+    // (#36), so they must be destroyed explicitly before the new room's props are built.
+    this.cover?.destroy();
+    this.cover = null;
+    this.depth?.clearProps();
+    this.roomRoot = buildRoom(roomLayer, level, asset, this.roomLayers());
     const water = this.waterLayout;
     if (water !== null) {
       attachRoomWater(
@@ -1300,6 +1380,10 @@ export class Bootstrap extends Component {
 
     this.roomRoot?.destroy();
     this.roomRoot = null;
+    // Prop bases and overlays (#36) live on the shared actor/overlay layers, not on `roomRoot`.
+    this.cover?.destroy();
+    this.cover = null;
+    this.depth?.clearProps();
     // The over-actors atmosphere node lives on the world `atmosphere-layer`, not on `roomRoot`:
     // destroying the room does not take it with it, so the shared handle must be torn down
     // explicitly (otherwise ch1 shafts/leaves stay drawn over the next chapter and the menus).

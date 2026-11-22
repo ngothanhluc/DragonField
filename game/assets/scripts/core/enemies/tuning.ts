@@ -34,6 +34,7 @@ import {
   parseTuning,
   type CameraTuning,
   type CombatTuning,
+  type CoverTuning,
   type EnemiesTuning,
   type FeelTuning,
   type NavigationTuning,
@@ -68,3 +69,6 @@ export const CAMERA_TUNING: CameraTuning = TUNING.camera;
 
 /** Juice numbers (ticket #2) — the `game/` adapter reads them; `core/feel/` only takes numbers as parameters. */
 export const FEEL_TUNING: FeelTuning = TUNING.feel;
+
+/** Canopy/roof fade + walk-in grass alpha (#36) — `game/cover-view.ts` reads them. */
+export const COVER_TUNING: CoverTuning = TUNING.cover;

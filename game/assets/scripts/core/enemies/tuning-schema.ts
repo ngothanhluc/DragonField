@@ -167,6 +167,21 @@ export interface TuningConfig {
   readonly camera: CameraTuning;
   /** "Juice" numbers (ticket #2): shake, squash, coins, damage numbers, muzzle. */
   readonly feel: FeelTuning;
+  /** Depth/see-through canopies and walk-in grass (#36). Visual only — no stealth. */
+  readonly cover: CoverTuning;
+}
+
+/**
+ * Canopy/roof and walk-in grass numbers (#36). Read by `game/cover-view.ts`; the pure rules
+ * live in `core/view/cover.ts`, which takes them as parameters.
+ */
+export interface CoverTuning {
+  /** Opacity of a canopy/roof while the player or an enemy is under it (0..1). */
+  readonly overlayAlpha: number;
+  /** Opacity of an actor standing in tall grass (0..1). */
+  readonly actorInCoverAlpha: number;
+  /** Exponential fade rate, 1/s — `1 - exp(-fadeRate · dt)` per frame. */
+  readonly fadeRate: number;
 }
 
 /**
@@ -375,6 +390,8 @@ const CAMERA_FIELDS = [
   'followRate',
   'lookAheadRate',
 ] as const;
+
+const COVER_FIELDS = ['overlayAlpha', 'actorInCoverAlpha', 'fadeRate'] as const;
 
 const SHAKE_FIELDS = [
   'maxOffsetTiles',
@@ -893,6 +910,16 @@ function readTrauma(
   path: string,
   problems: ProblemList,
 ): number {
+  return readRatio(source, field, path, problems);
+}
+
+/** A 0..1 opacity/ratio: a value above 1 is reported and clamped (never silently > 1). */
+function readRatio(
+  source: Record<string, unknown>,
+  field: string,
+  path: string,
+  problems: ProblemList,
+): number {
   const value = readNumber(source, field, path, problems);
   if (value === undefined) return 0;
   if (value > 1) {
@@ -1061,6 +1088,22 @@ function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTun
   return { shake, squash, damageNumbers, coin, muzzle, vfx };
 }
 
+function zeroCover(): CoverTuning {
+  return { overlayAlpha: 1, actorInCoverAlpha: 1, fadeRate: 1 };
+}
+
+function parseCover(raw: Record<string, unknown>, problems: ProblemList): CoverTuning {
+  const source = readObject(raw, 'cover', '', problems, COVER_FIELDS);
+  if (source === undefined) return zeroCover();
+
+  const path = 'cover';
+  return {
+    overlayAlpha: readRatio(source, 'overlayAlpha', path, problems),
+    actorInCoverAlpha: readRatio(source, 'actorInCoverAlpha', path, problems),
+    fadeRate: readNumber(source, 'fadeRate', path, problems, { positive: true }) ?? 0,
+  };
+}
+
 /** Deep freeze so nobody can accidentally change tuned numbers at runtime. */
 function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null) return value;
@@ -1108,6 +1151,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     navigation: parseNavigation(raw, problems),
     camera: parseCamera(raw, problems),
     feel: parseFeel(raw, problems),
+    cover: parseCover(raw, problems),
   };
 
   problems.throwIfAny();

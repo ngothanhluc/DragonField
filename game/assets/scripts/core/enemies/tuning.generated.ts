@@ -193,4 +193,9 @@ export const TUNING_DATA = {
       auraOffsetTiles: 0.35,
     },
   },
+  cover: {
+    overlayAlpha: 0.4,
+    actorInCoverAlpha: 0.5,
+    fadeRate: 10,
+  },
 } as const;

@@ -22,6 +22,7 @@
 import { Color as CocosColor, Node as CocosNodeValue, Sprite as CocosSprite } from 'cc';
 import type { AnimationManifest } from '../core/art/manifest';
 import type { BossDef, BossPhase } from '../core/boss/boss-defs';
+import { BOSS_FEET_OFFSET_TILES } from '../core/boss/boss-defs';
 import { summonedEnemies } from '../core/boss/summon';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
 import { fireEnemyVolley, sniperShotPlan } from '../core/combat/enemy-fire';
@@ -55,9 +56,10 @@ import {
 import { SpriteAnimator } from './anim/sprite-animator';
 import { BossView } from './boss-view';
 import type { BulletView } from './bullet-view';
+import type { CoverBody } from './cover-view';
 import { EnemyView } from './enemy-view';
 import type { FxPool } from './fx/effect-pool';
-import { ACTOR_SCALE } from './level-view';
+import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE } from './level-view';
 import type { PlayerController } from './player-controller';
 import { playSfx } from './audio/sfx';
 
@@ -964,9 +966,34 @@ export class CombatLoop {
     this.stress = false;
   }
 
+  /**
+   * Append the living enemy/boss bodies for the depth sort and cover fade (#36). Visual only:
+   * the player is added by the caller. `out` is reused, so no array is allocated per frame.
+   */
+  collectEnemyBodies(out: CoverBody[]): void {
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      out.push({
+        node: enemy.node,
+        position: enemy.position,
+        radiusTiles: enemy.radiusTiles,
+        footY: enemy.position.y + ACTOR_FEET_OFFSET_TILES,
+      });
+    }
+
+    const boss = this.boss;
+    if (boss !== null && !boss.isDefeated) {
+      out.push({
+        node: boss.spriteNode,
+        position: boss.position,
+        radiusTiles: boss.hitboxRadiusTiles,
+        footY: boss.position.y + BOSS_FEET_OFFSET_TILES,
+      });
+    }
+  }
+
   /** Enemy snapshot for the debug hook (never exposes internal objects). */
-  snapshotEnemies(): EnemySnapshot[] {
-    return this.enemies.map((enemy) => ({
+  snapshotEnemies(): EnemySnapshot[] {    return this.enemies.map((enemy) => ({
       id: enemy.id,
       role: enemy.role,
       elite: enemy.isElite,
