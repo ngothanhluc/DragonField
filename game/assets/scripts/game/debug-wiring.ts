@@ -12,6 +12,7 @@ import type {
   DebugAtmosphereSnapshot,
   DebugAudioSnapshot,
   DebugBossSnapshot,
+  DebugDoorSnapshot,
   DebugEnemySnapshot,
   DebugMenuBackdropSnapshot,
   DebugProvider,
@@ -64,6 +65,8 @@ export interface DebugWiringHost {
   readonly vfx: () => DebugVfxSnapshot;
   readonly atmosphere: () => DebugAtmosphereSnapshot;
   readonly menuBackdrop: () => DebugMenuBackdropSnapshot | null;
+  readonly doors: () => DebugDoorSnapshot;
+  readonly takeDoor: (index: number) => boolean;
 }
 
 /** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
@@ -126,6 +129,8 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     vfx: host.vfx,
     atmosphere: host.atmosphere,
     menuBackdrop: host.menuBackdrop,
+    doors: host.doors,
+    takeDoor: host.takeDoor,
     nodeCount: () => {
       const scene: Node | null = director.getScene() as Node | null;
       return scene === null ? 0 : countNodes(scene);

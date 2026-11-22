@@ -55,6 +55,13 @@ export class RunRewards {
     return amount;
   }
 
+  /** A flat bonus outside the kill/room table — the `gold` door's clear reward (#39). */
+  awardBonus(amount: number): number {
+    const safe = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+    this.earned = clampGold(this.earned + safe);
+    return safe;
+  }
+
   /** Read only: the rule-based reward for one enemy, used by tooltips/tests. */
   static killValue(role: EnemyRole, elite: boolean, goldMultiplier = 1): number {
     return scaled(goldForKill(role, elite), goldMultiplier);
