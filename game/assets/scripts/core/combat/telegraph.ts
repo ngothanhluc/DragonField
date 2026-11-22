@@ -17,6 +17,7 @@ export const TELEGRAPH_MS = {
   chaser: ENEMY_TUNING.elite.chaser.pounceTelegraphMs,
   caster: ENEMY_TUNING.roles.caster.telegraphMs,
   tank: ENEMY_TUNING.roles.tank.telegraphMs,
+  sniper: ENEMY_TUNING.roles.sniper.telegraphMs,
   boss: 800,
 } as const;
 

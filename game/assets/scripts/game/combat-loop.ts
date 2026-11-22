@@ -24,7 +24,7 @@ import type { AnimationManifest } from '../core/art/manifest';
 import type { BossDef, BossPhase } from '../core/boss/boss-defs';
 import { summonedEnemies } from '../core/boss/summon';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
-import { fireEnemyVolley } from '../core/combat/enemy-fire';
+import { fireEnemyVolley, sniperShotPlan } from '../core/combat/enemy-fire';
 import { segmentHitsCircle } from '../core/combat/hitbox';
 import { HitstopClock } from '../core/combat/hitstop';
 import {
@@ -41,6 +41,7 @@ import type { EnemyState } from '../core/enemies/behaviours';
 import { ROOM_EDGE_MARGIN_TILES, maxHealthFor } from '../core/enemies/behaviours';
 import { FEEL_TUNING, NAVIGATION_TUNING } from '../core/enemies/tuning';
 import { eliteVolleyAngles } from '../core/enemies/elite';
+import { splitOnDeath } from '../core/enemies/splitter';
 import { RoomNavigation, separateEnemies, type SeparationBody } from '../core/enemies/navigation';
 import type { ScreenShake } from '../core/feel/screen-shake';
 import { spawnWave } from '../core/enemies/waves';
@@ -431,12 +432,15 @@ export class CombatLoop {
       if (step.released === 'shot') {
         const role = enemy.role;
         if (role !== null) {
+          // #42: the sniper fires a single fast, aimed bullet; everyone else keeps the volley rule.
+          const plan = role === 'sniper' ? sniperShotPlan() : null;
           fireEnemyVolley({
             pool: player.bullets,
             from: enemy.position,
             to: player.position,
             damage: enemy.contactDamage,
-            angles: eliteVolleyAngles(role, enemy.isElite),
+            angles: plan !== null ? plan.angles : eliteVolleyAngles(role, enemy.isElite),
+            ...(plan !== null ? { speedTilesPerSecond: plan.speedTilesPerSecond } : {}),
           });
         }
       }
@@ -892,6 +896,9 @@ export class CombatLoop {
    * `killAll`, `setBossHealthFraction`) so bootstrap credits gold in that same frame.
    */
   private reportDeaths(): void {
+    /** Splitlings left by splitters that died this frame (#42), spawned after the loop. */
+    const splits: EnemyState[] = [];
+
     for (const enemy of this.enemies) {
       if (!enemy.isDead || this.rewarded.has(enemy.id)) continue;
       this.rewarded.add(enemy.id);
@@ -904,6 +911,17 @@ export class CombatLoop {
         lifetimeMs: 320,
       });
       playSfx('gold');
+
+      const state = enemy.enemyState;
+      if (state !== null && state.role === 'splitter') {
+        splits.push(...splitOnDeath(state, this.level, this.nowMs));
+      }
+    }
+
+    // Spawn after iterating: `addEnemy` pushes into `this.enemies`.
+    for (const child of splits) {
+      this.addEnemy(child);
+      this.fx?.spawn('fx.smoke', child.position);
     }
 
     const boss = this.boss;

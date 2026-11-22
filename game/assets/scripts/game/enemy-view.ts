@@ -27,6 +27,7 @@ import {
   _decorator,
   Color as CocosColor,
   Component,
+  Graphics as CocosGraphics,
   Node as CocosNode,
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
@@ -50,7 +51,8 @@ import {
 } from '../core/enemies/behaviours';
 import type { EnemyAction, EnemyState } from '../core/enemies/behaviours';
 import { nextActionStartedMs } from '../core/enemies/attack-cycle';
-import { eliteScale, spriteActorFor } from '../core/enemies/elite';
+import { eliteScale, spriteActorForRole } from '../core/enemies/elite';
+import { telegraphLine } from '../core/enemies/telegraph-line';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { moveWithCollision } from '../core/movement/collision';
@@ -74,8 +76,11 @@ const { ccclass } = _decorator;
 
 /** `cc` is an any module in this repo: types must be derived from the import value (see `texture-cache.ts`). */
 type Color = InstanceType<typeof CocosColor>;
+type Graphics = InstanceType<typeof CocosGraphics>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = ReturnType<typeof sliceFrame>;
+/** `cc` is an any module: `Node` must be a derived type, not the imported value. */
+type Node = InstanceType<typeof CocosNode>;
 
 /** Roles that have a telegraph — `telegraphProgress` needs a narrow union. */
 type RoleTelegraphKind = Exclude<TelegraphKind, 'boss'>;
@@ -122,6 +127,7 @@ const TELEGRAPH_TINT: Readonly<Record<RoleTelegraphKind, Color>> = {
   chaser: new CocosColor(255, 226, 120, 255),
   caster: new CocosColor(130, 220, 255, 255),
   tank: new CocosColor(255, 150, 80, 255),
+  sniper: new CocosColor(255, 120, 120, 255),
 };
 
 /** Telegraph ring diameter by role, in tiles (distinguishable at a glance). */
@@ -129,7 +135,25 @@ const RING_DIAMETER_TILES: Readonly<Record<RoleTelegraphKind, number>> = {
   chaser: 2.4,
   caster: 2.8,
   tank: 4,
+  sniper: 2.8,
 };
+
+/**
+ * Enemy role → telegraph kind. Splitter and splitling have no telegraph, so this is the single
+ * place that narrows the role union before `telegraphProgress`/the colour tables are indexed.
+ */
+function telegraphKindFor(role: EnemyRole): RoleTelegraphKind | null {
+  switch (role) {
+    case 'chaser':
+    case 'caster':
+    case 'tank':
+    case 'sniper':
+      return role;
+    case 'splitter':
+    case 'splitling':
+      return null;
+  }
+}
 
 /** The ring sits under the feet: offset down in the parent's texture px (parent scale 1/16). */
 const RING_OFFSET_Y_PX = -7;
@@ -212,6 +236,13 @@ export class EnemyView extends Component {
   private ringScaleCompensation = 1;
   /** Scratch colour for the ring (rewritten each frame, no allocation). */
   private readonly ringTint = new CocosColor(255, 255, 255, 0);
+  /**
+   * Sniper line telegraph (#42): a `Graphics` sibling in world space (the enemy node is scaled
+   * 1/16, so drawing inside it would need compensating every frame).
+   */
+  private lineNode: Node | null = null;
+  private lineGraphics: Graphics | null = null;
+  private lineVisible = false;
   /** Whether the current dash has dealt damage (once per dash). */
   private chargeHitDone = false;
   /** `untilMs` of the running dash — a new value means a new dash (elites dash repeatedly). */
@@ -261,15 +292,26 @@ export class EnemyView extends Component {
     return this.state?.maxHealth ?? 0;
   }
 
+  /** Read-only state, for adapters that need the pure `EnemyState` (e.g. `splitOnDeath`). */
+  get enemyState(): EnemyState | null {
+    return this.state;
+  }
+
   /** Hitbox radius, tiles (player bullets use it for hit tests). */
   get radiusTiles(): number {
     return this.hitRadius;
   }
 
-  /** Chaser/tank deal contact damage; the caster shoots, so it has no contact damage. */
+  /** Chaser/tank/splitter deal contact damage; the caster and sniper shoot instead. */
   get melee(): boolean {
     const state = this.state;
-    return state !== null && (state.role === 'chaser' || state.role === 'tank');
+    return (
+      state !== null &&
+      (state.role === 'chaser' ||
+        state.role === 'tank' ||
+        state.role === 'splitter' ||
+        state.role === 'splitling')
+    );
   }
 
   get contactDamage(): number {
@@ -306,6 +348,7 @@ export class EnemyView extends Component {
     void this.createRing().catch((error: unknown) => {
       warn(`[YokaiField] Could not build the telegraph ring: ${String(error)}`);
     });
+    this.createTelegraphLine();
   }
 
   /**
@@ -474,6 +517,7 @@ export class EnemyView extends Component {
     this.dead = true;
     this.animator?.stop();
     this.hideRing();
+    this.hideLine();
     // GDD §12.3: monsters have no death frame — death is pack FX, not a sprite.
     this.fx?.spawn('fx.smoke', this.position);
     this.fx?.spawn('fx.impact', this.position, {
@@ -554,18 +598,36 @@ export class EnemyView extends Component {
     const hitFlash = nowMs < this.hitFlashUntilMs;
 
     if (action.kind === 'telegraph') {
-      const kind: RoleTelegraphKind = state.role;
+      const kind = telegraphKindFor(state.role);
+      if (kind === null) {
+        this.applyScale(hitFlash ? HIT_FLASH_SCALE : 1, nowMs);
+        this.applyTint(hitFlash ? HIT_TINT : this.stateTint(nowMs));
+        this.hideRing();
+        this.hideLine();
+        return;
+      }
+
       const elapsedMs = Math.max(0, nowMs - action.sinceMs);
       const pulse = 1 + TELEGRAPH_PULSE * Math.sin((elapsedMs / 1000) * TELEGRAPH_PULSE_SPEED);
       this.applyScale(hitFlash ? HIT_FLASH_SCALE : pulse, nowMs);
       this.applyTint(hitFlash ? HIT_TINT : TELEGRAPH_TINT[kind]);
-      this.showRing(kind, telegraphProgress(action.sinceMs, nowMs, kind));
+
+      // The sniper shows a line to the player instead of the caster's ring (#42).
+      if (kind === 'sniper' && this.level !== null) {
+        const line = telegraphLine(this.level, state.position, player);
+        this.showLine(tileToWorld(line.from), tileToWorld(line.to), TELEGRAPH_TINT.sniper);
+        this.hideRing();
+      } else {
+        this.hideLine();
+        this.showRing(kind, telegraphProgress(action.sinceMs, nowMs, kind));
+      }
       return;
     }
 
     this.applyScale(hitFlash ? HIT_FLASH_SCALE : 1, nowMs);
     this.applyTint(hitFlash ? HIT_TINT : this.stateTint(nowMs));
     this.hideRing();
+    this.hideLine();
   }
 
   /** Status tint outside telegraph: frozen > poisoned > none (elites have their own art, ADR-015). */
@@ -600,8 +662,10 @@ export class EnemyView extends Component {
    */
   private playMotion(moving: boolean, direction: Direction, force = false): void {
     const clip = moving ? 'walk' : 'idle';
-    // Elites use their own generated sheet (`<monster>.elite.*`, ADR-015) instead of a tint.
-    const actor = spriteActorFor(this.monster, this.isElite);
+    // Elites use their own generated sheet (`<monster>.elite.*`, ADR-015); splitlings use the
+    // palette-remapped `<monster>.splitling.*` variant (#42).
+    const role = this.state?.role ?? 'chaser';
+    const actor = spriteActorForRole(this.monster, role, this.isElite);
     const key = `${actor}.${clip}`;
     if (!force && this.animKey === key && this.animDirection === direction && this.animMoving === moving) {
       return;
@@ -700,8 +764,63 @@ export class EnemyView extends Component {
     this.ringVisible = false;
   }
 
+  // -------------------------------------------------------------------------
+  // Sniper line telegraph (#42): one Graphics sibling in world units
+  // -------------------------------------------------------------------------
+
+  private createTelegraphLine(): void {
+    // Only the sniper shows a line; every other role keeps the ring and no extra node.
+    if (this.state?.role !== 'sniper') return;
+    const parent = this.node.parent;
+    if (parent === null) return;
+
+    const node = new CocosNode('sniper-line');
+    node.layer = this.node.layer;
+    node.parent = parent;
+    const graphics: Graphics = node.addComponent(CocosGraphics);
+    node.active = false;
+
+    this.lineNode = node;
+    this.lineGraphics = graphics;
+  }
+
+  /** Draw the line from `from` to `to` (world units), pulsing the alpha with telegraph progress. */
+  private showLine(from: Vec2, to: Vec2, color: Color): void {
+    const node = this.lineNode;
+    const graphics = this.lineGraphics;
+    if (node === null || graphics === null) return;
+
+    node.setPosition(from.x, from.y, 0);
+    graphics.clear();
+    graphics.lineWidth = 0.07;
+    graphics.strokeColor = color;
+    graphics.moveTo(0, 0);
+    graphics.lineTo(to.x - from.x, to.y - from.y);
+    graphics.stroke();
+
+    if (!this.lineVisible) {
+      node.active = true;
+      this.lineVisible = true;
+    }
+  }
+
+  private hideLine(): void {
+    if (!this.lineVisible) return;
+    const node = this.lineNode;
+    if (node !== null) node.active = false;
+    this.lineVisible = false;
+  }
+
   private syncNodePosition(): void {
     const world = tileToWorld(this.position);
     this.node.setPosition(world.x, world.y - ACTOR_FEET_OFFSET_TILES, 0);
+  }
+
+  protected onDestroy(): void {
+    // The line is a sibling in world space, not a child: destroying the enemy must take it too.
+    const line = this.lineNode;
+    if (line !== null && line.isValid) line.destroy();
+    this.lineNode = null;
+    this.lineGraphics = null;
   }
 }

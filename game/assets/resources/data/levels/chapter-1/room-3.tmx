@@ -91,5 +91,12 @@
     <property name="toRoom" type="int" value="4"/>
    </properties>
   <point/></object>
+  <object id="9" name="spawn" x="464" y="48">
+   <properties>
+    <property name="role" value="splitter"/>
+    <property name="wave" type="int" value="1"/>
+    <property name="elite" type="bool" value="false"/>
+   </properties>
+  <point/></object>
    </objectgroup>
 </map>

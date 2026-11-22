@@ -56,6 +56,14 @@ const MONSTERS = [
   'bear',
   'trex',
   'cyclope',
+  // #42 — sniper and splitter monsters; elites are generated for these too so
+  // `spawn(role, true)` and chapter preloading have a sheet.
+  'kappagreen',
+  'kappared',
+  'skullblue',
+  'slimegreen',
+  'slime2',
+  'slime3',
 ] as const;
 
 interface ElitePaletteConfig {

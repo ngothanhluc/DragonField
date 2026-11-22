@@ -51,6 +51,8 @@ import {
   type EnemyState,
 } from '../enemies/behaviours';
 import { eliteVolleyAngles } from '../enemies/elite';
+import { aimDirection, sniperShotPlan } from '../combat/enemy-fire';
+import { splitOnDeath } from '../enemies/splitter';
 import {
   RoomNavigation,
   StuckGuard,
@@ -179,6 +181,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   /** Ids of bullets hit this frame; reused so each frame allocates nothing. */
   const spent = new Set<number>();
   let hitstopMs = 0;
+  /** Splitlings born this frame; appended after the damage loops so we never mutate mid-iteration. */
+  const pendingSplits: EnemyState[] = [];
 
   let roomIndex = 0;
   let room = firstRoom;
@@ -231,11 +235,35 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   };
 
   /**
-   * The caster fires a volley. Elites use `eliteVolleyAngles` (3-bullet fan); regular ones
-   * fire one bullet with a small random offset so two casters do not fire the same line.
-   * Same rule as `game/combat-loop.ts`.
+   * Release an enemy's telegraphed attack. A sniper fires exactly one fast, aimed bullet;
+   * elites use `eliteVolleyAngles` (3-bullet fan) and a regular caster fires one bullet with a
+   * small random offset so two casters do not fire the same line. Same rule as
+   * `game/combat-loop.ts`.
    */
   const fireCasterVolley = (enemy: EnemyState): void => {
+    const damage = contactDamageFor(enemy.role, enemy.elite, undefined, room.chapter);
+
+    if (enemy.role === 'sniper') {
+      const plan = sniperShotPlan();
+      const direction = aimDirection(enemy.position, player);
+      const baseAngle = Math.atan2(direction.y, direction.x);
+      for (const offset of plan.angles) {
+        const angle = baseAngle + offset;
+        bullets.spawn({
+          position: enemy.position,
+          velocity: {
+            x: Math.cos(angle) * plan.speedTilesPerSecond,
+            y: Math.sin(angle) * plan.speedTilesPerSecond,
+          },
+          radiusTiles: BULLET_RADIUS_TILES,
+          damage,
+          owner: 'enemy',
+          ttlMs: ENEMY_BULLET_TTL_MS,
+        });
+      }
+      return;
+    }
+
     const dx = player.x - enemy.position.x;
     const dy = player.y - enemy.position.y;
     const length = Math.hypot(dx, dy);
@@ -245,7 +273,6 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       enemy.elite && eliteAngles.length > 0
         ? eliteAngles
         : [(rng.next() * 2 - 1) * ENEMY_SHOT_SPREAD_RADIANS];
-    const damage = contactDamageFor(enemy.role, enemy.elite, undefined, room.chapter);
 
     for (const offset of angles) {
       const angle = baseAngle + offset;
@@ -279,6 +306,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       role: enemy.role,
       gold,
     });
+
+    // #42: a splitter leaves 2–3 splitlings. They are appended after this frame's damage
+    // loops, so the room only clears once they are dead too.
+    if (enemy.role === 'splitter') {
+      for (const child of splitOnDeath(enemy, room, atMs)) pendingSplits.push(child);
+    }
   };
 
   const damageEnemy = (enemy: EnemyState, amount: number): number => {
@@ -430,7 +463,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       );
       advanceEnemy(enemy, next, slow, room, field, detour);
 
-      const melee = enemy.role === 'chaser' || enemy.role === 'tank';
+      const melee =
+        enemy.role === 'chaser' ||
+        enemy.role === 'tank' ||
+        enemy.role === 'splitter' ||
+        enemy.role === 'splitling';
       const contactRange = CONTACT_RANGE_TILES * visualScaleFor(enemy.role);
       if (melee && distance(enemy.position, player) <= contactRange) {
         if (options.godMode !== true) {
@@ -556,6 +593,13 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       if (consumed) spent.add(bullet.id);
     }
     if (spent.size > 0) bullets.consumeWhere((bullet) => spent.has(bullet.id));
+
+    // Splitters killed this frame leave their splitlings behind, before the clear check
+    // (otherwise the room would clear with the brood still to come).
+    if (pendingSplits.length > 0) {
+      for (const child of pendingSplits) enemies.push(child);
+      pendingSplits.length = 0;
+    }
 
     if (health.isDead) {
       status = 'lost';

@@ -153,9 +153,39 @@ const ROOM_CLEAR_BANNER_SECONDS = 1;
  * tinted orange (see `bullet-view.ts`), so they do not blend into the enemy body either.
  */
 const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, string>>>> = {
-  1: { chaser: 'bluebat', caster: 'greenoctopus', tank: 'bear' },
-  2: { chaser: 'spiderred', caster: 'greenoctopus', tank: 'trex' },
-  3: { chaser: 'snake3', caster: 'lanternred', tank: 'cyclope' },
+  1: {
+    chaser: 'bluebat',
+    caster: 'greenoctopus',
+    tank: 'bear',
+    sniper: 'kappagreen',
+    splitter: 'slimegreen',
+    splitling: 'slimegreen',
+  },
+  2: {
+    chaser: 'spiderred',
+    caster: 'greenoctopus',
+    tank: 'trex',
+    sniper: 'kappared',
+    splitter: 'slime2',
+    splitling: 'slime2',
+  },
+  // #45 owns chapter 4 rooms; until then its roles reuse the chapter-3 roster.
+  4: {
+    chaser: 'snake3',
+    caster: 'lanternred',
+    tank: 'cyclope',
+    sniper: 'skullblue',
+    splitter: 'slime3',
+    splitling: 'slime3',
+  },
+  3: {
+    chaser: 'snake3',
+    caster: 'lanternred',
+    tank: 'cyclope',
+    sniper: 'skullblue',
+    splitter: 'slime3',
+    splitling: 'slime3',
+  },
 };
 
 /** Player animations whose sheets must be ready before the first frame (`roll` unused in M1). */
@@ -626,6 +656,10 @@ export class Bootstrap extends Component {
           // Elites are a separate generated PNG (ADR-015); preload both so a debug
           // `spawn(role, true)` renders immediately in any room of the chapter.
           sheets.add(resolve(manifest, `${monster}.elite.walk.down`).sheet);
+          // #42: splitlings use a palette-remapped variant of the splitter sheet.
+          if (spawn.role === 'splitter' || spawn.role === 'splitling') {
+            sheets.add(resolve(manifest, `${monster}.splitling.walk.down`).sheet);
+          }
         }
       }
 

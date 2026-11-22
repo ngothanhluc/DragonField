@@ -86,6 +86,44 @@
         "chargeSpeedTilesPerSecond": 7,
         "chargeDurationMs": 450,
         "scale": 1.75
+      },
+      "sniper": {
+        "health": 4,
+        "speedTilesPerSecond": 1.1,
+        "attackCooldownMs": 1800,
+        "telegraphMs": 900,
+        "preferredRangeMinTiles": 8,
+        "preferredRangeMaxTiles": 12,
+        "contactDamage": 1,
+        "chargeSpeedTilesPerSecond": 0,
+        "chargeDurationMs": 0,
+        "scale": 1,
+        "projectileSpeedTilesPerSecond": 11
+      },
+      "splitter": {
+        "health": 8,
+        "speedTilesPerSecond": 2.1,
+        "attackCooldownMs": 0,
+        "telegraphMs": 0,
+        "preferredRangeMinTiles": 0.75,
+        "preferredRangeMaxTiles": 0.75,
+        "contactDamage": 1,
+        "chargeSpeedTilesPerSecond": 0,
+        "chargeDurationMs": 0,
+        "scale": 1,
+        "splitCount": 3
+      },
+      "splitling": {
+        "health": 2,
+        "speedTilesPerSecond": 3.6,
+        "attackCooldownMs": 0,
+        "telegraphMs": 0,
+        "preferredRangeMinTiles": 0.6,
+        "preferredRangeMaxTiles": 0.6,
+        "contactDamage": 1,
+        "chargeSpeedTilesPerSecond": 0,
+        "chargeDurationMs": 0,
+        "scale": 0.7
       }
     }
   },

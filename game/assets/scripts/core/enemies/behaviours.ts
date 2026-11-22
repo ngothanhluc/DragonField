@@ -119,6 +119,9 @@ export const ATTACK_COOLDOWN_MS: Readonly<Record<EnemyRole, number>> = {
   chaser: ENEMY_TUNING.roles.chaser.attackCooldownMs,
   caster: ENEMY_TUNING.roles.caster.attackCooldownMs,
   tank: ENEMY_TUNING.roles.tank.attackCooldownMs,
+  sniper: ENEMY_TUNING.roles.sniper.attackCooldownMs,
+  splitter: ENEMY_TUNING.roles.splitter.attackCooldownMs,
+  splitling: ENEMY_TUNING.roles.splitling.attackCooldownMs,
 };
 
 /** Fallback direction when the two points coincide (no defined direction). */
@@ -134,6 +137,19 @@ const FALLBACK_DIRECTION: Vec2 = { x: 1, y: 0 };
  * when switching engines. This tolerance is many orders of magnitude above numeric noise.
  */
 const RANGE_TOLERANCE_TILES = 1e-6;
+
+/**
+ * The sniper closes to this far **inside** its lower band edge (`preferredRangeMinTiles`).
+ *
+ * Why: the auto-aim range is 8 tiles and the band starts at 8, so a sniper holding exactly at
+ * 8 sits on the range boundary (and float error can put it just outside) — it would be
+ * untouchable and the balance sim times out. Closing a little past the near edge keeps it in
+ * the player's reach while still far away.
+ */
+const SNIPER_APPROACH_INSET_TILES = 0.75;
+
+/** A reposition walk counts as arrived within this distance of its target point, tiles. */
+const REPOSITION_ARRIVAL_TILES = 0.3;
 
 /** Walk speed, tiles/second. */
 export function speedFor(
@@ -237,6 +253,12 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
       return decideCaster(state, player, nowMs, level, role);
     case 'tank':
       return decideTank(state, player, nowMs, level, role, elite.tank);
+    case 'sniper':
+      return decideSniper(state, player, nowMs, level, role);
+    case 'splitter':
+    case 'splitling':
+      // Splitters and their brood are contact-only chasers: they never telegraph.
+      return decideMelee(state, player, level, role);
   }
 }
 
@@ -342,6 +364,74 @@ function decideCaster(
 }
 
 /**
+ * Sniper (#42): the opposite of the chaser — it wants the `preferredRange` band (8–12 tiles)
+ * and a clear line. Outside the band it repositions on the flow field (like the caster); inside
+ * the band **without** line of sight it walks to regain sight, so it can never telegraph a shot
+ * into a wall. Inside the band with sight, off cooldown, it telegraphs `telegraphMs` then fires
+ * one fast bullet (released as `shot` → `idle`).
+ *
+ * A telegraph runs to completion once started (the player dodges the line, not the trigger);
+ * like the caster it does not cancel because the player left the band.
+ */
+function decideSniper(
+  state: EnemyState,
+  player: Vec2,
+  nowMs: number,
+  level: LevelData,
+  tuning: EnemyRoleTuning,
+): EnemyAction {
+  const current = state.action;
+
+  if (current.kind === 'telegraph') {
+    if (!isTelegraphElapsed(current.sinceMs, nowMs, tuning.telegraphMs)) {
+      return { kind: 'telegraph', sinceMs: current.sinceMs };
+    }
+    return { kind: 'idle' };
+  }
+
+  // Commit to an in-flight reposition: a sniper that stops the moment it enters the far edge of
+  // the band would park exactly at `preferredRangeMaxTiles`, outside the player's reach. It keeps
+  // walking until the target point is reached, then re-decides there.
+  if (current.kind === 'walk' && distance(state.position, current.target) > REPOSITION_ARRIVAL_TILES) {
+    return { kind: 'walk', target: { x: current.target.x, y: current.target.y } };
+  }
+
+  const gap = distance(state.position, player);
+  const approachRange = tuning.preferredRangeMinTiles - SNIPER_APPROACH_INSET_TILES;
+  const insideBand =
+    gap >= approachRange - RANGE_TOLERANCE_TILES &&
+    gap <= tuning.preferredRangeMaxTiles + RANGE_TOLERANCE_TILES;
+
+  if (!insideBand) {
+    return { kind: 'walk', target: sniperHoldTarget(state, player, level, tuning) };
+  }
+  if (!hasLineOfSight(level, state.position, player)) {
+    return { kind: 'walk', target: clampToRoom(level, player) };
+  }
+  // Between shots it closes to the near edge instead of standing in place at whatever distance
+  // it happened to stop (see `SNIPER_APPROACH_INSET_TILES`).
+  if (isCoolingDown(state, nowMs, tuning)) {
+    return { kind: 'walk', target: sniperHoldTarget(state, player, level, tuning) };
+  }
+  return { kind: 'telegraph', sinceMs: nowMs };
+}
+
+/**
+ * Splitter / splitling: contact-only chasers. They reuse the chaser's stop-at-contact rule
+ * but have no elite pounce, because their extra strength is the split (see `splitter.ts`).
+ */
+function decideMelee(
+  state: EnemyState,
+  player: Vec2,
+  level: LevelData,
+  tuning: EnemyRoleTuning,
+): EnemyAction {
+  const gap = distance(state.position, player);
+  if (gap <= tuning.preferredRangeMaxTiles) return { kind: 'idle' };
+  return { kind: 'walk', target: clampToRoom(level, player) };
+}
+
+/**
  * Tank: walks slowly closer, telegraphs, then charges in a straight line for
  * `chargeDurationMs`. The charge direction locks when the telegraph ends, so the player dodges
  * by stepping off the charge line.
@@ -423,6 +513,32 @@ function holdRangeTarget(
   const atRange = clampToRoom(level, {
     x: player.x + away.x * tuning.preferredRangeMaxTiles,
     y: player.y + away.y * tuning.preferredRangeMaxTiles,
+  });
+
+  if (obstacleAt(level, atRange) !== null) {
+    return { x: state.position.x, y: state.position.y };
+  }
+  return atRange;
+}
+
+/**
+ * Sniper reposition point (#42): farther than the band it walks **to the near edge minus the
+ * approach inset** (see `SNIPER_APPROACH_INSET_TILES`) so it ends up inside the player's
+ * auto-aim range; closer than the band it backs off to the far edge.
+ */
+function sniperHoldTarget(
+  state: EnemyState,
+  player: Vec2,
+  level: LevelData,
+  tuning: EnemyRoleTuning,
+): Vec2 {
+  const gap = distance(player, state.position);
+  const approachRange = tuning.preferredRangeMinTiles - SNIPER_APPROACH_INSET_TILES;
+  const range = gap > approachRange ? approachRange : tuning.preferredRangeMaxTiles;
+  const away = directionBetween(player, state.position);
+  const atRange = clampToRoom(level, {
+    x: player.x + away.x * range,
+    y: player.y + away.y * range,
   });
 
   if (obstacleAt(level, atRange) !== null) {

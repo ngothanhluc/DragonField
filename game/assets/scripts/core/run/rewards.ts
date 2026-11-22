@@ -17,6 +17,10 @@ export const GOLD = {
   chaser: 1,
   caster: 1,
   tank: 3,
+  /** #42 roles: a ranged sharp-shooter and a splitter are worth more than a chaser, a splitling less. */
+  sniper: 2,
+  splitter: 2,
+  splitling: 1,
   /** Elites are ×3 the regular version (GDD §4: elites only change health/damage). */
   eliteMultiplier: 3,
   roomClear: 5,

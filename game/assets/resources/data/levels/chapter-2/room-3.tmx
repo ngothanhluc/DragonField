@@ -104,5 +104,12 @@
     <property name="kind" type="string" value="wall"/>
    </properties>
   </object>
+  <object id="12" name="spawn" x="464" y="48">
+   <properties>
+    <property name="role" value="splitter"/>
+    <property name="wave" type="int" value="3"/>
+    <property name="elite" type="bool" value="false"/>
+   </properties>
+  <point/></object>
    </objectgroup>
 </map>

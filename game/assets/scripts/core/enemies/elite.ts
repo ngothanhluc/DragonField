@@ -51,6 +51,15 @@ export function spriteActorFor(monster: string, elite: boolean): string {
   return elite ? `${monster}.elite` : monster;
 }
 
+/**
+ * Manifest actor for a **role** (#42): a splitling plays its palette-remapped variant sheet
+ * (`<monster>.splitling.*`), every other role keeps the regular/elite rule above.
+ */
+export function spriteActorForRole(monster: string, role: EnemyRole, elite: boolean): string {
+  if (role === 'splitling') return `${monster}.splitling`;
+  return spriteActorFor(monster, elite);
+}
+
 /** Number of **extra** charges after the first for an elite tank. */
 export function eliteExtraCharges(
   role: EnemyRole,
