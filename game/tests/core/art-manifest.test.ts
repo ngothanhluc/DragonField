@@ -24,6 +24,13 @@ const MONSTERS = [
   'bear',
   'trex',
   'cyclope',
+  // #42 — sniper and splitter monsters (staged from the pack).
+  'kappagreen',
+  'kappared',
+  'skullblue',
+  'slimegreen',
+  'slime2',
+  'slime3',
 ] as const;
 const BOSSES = ['tengu', 'squid', 'samurai', 'frog', 'slime', 'bamboo', 'racoon', 'redtengu'] as const;
 

@@ -11,6 +11,8 @@
  * game loop.
  */
 import type { Vec2 } from '../math/vec2';
+import { ENEMY_TUNING, type EnemiesTuning } from '../enemies/tuning';
+import type { EnemyRole } from '../level/level-data';
 import type { BulletPool } from './bullets';
 
 /** Enemy bullet radius, tiles — same convention as player bullets (0.15). */
@@ -39,6 +41,33 @@ export function rotateDirection(direction: Vec2, angle: number): Vec2 {
     x: direction.x * cos - direction.y * sin,
     y: direction.x * sin + direction.y * cos,
   };
+}
+
+/** What a role fires when its telegraph is released. */
+export interface EnemyShotPlan {
+  /** Angle offsets from the straight line to the player (one bullet per element). */
+  readonly angles: readonly number[];
+  /** Bullet speed, tiles/second. */
+  readonly speedTilesPerSecond: number;
+}
+
+/**
+ * Sniper shot (#42): exactly **one** bullet, aimed straight at the player, much faster than
+ * the caster's 4 tile/s ball. Both the game adapter and the balance sim call this, so the two
+ * can never drift apart on "how fast is the sniper's shot".
+ */
+export function sniperShotPlan(tuning: EnemiesTuning = ENEMY_TUNING): EnemyShotPlan {
+  return {
+    angles: [0],
+    speedTilesPerSecond:
+      tuning.roles.sniper.projectileSpeedTilesPerSecond ??
+      ENEMY_BULLET_SPEED_TILES_PER_SECOND,
+  };
+}
+
+/** Roles whose released attack is a straight bullet (caster and sniper); others charge or pounce. */
+export function shootsProjectiles(role: EnemyRole): boolean {
+  return role === 'caster' || role === 'sniper';
 }
 
 export interface EnemyVolleyArgs {

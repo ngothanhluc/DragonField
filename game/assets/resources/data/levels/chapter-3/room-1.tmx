@@ -120,5 +120,12 @@
     <property name="kind" type="string" value="wall"/>
    </properties>
   </object>
+  <object id="13" name="spawn" x="48" y="48">
+   <properties>
+    <property name="role" value="sniper"/>
+    <property name="wave" type="int" value="3"/>
+    <property name="elite" type="bool" value="false"/>
+   </properties>
+  <point/></object>
   </objectgroup>
 </map>

@@ -131,6 +131,15 @@ export interface EnemyRoleTuning {
    * this number (M3: 1.75; elites multiply it by `enemies.elite.scale`).
    */
   readonly scale: number;
+  /**
+   * Per-role extras (#42). They are optional because the original chaser/caster/tank blocks
+   * predate them and must not change: a role that does not use a number simply omits it.
+   *
+   * `sniper`: speed of its single shot, tiles/second (much faster than the caster bullet).
+   */
+  readonly projectileSpeedTilesPerSecond?: number;
+  /** `splitter`: how many `splitling`s it leaves behind (2–3). */
+  readonly splitCount?: number;
 }
 
 export interface EnemiesTuning {
@@ -455,6 +464,18 @@ function readNumber(
   return value;
 }
 
+/** Read a field only when the JSON declares it (per-role extras, #42). */
+function readOptionalNumber(
+  source: Record<string, unknown>,
+  field: string,
+  path: string,
+  problems: ProblemList,
+  options: { readonly integer?: boolean; readonly positive?: boolean } = {},
+): number | undefined {
+  if (source[field] === undefined) return undefined;
+  return readNumber(source, field, path, problems, options);
+}
+
 /** Report exactly the missing field, plus the list of expected fields. */
 function readObject(
   source: Record<string, unknown>,
@@ -565,6 +586,13 @@ function zeroRole(): EnemyRoleTuning {
     chargeDurationMs: 0,
     scale: 1,
   };
+}
+
+/** One zeroed block per role, so a missing config still has every key. */
+function zeroRoles(): Record<EnemyRole, EnemyRoleTuning> {
+  const roles = {} as Record<EnemyRole, EnemyRoleTuning>;
+  for (const role of ENEMY_ROLES) roles[role] = zeroRole();
+  return roles;
 }
 
 function parseChapters(
@@ -736,6 +764,14 @@ function parseRole(
   if (own === undefined) return zeroRole();
 
   const path = `enemies.roles.${role}`;
+  const projectileSpeedTilesPerSecond = readOptionalNumber(
+    own,
+    'projectileSpeedTilesPerSecond',
+    path,
+    problems,
+    { positive: true },
+  );
+  const splitCount = readOptionalNumber(own, 'splitCount', path, problems, { integer: true });
   const tuning: EnemyRoleTuning = {
     health: readNumber(own, 'health', path, problems, { positive: true }) ?? 1,
     speedTilesPerSecond:
@@ -751,6 +787,8 @@ function parseRole(
       readNumber(own, 'chargeSpeedTilesPerSecond', path, problems) ?? 0,
     chargeDurationMs: readNumber(own, 'chargeDurationMs', path, problems) ?? 0,
     scale: readNumber(own, 'scale', path, problems, { positive: true }) ?? 1,
+    ...(projectileSpeedTilesPerSecond !== undefined ? { projectileSpeedTilesPerSecond } : {}),
+    ...(splitCount !== undefined ? { splitCount } : {}),
   };
 
   if (tuning.preferredRangeMaxTiles < tuning.preferredRangeMinTiles) {
@@ -774,7 +812,7 @@ function parseEnemies(
       eliteDamageMultiplier: 1,
       roomEdgeMarginTiles: 0,
       elite: zeroElite(),
-      roles: { chaser: zeroRole(), caster: zeroRole(), tank: zeroRole() },
+      roles: zeroRoles(),
     };
   }
 

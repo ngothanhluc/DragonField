@@ -1577,6 +1577,822 @@
       "anchor": "feet",
       "footPx": 0
     },
+    "kappagreen.idle.down": {
+      "sheet": "resources/art/monsters/kappa-green/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappagreen.idle.up": {
+      "sheet": "resources/art/monsters/kappa-green/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappagreen.idle.left": {
+      "sheet": "resources/art/monsters/kappa-green/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappagreen.idle.right": {
+      "sheet": "resources/art/monsters/kappa-green/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappagreen.walk.down": {
+      "sheet": "resources/art/monsters/kappa-green/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappagreen.walk.up": {
+      "sheet": "resources/art/monsters/kappa-green/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappagreen.walk.left": {
+      "sheet": "resources/art/monsters/kappa-green/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappagreen.walk.right": {
+      "sheet": "resources/art/monsters/kappa-green/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappared.idle.down": {
+      "sheet": "resources/art/monsters/kappa-red/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappared.idle.up": {
+      "sheet": "resources/art/monsters/kappa-red/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappared.idle.left": {
+      "sheet": "resources/art/monsters/kappa-red/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappared.idle.right": {
+      "sheet": "resources/art/monsters/kappa-red/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappared.walk.down": {
+      "sheet": "resources/art/monsters/kappa-red/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappared.walk.up": {
+      "sheet": "resources/art/monsters/kappa-red/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappared.walk.left": {
+      "sheet": "resources/art/monsters/kappa-red/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "kappared.walk.right": {
+      "sheet": "resources/art/monsters/kappa-red/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.idle.down": {
+      "sheet": "resources/art/monsters/skull-blue/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.idle.up": {
+      "sheet": "resources/art/monsters/skull-blue/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.idle.left": {
+      "sheet": "resources/art/monsters/skull-blue/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.idle.right": {
+      "sheet": "resources/art/monsters/skull-blue/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.walk.down": {
+      "sheet": "resources/art/monsters/skull-blue/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.walk.up": {
+      "sheet": "resources/art/monsters/skull-blue/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.walk.left": {
+      "sheet": "resources/art/monsters/skull-blue/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.walk.right": {
+      "sheet": "resources/art/monsters/skull-blue/SpriteSheet.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "slimegreen.idle.down": {
+      "sheet": "resources/art/monsters/slime-green/Slime.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.idle.up": {
+      "sheet": "resources/art/monsters/slime-green/Slime.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.idle.left": {
+      "sheet": "resources/art/monsters/slime-green/Slime.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.idle.right": {
+      "sheet": "resources/art/monsters/slime-green/Slime.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.walk.down": {
+      "sheet": "resources/art/monsters/slime-green/Slime.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.walk.up": {
+      "sheet": "resources/art/monsters/slime-green/Slime.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.walk.left": {
+      "sheet": "resources/art/monsters/slime-green/Slime.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.walk.right": {
+      "sheet": "resources/art/monsters/slime-green/Slime.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.idle.down": {
+      "sheet": "resources/art/monsters/slime2/Slime2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.idle.up": {
+      "sheet": "resources/art/monsters/slime2/Slime2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.idle.left": {
+      "sheet": "resources/art/monsters/slime2/Slime2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.idle.right": {
+      "sheet": "resources/art/monsters/slime2/Slime2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.walk.down": {
+      "sheet": "resources/art/monsters/slime2/Slime2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.walk.up": {
+      "sheet": "resources/art/monsters/slime2/Slime2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.walk.left": {
+      "sheet": "resources/art/monsters/slime2/Slime2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.walk.right": {
+      "sheet": "resources/art/monsters/slime2/Slime2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.idle.down": {
+      "sheet": "resources/art/monsters/slime3/Slime3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.idle.up": {
+      "sheet": "resources/art/monsters/slime3/Slime3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.idle.left": {
+      "sheet": "resources/art/monsters/slime3/Slime3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.idle.right": {
+      "sheet": "resources/art/monsters/slime3/Slime3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.walk.down": {
+      "sheet": "resources/art/monsters/slime3/Slime3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.walk.up": {
+      "sheet": "resources/art/monsters/slime3/Slime3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.walk.left": {
+      "sheet": "resources/art/monsters/slime3/Slime3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.walk.right": {
+      "sheet": "resources/art/monsters/slime3/Slime3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
     "tengu.idle": {
       "sheet": "resources/art/bosses/tengu-blue/Idle.png",
       "frameWidth": 68,
@@ -2172,6 +2988,630 @@
       "loop": false,
       "anchor": "center",
       "footPx": 14
+    },
+    "fx.big-energy-ball": {
+      "sheet": "resources/art/fx/big-energy-ball/BigEnergyBall.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 12,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 12
+    },
+    "fx.ice-spike": {
+      "sheet": "resources/art/fx/ice-spike/IceSpike.png",
+      "frameWidth": 18,
+      "frameHeight": 10,
+      "layout": "strip",
+      "directions": [],
+      "frames": 8,
+      "fps": 14,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 5
+    },
+    "fx.plant-spike": {
+      "sheet": "resources/art/fx/plant-spike/PlantSpike.png",
+      "frameWidth": 24,
+      "frameHeight": 20,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 12,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 10
+    },
+    "fx.shuriken-magic": {
+      "sheet": "resources/art/fx/shuriken-magic/ShurikenMagic.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 2,
+      "fps": 14,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "fx.kunai": {
+      "sheet": "resources/art/fx/kunai/Kunai.png",
+      "frameWidth": 14,
+      "frameHeight": 5,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 10,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 2
+    },
+    "fx.big-shuriken": {
+      "sheet": "resources/art/fx/big-shuriken/BigShuriken.png",
+      "frameWidth": 23,
+      "frameHeight": 23,
+      "layout": "strip",
+      "directions": [],
+      "frames": 2,
+      "fps": 10,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 11
+    },
+    "fx.big-kunai": {
+      "sheet": "resources/art/fx/big-kunai/BigKunai.png",
+      "frameWidth": 35,
+      "frameHeight": 9,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 10,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 4
+    },
+    "fx.bubble": {
+      "sheet": "resources/art/fx/bubble/EnergyBall.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 12,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "fx.canon-ball": {
+      "sheet": "resources/art/fx/canon-ball/CanonBall.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 5,
+      "fps": 12,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "fx.fireball": {
+      "sheet": "resources/art/fx/fireball/Fireball.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 12,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "fx.spark": {
+      "sheet": "resources/art/fx/particle-spark/Spark.png",
+      "frameWidth": 10,
+      "frameHeight": 8,
+      "layout": "strip",
+      "directions": [],
+      "frames": 7,
+      "fps": 18,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 4
+    },
+    "fx.cut": {
+      "sheet": "resources/art/fx/cut/SpriteSheet.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 16,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 16
+    },
+    "fx.slash-arc": {
+      "sheet": "resources/art/fx/slash-arc/SpriteSheetArc.png",
+      "frameWidth": 38,
+      "frameHeight": 34,
+      "layout": "strip",
+      "directions": [],
+      "frames": 6,
+      "fps": 18,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 17
+    },
+    "fx.boost": {
+      "sheet": "resources/art/fx/boost/SpriteSheet.png",
+      "frameWidth": 53,
+      "frameHeight": 35,
+      "layout": "strip",
+      "directions": [],
+      "frames": 8,
+      "fps": 10,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 17
+    },
+    "fx.smoke-circular": {
+      "sheet": "resources/art/fx/smoke-circular/SpriteSheet.png",
+      "frameWidth": 15,
+      "frameHeight": 14,
+      "layout": "strip",
+      "directions": [],
+      "frames": 16,
+      "fps": 14,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 7
+    },
+    "fx.aura": {
+      "sheet": "resources/art/fx/aura/SpriteSheet.png",
+      "frameWidth": 25,
+      "frameHeight": 24,
+      "layout": "strip",
+      "directions": [],
+      "frames": 5,
+      "fps": 10,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 12
+    },
+    "animal.frog": {
+      "sheet": "resources/art/characters/animals/frog.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 2,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 5
+    },
+    "animal.chicken": {
+      "sheet": "resources/art/characters/animals/chicken.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 2,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "animal.cat": {
+      "sheet": "resources/art/characters/animals/cat.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 2,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 5
+    },
+    "animal.racoon": {
+      "sheet": "resources/art/characters/animals/racoon.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 2,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 5
+    },
+    "animal.dog": {
+      "sheet": "resources/art/characters/animals/dog.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 2,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 5
+    },
+    "decor.flower": {
+      "sheet": "resources/art/decor/flower.png",
+      "frameWidth": 10,
+      "frameHeight": 8,
+      "layout": "grid",
+      "directions": [],
+      "frames": 2,
+      "fps": 3,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "decor.plant": {
+      "sheet": "resources/art/decor/plant.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "decor.flag-green": {
+      "sheet": "resources/art/decor/flag-green.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "decor.flag-blue": {
+      "sheet": "resources/art/decor/flag-blue.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "decor.flag-red": {
+      "sheet": "resources/art/decor/flag-red.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "decor.flag-black": {
+      "sheet": "resources/art/decor/flag-black.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "fx.raylight": {
+      "sheet": "resources/art/fx/raylight/Raylight.png",
+      "frameWidth": 216,
+      "frameHeight": 102,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 51
+    },
+    "fx.fog": {
+      "sheet": "resources/art/fx/fog/Fog.png",
+      "frameWidth": 320,
+      "frameHeight": 180,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 90
+    },
+    "fx.leaf": {
+      "sheet": "resources/art/fx/leaf/Leaf.png",
+      "frameWidth": 8,
+      "frameHeight": 7,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 3
+    },
+    "fx.ash": {
+      "sheet": "resources/art/fx/ash/Snow.png",
+      "frameWidth": 8,
+      "frameHeight": 8,
+      "layout": "strip",
+      "directions": [],
+      "frames": 7,
+      "fps": 6,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 4
+    },
+    "fx.sand": {
+      "sheet": "resources/art/fx/sand/Rain.png",
+      "frameWidth": 8,
+      "frameHeight": 8,
+      "layout": "strip",
+      "directions": [],
+      "frames": 3,
+      "fps": 10,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 4
+    },
+    "fx.ripple": {
+      "sheet": "resources/art/fx/water/ripple.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "sniper.idle.down": {
+      "sheet": "resources/art/generated/sniper/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "sniper.idle.up": {
+      "sheet": "resources/art/generated/sniper/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "sniper.idle.left": {
+      "sheet": "resources/art/generated/sniper/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "sniper.idle.right": {
+      "sheet": "resources/art/generated/sniper/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 8,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.idle.down": {
+      "sheet": "resources/art/generated/cultivator/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.idle.up": {
+      "sheet": "resources/art/generated/cultivator/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.idle.left": {
+      "sheet": "resources/art/generated/cultivator/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.idle.right": {
+      "sheet": "resources/art/generated/cultivator/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "attachment.sword-back.down": {
+      "sheet": "resources/art/generated/attachment/sword-back.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.sword-back.up": {
+      "sheet": "resources/art/generated/attachment/sword-back.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.sword-back.left": {
+      "sheet": "resources/art/generated/attachment/sword-back.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.sword-back.right": {
+      "sheet": "resources/art/generated/attachment/sword-back.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "icon.cultivator-ten-thousand-swords": {
+      "sheet": "resources/art/generated/icons/cultivator/cultivator-ten-thousand-swords.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 12
+    },
+    "icon.cultivator-portrait": {
+      "sheet": "resources/art/generated/icons/cultivator/cultivator-portrait.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 12
     },
     "bluebat.elite.idle.down": {
       "sheet": "resources/art/monsters/blue-bat/sprite-sheet-elite.png",
@@ -3397,404 +4837,93 @@
       "anchor": "feet",
       "footPx": 0
     },
-    "fx.big-energy-ball": {
-      "sheet": "resources/art/fx/big-energy-ball/BigEnergyBall.png",
-      "frameWidth": 24,
-      "frameHeight": 24,
-      "layout": "strip",
-      "directions": [],
-      "frames": 4,
-      "fps": 12,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 12
-    },
-    "fx.ice-spike": {
-      "sheet": "resources/art/fx/ice-spike/IceSpike.png",
-      "frameWidth": 18,
-      "frameHeight": 10,
-      "layout": "strip",
-      "directions": [],
-      "frames": 8,
-      "fps": 14,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 5
-    },
-    "fx.plant-spike": {
-      "sheet": "resources/art/fx/plant-spike/PlantSpike.png",
-      "frameWidth": 24,
-      "frameHeight": 20,
-      "layout": "strip",
-      "directions": [],
-      "frames": 4,
-      "fps": 12,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 10
-    },
-    "fx.shuriken-magic": {
-      "sheet": "resources/art/fx/shuriken-magic/ShurikenMagic.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "strip",
-      "directions": [],
-      "frames": 2,
-      "fps": 14,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 8
-    },
-    "fx.kunai": {
-      "sheet": "resources/art/fx/kunai/Kunai.png",
-      "frameWidth": 14,
-      "frameHeight": 5,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 10,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 2
-    },
-    "fx.big-shuriken": {
-      "sheet": "resources/art/fx/big-shuriken/BigShuriken.png",
-      "frameWidth": 23,
-      "frameHeight": 23,
-      "layout": "strip",
-      "directions": [],
-      "frames": 2,
-      "fps": 10,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 11
-    },
-    "fx.big-kunai": {
-      "sheet": "resources/art/fx/big-kunai/BigKunai.png",
-      "frameWidth": 35,
-      "frameHeight": 9,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 10,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 4
-    },
-    "fx.bubble": {
-      "sheet": "resources/art/fx/bubble/EnergyBall.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "strip",
-      "directions": [],
-      "frames": 4,
-      "fps": 12,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 8
-    },
-    "fx.canon-ball": {
-      "sheet": "resources/art/fx/canon-ball/CanonBall.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "strip",
-      "directions": [],
-      "frames": 5,
-      "fps": 12,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 8
-    },
-    "fx.fireball": {
-      "sheet": "resources/art/fx/fireball/Fireball.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "strip",
-      "directions": [],
-      "frames": 4,
-      "fps": 12,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 8
-    },
-    "fx.spark": {
-      "sheet": "resources/art/fx/particle-spark/Spark.png",
-      "frameWidth": 10,
-      "frameHeight": 8,
-      "layout": "strip",
-      "directions": [],
-      "frames": 7,
-      "fps": 18,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 4
-    },
-    "fx.cut": {
-      "sheet": "resources/art/fx/cut/SpriteSheet.png",
-      "frameWidth": 32,
-      "frameHeight": 32,
-      "layout": "strip",
-      "directions": [],
-      "frames": 4,
-      "fps": 16,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 16
-    },
-    "fx.slash-arc": {
-      "sheet": "resources/art/fx/slash-arc/SpriteSheetArc.png",
-      "frameWidth": 38,
-      "frameHeight": 34,
-      "layout": "strip",
-      "directions": [],
-      "frames": 6,
-      "fps": 18,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 17
-    },
-    "fx.boost": {
-      "sheet": "resources/art/fx/boost/SpriteSheet.png",
-      "frameWidth": 53,
-      "frameHeight": 35,
-      "layout": "strip",
-      "directions": [],
-      "frames": 8,
-      "fps": 10,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 17
-    },
-    "fx.smoke-circular": {
-      "sheet": "resources/art/fx/smoke-circular/SpriteSheet.png",
-      "frameWidth": 15,
-      "frameHeight": 14,
-      "layout": "strip",
-      "directions": [],
-      "frames": 16,
-      "fps": 14,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 7
-    },
-    "fx.aura": {
-      "sheet": "resources/art/fx/aura/SpriteSheet.png",
-      "frameWidth": 25,
-      "frameHeight": 24,
-      "layout": "strip",
-      "directions": [],
-      "frames": 5,
-      "fps": 10,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 12
-    },
-    "animal.frog": {
-      "sheet": "resources/art/characters/animals/frog.png",
+    "kappagreen.elite.idle.down": {
+      "sheet": "resources/art/monsters/kappa-green/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": [],
-      "frames": 2,
-      "fps": 6,
-      "loop": true,
-      "anchor": "feet",
-      "footPx": 5
-    },
-    "animal.chicken": {
-      "sheet": "resources/art/characters/animals/chicken.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "grid",
-      "directions": [],
-      "frames": 2,
-      "fps": 6,
-      "loop": true,
-      "anchor": "feet",
-      "footPx": 0
-    },
-    "animal.cat": {
-      "sheet": "resources/art/characters/animals/cat.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "grid",
-      "directions": [],
-      "frames": 2,
-      "fps": 6,
-      "loop": true,
-      "anchor": "feet",
-      "footPx": 5
-    },
-    "animal.racoon": {
-      "sheet": "resources/art/characters/animals/racoon.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "grid",
-      "directions": [],
-      "frames": 2,
-      "fps": 6,
-      "loop": true,
-      "anchor": "feet",
-      "footPx": 5
-    },
-    "animal.dog": {
-      "sheet": "resources/art/characters/animals/dog.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "grid",
-      "directions": [],
-      "frames": 2,
-      "fps": 6,
-      "loop": true,
-      "anchor": "feet",
-      "footPx": 5
-    },
-    "decor.flower": {
-      "sheet": "resources/art/decor/flower.png",
-      "frameWidth": 10,
-      "frameHeight": 8,
-      "layout": "grid",
-      "directions": [],
-      "frames": 2,
-      "fps": 3,
-      "loop": true,
-      "anchor": "feet",
-      "footPx": 0
-    },
-    "decor.plant": {
-      "sheet": "resources/art/decor/plant.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "grid",
-      "directions": [],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
       "fps": 4,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "decor.flag-green": {
-      "sheet": "resources/art/decor/flag-green.png",
+    "kappagreen.elite.idle.up": {
+      "sheet": "resources/art/monsters/kappa-green/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": [],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
-      "fps": 8,
+      "fps": 4,
       "loop": true,
       "anchor": "feet",
-      "footPx": 1
+      "footPx": 0
     },
-    "decor.flag-blue": {
-      "sheet": "resources/art/decor/flag-blue.png",
+    "kappagreen.elite.idle.left": {
+      "sheet": "resources/art/monsters/kappa-green/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": [],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
-      "fps": 8,
+      "fps": 4,
       "loop": true,
       "anchor": "feet",
-      "footPx": 1
+      "footPx": 0
     },
-    "decor.flag-red": {
-      "sheet": "resources/art/decor/flag-red.png",
+    "kappagreen.elite.idle.right": {
+      "sheet": "resources/art/monsters/kappa-green/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": [],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
-      "fps": 8,
+      "fps": 4,
       "loop": true,
       "anchor": "feet",
-      "footPx": 1
+      "footPx": 0
     },
-    "decor.flag-black": {
-      "sheet": "resources/art/decor/flag-black.png",
+    "kappagreen.elite.walk.down": {
+      "sheet": "resources/art/monsters/kappa-green/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
-      "directions": [],
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
       "frames": 4,
-      "fps": 8,
-      "loop": true,
-      "anchor": "feet",
-      "footPx": 1
-    },
-    "fx.raylight": {
-      "sheet": "resources/art/fx/raylight/Raylight.png",
-      "frameWidth": 216,
-      "frameHeight": 102,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 1,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 51
-    },
-    "fx.fog": {
-      "sheet": "resources/art/fx/fog/Fog.png",
-      "frameWidth": 320,
-      "frameHeight": 180,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 1,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 90
-    },
-    "fx.leaf": {
-      "sheet": "resources/art/fx/leaf/Leaf.png",
-      "frameWidth": 8,
-      "frameHeight": 7,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 1,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 3
-    },
-    "fx.ash": {
-      "sheet": "resources/art/fx/ash/Snow.png",
-      "frameWidth": 8,
-      "frameHeight": 8,
-      "layout": "strip",
-      "directions": [],
-      "frames": 7,
-      "fps": 6,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 4
-    },
-    "fx.sand": {
-      "sheet": "resources/art/fx/sand/Rain.png",
-      "frameWidth": 8,
-      "frameHeight": 8,
-      "layout": "strip",
-      "directions": [],
-      "frames": 3,
       "fps": 10,
       "loop": true,
-      "anchor": "center",
-      "footPx": 4
+      "anchor": "feet",
+      "footPx": 0
     },
-    "fx.ripple": {
-      "sheet": "resources/art/fx/water/ripple.png",
-      "frameWidth": 16,
-      "frameHeight": 16,
-      "layout": "strip",
-      "directions": [],
-      "frames": 4,
-      "fps": 8,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 8
-    },
-    "sniper.idle.down": {
-      "sheet": "resources/art/generated/sniper/idle.png",
+    "kappagreen.elite.walk.up": {
+      "sheet": "resources/art/monsters/kappa-green/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3805,13 +4934,13 @@
         "right"
       ],
       "frames": 4,
-      "fps": 8,
+      "fps": 10,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "sniper.idle.up": {
-      "sheet": "resources/art/generated/sniper/idle.png",
+    "kappagreen.elite.walk.left": {
+      "sheet": "resources/art/monsters/kappa-green/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3822,13 +4951,13 @@
         "right"
       ],
       "frames": 4,
-      "fps": 8,
+      "fps": 10,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "sniper.idle.left": {
-      "sheet": "resources/art/generated/sniper/idle.png",
+    "kappagreen.elite.walk.right": {
+      "sheet": "resources/art/monsters/kappa-green/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3839,13 +4968,13 @@
         "right"
       ],
       "frames": 4,
-      "fps": 8,
+      "fps": 10,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "sniper.idle.right": {
-      "sheet": "resources/art/generated/sniper/idle.png",
+    "kappared.elite.idle.down": {
+      "sheet": "resources/art/monsters/kappa-red/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3856,13 +4985,13 @@
         "right"
       ],
       "frames": 4,
-      "fps": 8,
+      "fps": 4,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "cultivator.idle.down": {
-      "sheet": "resources/art/generated/cultivator/idle.png",
+    "kappared.elite.idle.up": {
+      "sheet": "resources/art/monsters/kappa-red/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3873,13 +5002,13 @@
         "right"
       ],
       "frames": 4,
-      "fps": 6,
+      "fps": 4,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "cultivator.idle.up": {
-      "sheet": "resources/art/generated/cultivator/idle.png",
+    "kappared.elite.idle.left": {
+      "sheet": "resources/art/monsters/kappa-red/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3890,13 +5019,13 @@
         "right"
       ],
       "frames": 4,
-      "fps": 6,
+      "fps": 4,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "cultivator.idle.left": {
-      "sheet": "resources/art/generated/cultivator/idle.png",
+    "kappared.elite.idle.right": {
+      "sheet": "resources/art/monsters/kappa-red/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3907,13 +5036,13 @@
         "right"
       ],
       "frames": 4,
-      "fps": 6,
+      "fps": 4,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "cultivator.idle.right": {
-      "sheet": "resources/art/generated/cultivator/idle.png",
+    "kappared.elite.walk.down": {
+      "sheet": "resources/art/monsters/kappa-red/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3924,13 +5053,13 @@
         "right"
       ],
       "frames": 4,
-      "fps": 6,
+      "fps": 10,
       "loop": true,
       "anchor": "feet",
       "footPx": 0
     },
-    "attachment.sword-back.down": {
-      "sheet": "resources/art/generated/attachment/sword-back.png",
+    "kappared.elite.walk.up": {
+      "sheet": "resources/art/monsters/kappa-red/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3940,14 +5069,14 @@
         "left",
         "right"
       ],
-      "frames": 1,
-      "fps": 1,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 8
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
     },
-    "attachment.sword-back.up": {
-      "sheet": "resources/art/generated/attachment/sword-back.png",
+    "kappared.elite.walk.left": {
+      "sheet": "resources/art/monsters/kappa-red/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3957,14 +5086,14 @@
         "left",
         "right"
       ],
-      "frames": 1,
-      "fps": 1,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 8
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
     },
-    "attachment.sword-back.left": {
-      "sheet": "resources/art/generated/attachment/sword-back.png",
+    "kappared.elite.walk.right": {
+      "sheet": "resources/art/monsters/kappa-red/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3974,14 +5103,14 @@
         "left",
         "right"
       ],
-      "frames": 1,
-      "fps": 1,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 8
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
     },
-    "attachment.sword-back.right": {
-      "sheet": "resources/art/generated/attachment/sword-back.png",
+    "skullblue.elite.idle.down": {
+      "sheet": "resources/art/monsters/skull-blue/sprite-sheet-elite.png",
       "frameWidth": 16,
       "frameHeight": 16,
       "layout": "grid",
@@ -3991,35 +5120,946 @@
         "left",
         "right"
       ],
-      "frames": 1,
-      "fps": 1,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 8
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
     },
-    "icon.cultivator-ten-thousand-swords": {
-      "sheet": "resources/art/generated/icons/cultivator/cultivator-ten-thousand-swords.png",
-      "frameWidth": 24,
-      "frameHeight": 24,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 1,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 12
+    "skullblue.elite.idle.up": {
+      "sheet": "resources/art/monsters/skull-blue/sprite-sheet-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
     },
-    "icon.cultivator-portrait": {
-      "sheet": "resources/art/generated/icons/cultivator/cultivator-portrait.png",
-      "frameWidth": 24,
-      "frameHeight": 24,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 1,
-      "loop": false,
-      "anchor": "center",
-      "footPx": 12
+    "skullblue.elite.idle.left": {
+      "sheet": "resources/art/monsters/skull-blue/sprite-sheet-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.elite.idle.right": {
+      "sheet": "resources/art/monsters/skull-blue/sprite-sheet-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.elite.walk.down": {
+      "sheet": "resources/art/monsters/skull-blue/sprite-sheet-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.elite.walk.up": {
+      "sheet": "resources/art/monsters/skull-blue/sprite-sheet-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.elite.walk.left": {
+      "sheet": "resources/art/monsters/skull-blue/sprite-sheet-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "skullblue.elite.walk.right": {
+      "sheet": "resources/art/monsters/skull-blue/sprite-sheet-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "slimegreen.elite.idle.down": {
+      "sheet": "resources/art/monsters/slime-green/slime-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.elite.idle.up": {
+      "sheet": "resources/art/monsters/slime-green/slime-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.elite.idle.left": {
+      "sheet": "resources/art/monsters/slime-green/slime-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.elite.idle.right": {
+      "sheet": "resources/art/monsters/slime-green/slime-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.elite.walk.down": {
+      "sheet": "resources/art/monsters/slime-green/slime-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.elite.walk.up": {
+      "sheet": "resources/art/monsters/slime-green/slime-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.elite.walk.left": {
+      "sheet": "resources/art/monsters/slime-green/slime-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.elite.walk.right": {
+      "sheet": "resources/art/monsters/slime-green/slime-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.elite.idle.down": {
+      "sheet": "resources/art/monsters/slime2/slime2-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.elite.idle.up": {
+      "sheet": "resources/art/monsters/slime2/slime2-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.elite.idle.left": {
+      "sheet": "resources/art/monsters/slime2/slime2-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.elite.idle.right": {
+      "sheet": "resources/art/monsters/slime2/slime2-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.elite.walk.down": {
+      "sheet": "resources/art/monsters/slime2/slime2-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.elite.walk.up": {
+      "sheet": "resources/art/monsters/slime2/slime2-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.elite.walk.left": {
+      "sheet": "resources/art/monsters/slime2/slime2-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.elite.walk.right": {
+      "sheet": "resources/art/monsters/slime2/slime2-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.elite.idle.down": {
+      "sheet": "resources/art/monsters/slime3/slime3-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.elite.idle.up": {
+      "sheet": "resources/art/monsters/slime3/slime3-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.elite.idle.left": {
+      "sheet": "resources/art/monsters/slime3/slime3-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.elite.idle.right": {
+      "sheet": "resources/art/monsters/slime3/slime3-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.elite.walk.down": {
+      "sheet": "resources/art/monsters/slime3/slime3-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.elite.walk.up": {
+      "sheet": "resources/art/monsters/slime3/slime3-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.elite.walk.left": {
+      "sheet": "resources/art/monsters/slime3/slime3-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.elite.walk.right": {
+      "sheet": "resources/art/monsters/slime3/slime3-elite.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.splitling.idle.down": {
+      "sheet": "resources/art/monsters/slime-green/slime-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.splitling.idle.up": {
+      "sheet": "resources/art/monsters/slime-green/slime-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.splitling.idle.left": {
+      "sheet": "resources/art/monsters/slime-green/slime-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.splitling.idle.right": {
+      "sheet": "resources/art/monsters/slime-green/slime-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.splitling.walk.down": {
+      "sheet": "resources/art/monsters/slime-green/slime-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.splitling.walk.up": {
+      "sheet": "resources/art/monsters/slime-green/slime-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.splitling.walk.left": {
+      "sheet": "resources/art/monsters/slime-green/slime-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slimegreen.splitling.walk.right": {
+      "sheet": "resources/art/monsters/slime-green/slime-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.splitling.idle.down": {
+      "sheet": "resources/art/monsters/slime2/slime2-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.splitling.idle.up": {
+      "sheet": "resources/art/monsters/slime2/slime2-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.splitling.idle.left": {
+      "sheet": "resources/art/monsters/slime2/slime2-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.splitling.idle.right": {
+      "sheet": "resources/art/monsters/slime2/slime2-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.splitling.walk.down": {
+      "sheet": "resources/art/monsters/slime2/slime2-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.splitling.walk.up": {
+      "sheet": "resources/art/monsters/slime2/slime2-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.splitling.walk.left": {
+      "sheet": "resources/art/monsters/slime2/slime2-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime2.splitling.walk.right": {
+      "sheet": "resources/art/monsters/slime2/slime2-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.splitling.idle.down": {
+      "sheet": "resources/art/monsters/slime3/slime3-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.splitling.idle.up": {
+      "sheet": "resources/art/monsters/slime3/slime3-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.splitling.idle.left": {
+      "sheet": "resources/art/monsters/slime3/slime3-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.splitling.idle.right": {
+      "sheet": "resources/art/monsters/slime3/slime3-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.splitling.walk.down": {
+      "sheet": "resources/art/monsters/slime3/slime3-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.splitling.walk.up": {
+      "sheet": "resources/art/monsters/slime3/slime3-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.splitling.walk.left": {
+      "sheet": "resources/art/monsters/slime3/slime3-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
+    },
+    "slime3.splitling.walk.right": {
+      "sheet": "resources/art/monsters/slime3/slime3-splitling.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 1
     }
   }
 }

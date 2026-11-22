@@ -13,8 +13,20 @@ export const ROOM_COLS = 32;
 export const ROOM_ROWS = 18;
 export const TILE_SIZE_PX = 16;
 
-/** GDD §4 calls this role "Brute"; the data contract uses the name `tank`. */
-export const ENEMY_ROLES = ['chaser', 'caster', 'tank'] as const;
+/**
+ * GDD §4 calls the brute role "Brute"; the data contract uses the name `tank`.
+ *
+ * #42 adds three roles: `sniper` (keeps far, line telegraph, one fast shot), `splitter`
+ * (splits into `splitling`s on death) and `splitling` (small, fast, never splits again).
+ */
+export const ENEMY_ROLES = [
+  'chaser',
+  'caster',
+  'tank',
+  'sniper',
+  'splitter',
+  'splitling',
+] as const;
 export type EnemyRole = (typeof ENEMY_ROLES)[number];
 
 export const OBSTACLE_KINDS = ['pillar', 'wall', 'pit'] as const;
