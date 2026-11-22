@@ -1381,7 +1381,9 @@ function planGeometry(args: GeometryArgs): GeometryResult {
   // -- Set piece: desert cliff plateau (a raised sand shelf with a rock face at its foot) ------
   const placeCliff = (): boolean => {
     const width = 8;
-    const height = 3;
+    // Two rows of shelf and a two-row rock face: at one tile the face reads as planks, at two it
+    // reads as the cliff the demo's plateaus stand on.
+    const height = 4;
     for (let attempt = 0; attempt < 24; attempt += 1) {
       const minX = BORDER_TILES + 1;
       const minY = BORDER_TILES + 1;
@@ -1392,12 +1394,14 @@ function planGeometry(args: GeometryArgs): GeometryResult {
       if (!colliderFits(rect, rect, MIN_OBSTACLE_GAP)) continue;
       book.rects.push(rect);
       obstacles.push({ kind: 'edge', ...rect });
-      // The shelf (all but the last row) joins the ground-patch mask, so `paintGround` gives it a
-      // fringed outer edge like every other shelf. The last row is the cliff face, drawn on the
-      // front border layer with the sand-cliff face tiles (fully opaque, base rim at the bottom).
+      // The shelf (the top rows) joins the ground-patch mask, so `paintGround` gives it a fringed
+      // outer edge like every other shelf. The bottom rows are the cliff face on the front border
+      // layer: the shelf lip over the rock face, with its base rim at the bottom.
       for (let col = 0; col < width; col += 1) {
-        for (let row = 0; row < height - 1; row += 1) plateauSurface.push(cellKey(x + col, y + row));
-        const face = CLIFF_LIP[int(rng, CLIFF_LIP.length)] ?? 125;
+        for (let row = 0; row < height - 2; row += 1) plateauSurface.push(cellKey(x + col, y + row));
+        const lip = CLIFF_LIP[int(rng, CLIFF_LIP.length)] ?? 125;
+        const face = CLIFF_BASE[int(rng, CLIFF_BASE.length)] ?? 145;
+        plateauFace.push({ index: (y + height - 2) * COLS + (x + col), value: gid(chapter, 'relief', lip) });
         plateauFace.push({ index: (y + height - 1) * COLS + (x + col), value: gid(chapter, 'relief', face) });
       }
       return true;
