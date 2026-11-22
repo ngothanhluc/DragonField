@@ -1,5 +1,6 @@
 /**
- * Stage the boss-pool content of ticket #43: GiantFrog / GiantSlime art and one music track per boss.
+ * Stage the boss-pool content of ticket #43 and #44: GiantFrog / GiantSlime / GiantBamboo /
+ * GiantRacoon / TenguRed art and one music track per boss.
  *
  * Run: `bun run scripts/stage-boss-pool.ts`
  *
@@ -52,6 +53,22 @@ const ART: readonly (readonly [string, string])[] = [
   ['Actor/Boss/GiantSlime/Idle.png', 'art/bosses/giant-slime/Idle.png'],
   ['Actor/Boss/GiantSlime/Jump.png', 'art/bosses/giant-slime/Jump.png'],
   ['Actor/Boss/GiantSlime/Hit.png', 'art/bosses/giant-slime/Hit.png'],
+  // Ticket #44 — ch3/ch4 pool bosses.
+  ['Actor/Boss/GiantBamboo/Idle.png', 'art/bosses/giant-bamboo/Idle.png'],
+  ['Actor/Boss/GiantBamboo/Walk.png', 'art/bosses/giant-bamboo/Walk.png'],
+  ['Actor/Boss/GiantBamboo/Attack.png', 'art/bosses/giant-bamboo/Attack.png'],
+  ['Actor/Boss/GiantBamboo/Charge.png', 'art/bosses/giant-bamboo/Charge.png'],
+  ['Actor/Boss/GiantBamboo/Hit.png', 'art/bosses/giant-bamboo/Hit.png'],
+  // GiantRacoon has no hit sheet; `Sprite.png` is a single frame, not a strip.
+  ['Actor/Boss/GiantRacoon/Idle.png', 'art/bosses/giant-racoon/Idle.png'],
+  ['Actor/Boss/GiantRacoon/Jump.png', 'art/bosses/giant-racoon/Jump.png'],
+  ['Actor/Boss/GiantRacoon/Attack.png', 'art/bosses/giant-racoon/Attack.png'],
+  ['Actor/Boss/GiantRacoon/Charge.png', 'art/bosses/giant-racoon/Charge.png'],
+  ['Actor/Boss/TenguRed/Idle.png', 'art/bosses/tengu-red/Idle.png'],
+  ['Actor/Boss/TenguRed/Walk.png', 'art/bosses/tengu-red/Walk.png'],
+  ['Actor/Boss/TenguRed/Attack.png', 'art/bosses/tengu-red/Attack.png'],
+  ['Actor/Boss/TenguRed/Trans.png', 'art/bosses/tengu-red/Trans.png'],
+  ['Actor/Boss/TenguRed/Hit.png', 'art/bosses/tengu-red/Hit.png'],
 ];
 
 /** One theme per boss; Tengu keeps `audio/music/boss` ("17 - Fight") staged by `stage-m6-assets.ts`. */
@@ -61,6 +78,10 @@ const MUSIC: readonly (readonly [string, string])[] = [
   // The pack file name really has two spaces after "34".
   ['Audio/Musics/34  - Fight.ogg', 'audio/music/boss-frog.mp3'],
   ['Audio/Musics/14 - Curse.ogg', 'audio/music/boss-slime.mp3'],
+  // Ticket #44 — one theme for each ch3/ch4 boss.
+  ['Audio/Musics/21 - Dungeon.ogg', 'audio/music/boss-bamboo.mp3'],
+  ['Audio/Musics/24 - Final Area.ogg', 'audio/music/boss-racoon.mp3'],
+  ['Audio/Musics/40 - Crypt.ogg', 'audio/music/boss-redtengu.mp3'],
 ];
 
 for (const [sourceRel, targetRel] of ART) {

@@ -135,13 +135,16 @@ function matchesSpec(bullets: readonly BulletVerb[], spec: VolleySpec): boolean 
 
 describe('boss defs', () => {
   it('health exactly as GDD 60 / 80 / 100 from all 3 chapters, 60 / 80 for the ch1/ch2 pool', () => {
-    expect(BOSS_IDS.map((id) => BOSSES[id].maxHealth)).toEqual([60, 80, 100, 60, 80]);
-    expect(BOSS_IDS.map((id) => BOSSES[id].chapter)).toEqual([1, 2, 3, 1, 2]);
+    expect(BOSS_IDS.map((id) => BOSSES[id].maxHealth)).toEqual([60, 80, 100, 60, 80, 100, 120, 120]);
+    expect(BOSS_IDS.map((id) => BOSSES[id].chapter)).toEqual([1, 2, 3, 1, 2, 3, 4, 4]);
     expect(BOSSES.tengu.spriteName).toBe('TenguBlue');
     expect(BOSSES.squid.spriteName).toBe('SquidGreen');
     expect(BOSSES.samurai.spriteName).toBe('GiantBlueSamurai');
     expect(BOSSES.frog.spriteName).toBe('GiantFrog');
     expect(BOSSES.slime.spriteName).toBe('GiantSlime');
+    expect(BOSSES.bamboo.spriteName).toBe('GiantBamboo');
+    expect(BOSSES.racoon.spriteName).toBe('GiantRacoon');
+    expect(BOSSES.redtengu.spriteName).toBe('TenguRed');
   });
 
   it('every declared animation really exists in the manifest', () => {

@@ -25,7 +25,7 @@ const MONSTERS = [
   'trex',
   'cyclope',
 ] as const;
-const BOSSES = ['tengu', 'squid', 'samurai', 'frog', 'slime'] as const;
+const BOSSES = ['tengu', 'squid', 'samurai', 'frog', 'slime', 'bamboo', 'racoon', 'redtengu'] as const;
 
 interface GeneratedActors {
   readonly actors: readonly string[];
@@ -264,6 +264,21 @@ describe('animations.json', () => {
       ['slime.idle', 5],
       ['slime.jump', 13],
       ['slime.hit', 5],
+      // Ticket #44 — ch3/ch4 pool bosses.
+      ['bamboo.idle', 6],
+      ['bamboo.walk', 12],
+      ['bamboo.attack', 5],
+      ['bamboo.charge', 3],
+      ['bamboo.hit', 4],
+      ['racoon.idle', 6],
+      ['racoon.jump', 5],
+      ['racoon.attack', 4],
+      ['racoon.charge', 2],
+      ['redtengu.idle', 6],
+      ['redtengu.walk', 10],
+      ['redtengu.attack', 15],
+      ['redtengu.trans', 11],
+      ['redtengu.hit', 8],
     ];
 
     for (const [key, frames] of expectedFrames) {

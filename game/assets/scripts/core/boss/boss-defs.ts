@@ -1,6 +1,7 @@
 /**
  * Definitions of the chapter bosses (GDD §5): TenguBlue → SquidGreen → GiantBlueSamurai,
- * plus the pool alternatives GiantFrog (ch1) and GiantSlime (ch2) picked by the run seed (#43).
+ * plus the pool alternatives picked by the run seed: GiantFrog (ch1) and GiantSlime (ch2) from
+ * #43, GiantBamboo (ch3) with GiantRacoon and the red Tengu (ch4) from #44.
  *
  * This file has **pure data** only: no time, no RNG, no `cc`.
  * Detailed patterns live in `patterns.ts`, enemy spawning in `summon.ts`.
@@ -9,7 +10,16 @@
  * (`layout: "strip"` in `assets/resources/data/animations.json`), so core only *names*
  * animations while the adapter handles slicing and flipping.
  */
-export const BOSS_IDS = ['tengu', 'squid', 'samurai', 'frog', 'slime'] as const;
+export const BOSS_IDS = [
+  'tengu',
+  'squid',
+  'samurai',
+  'frog',
+  'slime',
+  'bamboo',
+  'racoon',
+  'redtengu',
+] as const;
 export type BossId = (typeof BOSS_IDS)[number];
 
 export type BossPhase = 1 | 2 | 3;
@@ -76,6 +86,29 @@ const ANIMATION_TABLE: Readonly<
     walk: { base: 'slime.jump' },
     hit: { base: 'slime.hit' },
   },
+  // GiantBamboo stomps on `Walk` and telegraphs with `Charge` (charge intent).
+  bamboo: {
+    idle: { base: 'bamboo.idle' },
+    walk: { base: 'bamboo.walk' },
+    attack: { base: 'bamboo.attack' },
+    charge: { base: 'bamboo.charge' },
+    hit: { base: 'bamboo.hit' },
+  },
+  // GiantRacoon hops on `Jump` (walk); it has no hit sheet, so `hit` falls back to attack.
+  racoon: {
+    idle: { base: 'racoon.idle' },
+    walk: { base: 'racoon.jump' },
+    attack: { base: 'racoon.attack' },
+    charge: { base: 'racoon.charge' },
+  },
+  // Red Tengu mirrors the blue sheets with a stronger pattern (#44).
+  redtengu: {
+    idle: { base: 'redtengu.idle' },
+    walk: { base: 'redtengu.walk' },
+    attack: { base: 'redtengu.attack' },
+    teleport: { base: 'redtengu.trans' },
+    hit: { base: 'redtengu.hit' },
+  },
 };
 
 /**
@@ -103,8 +136,12 @@ export interface BossDef {
   readonly displayName: string;
   /** Real art folder name, matching `LevelData.boss.name`. */
   readonly spriteName: string;
-  readonly chapter: BossPhase;
-  /** Max health: 60 / 80 / 100 (GDD §5). */
+  /**
+   * Chapter the boss belongs to, as a plain number: chapter 4 has bosses (#44) before it has
+   * levels (#45), so this is not `BossPhase`.
+   */
+  readonly chapter: number;
+  /** Max health: 60 / 80 / 100 for the chapter bosses, 60 / 80 / 100 / 120 / 120 for the pool (#43, #44). */
   readonly maxHealth: number;
   /**
    * **Hitbox** radius, tiles — a collision proxy, not the sprite size.
@@ -122,6 +159,9 @@ export interface BossDef {
    * | samurai | 96 px | 75 %   | 2.25     |
    * | frog    | 40 px | 80 %   | 1        |
    * | slime   | 62 px | 70 %   | 1.5      |
+   * | bamboo  | 62 px | 90 %   | 1.75     |
+   * | racoon  | 60 px | 93 %   | 1.75     |
+   * | redtengu| 82 px | 70 %   | 1.75     |
    *
    * The hitbox is smaller than the sprite so the player never gets "hit by air".
    */
@@ -223,6 +263,42 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     // Measured from the 62×52 sheets (Idle/Jump/Hit), feet anchor.
     spriteExtentTiles: { left: 1.875, right: 1.8125, up: 2.8125 },
     animations: animationsOf('slime'),
+  },
+  bamboo: {
+    id: 'bamboo',
+    displayName: 'Giant Bamboo',
+    spriteName: 'GiantBamboo',
+    chapter: 3,
+    maxHealth: 100,
+    hitboxRadiusTiles: 1.75,
+    phaseThresholds: PHASE_THRESHOLDS,
+    // Measured from the 62×62 sheets (Idle/Walk/Attack/Charge/Hit), feet anchor.
+    spriteExtentTiles: { left: 1.6875, right: 1.6875, up: 3.75 },
+    animations: animationsOf('bamboo'),
+  },
+  racoon: {
+    id: 'racoon',
+    displayName: 'Giant Racoon',
+    spriteName: 'GiantRacoon',
+    chapter: 4,
+    maxHealth: 120,
+    hitboxRadiusTiles: 1.75,
+    phaseThresholds: PHASE_THRESHOLDS,
+    // Measured from the 60×60 sheets (Idle/Jump/Attack/Charge), feet anchor.
+    spriteExtentTiles: { left: 1.75, right: 1.75, up: 3.3125 },
+    animations: animationsOf('racoon'),
+  },
+  redtengu: {
+    id: 'redtengu',
+    displayName: 'Red Tengu',
+    spriteName: 'TenguRed',
+    chapter: 4,
+    maxHealth: 120,
+    hitboxRadiusTiles: 1.75,
+    phaseThresholds: PHASE_THRESHOLDS,
+    // Measured from the 82×82 sheets (Idle/Walk/Attack/Trans/Hit), feet anchor.
+    spriteExtentTiles: { left: 2.375, right: 2.3125, up: 5.0625 },
+    animations: animationsOf('redtengu'),
   },
 };
 

@@ -481,6 +481,212 @@ const SLIME_RING: BossAction = {
   },
 };
 
+// --- GiantBamboo / GiantRacoon / Red Tengu (#44) ---------------------------
+
+/** Bamboo stomp-chase: a heavy golem, slower than the frog. */
+const BAMBOO_WALK: BossAction = {
+  kind: 'move',
+  motion: { kind: 'chase', speedTilesPerSecond: 2 },
+};
+
+/** Bamboo line up with the player's row before stomping sideways. */
+const BAMBOO_LINE_UP: BossAction = {
+  kind: 'move',
+  motion: { kind: 'line-up', speedTilesPerSecond: 8 },
+};
+
+/** 1300 ms is enough to line up from the boss row to the player row. */
+const BAMBOO_LINE_UP_MS = 1300;
+
+/** Bamboo body-check: same speed as the Samurai charge, on a 62 px frame. */
+const BAMBOO_CHARGE: BossAction = {
+  kind: 'move',
+  motion: { kind: 'charge', speedTilesPerSecond: 9 },
+};
+
+/** Bamboo 7-bullet spread: wider than Tengu's fan, aimed at the player. */
+const BAMBOO_SPREAD: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'spread',
+    count: 7,
+    spreadRadians: 100 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 5,
+    damage: 1,
+    radiusTiles: 0.28,
+  },
+};
+
+/** Bamboo ring: 14 bullets, one aimed exactly at the player. */
+const BAMBOO_RING: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'ring',
+    count: 14,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 5,
+    damage: 1,
+    radiusTiles: 0.28,
+  },
+};
+
+/** Bamboo phase 3 spiral: steady 130 ms rhythm, one full turn every ~13 ticks. */
+const BAMBOO_SPIRAL: BossAction = {
+  kind: 'spiral',
+  spiral: {
+    intervalMs: 130,
+    angleStepRadians: 27 * DEG,
+    speedTilesPerSecond: 4.5,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
+/** Bamboo fire trail behind its charge (same shape as the Samurai's phase 3 tell). */
+const BAMBOO_FIRE_TRAIL: BossAction = {
+  kind: 'trail',
+  trail: {
+    spacingTiles: 1.5,
+    driftSpeedTilesPerSecond: 1.2,
+    damage: 1,
+    radiusTiles: 0.35,
+  },
+};
+
+/** Racoon hop-chase: a leaping brawler, faster than the frog. */
+const RACOON_HOP: BossAction = {
+  kind: 'move',
+  motion: { kind: 'chase', speedTilesPerSecond: 3 },
+};
+
+/** Racoon phase 2/3 fast leap — closes the whole gap in one bound. */
+const RACOON_LEAP: BossAction = {
+  kind: 'move',
+  motion: { kind: 'chase', speedTilesPerSecond: 10 },
+};
+
+/** Racoon 7-bullet fan. */
+const RACOON_FAN_7: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'fan',
+    count: 7,
+    spreadRadians: 70 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 6,
+    damage: 1,
+    radiusTiles: 0.25,
+  },
+};
+
+/** Racoon 5-bullet fan. */
+const RACOON_FAN_5: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'fan',
+    count: 5,
+    spreadRadians: 60 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 6,
+    damage: 1,
+    radiusTiles: 0.25,
+  },
+};
+
+/** Racoon ring: 14 bullets, one aimed exactly at the player. */
+const RACOON_RING: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'ring',
+    count: 14,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 5.5,
+    damage: 1,
+    radiusTiles: 0.28,
+  },
+};
+
+/** Racoon phase 3 fast spiral. */
+const RACOON_SPIRAL: BossAction = {
+  kind: 'spiral',
+  spiral: {
+    intervalMs: 110,
+    angleStepRadians: 30 * DEG,
+    speedTilesPerSecond: 5,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
+/** Red Tengu walk-chase: a little quicker than the blue one. */
+const RED_WALK: BossAction = {
+  kind: 'move',
+  motion: { kind: 'chase', speedTilesPerSecond: 2.6 },
+};
+
+/** Red Tengu 7-bullet fan (blue Tengu fires 5). */
+const RED_FAN_7: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'fan',
+    count: 7,
+    spreadRadians: 70 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 6.5,
+    damage: 1,
+    radiusTiles: 0.25,
+  },
+};
+
+/** Red Tengu 5-bullet fan. */
+const RED_FAN_5: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'fan',
+    count: 5,
+    spreadRadians: 60 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 6.5,
+    damage: 1,
+    radiusTiles: 0.25,
+  },
+};
+
+/** Red Tengu ring (phase 2): 12 bullets, one aimed exactly at the player. */
+const RED_RING_12: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'ring',
+    count: 12,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 5.5,
+    damage: 1,
+    radiusTiles: 0.25,
+  },
+};
+
+/** Red Tengu ring (phase 3): 10 bullets, one aimed exactly at the player. */
+const RED_RING_10: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'ring',
+    count: 10,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 6,
+    damage: 1,
+    radiusTiles: 0.25,
+  },
+};
+
 function anim(animation: BossAnimKind): BossAction {
   return { kind: 'animation', animation };
 }
@@ -712,6 +918,152 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [SLIME_RING] },
         { durationMs: 600, actions: [anim('idle')] },
+      ],
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // Ch3 pool — GiantBamboo: a stomping bamboo golem. Walk-chase + 7-bullet
+  // spread → line up + horizontal charge + aimed 14-bullet ring → summon 2
+  // tanks once, then spiral, charging fire trail and ring each loop.
+  // -------------------------------------------------------------------------
+  bamboo: {
+    1: {
+      steps: [
+        { durationMs: 1500, actions: [BAMBOO_WALK, anim('walk')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [BAMBOO_SPREAD] },
+        { durationMs: 500, actions: [anim('idle')] },
+      ],
+    },
+    2: {
+      steps: [
+        { durationMs: BAMBOO_LINE_UP_MS, actions: [BAMBOO_LINE_UP, anim('walk')] },
+        {
+          durationMs: TELEGRAPH_MS.boss,
+          actions: [face('player'), TELEGRAPH_ACTION, anim('charge')],
+        },
+        { durationMs: 900, actions: [BAMBOO_CHARGE, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [BAMBOO_RING] },
+        { durationMs: 600, actions: [anim('idle')] },
+      ],
+    },
+    3: {
+      // Step 0 (summon) runs only once on phase entry; the loop starts at 1.
+      loopFrom: 1,
+      steps: [
+        {
+          durationMs: 500,
+          actions: [{ kind: 'summon', role: 'tank', count: 2 }, anim('idle')],
+        },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 2200, actions: [anim('attack'), BAMBOO_SPIRAL] },
+        { durationMs: BAMBOO_LINE_UP_MS, actions: [BAMBOO_LINE_UP, anim('walk')] },
+        {
+          durationMs: TELEGRAPH_MS.boss,
+          actions: [face('player'), TELEGRAPH_ACTION, anim('charge')],
+        },
+        { durationMs: 900, actions: [BAMBOO_CHARGE, anim('charge'), BAMBOO_FIRE_TRAIL] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [BAMBOO_RING] },
+        { durationMs: 500, actions: [anim('idle')] },
+      ],
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // Ch4 pool — GiantRacoon: a leaping brawler. Hop-chase + 7-bullet fan →
+  // leap + aimed 14-bullet ring + fan → summon 3 chasers once, then a loop of
+  // leaps/rings and a fast spiral.
+  // -------------------------------------------------------------------------
+  racoon: {
+    1: {
+      steps: [
+        { durationMs: 1200, actions: [RACOON_HOP, anim('walk')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RACOON_FAN_7] },
+        { durationMs: 400, actions: [anim('idle')] },
+      ],
+    },
+    2: {
+      steps: [
+        {
+          durationMs: TELEGRAPH_MS.boss,
+          actions: [face('player'), TELEGRAPH_ACTION, anim('charge')],
+        },
+        { durationMs: 600, actions: [RACOON_LEAP, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RACOON_RING] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 550, actions: [RACOON_FAN_5] },
+        { durationMs: 500, actions: [anim('idle')] },
+      ],
+    },
+    3: {
+      // Step 0 (summon) runs only once on phase entry; the loop starts at 1.
+      loopFrom: 1,
+      steps: [
+        {
+          durationMs: 500,
+          actions: [{ kind: 'summon', role: 'chaser', count: 3 }, anim('idle')],
+        },
+        { durationMs: 600, actions: [RACOON_LEAP, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RACOON_RING] },
+        { durationMs: 250, actions: [anim('idle')] },
+        { durationMs: 600, actions: [RACOON_LEAP, anim('charge')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RACOON_RING] },
+        { durationMs: 250, actions: [anim('idle')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 2000, actions: [anim('attack'), RACOON_SPIRAL] },
+        { durationMs: 400, actions: [anim('idle')] },
+      ],
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // Ch4 pool — Red Tengu: the blue Tengu's structure with stronger volleys and
+  // shorter idles. Fan 7 → teleport + aimed 12-ring + fan → teleport ×3, each
+  // with an aimed 10-ring, then a final fan 7.
+  // -------------------------------------------------------------------------
+  redtengu: {
+    1: {
+      steps: [
+        { durationMs: 1000, actions: [RED_WALK, anim('walk')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [RED_FAN_7] },
+        { durationMs: 300, actions: [anim('idle')] },
+      ],
+    },
+    2: {
+      steps: [
+        { durationMs: 350, actions: [TELEPORT, anim('teleport')] },
+        { durationMs: 300, actions: [anim('idle')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [RED_RING_12] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RED_FAN_5] },
+        { durationMs: 900, actions: [RED_WALK, anim('walk')] },
+      ],
+    },
+    3: {
+      steps: [
+        { durationMs: 350, actions: [TELEPORT, anim('teleport')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 550, actions: [RED_RING_10] },
+        { durationMs: 200, actions: [anim('idle')] },
+        { durationMs: 350, actions: [TELEPORT, anim('teleport')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 550, actions: [RED_RING_10] },
+        { durationMs: 200, actions: [anim('idle')] },
+        { durationMs: 350, actions: [TELEPORT, anim('teleport')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 550, actions: [RED_RING_10] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RED_FAN_7] },
+        { durationMs: 500, actions: [anim('idle')] },
       ],
     },
   },

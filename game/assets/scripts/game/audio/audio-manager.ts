@@ -39,10 +39,13 @@ export type MusicId =
   | 'boss-squid'
   | 'boss-samurai'
   | 'boss-frog'
-  | 'boss-slime';
+  | 'boss-slime'
+  | 'boss-bamboo'
+  | 'boss-racoon'
+  | 'boss-redtengu';
 
 /**
- * Boss themes (#43): one track per boss, path from core so there is a single source.
+ * Boss themes (#43, #44): one track per boss, path from core so there is a single source.
  * Tengu keeps the original `boss` id ("17 - Fight").
  */
 const MUSIC_PATH: Readonly<Record<MusicId, string>> = {
@@ -55,6 +58,9 @@ const MUSIC_PATH: Readonly<Record<MusicId, string>> = {
   'boss-samurai': bossMusicPath('samurai'),
   'boss-frog': bossMusicPath('frog'),
   'boss-slime': bossMusicPath('slime'),
+  'boss-bamboo': bossMusicPath('bamboo'),
+  'boss-racoon': bossMusicPath('racoon'),
+  'boss-redtengu': bossMusicPath('redtengu'),
 };
 
 /** Music id of a boss's own theme — the id `playMusic` wants. */
@@ -64,6 +70,9 @@ const BOSS_MUSIC_ID: Readonly<Record<BossId, MusicId>> = {
   samurai: 'boss-samurai',
   frog: 'boss-frog',
   slime: 'boss-slime',
+  bamboo: 'boss-bamboo',
+  racoon: 'boss-racoon',
+  redtengu: 'boss-redtengu',
 };
 
 export function bossMusicId(id: BossId): MusicId {

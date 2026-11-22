@@ -117,6 +117,10 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
   // Ticket #43 — boss pool alternatives.
   frog: ['frog.idle', 'frog.jump', 'frog.charge', 'frog.attack', 'frog.hit'],
   slime: ['slime.idle', 'slime.jump', 'slime.hit'],
+  // Ticket #44 — ch3/ch4 pool bosses.
+  bamboo: ['bamboo.idle', 'bamboo.walk', 'bamboo.attack', 'bamboo.charge', 'bamboo.hit'],
+  racoon: ['racoon.idle', 'racoon.jump', 'racoon.attack', 'racoon.charge'],
+  redtengu: ['redtengu.idle', 'redtengu.walk', 'redtengu.attack', 'redtengu.trans', 'redtengu.hit'],
   fx: [
     'fx.shuriken',
     'fx.coin',
