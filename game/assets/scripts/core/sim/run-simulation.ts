@@ -21,7 +21,7 @@
  * - Obstacles **only block bullets** (a balance simulation, not real collision/nav).
  * - `godMode` is a test hook: skip damage to the player to measure room-clear time.
  */
-import { bossForSpriteName } from '../boss/boss-defs';
+import { pickBoss } from '../boss/boss-pool';
 import { AutoFire } from '../combat/auto-fire';
 import { BulletPool, firstHit, hitsCircle, type Bullet } from '../combat/bullets';
 import { HealthState } from '../combat/health';
@@ -273,14 +273,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     bossRoom: LevelData,
     atRoomIndex: number,
   ): { bossDurationMs: number; won: boolean } => {
-    const bossDef =
-      bossRoom.boss === undefined ? undefined : bossForSpriteName(bossRoom.boss.name);
-    if (bossDef === undefined) {
-      throw new Error(`Boss room ${bossRoom.id} is missing a valid boss in BOSSES`);
-    }
+    // Same rule as the game: the run seed picks one boss from the chapter pool (#43).
+    const bossId = pickBoss(bossRoom.chapter, options.seed);
 
     const result = simulateBossRun({
-      bossId: bossDef.id,
+      bossId,
       seed: options.seed + atRoomIndex * 1_000 + 1,
       maxDurationMs: Math.max(1, maxDurationMs - durationMs),
       godMode: options.godMode,

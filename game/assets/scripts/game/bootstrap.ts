@@ -38,7 +38,8 @@ import {
 } from 'cc';
 import { resolve, validateManifest } from '../core/art/manifest';
 import type { AnimationManifest } from '../core/art/manifest';
-import { bossForSpriteName } from '../core/boss/boss-defs';
+import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
+import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
 import { nextWaveIndex } from '../core/enemies/waves';
 import { chapterFromLevels } from '../core/level/chapter';
@@ -68,7 +69,13 @@ import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
 import { BulletView } from './bullet-view';
 import { CombatLoop, STRESS_ENEMY_BULLETS } from './combat-loop';
-import type { DebugStatus, DebugUiText, DebugVfxSnapshot, DebugAtmosphereSnapshot } from './debug-api';
+import {
+  isDebugEnabled,
+  type DebugStatus,
+  type DebugUiText,
+  type DebugVfxSnapshot,
+  type DebugAtmosphereSnapshot,
+} from './debug-api';
 import { TELEGRAPH_RING_SHEET } from './enemy-view';
 import { createFxPool } from './fx/effect-pool';
 import type { FxPool } from './fx/effect-pool';
@@ -84,7 +91,7 @@ import { ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
 import { PlayerController } from './player-controller';
 import { attachRoomWater } from './room-water';
 import { WorldCamera } from './world-camera';
-import { AudioManager } from './audio/audio-manager';
+import { AudioManager, bossMusicId } from './audio/audio-manager';
 import type { MusicId } from './audio/audio-manager';
 import { playSfx } from './audio/sfx';
 import { installDebugWiring } from './debug-wiring';
@@ -623,11 +630,10 @@ export class Bootstrap extends Component {
       }
 
       if (room.isBossRoom) {
-        const def = room.boss === undefined ? undefined : bossForSpriteName(room.boss.name);
-        if (def !== undefined) {
-          for (const key of def.animations) {
-            sheets.add(resolve(manifest, key).sheet);
-          }
+        // The run's pick (#43), not the TMX label: preload exactly the boss that will spawn.
+        const def = BOSSES[this.chapterBoss(room.chapter)];
+        for (const key of def.animations) {
+          sheets.add(resolve(manifest, key).sheet);
         }
       }
     }
@@ -650,6 +656,28 @@ export class Bootstrap extends Component {
     }
 
     return Array.from(sheets);
+  }
+
+  /**
+   * Boss of this run for `chapter` (#43): a debug URL override wins, then the run seed's pick
+   * from the chapter pool. The same call decides preload, spawn and music, so they never disagree.
+   */
+  private chapterBoss(chapter: number): BossId {
+    const forced = this.forcedBoss();
+    if (forced !== null) return forced;
+    return pickBoss(chapter, this.runSeed);
+  }
+
+  /** `?debug=1&boss=<id>` forces the pick so the browser proof can replay a specific boss. */
+  private forcedBoss(): BossId | null {
+    if (!isDebugEnabled() || typeof window === 'undefined') return null;
+    try {
+      const raw = new URLSearchParams(window.location.search).get('boss');
+      return BOSS_IDS.find((id) => id === raw) ?? null;
+    } catch {
+      // A malformed query string is not a run-stopping error.
+      return null;
+    }
   }
 
   /** world → room/actor/bullet; this order is the Cocos 2D draw order. */
@@ -1004,8 +1032,8 @@ export class Bootstrap extends Component {
     if (level.isBossRoom) {
       const combat = this.combat;
       if (combat === null) throw new Error('Bootstrap: no CombatLoop');
-      spawnBossForRoom(combat, level);
-      this.audio?.playMusic('boss');
+      const def = spawnBossForRoom(combat, level, this.chapterBoss(level.chapter));
+      this.audio?.playMusic(bossMusicId(def.id));
     } else {
       this.audio?.playMusic(chapterMusic(level.chapter));
     }

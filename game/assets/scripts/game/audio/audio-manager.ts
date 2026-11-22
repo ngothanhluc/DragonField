@@ -21,6 +21,8 @@ import {
   sfxVolumeScale,
   type SfxId,
 } from '../../core/audio/sfx-bank';
+import { bossMusicPath } from '../../core/boss/boss-pool';
+import type { BossId } from '../../core/boss/boss-defs';
 import { SeededRng } from '../../core/rng';
 import { SFX_IDS, setSfxSink } from './sfx';
 
@@ -28,15 +30,45 @@ type AudioClip = InstanceType<typeof CocosAudioClip>;
 type AudioSource = InstanceType<typeof CocosAudioSource>;
 type Node = InstanceType<typeof CocosNode>;
 
-export type MusicId = 'title' | 'chapter-1' | 'chapter-2' | 'chapter-3' | 'boss';
+export type MusicId =
+  | 'title'
+  | 'chapter-1'
+  | 'chapter-2'
+  | 'chapter-3'
+  | 'boss'
+  | 'boss-squid'
+  | 'boss-samurai'
+  | 'boss-frog'
+  | 'boss-slime';
 
+/**
+ * Boss themes (#43): one track per boss, path from core so there is a single source.
+ * Tengu keeps the original `boss` id ("17 - Fight").
+ */
 const MUSIC_PATH: Readonly<Record<MusicId, string>> = {
   title: 'audio/music/title',
   'chapter-1': 'audio/music/chapter-1',
   'chapter-2': 'audio/music/chapter-2',
   'chapter-3': 'audio/music/chapter-3',
-  boss: 'audio/music/boss',
+  boss: bossMusicPath('tengu'),
+  'boss-squid': bossMusicPath('squid'),
+  'boss-samurai': bossMusicPath('samurai'),
+  'boss-frog': bossMusicPath('frog'),
+  'boss-slime': bossMusicPath('slime'),
 };
+
+/** Music id of a boss's own theme — the id `playMusic` wants. */
+const BOSS_MUSIC_ID: Readonly<Record<BossId, MusicId>> = {
+  tengu: 'boss',
+  squid: 'boss-squid',
+  samurai: 'boss-samurai',
+  frog: 'boss-frog',
+  slime: 'boss-slime',
+};
+
+export function bossMusicId(id: BossId): MusicId {
+  return BOSS_MUSIC_ID[id];
+}
 
 /** Keep only the 12 most recent sounds for the `audio()` debug hook (no growth over play time). */
 const SFX_HISTORY = 12;
