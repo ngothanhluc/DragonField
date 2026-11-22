@@ -152,8 +152,28 @@ export interface TuningConfig {
   /** Per-chapter scale factors (GDD §4): each chapter is harder, not just busier. */
   readonly chapters: ChapterScalingTuning;
   readonly enemies: EnemiesTuning;
+  /** Enemy navigation (#34): flow-field rebuild throttle and the stuck guard. */
+  readonly navigation: NavigationTuning;
   /** "Juice" numbers (ticket #2): shake, squash, coins, damage numbers, muzzle. */
   readonly feel: FeelTuning;
+}
+
+/**
+ * Enemy navigation numbers (#34). Engine-neutral, read by `core/enemies/navigation.ts` callers
+ * (the balance sim and the game adapter pass them in, the module itself takes parameters).
+ */
+export interface NavigationTuning {
+  /**
+   * The shared flow field toward the player is rebuilt at most this often, ms — and only when
+   * the player changed tile. Keeps big rooms cheap.
+   */
+  readonly rebuildMinMs: number;
+  /** Window used by the stuck guard: walking this long without ... */
+  readonly stuckWindowMs: number;
+  /** ... covering this many tiles counts as stuck. */
+  readonly stuckDistanceTiles: number;
+  /** How long a stuck enemy follows a detour direction before trying the field again, ms. */
+  readonly detourMs: number;
 }
 
 /**
@@ -315,6 +335,13 @@ const ROLE_FIELDS = [
 ] as const;
 
 const FEEL_FIELDS = ['shake', 'squash', 'damageNumbers', 'coin', 'muzzle', 'vfx'] as const;
+
+const NAVIGATION_FIELDS = [
+  'rebuildMinMs',
+  'stuckWindowMs',
+  'stuckDistanceTiles',
+  'detourMs',
+] as const;
 
 const SHAKE_FIELDS = [
   'maxOffsetTiles',
@@ -773,6 +800,27 @@ function parseEnemies(
   };
 }
 
+function zeroNavigation(): NavigationTuning {
+  return { rebuildMinMs: 0, stuckWindowMs: 0, stuckDistanceTiles: 0, detourMs: 0 };
+}
+
+function parseNavigation(
+  raw: Record<string, unknown>,
+  problems: ProblemList,
+): NavigationTuning {
+  const source = readObject(raw, 'navigation', '', problems, NAVIGATION_FIELDS);
+  if (source === undefined) return zeroNavigation();
+
+  const path = 'navigation';
+  return {
+    rebuildMinMs: readNumber(source, 'rebuildMinMs', path, problems) ?? 0,
+    stuckWindowMs:
+      readNumber(source, 'stuckWindowMs', path, problems, { positive: true }) ?? 1,
+    stuckDistanceTiles: readNumber(source, 'stuckDistanceTiles', path, problems) ?? 0,
+    detourMs: readNumber(source, 'detourMs', path, problems) ?? 0,
+  };
+}
+
 /**
  * Trauma is a 0..1 ratio: > 1 makes the offset exceed the declared amplitude, which is hard
  * to reason about while tuning. Going over is reported and clamped to 1.
@@ -968,6 +1016,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     combat: parseCombat(raw, problems),
     chapters: parseChapters(raw, problems),
     enemies: parseEnemies(raw, problems),
+    navigation: parseNavigation(raw, problems),
     feel: parseFeel(raw, problems),
   };
 
