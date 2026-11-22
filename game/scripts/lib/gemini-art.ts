@@ -337,6 +337,14 @@ function parseAsset(value: unknown, index: number): AssetSpec {
   }
   const gripRaw = field('grip');
   const grip = gripRaw === undefined ? undefined : pointMap(gripRaw, `${key}.grip`);
+  const gripMarkerRaw = field('gripMarker');
+  let gripMarker: Rgb | undefined;
+  if (gripMarkerRaw !== undefined) {
+    if (typeof gripMarkerRaw !== 'string' || !HEX_COLOUR.test(gripMarkerRaw)) {
+      throw new Error(`${key}.gripMarker must be "#rrggbb"`);
+    }
+    gripMarker = hexToRgb(gripMarkerRaw);
+  }
   const behindRaw = field('behind');
   let behind: readonly string[] | undefined;
   if (behindRaw !== undefined) {
@@ -411,6 +419,7 @@ function parseAsset(value: unknown, index: number): AssetSpec {
     ...(slice === undefined ? {} : { nineSlice: slice }),
     ...(slotRaw === undefined ? {} : { slot: slotRaw as AttachSlot }),
     ...(grip === undefined ? {} : { grip }),
+    ...(gripMarker === undefined ? {} : { gripMarker }),
     ...(behind === undefined ? {} : { behind }),
     ...(attach === undefined ? {} : { attach }),
     ...(tsx === undefined ? {} : { tsx }),
@@ -1102,19 +1111,28 @@ export function footPxFor(anchor: 'feet' | 'center', image: PngImage, frameHeigh
   return image.height;
 }
 
+/** Shared crop window and scale of one `share` group, in source-cell pixels. */
+interface FitPlan {
+  readonly region: Box;
+  readonly scale: number;
+  readonly fitWidth: number;
+  readonly fitHeight: number;
+}
+
+interface Fitting {
+  readonly cellWidth: number;
+  readonly cellHeight: number;
+  readonly cells: readonly Cell[];
+  readonly groupOf: (row: number, column: number) => number;
+  readonly plans: ReadonlyMap<number, FitPlan>;
+}
+
 /**
- * Fit every cell of a source grid into output frames.
- *
- * `share` decides which cells union their crop window (and therefore share one scale):
- * - `column`: every frame of a direction column (today's character/monster behaviour),
- * - `sheet`: every cell of the sheet (an effect strip keeps its motion between frames),
- * - `cell`: each cell alone (icons each fill their own frame).
- *
- * `anchor: 'center'` centres the shared window in the frame; `'feet'` puts each frame's
- * own feet on the cell floor, exactly like `fitColumnsToCells`.
+ * The crop/scale decisions `fitCells` makes, shared with `fitPoint` so a source point maps
+ * to the pixel the fitted sheet actually shows.
  */
-export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
-  const { columns, rows, frameWidth, frameHeight, anchor, share, weights } = options;
+function planFitting(image: PngImage, options: FitCellsOptions): Fitting {
+  const { columns, rows, frameWidth, frameHeight, anchor, share } = options;
   for (const [label, value] of [
     ['columns', columns],
     ['rows', rows],
@@ -1160,7 +1178,7 @@ export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
 
   const [boxWidth, boxHeight] =
     options.fitBox ?? (anchor === 'feet' ? [frameWidth - 1, frameHeight - 1] : [frameWidth, frameHeight]);
-  const plans = new Map<number, { region: Box; scale: number; fitWidth: number; fitHeight: number }>();
+  const plans = new Map<number, FitPlan>();
   for (const [group, region] of regions) {
     if (region === null) continue;
     const regionWidth = region.x1 - region.x0;
@@ -1174,6 +1192,27 @@ export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
       fitHeight: Math.min(frameHeight, Math.max(1, Math.round(regionHeight * scale))),
     });
   }
+  return { cellWidth, cellHeight, cells, groupOf, plans };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Fit every cell of a source grid into output frames.
+ *
+ * `share` decides which cells union their crop window (and therefore share one scale):
+ * - `column`: every frame of a direction column (today's character/monster behaviour),
+ * - `sheet`: every cell of the sheet (an effect strip keeps its motion between frames),
+ * - `cell`: each cell alone (icons each fill their own frame).
+ *
+ * `anchor: 'center'` centres the shared window in the frame; `'feet'` puts each frame's
+ * own feet on the cell floor, exactly like `fitColumnsToCells`.
+ */
+export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
+  const { columns, rows, frameWidth, frameHeight, anchor, weights } = options;
+  const { cells, groupOf, plans } = planFitting(image, options);
 
   const outWidth = frameWidth * columns;
   const data = Buffer.alloc(outWidth * frameHeight * rows * 4);
@@ -1373,34 +1412,277 @@ export function frameBob(image: PngImage, columns: number, rows: number, frameWi
   return result;
 }
 
-// Ticket #22 stubs — to be implemented.
+// ---- Ticket #22: resolution warning and grip markers. ----
 
-/** Size in source pixels of the pixel blocks the image was drawn with. */
-export function nativeBlockSize(_image: PngImage): number {
-  return 0;
+/** Block sizes Gemini draws pixel art with. Largest first: a 16 px block is also a valid 8 px grid. */
+const NATIVE_BLOCK_SIZES = [32, 16, 8] as const;
+
+/** Packed colour of a pixel, or -1 when it is transparent. */
+function packedPixel(image: PngImage, x: number, y: number): number {
+  const index = (y * image.width + x) * 4;
+  if (image.data[index + 3]! < 128) return -1;
+  return (image.data[index]! << 16) | (image.data[index + 1]! << 8) | image.data[index + 2]!;
 }
 
-/** One `resolution` issue per direction column whose sprite has far more native blocks than its fitted height. */
+/**
+ * Positions (x for `x`, y for `y`) where the colour changes between adjacent pixels. Pixel
+ * art drawn with b×b blocks only changes at multiples of b, plus the 1 px seam Gemini's
+ * downscaled edges leave on the far side of a block boundary.
+ */
+function transitionPositions(image: PngImage, axis: 'x' | 'y'): number[] {
+  const found = new Set<number>();
+  if (axis === 'x') {
+    for (let y = 0; y < image.height; y += 1) {
+      for (let x = 1; x < image.width; x += 1) {
+        if (packedPixel(image, x - 1, y) !== packedPixel(image, x, y)) found.add(x);
+      }
+    }
+  } else {
+    for (let y = 1; y < image.height; y += 1) {
+      for (let x = 0; x < image.width; x += 1) {
+        if (packedPixel(image, x, y - 1) !== packedPixel(image, x, y)) found.add(y);
+      }
+    }
+  }
+  return Array.from(found);
+}
+
+/** Every transition lands on a multiple of `block`, or one pixel after it (a 1 px seam). */
+function alignsToBlocks(positions: readonly number[], block: number): boolean {
+  if (positions.length < 4) return false;
+  const residues = new Set(positions.map((position) => position % block));
+  for (const base of residues) {
+    let fits = true;
+    for (const residue of residues) {
+      if (residue !== base && residue !== (base + 1) % block) {
+        fits = false;
+        break;
+      }
+    }
+    if (fits) return true;
+  }
+  return false;
+}
+
+/**
+ * Size in source pixels of the pixel blocks the image was drawn with.
+ *
+ * A block size and its divisors both explain a purely block-aligned image, so the largest
+ * matching size wins: art drawn with 16 px blocks is not "8 px art". Smooth (not blocky) art
+ * has no block grid at all and returns 1.
+ */
+export function nativeBlockSize(image: PngImage): number {
+  const xs = transitionPositions(image, 'x');
+  const ys = transitionPositions(image, 'y');
+  for (const block of NATIVE_BLOCK_SIZES) {
+    if (alignsToBlocks(xs, block) && alignsToBlocks(ys, block)) return block;
+  }
+  return 1;
+}
+
+/**
+ * One `resolution` issue per direction column whose sprite has far more native blocks than
+ * its fitted height: below one block per output pixel, 1-block details such as eyes vanish
+ * in the downscale. Warns, never blocks — the caller prints it and stages anyway.
+ */
 export function resolutionIssues(
-  _image: PngImage,
-  _columns: number,
-  _rows: number,
-  _fitBox: readonly [number, number],
+  image: PngImage,
+  columns: number,
+  rows: number,
+  fitBox: readonly [number, number],
 ): SheetIssue[] {
-  return [];
+  const blockSize = nativeBlockSize(image);
+  const cellWidth = Math.floor(image.width / columns);
+  const cellHeight = Math.floor(image.height / rows);
+  const issues: SheetIssue[] = [];
+  for (let column = 0; column < columns; column += 1) {
+    let region: Box | null = null;
+    for (let row = 0; row < rows; row += 1) {
+      const box: Box = {
+        x0: column * cellWidth,
+        y0: row * cellHeight,
+        x1: (column + 1) * cellWidth,
+        y1: (row + 1) * cellHeight,
+      };
+      const found = opaqueBox(image, box);
+      region = unionBox(
+        region,
+        found === null
+          ? null
+          : { x0: found.x0 - box.x0, y0: found.y0 - box.y0, x1: found.x1 - box.x0, y1: found.y1 - box.y0 },
+      );
+    }
+    if (region === null) continue;
+    const regionWidth = region.x1 - region.x0;
+    const regionHeight = region.y1 - region.y0;
+    if (regionWidth <= 0 || regionHeight <= 0) continue;
+    const scale = Math.min(fitBox[0] / regionWidth, fitBox[1] / regionHeight);
+    const fittedHeight = Math.round(regionHeight * scale);
+    const blocksTall = Math.round(regionHeight / blockSize);
+    if (blocksTall > fittedHeight * 1.5) {
+      issues.push({
+        kind: 'resolution',
+        column,
+        row: 0,
+        detail: `drawn ${blocksTall} blocks tall, staged ${fittedHeight} px — 1-block details (eyes) will be lost; ask for fewer, larger blocks`,
+      });
+    }
+  }
+  return issues;
 }
 
-/** Remove marker-coloured pixels; per cell (row-major), the marker centre in source pixels or null. */
+/** RGB euclidean distance under which a pixel counts as the grip marker (Gemini's shades drift). */
+const MARKER_TOLERANCE = 60;
+/** How far around a marker pixel the replacement colour is searched. */
+const MARKER_RING = 2;
+
+/**
+ * Remove the grip marker Gemini painted on an attachment and read where it was.
+ *
+ * Marker pixels take the most common opaque, non-marker colour in the ring around them —
+ * that restores the item's own colour where the marker covered it — or vanish when only the
+ * keyed backdrop surrounds them. A marker larger than the ring inherits from its edge, so a
+ * whole block is removed without leaving a hole. `centres` is per cell in row-major order,
+ * in absolute source pixels (pixel (x, y) has centre (x + 0.5, y + 0.5)), or null.
+ */
 export function removeMarker(
   image: PngImage,
-  _marker: Rgb,
-  _columns: number,
-  _rows: number,
+  marker: Rgb,
+  columns: number,
+  rows: number,
 ): { readonly image: PngImage; readonly centres: Array<readonly [number, number] | null> } {
-  return { image, centres: [] };
+  const { width, height } = image;
+  const cellWidth = Math.floor(width / columns);
+  const cellHeight = Math.floor(height / rows);
+  const limit = MARKER_TOLERANCE * MARKER_TOLERANCE;
+  const isMarker = (x: number, y: number): boolean => {
+    const index = (y * width + x) * 4;
+    if (image.data[index + 3]! < 128) return false;
+    const dr = image.data[index]! - marker[0];
+    const dg = image.data[index + 1]! - marker[1];
+    const db = image.data[index + 2]! - marker[2];
+    return dr * dr + dg * dg + db * db <= limit;
+  };
+
+  const flagged = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (isMarker(x, y)) flagged[y * width + x] = 1;
+    }
+  }
+
+  const centres: Array<readonly [number, number] | null> = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      let count = 0;
+      let sumX = 0;
+      let sumY = 0;
+      for (let y = row * cellHeight; y < (row + 1) * cellHeight; y += 1) {
+        for (let x = column * cellWidth; x < (column + 1) * cellWidth; x += 1) {
+          if (flagged[y * width + x] !== 1) continue;
+          count += 1;
+          sumX += x + 0.5;
+          sumY += y + 0.5;
+        }
+      }
+      centres.push(count === 0 ? null : [sumX / count, sumY / count]);
+    }
+  }
+
+  const data = Buffer.from(image.data);
+  const resolved = new Uint8Array(width * height);
+  const queue: number[] = [];
+  const replace = (index: number, colour: number): void => {
+    data[index * 4] = (colour >> 16) & 0xff;
+    data[index * 4 + 1] = (colour >> 8) & 0xff;
+    data[index * 4 + 2] = colour & 0xff;
+    data[index * 4 + 3] = 255;
+  };
+
+  // First pass: each marker pixel that can see the item takes the ring's most common colour.
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      if (flagged[index] !== 1) continue;
+      const counts = new Map<number, number>();
+      for (let dy = -MARKER_RING; dy <= MARKER_RING; dy += 1) {
+        for (let dx = -MARKER_RING; dx <= MARKER_RING; dx += 1) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const neighbour = ny * width + nx;
+          if (flagged[neighbour] === 1) continue;
+          const from = neighbour * 4;
+          if (image.data[from + 3]! < 128) continue;
+          const packed = (image.data[from]! << 16) | (image.data[from + 1]! << 8) | image.data[from + 2]!;
+          counts.set(packed, (counts.get(packed) ?? 0) + 1);
+        }
+      }
+      if (counts.size === 0) continue;
+      let best = 0;
+      let bestCount = -1;
+      for (const [packed, count] of counts) {
+        if (count > bestCount || (count === bestCount && packed < best)) {
+          best = packed;
+          bestCount = count;
+        }
+      }
+      replace(index, best);
+      resolved[index] = 1;
+      queue.push(index);
+    }
+  }
+
+  // Second pass: a marker plate wider than the ring inherits from its resolved edge.
+  for (let head = 0; head < queue.length; head += 1) {
+    const pixel = queue[head]!;
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    const colour = (data[pixel * 4]! << 16) | (data[pixel * 4 + 1]! << 8) | data[pixel * 4 + 2]!;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbour = ny * width + nx;
+        if (flagged[neighbour] !== 1 || resolved[neighbour] === 1) continue;
+        replace(neighbour, colour);
+        resolved[neighbour] = 1;
+        queue.push(neighbour);
+      }
+    }
+  }
+
+  // Whatever is left sat on the backdrop: remove it.
+  for (let index = 0; index < flagged.length; index += 1) {
+    if (flagged[index] === 1 && resolved[index] === 0) data.fill(0, index * 4, index * 4 + 4);
+  }
+
+  return { image: { width, height, data }, centres };
 }
 
-/** Map a source point to the frame-local output pixel `fitCells` puts it in. */
-export function fitPoint(_image: PngImage, _options: FitCellsOptions, _point: readonly [number, number]): Point {
-  return [-1, -1];
+/**
+ * Map a source point to the frame-local output pixel `fitCells` puts it in: same cell
+ * lookup, shared region, scale and placement, floored and clamped inside the frame.
+ * Staging uses it to turn a marker centre into an attachment grip.
+ */
+export function fitPoint(image: PngImage, options: FitCellsOptions, point: readonly [number, number]): Point {
+  const { columns, rows, frameWidth, frameHeight, anchor } = options;
+  const { cellWidth, cellHeight, cells, groupOf, plans } = planFitting(image, options);
+  const column = clamp(Math.floor(point[0] / cellWidth), 0, columns - 1);
+  const row = clamp(Math.floor(point[1] / cellHeight), 0, rows - 1);
+  const cell = cells[row * columns + column]!;
+  const plan = plans.get(groupOf(row, column));
+  const middle: Point = [Math.floor(frameWidth / 2), Math.floor(frameHeight / 2)];
+  if (plan === undefined || cell.local === null) return middle;
+  const { region, scale, fitWidth, fitHeight } = plan;
+  const left = Math.floor((frameWidth - fitWidth) / 2);
+  const top =
+    anchor === 'feet'
+      ? Math.max(0, frameHeight - Math.round((cell.local.y1 - region.y0) * scale))
+      : Math.floor((frameHeight - fitHeight) / 2);
+  return [
+    clamp(left + Math.floor((point[0] - (cell.box.x0 + region.x0)) * scale), 0, frameWidth - 1),
+    clamp(top + Math.floor((point[1] - (cell.box.y0 + region.y0)) * scale), 0, frameHeight - 1),
+  ];
 }

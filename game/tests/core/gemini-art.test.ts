@@ -18,11 +18,13 @@ import {
   upscaleFactor,
   fitColumnsToCells,
   fitCells,
+  fitPoint,
   footPxFor,
   inspectCells,
   limitColors,
   mirrorColumn,
   kindDefaults,
+  removeMarker,
   type AssetSpec,
   type Rgb,
 } from '../../scripts/lib/gemini-art';
@@ -529,5 +531,54 @@ describe('#20 footPxFor', () => {
 
   it('returns the frame height for a fully transparent feet sheet', () => {
     expect(footPxFor('feet', image(new Array<Pixel>(9).fill(CLEAR), 3, 3), 3)).toBe(3);
+  });
+});
+
+describe('#22 fitPoint', () => {
+  it('agrees with fitCells for the feet anchor and clamps points outside the sprite', () => {
+    const red: Pixel = [200, 0, 0, 255];
+    const pixels: Pixel[] = new Array<Pixel>(16 * 16).fill(CLEAR);
+    for (let y = 5; y < 14; y += 1) for (let x = 2; x < 13; x += 1) pixels[y * 16 + x] = red;
+    const sheet = image(pixels, 16, 16);
+    const options = {
+      columns: 1,
+      rows: 1,
+      frameWidth: 16,
+      frameHeight: 16,
+      anchor: 'feet' as const,
+      share: 'cell' as const,
+    };
+    const out = fitCells(sheet, options);
+
+    // Every source pixel of the sprite maps to an opaque pixel of the fitted sheet.
+    for (const [x, y] of [
+      [2, 5],
+      [7, 9],
+      [12, 13],
+    ] as const) {
+      const [px, py] = fitPoint(sheet, options, [x + 0.5, y + 0.5]);
+      expect(out.data[(py * 16 + px) * 4 + 3]).toBe(255);
+    }
+    expect(fitPoint(sheet, options, [-30, -30])).toEqual([0, 0]);
+    expect(fitPoint(sheet, options, [99, 99])).toEqual([15, 15]);
+  });
+});
+
+describe('#22 removeMarker', () => {
+  it('matches a slightly off shade and fills a plate wider than the search ring', () => {
+    const blue: Pixel = [0, 0, 200, 255];
+    const nearCyan: Pixel = [12, 240, 245, 255];
+    const pixels: Pixel[] = new Array<Pixel>(64 * 64).fill(CLEAR);
+    for (let y = 8; y < 56; y += 1) for (let x = 8; x < 56; x += 1) pixels[y * 64 + x] = blue;
+    for (let y = 28; y < 36; y += 1) for (let x = 28; x < 36; x += 1) pixels[y * 64 + x] = nearCyan;
+
+    const { image: cleaned, centres } = removeMarker(image(pixels, 64, 64), [0, 255, 255], 1, 1);
+
+    expect(centres[0]).toEqual([32, 32]);
+    for (let y = 28; y < 36; y += 1) {
+      for (let x = 28; x < 36; x += 1) {
+        expect(Array.from(cleaned.data.subarray((y * 64 + x) * 4, (y * 64 + x) * 4 + 4))).toEqual([...blue]);
+      }
+    }
   });
 });
