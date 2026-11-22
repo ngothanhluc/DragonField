@@ -1430,6 +1430,8 @@ function bestAlignOffset(
   scale: number,
   frameWidth: number,
   frameHeight: number,
+  allowX: boolean,
+  allowY: boolean,
 ): readonly [number, number] {
   const span = Math.max(1, Math.ceil(1 / scale));
   const totals = new Float64Array(span * span);
@@ -1437,7 +1439,10 @@ function bestAlignOffset(
     if (cell.local === null) continue;
     const counts = alignCounts(image, cell.box);
     for (let oy = 0; oy < span; oy += 1) {
+      // An axis with no room for the extra block keeps offset 0.
+      if (oy > 0 && !allowY) continue;
       for (let ox = 0; ox < span; ox += 1) {
+        if (ox > 0 && !allowX) continue;
         totals[oy * span + ox]! += alignCellScore(counts, region, scale, frameWidth, frameHeight, ox, oy);
       }
     }
@@ -1532,8 +1537,21 @@ function planFitting(image: PngImage, options: FitCellsOptions): Fitting {
       continue;
     }
     // The window grows by the offset it starts before the region, so it always covers the
-    // whole region; the extra block is what makes up the sub-pixel shift.
-    const offset = bestAlignOffset(image, members.get(group) ?? [], region, scale, frameWidth, frameHeight);
+    // whole region; the extra block is what makes up the sub-pixel shift. An axis whose piece
+    // already fills the frame has no room for that extra block, so it keeps offset 0: shifting
+    // it would push the art one pixel past the frame and clip its edge.
+    const fittedWidth = Math.min(frameWidth, Math.max(1, Math.ceil(regionWidth * scale)));
+    const fittedHeight = Math.min(frameHeight, Math.max(1, Math.ceil(regionHeight * scale)));
+    const offset = bestAlignOffset(
+      image,
+      members.get(group) ?? [],
+      region,
+      scale,
+      frameWidth,
+      frameHeight,
+      fittedWidth + 1 <= frameWidth,
+      fittedHeight + 1 <= frameHeight,
+    );
     plans.set(group, {
       region,
       scale,

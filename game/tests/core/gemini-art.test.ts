@@ -607,6 +607,71 @@ describe('#24 align', () => {
   });
 });
 
+describe('#29 align leaves a full-frame axis still', () => {
+  const OUTLINE: Pixel = [20, 27, 27, 255];
+  const A: Pixel = [45, 105, 123, 255];
+  const B: Pixel = [184, 220, 229, 255];
+  const FRAME: FitCellsOptions = {
+    columns: 1,
+    rows: 1,
+    frameWidth: 16,
+    frameHeight: 16,
+    anchor: 'center',
+    share: 'cell',
+    fitBox: [16, 16],
+    align: true,
+  };
+
+  /**
+   * A 240 × 180 piece in a 260 × 200 cell: a 10 px outline ring around 15 px stripes that start
+   * 5 px off the output grid. Its fitted width is the 16 px frame, so a non-zero offset would
+   * push the right outline out of the frame; its height is smaller, so that axis may still shift.
+   */
+  function banner(): PngImage {
+    const pixels: Pixel[] = new Array<Pixel>(260 * 200).fill(CLEAR);
+    for (let y = 10; y < 190; y += 1) {
+      for (let x = 10; x < 250; x += 1) {
+        const edge = x < 20 || x >= 240 || y < 20 || y >= 180;
+        const stripe = Math.floor((x + 10) / 15) % 2 === Math.floor((y + 10) / 15) % 2;
+        pixels[y * 260 + x] = edge ? OUTLINE : stripe ? A : B;
+      }
+    }
+    return image(pixels, 260, 200);
+  }
+
+  /** Whether every opaque row of the piece ends on the outline at the frame's right edge. */
+  function rightEdgeIsOutline(sheet: PngImage): boolean {
+    let rows = 0;
+    for (let y = 0; y < 16; y += 1) {
+      for (let x = 15; x >= 0; x -= 1) {
+        const from = (y * 16 + x) * 4;
+        if (sheet.data[from + 3] === 0) continue;
+        rows += 1;
+        if (
+          sheet.data[from] !== OUTLINE[0] ||
+          sheet.data[from + 1] !== OUTLINE[1] ||
+          sheet.data[from + 2] !== OUTLINE[2]
+        ) {
+          return false;
+        }
+        break;
+      }
+    }
+    return rows > 0;
+  }
+
+  it('keeps the outline on the frame edge its axis fills', () => {
+    expect(rightEdgeIsOutline(fitCells(banner(), FRAME))).toBe(true);
+  });
+
+  it('still shifts the axis that has room, so it is not the unaligned fit', () => {
+    const source = banner();
+    const aligned = fitCells(source, FRAME);
+    const plain = fitCells(source, { ...FRAME, align: false });
+    expect(Buffer.compare(aligned.data, plain.data)).not.toBe(0);
+  });
+});
+
 describe('#27 keepDetails', () => {
   const GREEN: Pixel = [40, 140, 60, 255];
   const RED: Pixel = [200, 30, 40, 255];
