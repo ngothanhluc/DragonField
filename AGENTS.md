@@ -84,7 +84,7 @@ committed — to ship a new build, build with the editor then:
 ```bash
 cd game
 bun run check
-bun run deploy:prepare   # build/web-desktop → deploy/ + patch index.html, icons, OG, _headers; aborts if > 15 MB
+bun run deploy:prepare   # build/web-desktop → deploy/ + patch index.html, icons, OG, _headers; aborts if a file > 25 MiB
 git add deploy && git commit -m "chore(deploy): ..." && git push   # Cloudflare deploys
 # bun run deploy = check + deploy:prepare + wrangler deploy from your machine (needs `bunx wrangler login`)
 ```

@@ -1,7 +1,8 @@
 /**
  * `bun run deploy:prepare` — copy `build/web-desktop` (built by the editor) into `deploy/`,
- * patch `index.html`, add the files in `web/` (icon, OG, `_headers`) and check the M7 budget.
- * (< 15 MB) + Cloudflare static assets (≤ 25 MiB/file, ≤ 20 000 file).
+ * patch `index.html`, add the files in `web/` (icon, OG, `_headers`) and check the Cloudflare
+ * static assets gates (≤ 25 MiB/file, ≤ 20 000 files). ADR-017 dropped the old 15 MB total cap:
+ * the budget is fps, not MB — the total is printed, not enforced.
  */
 import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -13,7 +14,6 @@ const BUILD = join(ROOT, 'build', 'web-desktop');
 const WEB = join(ROOT, 'web');
 const OUT = join(ROOT, 'deploy');
 
-const BUDGET_BYTES = 15 * 1024 * 1024;
 const CF_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const CF_FILE_COUNT_LIMIT = 20_000;
 
@@ -52,7 +52,6 @@ const total = sizes.reduce((sum, file) => sum + file.bytes, 0);
 const largest = sizes.reduce((max, file) => (file.bytes > max.bytes ? file : max));
 
 const problems: string[] = [];
-if (total > BUDGET_BYTES) problems.push(`total ${(total / 1048576).toFixed(1)} MB > 15 MB`);
 if (largest.bytes > CF_FILE_LIMIT_BYTES) problems.push(`${relative(OUT, largest.path)} > 25 MiB`);
 if (files.length > CF_FILE_COUNT_LIMIT) problems.push(`${files.length} file > 20 000`);
 if (!existsSync(join(OUT, 'og.png'))) problems.push('missing web/og.png');
