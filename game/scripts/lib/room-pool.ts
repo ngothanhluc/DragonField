@@ -9,8 +9,8 @@
  *
  * Room anatomy (a normal room is 4×4 screens of 32×18 tiles):
  * - **Floor**: one uniform grass/sand gid, as before (`FLOOR_GID`).
- * - **Decor** (walkable tiles): grass/flower clusters (ch1/ch2) or whole VillageAbandoned blocks
- *   plus flat singles (ch3). Never on an obstacle, spawn, door or the player start.
+ * - **Decor** (walkable tiles): grass/flower clusters (ch1/ch2), whole VillageAbandoned blocks
+ *   plus flat singles (ch3) or sand cracks (ch4). Never on an obstacle, spawn, door or start.
  * - **Obstacles/props**: 1–3 solid props per screen from the #35 catalogue, plus an authored
  *   pillar/pit/wall in about half of the screens. Blobs are never closer than `MIN_OBSTACLE_GAP`
  *   tiles edge to edge, so the room always stays a field of cover to dodge behind, never a maze.
@@ -66,6 +66,8 @@ const TS = {
   house: { source: 'house.tsx', name: 'house', count: 759 },
   towers: { source: 'towers.tsx', name: 'towers', count: 144 },
   hole: { source: 'hole.tsx', name: 'hole', count: 55 },
+  desert: { source: 'desert.tsx', name: 'desert', count: 240 },
+  camp: { source: 'camp.tsx', name: 'camp', count: 207 },
 } as const satisfies Record<string, TilesetDef>;
 
 /** Tilesets of a chapter, in `firstgid` order (the same sets the hand-dressed rooms used). */
@@ -73,10 +75,12 @@ const CHAPTER_SETS: Readonly<Record<number, readonly TilesetDef[]>> = {
   1: [TS.field, TS.nature, TS.relief, TS.element],
   2: [TS.field, TS.water, TS.nature],
   3: [TS.ground, TS.village, TS.house, TS.towers, TS.hole],
+  // Chapter 4 — desert (#45): the desert village tileset (floor + houses + palms) and camp props.
+  4: [TS.desert, TS.camp],
 };
 
 /** Uniform background per chapter: moss green (field) / village sand (desert). */
-const FLOOR_GID: Readonly<Record<number, number>> = { 1: 37, 2: 37, 3: 176 };
+const FLOOR_GID: Readonly<Record<number, number>> = { 1: 37, 2: 37, 3: 176, 4: 176 };
 
 /** Global id of 1-based local tile `local` inside tileset `name` of `chapter`. */
 export function gid(chapter: number, name: string, local: number): number {
@@ -180,6 +184,15 @@ const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
     ],
     walkOvers: WALK_OVER_KEYS,
   },
+  // Chapter 4 — desert: camp tents / adobe houses as landmarks, palms, bones and camp furniture.
+  4: {
+    landmarks: ['camp-tent', 'camp-tent-open', 'desert-house', 'desert-tower'],
+    solids: [
+      'palm-cluster', 'palm-cluster-dusty', 'desert-skull', 'camp-well', 'camp-table', 'camp-bench',
+      'camp-signpost', 'camp-barrel', 'logs', 'rock-boulder-gray', 'tree-dead', 'stump-big',
+    ],
+    walkOvers: [...WALK_OVER_KEYS, 'desert-fish-bones', 'desert-shell', 'desert-potted-palm'],
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -207,7 +220,24 @@ function roles(...list: readonly string[]): readonly SpawnEntry[] {
 /**
  * Waves per chapter and **template** index (1..8): ch1 3–4 per wave, ch2 5–6 per room, ch3 7–8
  * per room with elites from the fourth room, exactly the numbers the hand-dressed rooms had.
+ *
+ * Chapter 4 is the ×8 scale (GDD §13.2: 64–72 per room): 64 in 8 waves of 8, so at most 8 are
+ * alive at once (the cap is 24) and a headless god-mode run of all 8 rooms still finishes well
+ * inside the acceptance timeout. Each template cycles a different roster (every role, sniper and
+ * splitter included); elites start in the fourth room, as in chapter 3.
  */
+function chapterFourTemplate(
+  roster: readonly SpawnRole[],
+  eliteWaves = 0,
+): readonly (readonly SpawnEntry[])[] {
+  return Array.from({ length: 8 }, (_unused, wave) =>
+    Array.from({ length: 8 }, (_entry, index): SpawnEntry => ({
+      role: roster[(wave + index) % roster.length] as SpawnRole,
+      elite: eliteWaves > 0 && wave >= 8 - eliteWaves && index === 0,
+    })),
+  );
+}
+
 const SPAWN_TEMPLATES: Readonly<Record<number, readonly (readonly (readonly SpawnEntry[])[])[]>> = {
   1: [
     [roles('chaser', 'chaser', 'caster'), roles('chaser', 'chaser', 'chaser'), roles('chaser', 'caster', 'caster')],
@@ -238,6 +268,16 @@ const SPAWN_TEMPLATES: Readonly<Record<number, readonly (readonly (readonly Spaw
     [roles('tank', 'caster'), roles('chaser', 'tank'), roles('caster', 'chaser', 'chaser', 'chaser*')],
     [roles('chaser', 'caster'), roles('tank', 'chaser'), roles('caster', 'tank', 'chaser', 'caster*')],
     [roles('chaser', 'caster'), roles('tank', 'chaser'), roles('caster', 'tank', 'chaser', 'tank')],
+  ],
+  4: [
+    chapterFourTemplate(['chaser', 'chaser', 'caster', 'splitter', 'chaser', 'tank', 'chaser', 'sniper']),
+    chapterFourTemplate(['chaser', 'caster', 'chaser', 'tank', 'splitter', 'chaser', 'sniper', 'chaser']),
+    chapterFourTemplate(['tank', 'chaser', 'caster', 'chaser', 'splitter', 'chaser', 'sniper', 'caster']),
+    chapterFourTemplate(['chaser', 'caster', 'splitter', 'chaser', 'tank', 'sniper', 'chaser', 'chaser'], 1),
+    chapterFourTemplate(['caster', 'chaser', 'tank', 'splitter', 'chaser', 'sniper', 'caster', 'chaser'], 2),
+    chapterFourTemplate(['chaser', 'tank', 'chaser', 'caster', 'sniper', 'chaser', 'splitter', 'chaser'], 3),
+    chapterFourTemplate(['splitter', 'chaser', 'caster', 'tank', 'chaser', 'sniper', 'chaser', 'caster'], 4),
+    chapterFourTemplate(['chaser', 'caster', 'tank', 'chaser', 'sniper', 'splitter', 'caster', 'chaser'], 5),
   ],
 };
 
@@ -498,6 +538,14 @@ const AUTHORED_SHAPES: Readonly<Record<number, readonly { kind: Exclude<Obstacle
     { kind: 'wall', width: 3, height: 1 },
     { kind: 'wall', width: 1, height: 3 },
   ],
+  // Chapter 4 — desert: boulders and broken walls on sand, holes are 2×2 like ch1/ch2.
+  4: [
+    { kind: 'pillar', width: 2, height: 2 },
+    { kind: 'pillar', width: 1, height: 1 },
+    { kind: 'pit', width: 2, height: 2 },
+    { kind: 'wall', width: 3, height: 1 },
+    { kind: 'wall', width: 1, height: 3 },
+  ],
 };
 
 interface GeometryResult {
@@ -635,16 +683,28 @@ function planSpawns(
   if (waves === undefined) throw new Error(`chapter ${chapter} has no spawn template for room ${room}`);
 
   const startScreen = screenOf(playerStart);
+  // Chapter 4 spawns 64 enemies per room: they do not fit the 7–9.5 tile annulus an 8-enemy room
+  // uses, so they spread over all 16 screens. Everyone stays at least `SPAWN_MIN_DISTANCE` (7)
+  // from the player — GDD fairness asks for ≥ 6 — and may stand anywhere farther; a caster with
+  // no line of sight repositions (GDD §4), so no LOS requirement is placed on a wide room.
+  const spreadRoom = chapter === 4;
+  const allScreens: { sx: number; sy: number }[] = [];
+  for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
+    for (let sx = 0; sx < ROOM_SCREENS; sx += 1) allScreens.push({ sx, sy });
+  }
   // The 2×2 block of screens around the start, preferring the side with room in the room.
   const baseSx = Math.min(ROOM_SCREENS - 2, Math.max(0, startScreen.sx - 1));
   const baseSy = Math.min(ROOM_SCREENS - 2, Math.max(0, startScreen.sy - 1));
-  const screens = [
-    { sx: startScreen.sx, sy: startScreen.sy },
-    { sx: baseSx, sy: baseSy },
-    { sx: baseSx + 1, sy: baseSy },
-    { sx: baseSx, sy: baseSy + 1 },
-    { sx: baseSx + 1, sy: baseSy + 1 },
-  ].filter(
+  const screens = (spreadRoom
+    ? allScreens
+    : [
+        { sx: startScreen.sx, sy: startScreen.sy },
+        { sx: baseSx, sy: baseSy },
+        { sx: baseSx + 1, sy: baseSy },
+        { sx: baseSx, sy: baseSy + 1 },
+        { sx: baseSx + 1, sy: baseSy + 1 },
+      ]
+  ).filter(
     (screen, index, all) =>
       all.findIndex((other) => other.sx === screen.sx && other.sy === screen.sy) === index,
   );
@@ -666,8 +726,16 @@ function planSpawns(
 
   /** A free spawn point in one screen, >= the role's near distance and <= the far one. */
   const pointIn = (screen: { sx: number; sy: number }, role: SpawnRole): Vec2 | null => {
-    const near = role === 'caster' ? CASTER_MIN_DISTANCE : SPAWN_MIN_DISTANCE;
-    const far = role === 'caster' ? CASTER_MAX_DISTANCE : SPAWN_MAX_DISTANCE;
+    const near = spreadRoom
+      ? SPAWN_MIN_DISTANCE
+      : role === 'caster'
+        ? CASTER_MIN_DISTANCE
+        : SPAWN_MIN_DISTANCE;
+    const far = spreadRoom
+      ? Number.POSITIVE_INFINITY
+      : role === 'caster'
+        ? CASTER_MAX_DISTANCE
+        : SPAWN_MAX_DISTANCE;
     for (let attempt = 0; attempt < 80; attempt += 1) {
       const point = {
         x: screen.sx * SCREEN_COLS + 1 + rng() * (SCREEN_COLS - 2),
@@ -677,7 +745,7 @@ function planSpawns(
       if (toStart < near || toStart > far) continue;
       if (!free(point, 1.2)) continue;
       // A caster opens fire from its band, so it must see the player from where it stands.
-      if (role === 'caster' && !lineClear(point, playerStart, colliders)) continue;
+      if (!spreadRoom && role === 'caster' && !lineClear(point, playerStart, colliders)) continue;
       if (doors.some((door) => Math.hypot(point.x - door.x, point.y - door.y) < 2)) continue;
       if (placed.some((other) => Math.hypot(point.x - other.x, point.y - other.y) < 2)) continue;
       return { x: Math.round(point.x * 2) / 2, y: Math.round(point.y * 2) / 2 };
@@ -789,6 +857,8 @@ const VILLAGE_BLOCKS: readonly (readonly (readonly number[])[])[] = [
 
 const VILLAGE_FLAT_SINGLES: readonly number[] = [68, 88, 89, 91, 105, 106, 165, 166, 225, 226];
 const DESERT_FLAT_SINGLES: readonly number[] = [189, 190, 237, 238, 239, 240];
+/** `TilesetDesert` sand tiles with a crack/speck: walkable decor that reads on the plain floor. */
+const SAND_DETAIL_TILES: readonly number[] = [175, 177, 195, 197];
 const BORDER_VILLAGE_PROPS: readonly number[] = [148, 149, 227, 230, 231, 232, 233, 234, 235];
 const BORDER_DESERT_PROPS: readonly number[] = [215, 235, 227, 228];
 
@@ -858,7 +928,7 @@ function planDecor(
     used.add(cellKey(x, y));
   };
 
-  if (chapter !== 3) {
+  if (chapter === 1 || chapter === 2) {
     for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
       for (let sx = 0; sx < ROOM_SCREENS; sx += 1) {
         for (let cluster = 0; cluster < 7; cluster += 1) {
@@ -872,6 +942,20 @@ function planDecor(
             const list = roll < 0.6 ? GRASS_TILES : roll < 0.88 ? FLOWER_TILES : PEBBLE_TILES;
             set(tx, ty, gid(chapter, 'nature', pick(rng, list)));
           }
+        }
+      }
+    }
+    return data;
+  }
+
+  // Chapter 4: sparse sand cracks (the desert floor is already sand); decor never hides a prop.
+  if (chapter === 4) {
+    for (let sy = 0; sy < ROOM_SCREENS; sy += 1) {
+      for (let sx = 0; sx < ROOM_SCREENS; sx += 1) {
+        for (let step = 0; step < 3; step += 1) {
+          const x = sx * SCREEN_COLS + 1 + int(rng, SCREEN_COLS - 2);
+          const y = sy * SCREEN_ROWS + 1 + int(rng, SCREEN_ROWS - 2);
+          set(x, y, gid(4, 'desert', pick(rng, SAND_DETAIL_TILES)));
         }
       }
     }

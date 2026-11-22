@@ -157,7 +157,7 @@ describe('atmosphere.json — per-chapter config is data', () => {
 describe('Effects setting — Reduced turns off the secondary layers', () => {
   it('Full (the default) keeps every layer, animals and animated props', () => {
     const config = loadConfig();
-    for (const chapter of [1, 2, 3]) {
+    for (const chapter of [1, 2, 3, 4]) {
       const atmosphere = chapterOf(config, chapter);
       const visible = visibleAtmosphere(atmosphere, DEFAULT_SETTINGS.effects);
       expect(DEFAULT_SETTINGS.effects).toBe('full');

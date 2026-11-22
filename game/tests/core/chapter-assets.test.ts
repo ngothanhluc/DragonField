@@ -12,8 +12,8 @@ function loadChapter(chapter: number): ChapterData {
 }
 
 describe('chapter assets', () => {
-  it('all 3 chapters have a room pool (16 normal + boss last) per GDD §5/#38', () => {
-    for (const chapter of [1, 2, 3]) {
+  it('all 4 chapters have a room pool (16 normal + boss last) per GDD §5/#38, #45', () => {
+    for (const chapter of [1, 2, 3, 4]) {
       const rooms = loadChapter(chapter).rooms;
       const normal = rooms.filter((room) => !room.isBossRoom);
       expect(normal.length, `chapter ${chapter} normal rooms`).toBeGreaterThanOrEqual(15);
@@ -21,17 +21,17 @@ describe('chapter assets', () => {
       for (const room of normal) expect(room.size, room.id).toEqual({ cols: 128, rows: 72 });
     }
 
-    const bosses = [1, 2, 3].map((chapter) => {
+    const bosses = [1, 2, 3, 4].map((chapter) => {
       const rooms = loadChapter(chapter).rooms;
       const last = rooms[rooms.length - 1];
       expect(last?.isBossRoom, `chapter ${chapter} boss is last`).toBe(true);
       expect(last?.size, `chapter ${chapter} boss size`).toEqual({ cols: 32, rows: 18 });
       return last?.boss?.name;
     });
-    expect(bosses).toEqual(['TenguBlue', 'SquidGreen', 'GiantBlueSamurai']);
+    expect(bosses).toEqual(['TenguBlue', 'SquidGreen', 'GiantBlueSamurai', 'GiantRacoon']);
   });
 
-  it('chapter 1: 3–4 enemies/wave; chapter 2: 5–6/room; chapter 3: 7–8/room + elite', () => {
+  it('chapter 1: 3–4 enemies/wave; ch2: 5–6/room; ch3: 7–8/room + elite; ch4: 64–72/room', () => {
     const chapterOne = loadChapter(1);
     for (const room of chapterOne.rooms.filter((candidate) => !candidate.isBossRoom)) {
       for (const wave of room.waves) {
@@ -40,12 +40,12 @@ describe('chapter assets', () => {
       }
     }
 
-    for (const chapter of [2, 3]) {
+    for (const chapter of [2, 3, 4]) {
       const rooms = loadChapter(chapter).rooms.filter((room) => !room.isBossRoom);
       for (const room of rooms) {
-        // GDD §4 counts enemies per room for chapters 2–3; each room splits into 2–3 waves.
+        // GDD §4 counts enemies per room for chapters 2–4; ch4 is the ×8 scale (#45).
         const count = room.waves.reduce((total, wave) => total + wave.enemies.length, 0);
-        const range = chapter === 2 ? [5, 6] : [7, 8];
+        const range = chapter === 2 ? [5, 6] : chapter === 3 ? [7, 8] : [64, 72];
         expect(count, `chapter ${chapter} room ${room.room}`).toBeGreaterThanOrEqual(range[0] ?? 0);
         expect(count, `chapter ${chapter} room ${room.room}`).toBeLessThanOrEqual(range[1] ?? 9);
       }
@@ -75,7 +75,7 @@ describe('chapter assets', () => {
   });
 
   it('every room has a playerStart and at least one valid obstacle/door', () => {
-    for (const chapter of [1, 2, 3]) {
+    for (const chapter of [1, 2, 3, 4]) {
       for (const room of loadChapter(chapter).rooms) {
         expect(Number.isFinite(room.playerStart.x)).toBe(true);
         expect(Number.isFinite(room.playerStart.y)).toBe(true);
@@ -85,7 +85,7 @@ describe('chapter assets', () => {
   });
 
   it('no spawn/player/boss stands inside an obstacle', () => {
-    for (const chapter of [1, 2, 3]) {
+    for (const chapter of [1, 2, 3, 4]) {
       for (const room of loadChapter(chapter).rooms) {
         expect(obstacleAt(room, room.playerStart), `ch${chapter} r${room.room} player`).toBeNull();
         if (room.bossStart !== undefined) {

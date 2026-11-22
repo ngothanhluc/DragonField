@@ -1,5 +1,5 @@
 /**
- * Generate the 128×72 room pool of chapters 1–3 (M9, ticket #38).
+ * Generate the 128×72 room pool of chapters 1–4 (M9, tickets #38 and #45).
  *
  * Run: `bun run gen:rooms` (`scripts/generate-rooms.ts`).
  *
@@ -7,7 +7,8 @@
  * renames the hand-authored boss room to `room-17.tmx` (content untouched, only the `room`
  * property changes so `chapterFromLevels` still sees 1..17 contiguous with the boss last), and
  * removes every other `room-*.tmx` of the chapter. Chapter 2's `water-layout.json` is rewritten
- * for the new rooms (each generated room's river + the boss room's old entry).
+ * for the new rooms (each generated room's river + the boss room's old entry). Chapter 4 (the
+ * desert, #45) needs its `desert.tsx` / `camp.tsx` and its boss room on disk before it runs.
  *
  * Every room is validated through `parseTmxLevel` + the core navigation before it is written, so
  * the game never sees a file the acceptance tests would reject. Deterministic: running it twice
@@ -121,6 +122,8 @@ function main(): void {
   const chapterTwo = writeChapter(2);
   writeChapter(1);
   writeChapter(3);
+  // Chapter 4 — desert (#45): same pool, desert+camp theme, boss room authored as room 17.
+  writeChapter(4);
 
   const layout = waterLayoutFor(chapterTwo, BOSS_ROOM, bossWater);
   writeFileSync(WATER_PATH, `${JSON.stringify({ version: 1, rooms: { '2': layout } }, null, 2)}\n`);
