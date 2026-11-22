@@ -168,7 +168,7 @@ interface DecorTile {
 interface Room {
   readonly file: TmxFile;
   readonly room: number;
-  /** Real size of the room in tiles (32×18 boss arena, 128×72 pool room since #38). */
+  /** Real size of the room in tiles (32×18 boss arena, 64×36 pool room since #66). */
   readonly cols: number;
   readonly rows: number;
   readonly tilesets: Tileset[];

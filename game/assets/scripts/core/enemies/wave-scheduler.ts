@@ -2,7 +2,7 @@
  * 8× enemies per room, delivered in waves under an alive cap, with fair spawn and attack rules
  * (M9, ticket #41).
  *
- * GDD §13.2: a normal room is 16 screens (128×72), so its enemies cannot all stand in it at once.
+ * GDD §13.2: a normal room is 4 screens (64×36), so its enemies cannot all stand in it at once.
  * This scheduler owns **delivery**:
  *
  * - `roomEnemyTotal()` decides how many enemies a room spawns: 8× the count the `.tmx` authors,
@@ -94,9 +94,9 @@ function roomSeed(level: LevelData, seed: number): number {
 }
 
 /**
- * Whether a room uses the M9 wave delivery. Only a **multi-screen normal room** (128×72, ADR-018)
- * does: a one-screen room (a boss arena, a dev room, a hand-built test fixture) cannot host 24+
- * enemies around a 32×18 alive cap, so it keeps exactly the enemies its `.tmx` authors.
+ * Whether a room uses the M9 wave delivery. Only a **multi-screen normal room** (64×36 since #66,
+ * ADR-018) does: a one-screen room (a boss arena, a dev room, a hand-built test fixture) cannot
+ * host 24+ enemies around a 32×18 alive cap, so it keeps exactly the enemies its `.tmx` authors.
  */
 export function usesWaveScheduler(level: LevelData): boolean {
   if (level.isBossRoom) return false;

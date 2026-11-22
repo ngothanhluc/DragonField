@@ -5,98 +5,98 @@
       "1": [
         {
           "kind": "river",
-          "x": 14,
-          "y": 43,
-          "width": 64,
+          "x": 13,
+          "y": 15,
+          "width": 32,
           "height": 2
         },
         {
           "kind": "waterfall",
-          "x": 41,
+          "x": 22,
           "y": 0,
           "width": 2,
-          "height": 43
+          "height": 15
         }
       ],
       "2": [
         {
           "kind": "river",
-          "x": 78,
-          "y": 30,
-          "width": 43,
+          "x": 4,
+          "y": 14,
+          "width": 26,
           "height": 2
         },
         {
           "kind": "waterfall",
-          "x": 116,
+          "x": 21,
           "y": 0,
           "width": 2,
-          "height": 30
+          "height": 14
         }
       ],
       "3": [
         {
           "kind": "river",
-          "x": 38,
-          "y": 46,
-          "width": 44,
+          "x": 33,
+          "y": 11,
+          "width": 28,
           "height": 2
         }
       ],
       "4": [
         {
           "kind": "river",
-          "x": 40,
-          "y": 26,
-          "width": 47,
+          "x": 18,
+          "y": 11,
+          "width": 27,
           "height": 2
         },
         {
           "kind": "waterfall",
-          "x": 81,
+          "x": 40,
           "y": 0,
           "width": 2,
-          "height": 26
+          "height": 11
         }
       ],
       "5": [
         {
           "kind": "river",
-          "x": 3,
-          "y": 22,
-          "width": 64,
+          "x": 24,
+          "y": 13,
+          "width": 27,
           "height": 2
         },
         {
           "kind": "waterfall",
-          "x": 40,
+          "x": 30,
           "y": 0,
           "width": 2,
-          "height": 22
+          "height": 13
         }
       ],
       "6": [
         {
           "kind": "river",
-          "x": 8,
-          "y": 29,
-          "width": 57,
+          "x": 10,
+          "y": 13,
+          "width": 35,
           "height": 2
         },
         {
           "kind": "waterfall",
-          "x": 23,
+          "x": 38,
           "y": 0,
           "width": 2,
-          "height": 29
+          "height": 13
         }
       ],
       "7": [
         {
           "kind": "river",
-          "x": 28,
-          "y": 14,
-          "width": 44,
+          "x": 13,
+          "y": 8,
+          "width": 25,
           "height": 2
         }
       ],
@@ -104,123 +104,102 @@
         {
           "kind": "river",
           "x": 27,
-          "y": 42,
-          "width": 65,
+          "y": 14,
+          "width": 32,
           "height": 2
-        },
-        {
-          "kind": "waterfall",
-          "x": 46,
-          "y": 0,
-          "width": 2,
-          "height": 42
         }
       ],
       "9": [
         {
           "kind": "river",
-          "x": 25,
-          "y": 18,
-          "width": 45,
+          "x": 20,
+          "y": 12,
+          "width": 30,
           "height": 2
-        },
-        {
-          "kind": "waterfall",
-          "x": 47,
-          "y": 0,
-          "width": 2,
-          "height": 18
         }
       ],
       "10": [
         {
           "kind": "river",
-          "x": 64,
-          "y": 46,
-          "width": 41,
+          "x": 31,
+          "y": 12,
+          "width": 30,
           "height": 2
-        },
-        {
-          "kind": "waterfall",
-          "x": 79,
-          "y": 0,
-          "width": 2,
-          "height": 46
         }
       ],
       "11": [
         {
           "kind": "river",
-          "x": 3,
-          "y": 16,
-          "width": 57,
+          "x": 27,
+          "y": 8,
+          "width": 25,
           "height": 2
-        },
-        {
-          "kind": "waterfall",
-          "x": 53,
-          "y": 0,
-          "width": 2,
-          "height": 16
         }
       ],
       "12": [
         {
           "kind": "river",
-          "x": 25,
-          "y": 18,
-          "width": 48,
+          "x": 21,
+          "y": 14,
+          "width": 30,
           "height": 2
         }
       ],
       "13": [
         {
           "kind": "river",
-          "x": 44,
-          "y": 16,
-          "width": 42,
+          "x": 13,
+          "y": 12,
+          "width": 34,
           "height": 2
+        },
+        {
+          "kind": "waterfall",
+          "x": 26,
+          "y": 0,
+          "width": 2,
+          "height": 12
         }
       ],
       "14": [
         {
           "kind": "river",
-          "x": 28,
-          "y": 36,
-          "width": 49,
+          "x": 13,
+          "y": 13,
+          "width": 28,
           "height": 2
         },
         {
           "kind": "waterfall",
-          "x": 56,
+          "x": 28,
           "y": 0,
           "width": 2,
-          "height": 36
+          "height": 13
         }
       ],
       "15": [
         {
           "kind": "river",
-          "x": 64,
-          "y": 43,
-          "width": 44,
+          "x": 28,
+          "y": 14,
+          "width": 26,
           "height": 2
         }
       ],
       "16": [
         {
           "kind": "river",
-          "x": 13,
-          "y": 26,
-          "width": 61,
+          "x": 6,
+          "y": 10,
+          "width": 34,
           "height": 2
         },
         {
           "kind": "waterfall",
-          "x": 16,
+          "x": 8,
           "y": 0,
           "width": 2,
-          "height": 26
+          "height": 10
         }
       ],
       "17": [

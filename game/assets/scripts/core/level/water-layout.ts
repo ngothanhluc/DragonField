@@ -14,8 +14,9 @@ export const WATER_KINDS = ['river', 'waterfall'] as const;
 export type WaterKind = (typeof WATER_KINDS)[number];
 
 /**
- * Largest room a water area may address: a normal room is 4×4 screens (ADR-018, #37/#38). Water is
- * decoration only, so the bound just has to keep a typo from pointing outside every possible room.
+ * Largest room a water area may address. A normal room is 2×2 screens since #66; the bound stays
+ * at 4×4 so a layout authored for the M9 rooms still parses. Water is decoration only, so the
+ * bound just has to keep a typo from pointing outside every possible room.
  */
 export const MAX_ROOM_COLS = ROOM_COLS * 4;
 export const MAX_ROOM_ROWS = ROOM_ROWS * 4;
