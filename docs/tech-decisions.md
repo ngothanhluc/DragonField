@@ -21,7 +21,7 @@ Agreed: 2026-11-15. Status: settled, reopened only with new evidence.
 
 **Rationale.** The audit showed the old content was very thin (Level1 = 14 scattered mobs, damage hardcoded to 1, no state machine). Nothing worth keeping as a baseline, so a genre change costs nothing extra.
 
-**Consequences.** Single-screen room ⇒ **no camera follow, no large maps**. New systems to build: skill pool, rarity, meta progression, meta save. Systems dropped: dialog, inventory, in-level shop, hub. Technical numbers (16px, animation cadence, audio) are preserved in `docs/research/2026-11-unity-content-audit.md`.
+**Consequences.** Single-screen room ⇒ **no camera follow, no large maps** (reversed for normal rooms in M9 by ADR-018). New systems to build: skill pool, rarity, meta progression, meta save. Systems dropped: dialog, inventory, in-level shop, hub. Technical numbers (16px, animation cadence, audio) are preserved in `docs/research/2026-11-unity-content-audit.md`.
 
 ---
 
@@ -202,3 +202,14 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 **Rationale.** A room is one screen with a static camera — a sprite overlay looks good enough and carries no shader build risk. Web players do not feel a few MB, but they feel an fps drop instantly in a bullet-dodging game.
 
 **Consequences.** `deploy:prepare` switches the gate from “total > 15 MB” to “file > 25 MiB”. Every new FX goes through the pool (`fx/effect-pool.ts`), never `SpriteAnimator` for FX.
+
+---
+
+## ADR-018 — Big rooms with a follow camera, 8× enemies in waves (M9)
+
+**Decision.** Normal rooms grow from 32×18 to 128×72 tiles; the view stays 32×18 tiles at the M7 integer zoom and follows the player (hand-rolled: deadzone, look-ahead eased with `1 - exp(-rate·dt)`, view clamped to the room, snapped to whole texels after smoothing, shake added last, hard cut on room entry). Boss arenas stay single-screen with the static camera. Enemies per normal room are 8× v1, in waves capped at 24 alive; enemies only attack while inside the view.
+
+**Rationale.** Owner request (2026-11-22) to raise difficulty and give rooms space to explore. Keeping the zoom keeps 16 px readability; the alive cap and on-screen-only attacks keep 60 fps and keep the bullet-dodging fair (no hits from bullets fired off screen). Bosses keep one screen because their patterns are designed to be seen whole.
+
+**Consequences.** Overrides ADR-002's "no camera follow, no large maps" for normal rooms. New `core/camera/` (pure, tested) + a `game/` adapter that moves the world camera; HUD and atmosphere stay screen-space. Off-screen culling of world nodes, edge arrows, aggro radius, wave scheduler and spawn rules go in `core/`. Room generator, traversal tests, dress density and the balance sim all work on 128×72. The `stress()` gate becomes 24 enemies alive with the camera moving.
+
