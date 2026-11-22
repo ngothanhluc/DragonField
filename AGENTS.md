@@ -23,7 +23,7 @@ Top-down bullet-hell roguelite, 16px pixel art, runs on the web. The player **fi
 
 ## Current status
 
-M0–M9 done (shipped); M10 (playable characters and weapons — GDD §14) is next, not started — see `docs/milestones.md` and GDD §13. M9 balance is proven by the sim table in `docs/research/2026-11-m9-sim-table.md` (`bun run sim:table`). The game runs at **https://yokai.lukeinc.tech**
+M0–M9 done (shipped); M10 (playable characters and weapons — GDD §14) is next, not started — see `docs/milestones.md` and GDD §14. M9 balance is proven by the sim table in `docs/research/2026-11-m9-sim-table.md` (`bun run sim:table`). The game runs at **https://yokai.lukeinc.tech**
 (Cloudflare Worker `yokai-field`, static files only). The showcase page lives in the portfolio:
 https://lukeinc.tech/projects/dragon-field (separate repo `luke-tech`).
 

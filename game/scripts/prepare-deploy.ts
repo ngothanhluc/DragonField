@@ -40,7 +40,7 @@ writeFileSync(
   patchIndexHtml(readFileSync(indexPath, 'utf8'), {
     title: 'Yokai Field — top-down roguelite',
     description:
-      'Dodge-first pixel roguelite in the browser: auto-fire, clear 9 rooms, pick skills, beat 3 bosses. Built with Cocos Creator and the Ninja Adventure pack.',
+      'Dodge-first pixel roguelite in the browser: auto-fire, clear 9 rooms per chapter, pick skills, beat 4 chapter bosses. Built with Cocos Creator and the Ninja Adventure pack.',
     origin: 'https://yokai.lukeinc.tech',
     ogImagePath: '/og.png',
   }),
