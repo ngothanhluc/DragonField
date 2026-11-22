@@ -298,8 +298,9 @@ function stage(
   const mapped = prepared.image;
   const cells = sourceCells(asset);
   // Kinds fitted into a frame line their output grid up with the source's pixel grid, so a
-  // feature narrower than one output pixel (an eye) keeps its own block. `ui` stretches and
-  // `tileset` slices whole cells, so both keep their exact mapping.
+  // feature narrower than one output pixel (an eye) keeps its own block, and give back a pixel
+  // to the small details the block vote still erases. `ui` stretches and `tileset` slices
+  // whole cells, so both keep their exact mapping.
   const align = defaults.fit === 'feet' || defaults.fit === 'center';
 
   if (defaults.register === 'tileset') {
@@ -331,6 +332,7 @@ function stage(
           anchor: defaults.anchor,
           share: defaults.share,
           align,
+          keepDetails: align,
         }),
       ),
       palette,
@@ -356,6 +358,7 @@ function stage(
     anchor: defaults.anchor,
     share: defaults.share,
     align,
+    keepDetails: align,
     weights: salienceWeights(mapped),
     ...(asset.fitBox === undefined ? {} : { fitBox: asset.fitBox }),
   };
