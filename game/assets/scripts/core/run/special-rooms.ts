@@ -1,9 +1,9 @@
 /**
  * Special rooms behind the heal / shop / chest doors (M9, ticket #40).
  *
- * Pure rules only: healing, the seeded shop stock, the purchase rule (meta gold) and the chest
- * reward. The engine adapters (`game/special-room-view.ts`, `game/shop-panel.ts`, bootstrap)
- * draw these rooms and call `buyFromShop` once per purchase.
+ * Pure rules only: healing, the seeded shop stock, the purchase rule (run gold first, then the
+ * save's gold) and the chest reward. The engine adapters (`game/special-room-view.ts`,
+ * `game/shop-panel.ts`, bootstrap) draw these rooms and call `buyFromShop` once per purchase.
  */
 import { SPECIAL_ROOMS_TUNING } from '../enemies/tuning';
 import type { DoorReward } from './doors';
@@ -14,17 +14,23 @@ import { SeededRng } from '../rng';
 import type { SaveData } from '../save/save-data';
 import { getSkill } from '../skills/pool';
 import { rollChoices } from '../skills/roll';
+import { MAX_GOLD } from './rewards';
 
 export interface ShopOffer {
   /** `heart-refill` restores all hearts; otherwise a skill id from the pool. */
   readonly item: string;
-  /** Price in meta gold (the save's gold). */
+  /** Price in gold: the run's gold is spent first, then the save's gold. */
   readonly price: number;
 }
 
 export type PurchaseResult =
-  | { readonly ok: true; readonly save: SaveData }
-  | { readonly ok: false; readonly reason: 'not-enough-gold'; readonly save: SaveData };
+  | { readonly ok: true; readonly save: SaveData; readonly runGold: number }
+  | {
+      readonly ok: false;
+      readonly reason: 'not-enough-gold';
+      readonly save: SaveData;
+      readonly runGold: number;
+    };
 
 export type ChestReward = { readonly kind: 'skill' } | { readonly kind: 'gold'; readonly amount: number };
 
@@ -81,21 +87,40 @@ export function shopOffers(
 }
 
 /**
- * Pay `offer.price` from the save's meta gold; blocked (save unchanged) when short. Pure.
+ * Gold the mid-run shop can spend: the save's meta gold plus the gold earned this run — the
+ * same total the HUD shows. Non-finite/negative inputs count as 0, capped at `MAX_GOLD`.
+ */
+export function shopGold(save: SaveData, runGold: number): number {
+  const banked = Number.isFinite(save.gold) && save.gold > 0 ? Math.trunc(save.gold) : 0;
+  const earned = Number.isFinite(runGold) && runGold > 0 ? Math.trunc(runGold) : 0;
+  return Math.min(MAX_GOLD, banked + earned);
+}
+
+/**
+ * Pay `offer.price`: the run's gold first, the rest from the save's meta gold. Blocked (save and
+ * run gold unchanged) when the total is short. Pure.
  *
  * This is the **only** place the mid-run shop changes gold: never negative, and an invalid
- * price is refused instead of minting a free purchase.
+ * price is refused instead of minting a free purchase. The caller spends the run part from its
+ * `RunRewards` ledger, so banking at the end of the run adds only what is left.
  */
-export function buyFromShop(save: SaveData, offer: ShopOffer): PurchaseResult {
+export function buyFromShop(save: SaveData, runGold: number, offer: ShopOffer): PurchaseResult {
   // Only a whole, non-negative price is a real price; a broken one is refused, never clamped
   // (clamping a negative price would turn it into a free purchase).
   const price =
     Number.isInteger(offer.price) && offer.price >= 0 ? offer.price : null;
   const gold = Number.isFinite(save.gold) ? save.gold : 0;
-  if (price === null || gold < price) {
-    return { ok: false, reason: 'not-enough-gold', save };
+  const earned = Number.isFinite(runGold) && runGold > 0 ? Math.trunc(runGold) : 0;
+  if (price === null || shopGold(save, runGold) < price) {
+    return { ok: false, reason: 'not-enough-gold', save, runGold };
   }
-  return { ok: true, save: { ...save, gold: gold - price } };
+
+  const fromRun = Math.min(earned, price);
+  return {
+    ok: true,
+    save: { ...save, gold: Math.max(0, gold - (price - fromRun)) },
+    runGold: earned - fromRun,
+  };
 }
 
 /** What a chest gives: a free skill pick or gold, seeded. */

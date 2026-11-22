@@ -1,5 +1,6 @@
 /**
- * Mid-run shop panel (#40): the three offers of a shop room, priced in **meta gold**.
+ * Mid-run shop panel (#40): the three offers of a shop room, priced in gold (the save's gold
+ * plus the gold earned this run — the same total the HUD shows).
  *
  * Reuses the skill-pick card look (`sliceSliced` + `createLabel` + the same card size) so the
  * shop reads as the same UI. Rules (price, purchase, save write) stay in `core/run/special-rooms`
@@ -60,7 +61,7 @@ const CARD_TINT = new CocosColor(150, 110, 90, 255);
 
 export interface ShopBuyResult {
   readonly ok: boolean;
-  /** Meta gold after the attempt (unchanged on failure). */
+  /** Shop total (save gold + this run's gold) after the attempt; unchanged on failure. */
   readonly gold: number;
   /** Why the purchase was refused; `null` when it went through. */
   readonly message: string | null;
@@ -71,7 +72,7 @@ export interface ShopPanelOptions {
   readonly offers: readonly ShopOffer[];
   /** Current skill stacks, for the icon's Disabled variant. */
   readonly owned: ReadonlyMap<string, number>;
-  /** Meta gold when the panel opens. */
+  /** Gold when the panel opens: save gold + this run's gold (the HUD total). */
   readonly gold: number;
   /** Run one purchase; a success closes the shop and leaves the room. */
   readonly onBuy: (index: number) => ShopBuyResult;

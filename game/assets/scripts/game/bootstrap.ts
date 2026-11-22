@@ -71,6 +71,7 @@ import {
   chestReward,
   healHearts,
   isSpecialDoor,
+  shopGold,
   shopOffers,
   specialRoomLevel,
   type ShopOffer,
@@ -1824,7 +1825,7 @@ export class Bootstrap extends Component {
       parent: canvas,
       offers,
       owned: this.skills.snapshot(),
-      gold: this.save?.gold ?? 0,
+      gold: this.shopGoldTotal(),
       onBuy: (index) => this.buyShopOffer(index),
       onClose: () => this.closeMidRunShop(),
     })
@@ -1845,28 +1846,34 @@ export class Bootstrap extends Component {
     const save = this.save;
     const repo = this.saveRepo;
     const offer = this.shopOfferList[index];
-    const gold = save?.gold ?? 0;
     if (save === null || repo === null || offer === undefined) {
-      return { ok: false, gold, message: 'SHOP UNAVAILABLE' };
+      return { ok: false, gold: this.shopGoldTotal(), message: 'SHOP UNAVAILABLE' };
     }
 
     if (offer.item !== 'heart-refill') {
       const def = safeSkill(offer.item);
       if (def === null || this.skills.stacks(def.id) >= def.maxStacks) {
-        return { ok: false, gold, message: 'ALREADY MAXED' };
+        return { ok: false, gold: this.shopGoldTotal(), message: 'ALREADY MAXED' };
       }
     }
 
-    const result = buyFromShop(save, offer);
-    if (!result.ok) return { ok: false, gold: result.save.gold, message: 'NOT ENOUGH GOLD' };
+    const result = buyFromShop(save, this.rewards.goldEarned, offer);
+    if (!result.ok) {
+      return { ok: false, gold: shopGold(result.save, result.runGold), message: 'NOT ENOUGH GOLD' };
+    }
 
     try {
       repo.save(result.save);
     } catch (error: unknown) {
       console.warn(`[YokaiField] Could not write the shop purchase: ${errorMessage(error)}`);
-      return { ok: false, gold, message: 'COULD NOT SAVE' };
+      return { ok: false, gold: this.shopGoldTotal(), message: 'COULD NOT SAVE' };
     }
     this.save = result.save;
+
+    // Take the run part of the price out of the run's ledger, so death/win/quit bank only what
+    // is left; drop the same amount from the HUD's arrived coins to keep both totals equal.
+    const spent = this.rewards.spend(this.rewards.goldEarned - result.runGold);
+    this.displayedGold = Math.max(0, this.displayedGold - spent);
 
     if (offer.item === 'heart-refill') {
       const player = this.player;
@@ -1879,12 +1886,10 @@ export class Bootstrap extends Component {
       this.applyLoadout(grant.healNow);
       this.player?.playSkillBoost();
     }
+    const total = this.shopGoldTotal();
     this.hud?.setGold(this.hudGoldTotal());
-    console.log(
-      `[YokaiField] Bought ${offer.item} for ${offer.price} meta gold ` +
-        `(${result.save.gold} left).`,
-    );
-    return { ok: true, gold: result.save.gold, message: null };
+    console.log(`[YokaiField] Bought ${offer.item} for ${offer.price} gold (${total} left).`);
+    return { ok: true, gold: total, message: null };
   }
 
   /** Leave the shop (Esc / a successful purchase): back to the room, then the exit door. */
@@ -2005,7 +2010,17 @@ export class Bootstrap extends Component {
   /** Spendable gold shown on the HUD: the save's meta gold plus this run's arrived coins. */
   private hudGoldTotal(): number {
     const save = this.save?.gold ?? 0;
-    return Math.min(Number.MAX_SAFE_INTEGER, save + this.displayedGold);
+    // A shop purchase spends from the ledger while some coins may still be in flight; never let
+    // those late coins show more than the run still holds (the ledger is the source of truth).
+    const arrived = Math.min(this.displayedGold, this.rewards.goldEarned);
+    return Math.min(Number.MAX_SAFE_INTEGER, save + arrived);
+  }
+
+  /** Spendable gold the shop shows: the save's gold plus the run's earned gold (the HUD total). */
+  private shopGoldTotal(): number {
+    const save = this.save;
+    // No save loaded: the only spendable gold is this run's (a purchase is refused anyway).
+    return save === null ? this.rewards.goldEarned : shopGold(save, this.rewards.goldEarned);
   }
 
   /** Accessibility flags (shake, damage numbers) + effects mode applied immediately. */

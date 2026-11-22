@@ -7,7 +7,8 @@
  *
  * Gold is only written to the save at **end of run** (death, win, quit, restart) —
  * see `game/run-end.ts`. That gives the HUD a live number during the run while
- * `SaveData.gold` is not written to localStorage on every kill.
+ * `SaveData.gold` is not written to localStorage on every kill. `spend` takes a shop
+ * purchase back out of the run's gold, so the end-of-run bank adds only what is left.
  */
 import type { EnemyRole } from '../level/level-data';
 import { MAX_GOLD, goldForKill, goldForRoomClear } from './rewards';
@@ -60,6 +61,17 @@ export class RunRewards {
     const safe = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
     this.earned = clampGold(this.earned + safe);
     return safe;
+  }
+
+  /**
+   * Spend up to `amount` (a whole, positive number; anything broken counts as 0) of this run's
+   * gold — a shop purchase. Never goes below 0 and returns the amount actually removed.
+   */
+  spend(amount: number): number {
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    const spent = Math.min(this.earned, Math.trunc(amount));
+    this.earned -= spent;
+    return spent;
   }
 
   /** Read only: the rule-based reward for one enemy, used by tooltips/tests. */
