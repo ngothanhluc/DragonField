@@ -3596,6 +3596,142 @@
       "loop": true,
       "anchor": "feet",
       "footPx": 0
+    },
+    "cultivator.idle.down": {
+      "sheet": "resources/art/generated/cultivator/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.idle.up": {
+      "sheet": "resources/art/generated/cultivator/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.idle.left": {
+      "sheet": "resources/art/generated/cultivator/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.idle.right": {
+      "sheet": "resources/art/generated/cultivator/idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "attachment.sword-back.down": {
+      "sheet": "resources/art/generated/attachment/sword-back.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.sword-back.up": {
+      "sheet": "resources/art/generated/attachment/sword-back.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.sword-back.left": {
+      "sheet": "resources/art/generated/attachment/sword-back.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.sword-back.right": {
+      "sheet": "resources/art/generated/attachment/sword-back.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
     }
   }
 }

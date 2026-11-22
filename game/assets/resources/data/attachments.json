@@ -1,5 +1,101 @@
 {
   "version": 1,
-  "characters": {},
-  "items": {}
+  "characters": {
+    "cultivator": {
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "points": {
+        "back": {
+          "down": [
+            8,
+            9
+          ],
+          "up": [
+            8,
+            10
+          ],
+          "left": [
+            10,
+            10
+          ],
+          "right": [
+            6,
+            10
+          ]
+        },
+        "hand": {
+          "down": [
+            11,
+            11
+          ],
+          "up": [
+            5,
+            11
+          ],
+          "left": [
+            6,
+            11
+          ],
+          "right": [
+            10,
+            11
+          ]
+        }
+      },
+      "bob": {
+        "idle": {
+          "down": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            0,
+            0,
+            -1
+          ],
+          "left": [
+            0,
+            1,
+            0,
+            0
+          ],
+          "right": [
+            0,
+            1,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  },
+  "items": {
+    "sword-back": {
+      "sprite": "attachment.sword-back",
+      "slot": "back",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "grip": {
+        "down": [
+          8,
+          8
+        ],
+        "up": [
+          8,
+          8
+        ],
+        "left": [
+          8,
+          8
+        ],
+        "right": [
+          8,
+          8
+        ]
+      }
+    }
+  }
 }

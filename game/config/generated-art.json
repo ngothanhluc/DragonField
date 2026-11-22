@@ -1,5 +1,7 @@
 {
-  "actors": [],
+  "actors": [
+    "cultivator"
+  ],
   "monsters": [
     "sniper"
   ],
@@ -7,7 +9,9 @@
   "props": [],
   "vfx": [],
   "particles": [],
-  "attachments": [],
+  "attachments": [
+    "attachment"
+  ],
   "icons": [],
   "ui": []
 }
