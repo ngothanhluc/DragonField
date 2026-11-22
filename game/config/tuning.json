@@ -187,5 +187,10 @@
       "auraDrawUnits": 2.2,
       "auraOffsetTiles": 0.35
     }
+  },
+  "cover": {
+    "overlayAlpha": 0.4,
+    "actorInCoverAlpha": 0.5,
+    "fadeRate": 10
   }
 }
