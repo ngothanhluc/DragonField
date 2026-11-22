@@ -24,8 +24,6 @@ import { findTmxFiles, LEVELS_ROOT, type TmxFile } from '../helpers/tmx-levels';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GAME = join(HERE, '../..');
-const COLS = 32;
-const ROWS = 18;
 const TILE = 16;
 const CONNECT_MIN_PIXELS = 4;
 /** Tiled flip flags live in the top 3 bits of a gid; this project never flips tiles. */
@@ -170,6 +168,9 @@ interface DecorTile {
 interface Room {
   readonly file: TmxFile;
   readonly room: number;
+  /** Real size of the room in tiles (32×18 boss arena, 128×72 pool room since #38). */
+  readonly cols: number;
+  readonly rows: number;
   readonly tilesets: Tileset[];
   readonly decor: (DecorTile | null)[];
   readonly obstacles: readonly Obstacle[];
@@ -185,11 +186,12 @@ function resolve(tilesets: readonly Tileset[], gid: number): { set: Tileset; loc
 function loadRoom(file: TmxFile): Room {
   const tilesets = readTilesets(file);
   const level = parseTmxLevel(file.xml, { source: file.name });
+  const { cols, rows } = level.size;
   const decor = readLayer(file, 'decor').map((gid, index) => {
     const hit = resolve(tilesets, gid);
-    return hit === null ? null : { x: index % COLS, y: Math.floor(index / COLS), ...hit };
+    return hit === null ? null : { x: index % cols, y: Math.floor(index / cols), ...hit };
   });
-  return { file, room: level.room, tilesets, decor, obstacles: level.obstacles };
+  return { file, room: level.room, cols, rows, tilesets, decor, obstacles: level.obstacles };
 }
 
 function chapterRooms(chapter: number): Room[] {
@@ -197,12 +199,12 @@ function chapterRooms(chapter: number): Room[] {
 }
 
 function at(room: Room, x: number, y: number): DecorTile | null {
-  if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return null;
-  return room.decor[y * COLS + x] ?? null;
+  if (x < 0 || x >= room.cols || y < 0 || y >= room.rows) return null;
+  return room.decor[y * room.cols + x] ?? null;
 }
 
-function isBorder(x: number, y: number): boolean {
-  return x === 0 || x === COLS - 1 || y === 0 || y === ROWS - 1;
+function isBorder(room: Room, x: number, y: number): boolean {
+  return x === 0 || x === room.cols - 1 || y === 0 || y === room.rows - 1;
 }
 
 function onObstacle(room: Room, x: number, y: number): boolean {
@@ -286,21 +288,25 @@ function visualKey(obstacle: Obstacle & { kind: Exclude<Obstacle['kind'], 'prop'
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('#7 every room keeps its collision', () => {
-  it('obstacles of all 27 rooms equal the pre-ticket snapshot', () => {
+describe('#7 the boss rooms keep their collision', () => {
+  // #38 replaced the hand-dressed normal rooms with a generated pool; the boss rooms kept their
+  // content (only the `room` property changed, 9 → 17), so the pre-ticket snapshot still pins them.
+  it('every chapter boss room equals the pre-#38 snapshot of the authored obstacles', () => {
     const before = JSON.parse(
       readFileSync(join(HERE, '../fixtures/level-obstacles.json'), 'utf8'),
     ) as Record<string, Obstacle[]>;
-    const now: Record<string, Obstacle[]> = {};
-    for (const file of findTmxFiles()) {
+
+    for (const chapter of [1, 2, 3]) {
+      const files = findTmxFiles(join(LEVELS_ROOT, `chapter-${chapter}`));
+      const file = files.find((candidate) => candidate.name.endsWith('room-17.tmx'));
+      expect(file, `chapter ${chapter} boss file`).toBeDefined();
+      if (file === undefined) continue;
       // #35 adds generated `prop` obstacles on top of these; the snapshot pins the authored ones.
-      now[file.name] = parseTmxLevel(file.xml, { source: file.name }).obstacles.filter(
+      const now = parseTmxLevel(file.xml, { source: file.name }).obstacles.filter(
         (obstacle) => (obstacle.kind as string) !== 'prop',
       );
+      expect(now, `chapter ${chapter} boss`).toEqual(before[`chapter-${chapter}/room-9.tmx`]);
     }
-
-    expect(Object.keys(now)).toHaveLength(27);
-    expect(now).toEqual(before);
   });
 });
 
@@ -327,9 +333,10 @@ describe('#7 every .tmx is valid', () => {
       expectedFirstgid += set.tilecount;
     }
 
+    const level = parseTmxLevel(file.xml, { source: file.name });
     for (const layer of ['floor', 'decor']) {
       const data = readLayer(file, layer);
-      expect(data, `${layer} cell count`).toHaveLength(COLS * ROWS);
+      expect(data, `${layer} cell count`).toHaveLength(level.size.cols * level.size.rows);
       for (const gid of data) {
         expect(Number.isInteger(gid) && gid >= 0 && gid <= MAX_PLAIN_GID, `${layer} gid ${gid}`).toBe(true);
         expect(gid, `${layer} gid ${gid} must belong to a declared tileset`).toBeLessThan(expectedFirstgid);
@@ -346,15 +353,19 @@ describe('#7 every .tmx is valid', () => {
 describe('#7 chapter 3 decor follows collision', () => {
   const rooms = chapterRooms(3);
 
-  it('has all 9 rooms', () => {
-    expect(rooms.map((room) => room.room).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  it('has the whole pool: 16 normal rooms + the boss last', () => {
+    const numbers = rooms.map((room) => room.room).sort((a, b) => a - b);
+    expect(numbers).toEqual(Array.from({ length: numbers.length }, (_value, index) => index + 1));
+    expect(numbers.length).toBeGreaterThanOrEqual(15);
+    const bossRoom = numbers[numbers.length - 1] ?? 0;
+    expect(numbers.filter((number) => number === bossRoom)).toHaveLength(1);
   });
 
   it('every solid-looking decor tile sits on an obstacle or a border cell', () => {
     const offenders = rooms.flatMap((room) =>
       room.decor
         .filter((tile): tile is DecorTile => tile !== null && !isFlat(tile))
-        .filter((tile) => !isBorder(tile.x, tile.y) && !onObstacle(room, tile.x, tile.y))
+        .filter((tile) => !isBorder(room, tile.x, tile.y) && !onObstacle(room, tile.x, tile.y))
         .map((tile) => describeTile(room, tile)),
     );
 
@@ -370,7 +381,7 @@ describe('#7 chapter 3 decor follows collision', () => {
           if (!artConnected(tile.set, tile.local, direction)) continue;
           const nx = tile.x + STEP[direction][0];
           const ny = tile.y + STEP[direction][1];
-          if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+          if (nx < 0 || nx >= room.cols || ny < 0 || ny >= room.rows) continue;
           const expected = sheetNeighbour(tile.set, tile.local, direction);
           const actual = at(room, nx, ny);
           if (actual === null || actual.set.name !== tile.set.name || actual.local !== expected) {
@@ -405,7 +416,7 @@ describe('#7 chapter 3 is re-dressed', () => {
     '%s frames the room with solid props on the border (>= 4, the boss arena >= 8)',
     (_name, room) => {
       const props = room.decor.filter(
-        (tile): tile is DecorTile => tile !== null && !isFlat(tile) && isBorder(tile.x, tile.y),
+        (tile): tile is DecorTile => tile !== null && !isFlat(tile) && isBorder(room, tile.x, tile.y),
       );
 
       expect(props.length).toBeGreaterThanOrEqual(room.room === 9 ? 8 : 4);

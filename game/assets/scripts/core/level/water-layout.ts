@@ -13,6 +13,13 @@ import { ROOM_COLS, ROOM_ROWS } from './level-data';
 export const WATER_KINDS = ['river', 'waterfall'] as const;
 export type WaterKind = (typeof WATER_KINDS)[number];
 
+/**
+ * Largest room a water area may address: a normal room is 4×4 screens (ADR-018, #37/#38). Water is
+ * decoration only, so the bound just has to keep a typo from pointing outside every possible room.
+ */
+export const MAX_ROOM_COLS = ROOM_COLS * 4;
+export const MAX_ROOM_ROWS = ROOM_ROWS * 4;
+
 export interface WaterArea {
   readonly kind: WaterKind;
   readonly x: number;
@@ -52,8 +59,8 @@ function isArea(value: unknown): value is WaterArea {
     value['height'] > 0 &&
     value['x'] >= 0 &&
     value['y'] >= 0 &&
-    value['x'] + value['width'] <= ROOM_COLS &&
-    value['y'] + value['height'] <= ROOM_ROWS
+    value['x'] + value['width'] <= MAX_ROOM_COLS &&
+    value['y'] + value['height'] <= MAX_ROOM_ROWS
   );
 }
 
@@ -78,7 +85,7 @@ export function parseWaterLayout(raw: unknown): WaterLayout {
         if (!isArea(area)) {
           throw new Error(
             `water-layout chapter ${chapter} room ${room} area[${index}] is invalid ` +
-              `(kind river|waterfall, integers, inside ${ROOM_COLS}×${ROOM_ROWS})`,
+              `(kind river|waterfall, integers, inside ${MAX_ROOM_COLS}×${MAX_ROOM_ROWS})`,
           );
         }
         parsed.push({ kind: area.kind, x: area.x, y: area.y, width: area.width, height: area.height });

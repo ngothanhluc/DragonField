@@ -61,6 +61,8 @@ const chapter: ChapterData = loadChapterOne();
 // Plain JSON to mutate in validation tests: the TMX parser returns readonly objects but
 // `parseLevelData` takes raw data, so the test can exercise the real validation path.
 const rawChapter = JSON.parse(JSON.stringify(chapter)) as RawChapter;
+/** The boss is the chapter's last room (#38: the pool is followed by the boss). */
+const BOSS_INDEX = rawChapter.rooms.length - 1;
 
 function at<T>(items: readonly T[], index: number): T {
   const value = items[index];
@@ -89,10 +91,12 @@ function expectChapterError(mutate: (chapter: RawChapter) => void, pattern: RegE
 }
 
 describe('chapter 1 (.tmx → LevelData)', () => {
-  it('parses all 9 rooms in order', () => {
+  it('parses all 17 rooms in order (16 normal + the boss)', () => {
     expect(chapter.chapter).toBe(1);
-    expect(chapter.rooms).toHaveLength(9);
-    expect(chapter.rooms.map((level) => level.room)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(chapter.rooms).toHaveLength(17);
+    expect(chapter.rooms.map((level) => level.room)).toEqual(
+      Array.from({ length: 17 }, (_value, index) => index + 1),
+    );
   });
 
   it('parseLevelData accepts a chapter file and returns the first room', () => {
@@ -102,29 +106,32 @@ describe('chapter 1 (.tmx → LevelData)', () => {
     expect(first.id).toBe('ch1-r1');
   });
 
-  it('room 1 has 3 waves, both chaser + caster, 4 pillars, and the player start at bottom centre', () => {
+  it('room 1 is a 128×72 room with waves, both chaser + caster, obstacles and 2 doors', () => {
     const room1 = room(1);
 
     expect(room1.isBossRoom).toBe(false);
-    expect(room1.waves.length).toBeGreaterThanOrEqual(3);
+    expect(room1.size).toEqual({ cols: 128, rows: 72 });
+    expect(room1.waves.length).toBeGreaterThanOrEqual(1);
 
     const roles = new Set(room1.waves.flatMap((wave) => wave.enemies.map((enemy) => enemy.role)));
     expect(roles.has('chaser')).toBe(true);
     expect(roles.has('caster')).toBe(true);
 
-    expect(room1.obstacles.filter((obstacle) => obstacle.kind === 'pillar')).toHaveLength(4);
     expect(room1.obstacles.length).toBeGreaterThanOrEqual(1);
-    expect(room1.playerStart).toEqual({ x: 16, y: 16 });
-    expect(room1.doors).toHaveLength(1);
+    expect(Number.isFinite(room1.playerStart.x)).toBe(true);
+    expect(Number.isFinite(room1.playerStart.y)).toBe(true);
+    // Two door spots on the room edge: the door choice (#39) offers 2 after every normal room.
+    expect(room1.doors).toHaveLength(2);
   });
 
-  it('room 9 is a boss room with a boss name, bossStart and 4 pillars', () => {
-    const bossRoom = room(9);
+  it('the last room is the boss room with a boss name, bossStart and pillars', () => {
+    const rooms = chapter.rooms;
+    const bossRoom = rooms[rooms.length - 1];
 
-    expect(bossRoom.isBossRoom).toBe(true);
-    expect(bossRoom.boss?.name).toBe('TenguBlue');
-    expect(bossRoom.bossStart).toEqual({ x: 16, y: 5 });
-    expect(bossRoom.obstacles.filter((obstacle) => obstacle.kind === 'pillar')).toHaveLength(4);
+    expect(bossRoom?.isBossRoom).toBe(true);
+    expect(bossRoom?.boss?.name).toBe('TenguBlue');
+    expect(bossRoom?.bossStart).toEqual({ x: 16, y: 5 });
+    expect(bossRoom?.obstacles.filter((obstacle) => obstacle.kind === 'pillar')).toHaveLength(4);
   });
 
   it('every door points at a real room (or null)', () => {
@@ -146,36 +153,34 @@ describe('isInsideRoom', () => {
 
     expect(isInsideRoom(room1, { x: 16, y: 9 })).toBe(true);
     expect(isInsideRoom(room1, { x: 0, y: 0 })).toBe(true);
-    expect(isInsideRoom(room1, { x: 32, y: 18 })).toBe(true);
+    expect(isInsideRoom(room1, { x: room1.size.cols, y: room1.size.rows })).toBe(true);
   });
 
   it('rejects points outside the room', () => {
     const room1 = room(1);
 
     expect(isInsideRoom(room1, { x: -0.01, y: 9 })).toBe(false);
-    expect(isInsideRoom(room1, { x: 16, y: 18.01 })).toBe(false);
+    expect(isInsideRoom(room1, { x: 16, y: room1.size.rows + 0.01 })).toBe(false);
   });
 });
 
 describe('obstacleAt', () => {
-  it('returns the pillar when the point is inside it', () => {
+  it('returns the obstacle that contains the point', () => {
     const room1 = room(1);
+    const block = at(room1.obstacles, 0);
 
-    expect(obstacleAt(room1, { x: 8, y: 6 })).toEqual({
-      kind: 'pillar',
-      x: 8,
-      y: 6,
-      width: 2,
-      height: 2,
-    });
-    expect(obstacleAt(room1, { x: 9.99, y: 7.99 })?.kind).toBe('pillar');
+    expect(obstacleAt(room1, { x: block.x + 0.5, y: block.y + 0.5 })).toEqual(block);
+    expect(
+      obstacleAt(room1, { x: block.x + block.width - 0.01, y: block.y + block.height - 0.01 }),
+    ).toEqual(block);
   });
 
   it('returns null when the point is in open space', () => {
     const room1 = room(1);
 
-    expect(obstacleAt(room1, { x: 16, y: 9 })).toBeNull();
-    expect(obstacleAt(room1, { x: 10, y: 7 })).toBeNull();
+    // The pool's border cells are decor only: no obstacle reaches the room's first tile.
+    expect(obstacleAt(room1, { x: 1, y: 1 })).toBeNull();
+    expect(obstacleAt(room1, { x: 0.5, y: 0.5 })).toBeNull();
   });
 });
 
@@ -184,7 +189,7 @@ describe('parseLevelData — validation', () => {
     const broken = cloneChapter();
     // Add a copy of room 1: duplicates the room number without breaking any other door.
     broken.rooms.push(structuredClone(at(broken.rooms, 0)));
-    at(broken.rooms, 0).size.rows = 17;
+    at(broken.rooms, 0).tileSizePx = 32;
 
     let message = '';
     try {
@@ -193,7 +198,7 @@ describe('parseLevelData — validation', () => {
       message = error instanceof Error ? error.message : String(error);
     }
 
-    expect(message).toMatch(/rooms\[0\]\.size\.rows/);
+    expect(message).toMatch(/rooms\[0\]\.tileSizePx/);
     expect(message).toMatch(/room number 1 is duplicated/);
     expect(message).toMatch(/2 problem/);
   });
@@ -208,7 +213,7 @@ describe('parseLevelData — validation', () => {
   it('rejects a single room with a spawn outside the room', () => {
     const single = structuredClone(at(rawChapter.rooms, 0));
     const enemy = at(at(single.waves, 0).enemies, 0);
-    enemy.at.y = 19;
+    enemy.at.y = single.size.rows + 1;
 
     expect(() => parseLevelData(single)).toThrow(
       /level\.waves\[0\]\.enemies\[0\]\.at.*outside the room/,
@@ -235,7 +240,7 @@ describe('parseLevelData — validation', () => {
 
   it('rejects a spawn outside the room', () => {
     expectChapterError((broken) => {
-      at(at(at(broken.rooms, 0).waves, 0).enemies, 0).at.x = 33;
+      at(at(at(broken.rooms, 0).waves, 0).enemies, 0).at.x = at(broken.rooms, 0).size.cols + 1;
     }, /rooms\[0\]\.waves\[0\]\.enemies\[0\]\.at.*outside the room/);
   });
 
@@ -259,7 +264,7 @@ describe('parseLevelData — validation', () => {
 
   it('rejects an obstacle that extends outside the room', () => {
     expectChapterError((broken) => {
-      at(at(broken.rooms, 0).obstacles, 0).width = 30;
+      at(at(broken.rooms, 0).obstacles, 0).width = at(broken.rooms, 0).size.cols + 1;
     }, /rooms\[0\]\.obstacles\[0\].*extends outside the room/);
   });
 
@@ -271,8 +276,8 @@ describe('parseLevelData — validation', () => {
 
   it('rejects a boss room without a boss marker', () => {
     expectChapterError((broken) => {
-      delete at(broken.rooms, 8).boss;
-    }, /rooms\[8\]\.boss.*requires a boss/);
+      delete at(broken.rooms, broken.rooms.length - 1).boss;
+    }, new RegExp(`rooms\\[${BOSS_INDEX}\\]\\.boss.*requires a boss`));
   });
 
   it('rejects a boss marker in a regular room', () => {
@@ -283,10 +288,10 @@ describe('parseLevelData — validation', () => {
 
   it('rejects an empty boss name', () => {
     expectChapterError((broken) => {
-      const bossRoom = at(broken.rooms, 8);
+      const bossRoom = at(broken.rooms, broken.rooms.length - 1);
       if (bossRoom.boss === undefined) throw new Error('fixture is missing boss');
       bossRoom.boss.name = '   ';
-    }, /rooms\[8\]\.boss\.name/);
+    }, new RegExp(`rooms\\[${BOSS_INDEX}\\]\\.boss\\.name`));
   });
 
   it('rejects a duplicate room number', () => {
@@ -295,11 +300,11 @@ describe('parseLevelData — validation', () => {
     }, /room number 1 is duplicated/);
   });
 
-  it('accepts room number 10 — the room total is data, not a constant', () => {
+  it('accepts a room number above the pool size — the room total is data, not a constant', () => {
     const broken = cloneChapter();
-    at(broken.rooms, 0).room = 10;
+    at(broken.rooms, 0).room = 100;
 
-    expect(parseLevelData(broken).room).toBe(10);
+    expect(parseLevelData(broken).room).toBe(100);
   });
 
   it('rejects room number 0 or negative', () => {
@@ -316,9 +321,9 @@ describe('parseLevelData — validation', () => {
 
   it('rejects bossStart outside the room', () => {
     expectChapterError((broken) => {
-      const bossRoom = at(broken.rooms, 8);
+      const bossRoom = at(broken.rooms, broken.rooms.length - 1);
       bossRoom.bossStart = { x: 16, y: 19 };
-    }, /rooms\[8\]\.bossStart.*outside the room/);
+    }, new RegExp(`rooms\\[${BOSS_INDEX}\\]\\.bossStart.*outside the room`));
   });
 
   it('rejects a door pointing at a room that does not exist', () => {

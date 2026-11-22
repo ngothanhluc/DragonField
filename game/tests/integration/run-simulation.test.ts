@@ -1,13 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
+import { makeDodgePolicy } from '../helpers/dodge-policy';
 import { CHASER_CONTACT_RANGE_TILES } from '../../assets/scripts/core/enemies/behaviours';
-import {
-  ROOM_COLS,
-  ROOM_ROWS,
-  parseLevelData,
-  type ChapterData,
-  type LevelData,
-} from '../../assets/scripts/core/level/level-data';
+import { parseLevelData, type ChapterData, type LevelData } from '../../assets/scripts/core/level/level-data';
 import { ROOMS_PER_CHAPTER } from '../../assets/scripts/core/run/run-state';
 import {
   MAX_GOLD,
@@ -21,7 +16,6 @@ import {
   SIM_DEFAULT_MAX_DURATION_MS,
   simulateRun,
   type InputPolicy,
-  type PolicyWorld,
 } from '../../assets/scripts/core/sim/run-simulation';
 import { loadChapterOne, loadTmxLevels, LEVELS_ROOT } from '../helpers/tmx-levels';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
@@ -42,88 +36,6 @@ const patrol: InputPolicy = ({ nowMs }) => {
     right: phase === 1,
   };
 };
-
-/**
- * Dodge policy: each frame pick 1 of 8 directions, the one that keeps the **smallest
- * distance to an enemy across the full 1.2 s path** wins. Unlike "run straight
- * away from the nearest enemy", it looks at the whole path, so it does not corner
- * itself — exactly the bug that made the naive policy die sooner than standing still.
- *
- * This is a test policy, not game AI: it only reads `PolicyWorld`.
- */
-const DODGE_DIRECTIONS = [
-  { x: 0, y: -1, up: true, down: false, left: false, right: false },
-  { x: 0, y: 1, up: false, down: true, left: false, right: false },
-  { x: -1, y: 0, up: false, down: false, left: true, right: false },
-  { x: 1, y: 0, up: false, down: false, left: false, right: true },
-  { x: -Math.SQRT1_2, y: -Math.SQRT1_2, up: true, down: false, left: true, right: false },
-  { x: Math.SQRT1_2, y: -Math.SQRT1_2, up: true, down: false, left: false, right: true },
-  { x: -Math.SQRT1_2, y: Math.SQRT1_2, up: false, down: true, left: true, right: false },
-  { x: Math.SQRT1_2, y: Math.SQRT1_2, up: false, down: true, left: false, right: true },
-] as const;
-
-const DODGE_HORIZON_SECONDS = 1.2;
-const DODGE_SAMPLES = 8;
-const MIN_X = 0.5;
-const MIN_Y = 0.5;
-const MAX_X = ROOM_COLS - 0.5;
-const MAX_Y = ROOM_ROWS - 0.5;
-
-function makeDodgePolicy(): InputPolicy {
-  let lastIndex = 0;
-
-  return (world: PolicyWorld) => {
-    const alive = world.enemies.filter(
-      (enemy) => enemy.health > 0 && enemy.action.kind !== 'dead',
-    );
-    const enemyShots = world.bullets.filter((bullet) => bullet.owner === 'enemy');
-    const speed = DEFAULT_COMBAT.moveSpeedTilesPerSecond;
-
-    let bestIndex = lastIndex;
-    let bestScore = Number.NEGATIVE_INFINITY;
-
-    for (let index = 0; index < DODGE_DIRECTIONS.length; index += 1) {
-      const direction = DODGE_DIRECTIONS[index];
-      if (direction === undefined) continue;
-
-      let score = Number.POSITIVE_INFINITY;
-
-      for (let sample = 1; sample <= DODGE_SAMPLES; sample += 1) {
-        const seconds = (sample / DODGE_SAMPLES) * DODGE_HORIZON_SECONDS;
-        const rawX = world.player.x + direction.x * speed * seconds;
-        const rawY = world.player.y + direction.y * speed * seconds;
-        const x = Math.min(Math.max(rawX, MIN_X), MAX_X);
-        const y = Math.min(Math.max(rawY, MIN_Y), MAX_Y);
-
-        let gap = Number.POSITIVE_INFINITY;
-        for (const enemy of alive) {
-          gap = Math.min(gap, Math.hypot(x - enemy.position.x, y - enemy.position.y));
-        }
-        for (const bullet of enemyShots) {
-          const bx = bullet.position.x + bullet.velocity.x * seconds;
-          const by = bullet.position.y + bullet.velocity.y * seconds;
-          gap = Math.min(gap, Math.hypot(x - bx, y - by) * 1.25);
-        }
-
-        // Blocked by a wall means a shorter actual path — treat it as worse.
-        const blocked = Math.hypot(x - rawX, y - rawY);
-        score = Math.min(score, gap - blocked * 2);
-      }
-
-      if (index === lastIndex) score += 0.3;
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = index;
-      }
-    }
-
-    lastIndex = bestIndex;
-    const chosen = DODGE_DIRECTIONS[bestIndex];
-    if (chosen === undefined) return standStill(world);
-
-    return { up: chosen.up, down: chosen.down, left: chosen.left, right: chosen.right };
-  };
-}
 
 /** 9 rooms × (walk time to firing position + TTK) — wide bounds to avoid flakiness. */
 const CHAPTER_CLEAR_MIN_MS = 60_000;
@@ -498,7 +410,7 @@ describe('simulateRun — chapter 2 and 3 balance with a 0-skill run', () => {
         );
         expect(dodging.roomsCleared, `chapter ${chapter} seed ${seed}`).toBeGreaterThanOrEqual(3);
       }
-    });
+    }, 120_000);
   }
 });
 

@@ -12,10 +12,10 @@ function loadChapter(): ChapterData {
  * while `bun run check` stays green.
  */
 describe('assets/resources/data/levels/chapter-1/*.tmx', () => {
-  it('parses and has all 9 rooms', () => {
+  it('parses and has all 16 normal rooms + the boss', () => {
     const chapter = loadChapter();
 
-    expect(chapter.rooms).toHaveLength(9);
+    expect(chapter.rooms).toHaveLength(17);
   });
 
   it('room 1 has at least 3 waves and obstacles to dodge projectiles', () => {
