@@ -30,6 +30,7 @@ import { isTelegraphElapsed } from '../combat/telegraph';
 import type { EnemyRole, LevelData } from '../level/level-data';
 import { obstacleAt } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
+import { hasLineOfSight } from './navigation';
 import { ENEMY_TUNING, CHAPTER_TUNING, type EnemiesTuning, type EnemyRoleTuning } from './tuning';
 
 export interface EnemyState {
@@ -299,6 +300,10 @@ function decideChaser(
  * Caster: keeps the `preferredRange` band. Closer than the lower bound it backs off, farther
  * than the upper bound it steps in, inside the band it stands and telegraphs `telegraphMs` then fires.
  *
+ * It only fires what it can see (#34): inside the band with a wall between, it walks to regain
+ * sight instead of telegraphing — a shot that stops on the wall would only punish the player
+ * for standing still behind cover. Pits do not block sight, so shooting across one is legal.
+ *
  * Once in a telegraph it **runs to completion**, even if the player backs out of range — the attack is
  * "committed", so the player dodges by moving, not by cancelling it.
  */
@@ -324,6 +329,12 @@ function decideCaster(
     gap > tuning.preferredRangeMaxTiles + RANGE_TOLERANCE_TILES;
   if (outsideBand) {
     return { kind: 'walk', target: holdRangeTarget(state, player, level, tuning) };
+  }
+
+  // Inside the band but behind a wall: reposition until the player is in sight. The adapter
+  // steers this walk through the flow field, so it goes around the wall instead of pressing it.
+  if (!hasLineOfSight(level, state.position, player)) {
+    return { kind: 'walk', target: clampToRoom(level, player) };
   }
 
   if (isCoolingDown(state, nowMs, tuning)) return { kind: 'idle' };

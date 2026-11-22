@@ -94,6 +94,12 @@ export const TUNING_DATA = {
       },
     },
   },
+  navigation: {
+    rebuildMinMs: 250,
+    stuckWindowMs: 2000,
+    stuckDistanceTiles: 0.5,
+    detourMs: 1000,
+  },
   feel: {
     shake: {
       maxOffsetTiles: 0.5,

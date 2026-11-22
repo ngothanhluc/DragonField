@@ -35,6 +35,7 @@ import {
   type CombatTuning,
   type EnemiesTuning,
   type FeelTuning,
+  type NavigationTuning,
   type TuningConfig,
 } from './tuning-schema';
 
@@ -57,6 +58,9 @@ export const ENEMY_TUNING: EnemiesTuning = TUNING.enemies;
 
 /** Per-chapter scale factors — `behaviours.ts` reads them when computing health/damage. */
 export const CHAPTER_TUNING = TUNING.chapters;
+
+/** Enemy navigation numbers (#34) — the sim and the game adapter read them. */
+export const NAVIGATION_TUNING: NavigationTuning = TUNING.navigation;
 
 /** Juice numbers (ticket #2) — the `game/` adapter reads them; `core/feel/` only takes numbers as parameters. */
 export const FEEL_TUNING: FeelTuning = TUNING.feel;

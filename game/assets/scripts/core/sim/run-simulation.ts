@@ -51,11 +51,20 @@ import {
   type EnemyState,
 } from '../enemies/behaviours';
 import { eliteVolleyAngles } from '../enemies/elite';
+import {
+  RoomNavigation,
+  StuckGuard,
+  separateEnemies,
+  walkTowards,
+  type FlowField,
+  type SeparationBody,
+} from '../enemies/navigation';
+import { NAVIGATION_TUNING } from '../enemies/tuning';
 import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
 import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
-import { moveTowardsWithCollision, moveWithCollision } from '../movement/collision';
+import { moveWithCollision } from '../movement/collision';
 import { SeededRng } from '../rng';
 import { goldForKill, goldForRoomClear } from '../run/rewards';
 import { computeDerivedStats } from '../skills/derived-stats';
@@ -174,6 +183,15 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   let roomIndex = 0;
   let room = firstRoom;
   let waveIndex = 0;
+  /** Shared flow field per radius class for the current room (#34). Reset on a room change. */
+  let navigation = createRoomNavigation(firstRoom);
+  const stuckGuard = new StuckGuard(
+    NAVIGATION_TUNING.stuckWindowMs,
+    NAVIGATION_TUNING.stuckDistanceTiles,
+    NAVIGATION_TUNING.detourMs,
+  );
+  /** One closure so the per-enemy guard does not allocate a function every frame. */
+  const random = (): number => rng.next();
   let enemies = spawnRoomWave(room, 0);
   let player: Vec2 = { x: room.playerStart.x, y: room.playerStart.y };
   let durationMs = 0;
@@ -249,6 +267,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (enemy.health <= 0 && enemy.action.kind === 'dead') return;
     enemy.health = 0;
     enemy.action = { kind: 'dead' };
+    stuckGuard.forget(enemy.id);
     const gold = Math.round(goldForKill(enemy.role, enemy.elite) * stats.goldMultiplier);
     kills += 1;
     goldEarned += gold;
@@ -396,7 +415,20 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       if (attackReleased(before, next) === 'shot') {
         fireCasterVolley(enemy);
       }
-      advanceEnemy(enemy, next, slow, room);
+
+      // Walk on the shared flow field toward the player: straight while in sight, around the
+      // wall otherwise. The stuck guard may override the direction for a short detour.
+      const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
+      const field = navigation.field(enemyRadius, player, durationMs);
+      const detour = stuckGuard.update(
+        enemy.id,
+        enemy.position,
+        next.kind === 'walk',
+        durationMs,
+        field,
+        random,
+      );
+      advanceEnemy(enemy, next, slow, room, field, detour);
 
       const melee = enemy.role === 'chaser' || enemy.role === 'tank';
       const contactRange = CONTACT_RANGE_TILES * visualScaleFor(enemy.role);
@@ -426,6 +458,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         }
       }
     }
+
+    separateEnemiesForRoom(enemies, room);
 
     // --- Homing -----------------------------------------------------------
     for (const bullet of bullets.active()) {
@@ -549,6 +583,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       roomIndex += 1;
       room = nextRoom;
       waveIndex = 0;
+      navigation = createRoomNavigation(room);
+      stuckGuard.clear();
 
       if (room.isBossRoom) {
         const bossRun = runBossRoom(room, roomIndex);
@@ -570,6 +606,32 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 /** Waves of the room. Boss rooms are handled by `runBossRoom` so this covers regular rooms only. */
 function spawnRoomWave(room: LevelData, waveIndex: number): EnemyState[] {
   return spawnWave(room, waveIndex);
+}
+
+/** One room's navigation, built at the configured rebuild throttle (`navigation.rebuildMinMs`). */
+function createRoomNavigation(level: LevelData): RoomNavigation {
+  return new RoomNavigation(level, ROOM_EDGE_MARGIN_TILES, NAVIGATION_TUNING.rebuildMinMs);
+}
+
+/** Push overlapping living enemies apart; writes the new positions back in place. */
+function separateEnemiesForRoom(enemies: EnemyState[], level: LevelData): void {
+  const bodies: SeparationBody[] = [];
+  for (const enemy of enemies) {
+    if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
+    bodies.push({
+      id: enemy.id,
+      position: enemy.position,
+      radiusTiles: DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role),
+    });
+  }
+
+  const moved = separateEnemies(bodies, level, ROOM_EDGE_MARGIN_TILES);
+  if (moved.size === 0) return;
+
+  for (const enemy of enemies) {
+    const position = moved.get(enemy.id);
+    if (position !== undefined) enemy.position = position;
+  }
 }
 
 function waveCount(room: LevelData): number {
@@ -603,7 +665,14 @@ function movePlayer(player: Vec2, input: MoveInput, speed: number, room: LevelDa
 }
 
 /** Move the enemy by the action just decided; `slow` is the current Freeze factor. */
-function advanceEnemy(enemy: EnemyState, action: EnemyAction, slow: number, level: LevelData): void {
+function advanceEnemy(
+  enemy: EnemyState,
+  action: EnemyAction,
+  slow: number,
+  level: LevelData,
+  field: FlowField,
+  detour: Vec2 | null,
+): void {
   const seconds = SIM_STEP_MS / 1000;
   const factor = Math.max(0, Math.min(1, slow));
   const radius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
@@ -621,14 +690,16 @@ function advanceEnemy(enemy: EnemyState, action: EnemyAction, slow: number, leve
   }
   if (action.kind !== 'walk') return;
 
-  // No overshoot in one frame (a long frame ≠ a teleport), and step around a blocker
-  // instead of pressing into it forever (pathfinding is a later ticket).
-  enemy.position = moveTowardsWithCollision(
-    enemy.position,
-    action.target,
-    speedFor(enemy.role, enemy.elite) * factor * seconds,
-    radius,
+  // Same rule as the game adapter (`EnemyView.advance`): straight while the target is in
+  // sight, the shared flow field around a wall, a stuck-guard detour when it wedges anyway.
+  enemy.position = walkTowards({
+    position: enemy.position,
+    target: action.target,
+    field,
+    maxDistanceTiles: speedFor(enemy.role, enemy.elite) * factor * seconds,
+    radiusTiles: radius,
     level,
-    ROOM_EDGE_MARGIN_TILES,
-  );
+    marginTiles: ROOM_EDGE_MARGIN_TILES,
+    detour,
+  });
 }
