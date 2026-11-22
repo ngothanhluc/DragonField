@@ -35,6 +35,7 @@ import {
   type CameraTuning,
   type CombatTuning,
   type CoverTuning,
+  type DoorsTuning,
   type EnemiesTuning,
   type FeelTuning,
   type NavigationTuning,
@@ -72,3 +73,6 @@ export const FEEL_TUNING: FeelTuning = TUNING.feel;
 
 /** Canopy/roof fade + walk-in grass alpha (#36) — `game/cover-view.ts` reads them. */
 export const COVER_TUNING: CoverTuning = TUNING.cover;
+
+/** Door-choice numbers (#39) — the run flow and the balance sim read them. */
+export const DOORS_TUNING: DoorsTuning = TUNING.doors;

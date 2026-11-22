@@ -169,6 +169,30 @@ export interface TuningConfig {
   readonly feel: FeelTuning;
   /** Depth/see-through canopies and walk-in grass (#36). Visual only — no stealth. */
   readonly cover: CoverTuning;
+  /** Door choice after each normal room (#39, ADR-014). */
+  readonly doors: DoorsTuning;
+}
+
+/** One weight per door reward (skills and gold are the two fights). */
+export interface DoorWeightsTuning {
+  readonly skill: number;
+  readonly gold: number;
+  readonly heal: number;
+  readonly shop: number;
+  readonly chest: number;
+}
+
+/**
+ * Door-choice numbers (#39): the gold a `gold` door pays on the next room's clear, the flag that
+ * enables the special rooms (#40), and how often each reward comes up in an offer.
+ */
+export interface DoorsTuning {
+  /** Extra gold paid when a room's clear reward is `gold` instead of a skill pick. */
+  readonly goldBonus: number;
+  /** Heal/shop/chest doors exist in the offer logic but stay off until #40 ships them. */
+  readonly specialRoomsEnabled: boolean;
+  /** Relative weight of each reward in a door offer; all > 0 so every enabled reward comes up. */
+  readonly weights: DoorWeightsTuning;
 }
 
 /**
@@ -392,6 +416,10 @@ const CAMERA_FIELDS = [
 ] as const;
 
 const COVER_FIELDS = ['overlayAlpha', 'actorInCoverAlpha', 'fadeRate'] as const;
+
+const DOORS_FIELDS = ['goldBonus', 'specialRoomsEnabled', 'weights'] as const;
+
+const DOOR_WEIGHT_FIELDS = ['skill', 'gold', 'heal', 'shop', 'chest'] as const;
 
 const SHAKE_FIELDS = [
   'maxOffsetTiles',
@@ -1088,6 +1116,57 @@ function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTun
   return { shake, squash, damageNumbers, coin, muzzle, vfx };
 }
 
+/** Read a boolean field; missing/wrong type is reported with the expected type. */
+function readBoolean(
+  source: Record<string, unknown>,
+  field: string,
+  path: string,
+  problems: ProblemList,
+  fallback: boolean,
+): boolean {
+  const value = source[field];
+  if (typeof value === 'boolean') return value;
+  problems.add(joinPath(path, field), `must be a boolean, got ${describe(value)}`);
+  return fallback;
+}
+
+function zeroDoors(): DoorsTuning {
+  return {
+    goldBonus: 1,
+    specialRoomsEnabled: false,
+    weights: { skill: 1, gold: 1, heal: 0, shop: 0, chest: 0 },
+  };
+}
+
+function parseDoors(raw: Record<string, unknown>, problems: ProblemList): DoorsTuning {
+  const source = readObject(raw, 'doors', '', problems, DOORS_FIELDS);
+  if (source === undefined) return zeroDoors();
+
+  const path = 'doors';
+  const weightsSource = readObject(source, 'weights', path, problems, DOOR_WEIGHT_FIELDS) ?? {};
+
+  const weights: DoorWeightsTuning = {
+    skill: readNumber(weightsSource, 'skill', `${path}.weights`, problems) ?? 0,
+    gold: readNumber(weightsSource, 'gold', `${path}.weights`, problems) ?? 0,
+    heal: readNumber(weightsSource, 'heal', `${path}.weights`, problems) ?? 0,
+    shop: readNumber(weightsSource, 'shop', `${path}.weights`, problems) ?? 0,
+    chest: readNumber(weightsSource, 'chest', `${path}.weights`, problems) ?? 0,
+  };
+
+  return {
+    goldBonus:
+      readNumber(source, 'goldBonus', path, problems, { positive: true }) ?? 1,
+    specialRoomsEnabled: readBoolean(
+      source,
+      'specialRoomsEnabled',
+      path,
+      problems,
+      false,
+    ),
+    weights,
+  };
+}
+
 function zeroCover(): CoverTuning {
   return { overlayAlpha: 1, actorInCoverAlpha: 1, fadeRate: 1 };
 }
@@ -1152,6 +1231,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     camera: parseCamera(raw, problems),
     feel: parseFeel(raw, problems),
     cover: parseCover(raw, problems),
+    doors: parseDoors(raw, problems),
   };
 
   problems.throwIfAny();

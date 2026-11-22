@@ -61,7 +61,7 @@ import {
   type FlowField,
   type SeparationBody,
 } from '../enemies/navigation';
-import { NAVIGATION_TUNING } from '../enemies/tuning';
+import { DOORS_TUNING, NAVIGATION_TUNING } from '../enemies/tuning';
 import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
@@ -69,6 +69,13 @@ import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../moveme
 import { moveWithCollision } from '../movement/collision';
 import { SeededRng } from '../rng';
 import { drawRunRooms } from '../run/room-draw';
+import {
+  COMBAT_REWARDS,
+  DOOR_REWARDS,
+  clearRewardFor,
+  doorOffers,
+  type DoorReward,
+} from '../run/doors';
 import { goldForKill, goldForRoomClear } from '../run/rewards';
 import { computeDerivedStats } from '../skills/derived-stats';
 import { simulateBossRun } from './boss-run';
@@ -129,6 +136,11 @@ export interface SimulationOptions {
   readonly godMode?: boolean;
   /** Owned skills, `Map<skillId, stacks>` like the game's `RunState`. */
   readonly skills?: ReadonlyMap<string, number>;
+  /**
+   * Which door to take after a normal room (#39): returns an index into `offers`.
+   * Defaults to 0 (the first door).
+   */
+  readonly chooseDoor?: (offers: readonly DoorReward[], room: number) => number;
 }
 
 export type SimulationStatus = 'won' | 'lost' | 'timeout';
@@ -144,6 +156,10 @@ export type SimulationEvent =
   | (SimEventBase & { readonly kind: 'shield-block' })
   | (SimEventBase & { readonly kind: 'room-cleared'; readonly gold: number })
   | (SimEventBase & { readonly kind: 'boss-phase'; readonly phase: number })
+  /** Doors offered after a normal room (#39); `room` is the cleared room position, 1-based. */
+  | (SimEventBase & { readonly kind: 'door'; readonly offers: readonly DoorReward[]; readonly chosen: DoorReward })
+  /** The clear reward of room `room`; `gold` is the door bonus paid for a `gold` reward, else 0. */
+  | (SimEventBase & { readonly kind: 'reward'; readonly reward: DoorReward; readonly gold: number })
   | { readonly kind: 'run-won' | 'run-lost'; readonly nowMs: number };
 
 export interface SimulationResult {
@@ -166,6 +182,15 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const runRooms = drawRunRooms(options.level, options.seed);
   const firstRoom = runRooms[0];
   if (firstRoom === undefined) throw new Error('simulateRun needs a chapter with at least 1 room');
+
+  /** Normal rooms in this run = the door count that leads to the boss (#38). */
+  const normalRoomCount = runRooms.filter((candidate) => !candidate.isBossRoom).length;
+  /** Special doors stay off until #40 ships the rooms behind them. */
+  const enabledDoors: readonly DoorReward[] = DOORS_TUNING.specialRoomsEnabled
+    ? DOOR_REWARDS
+    : COMBAT_REWARDS;
+  /** Reward carried by the door taken after the previous room; `null` in room 1. */
+  let doorReward: DoorReward | null = null;
 
   const rng = new SeededRng(options.seed);
   const stats = computeDerivedStats(options.skills ?? new Map<string, number>());
@@ -615,10 +640,17 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (waveIndex + 1 < waveCount(room)) {
       waveIndex += 1;
     } else {
-      const roomGold = Math.round(goldForRoomClear(room.isBossRoom) * stats.goldMultiplier);
+      // The room's clear reward comes from the door taken after the previous room (#39).
+      const roomPosition = roomIndex + 1;
+      const reward = clearRewardFor(roomPosition, doorReward);
+      const goldBonus =
+        reward === 'gold' ? Math.max(0, Math.round(DOORS_TUNING.goldBonus)) : 0;
+      const roomGold =
+        Math.round(goldForRoomClear(room.isBossRoom) * stats.goldMultiplier) + goldBonus;
       goldEarned += roomGold;
       roomsCleared += 1;
       events.push({ kind: 'room-cleared', nowMs: durationMs, room: room.room, gold: roomGold });
+      events.push({ kind: 'reward', nowMs: durationMs, room: roomPosition, reward, gold: goldBonus });
       healPlayer(stats.healPerRoom ?? 0);
 
       const nextRoom = runRooms[roomIndex + 1];
@@ -627,6 +659,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         events.push({ kind: 'run-won', nowMs: durationMs });
         break;
       }
+
+      // Doors for the room just cleared: two rewards before the boss, the boss door after it.
+      const offers = doorOffers(options.seed, roomPosition, normalRoomCount, enabledDoors);
+      const chosen = chooseDoorFrom(options.chooseDoor, offers, roomPosition);
+      events.push({ kind: 'door', nowMs: durationMs, room: roomPosition, offers, chosen });
+      doorReward = chosen;
 
       roomIndex += 1;
       room = nextRoom;
@@ -654,6 +692,19 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 /** Waves of the room. Boss rooms are handled by `runBossRoom` so this covers regular rooms only. */
 function spawnRoomWave(room: LevelData, waveIndex: number): EnemyState[] {
   return spawnWave(room, waveIndex);
+}
+
+/** The door the run takes; an out-of-range index or a missing policy falls back to the first. */
+function chooseDoorFrom(
+  choose: SimulationOptions['chooseDoor'],
+  offers: readonly DoorReward[],
+  room: number,
+): DoorReward {
+  const fallback = offers[0] ?? 'skill';
+  if (offers.length <= 1) return fallback;
+  const index = choose?.(offers, room) ?? 0;
+  if (!Number.isInteger(index) || index < 0 || index >= offers.length) return fallback;
+  return offers[index] ?? fallback;
 }
 
 /** One room's navigation, built at the configured rebuild throttle (`navigation.rebuildMinMs`). */

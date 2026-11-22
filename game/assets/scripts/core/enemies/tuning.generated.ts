@@ -198,4 +198,15 @@ export const TUNING_DATA = {
     actorInCoverAlpha: 0.5,
     fadeRate: 10,
   },
+  doors: {
+    goldBonus: 15,
+    specialRoomsEnabled: false,
+    weights: {
+      skill: 40,
+      gold: 30,
+      heal: 12,
+      shop: 10,
+      chest: 8,
+    },
+  },
 } as const;
