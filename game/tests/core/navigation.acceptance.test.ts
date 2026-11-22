@@ -196,7 +196,7 @@ describe('line of sight', () => {
 });
 
 describe('headless runs: no enemy gets stuck', () => {
-  for (const chapterNumber of [1, 2, 3]) {
+  for (const chapterNumber of [1, 2, 3, 4]) {
     it(`chapter ${chapterNumber}: no enemy keeps walking for 2 s while moving < 0.5 tiles`, () => {
       const chapter = chapterFromLevels(loadTmxLevels(join(LEVELS_ROOT, `chapter-${chapterNumber}`)));
       const windows = new Map<string, { since: number; from: Vec2 }>();

@@ -947,7 +947,6 @@ function planDecor(
     return data;
   }
 
-  // Chapter 4: sparse sand cracks (the desert floor is already sand); decor never hides a prop.
   // Chapter 4 has no floor decor: `TilesetDesert` is a village object sheet (its sand tiles are
   // outlined corner pieces of the wall/plaza blocks, not walkable detail), so the sand stays plain.
   if (chapter === 4) return data;

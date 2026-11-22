@@ -48,7 +48,7 @@ function colliderObstacle(placed: PlacedProp, def: PropDef): Obstacle | null {
 }
 
 describe('prop catalogue', () => {
-  for (const chapter of [1, 2, 3]) {
+  for (const chapter of [1, 2, 3, 4]) {
     const defs = PROP_CATALOGUE[chapter] ?? [];
 
     it(`chapter ${chapter}: at least 8 solid and 6 walk-over kinds, with houses and trees`, () => {
@@ -88,7 +88,7 @@ describe('prop catalogue', () => {
 });
 
 describe('rooms on disk', () => {
-  for (const chapter of [1, 2, 3]) {
+  for (const chapter of [1, 2, 3, 4]) {
     it(`chapter ${chapter}: every room places catalogue props, and solid props are exactly the prop obstacles`, () => {
       const problems: string[] = [];
       for (const level of rooms(chapter)) {

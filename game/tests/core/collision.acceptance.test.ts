@@ -159,7 +159,7 @@ function loadChapter(chapter: number): ChapterData {
 describe('rooms on disk', () => {
   it('no playerStart or spawn overlaps an obstacle', () => {
     const problems: string[] = [];
-    for (const chapter of [1, 2, 3]) {
+    for (const chapter of [1, 2, 3, 4]) {
       for (const level of loadChapter(chapter).rooms) {
         for (const block of level.obstacles) {
           if (overlaps(level.playerStart, PLAYER_RADIUS, block)) problems.push(`${level.id} playerStart`);
@@ -204,7 +204,7 @@ describe('balance sim uses the same collision', () => {
     };
   }
 
-  for (const chapterNumber of [1, 2, 3]) {
+  for (const chapterNumber of [1, 2, 3, 4]) {
     it(`chapter ${chapterNumber}: neither the player nor an enemy ever overlaps an obstacle`, () => {
       const chapter = loadChapter(chapterNumber);
       const overlapsFound: string[] = [];
