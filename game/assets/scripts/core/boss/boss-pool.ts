@@ -3,7 +3,7 @@
  *
  * A chapter's boss is picked from its pool by the **run seed**, so two runs of the same
  * chapter can meet different bosses while a replay of the same seed stays identical.
- * Chapter 3 keeps a single boss until #44 adds its alternatives.
+ * Chapters 1–4 all have two bosses (#43, #44); chapter 4 has no levels yet (#45).
  *
  * Pure data + pure functions: no time, no RNG instance, no `cc` (the seed is the whole input).
  */
@@ -13,7 +13,8 @@ import { BOSSES, BOSS_IDS, type BossId } from './boss-defs';
 export const BOSS_POOLS: Readonly<Record<number, readonly BossId[]>> = {
   1: ['tengu', 'frog'],
   2: ['squid', 'slime'],
-  3: ['samurai'],
+  3: ['samurai', 'bamboo'],
+  4: ['racoon', 'redtengu'],
 };
 
 /**
@@ -55,13 +56,16 @@ export function pickBoss(chapter: number, seed: number): BossId {
   return chosen;
 }
 
-/** One music resource path per boss — every boss sounds different (ticket #43). */
+/** One music resource path per boss — every boss sounds different (ticket #43, #44). */
 const BOSS_MUSIC: Readonly<Record<BossId, string>> = {
   tengu: 'audio/music/boss',
   squid: 'audio/music/boss-squid',
   samurai: 'audio/music/boss-samurai',
   frog: 'audio/music/boss-frog',
   slime: 'audio/music/boss-slime',
+  bamboo: 'audio/music/boss-bamboo',
+  racoon: 'audio/music/boss-racoon',
+  redtengu: 'audio/music/boss-redtengu',
 };
 
 /** Resource path (no extension, as `resources.load` wants) of the boss's own music track. */

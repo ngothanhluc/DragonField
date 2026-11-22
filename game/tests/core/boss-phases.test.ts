@@ -24,6 +24,10 @@ const ARENAS: Readonly<Record<BossId, Arena>> = {
   // Pool alternatives (#43) — the same arena the acceptance test uses.
   frog: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
   slime: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
+  // Ch3/ch4 pool (#44) — the same arenas the acceptance test uses.
+  bamboo: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
+  racoon: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
+  redtengu: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
 };
 
 const PHASE_FRACTION: Readonly<Record<BossPhase, number>> = { 1: 1, 2: 0.6, 3: 0.2 };

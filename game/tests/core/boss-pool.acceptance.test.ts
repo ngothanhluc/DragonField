@@ -40,10 +40,11 @@ describe('new bosses', () => {
 });
 
 describe('boss pool', () => {
-  it('ch1 = Tengu or GiantFrog, ch2 = Squid or GiantSlime, ch3 = Samurai', () => {
+  it('ch1 = Tengu or GiantFrog, ch2 = Squid or GiantSlime, ch3 = Samurai or GiantBamboo', () => {
     expect([...(BOSS_POOLS[1] ?? [])].sort()).toEqual(['frog', 'tengu']);
     expect([...(BOSS_POOLS[2] ?? [])].sort()).toEqual(['slime', 'squid']);
-    expect(BOSS_POOLS[3]).toEqual(['samurai']);
+    // #44 superseded the single-boss ch3: GiantBamboo joins the pool.
+    expect([...(BOSS_POOLS[3] ?? [])].sort()).toEqual(['bamboo', 'samurai']);
   });
 
   it('the pick is deterministic per seed and both bosses come up across seeds', () => {
@@ -57,7 +58,10 @@ describe('boss pool', () => {
       }
       expect(seen.size, `chapter ${chapter}`).toBe(2);
     }
-    for (let seed = 1; seed <= 16; seed += 1) expect(pickBoss(3, seed)).toBe('samurai');
+    // #44: ch3 now has a pool too (the new ticket's contract covers both picks per seed).
+    for (let seed = 1; seed <= 16; seed += 1) {
+      expect(BOSS_POOLS[3]).toContain(pickBoss(3, seed));
+    }
   });
 });
 

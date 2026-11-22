@@ -210,8 +210,18 @@ describe('boss hitbox', () => {
   });
 
   it('the hitbox is a proxy smaller than half the largest sprite frame (no hitting air)', () => {
-    // Largest boss frames: 82 px Tengu, 76 px Squid, 96 px Samurai, 40 px Frog, 62 px Slime.
-    const framePx = { tengu: 82, squid: 76, samurai: 96, frog: 40, slime: 62 };
+    // Largest boss frames: 82 px Tengu, 76 px Squid, 96 px Samurai, 40 px Frog, 62 px Slime,
+    // 62 px Bamboo, 60 px Racoon, 82 px red Tengu (#44).
+    const framePx = {
+      tengu: 82,
+      squid: 76,
+      samurai: 96,
+      frog: 40,
+      slime: 62,
+      bamboo: 62,
+      racoon: 60,
+      redtengu: 82,
+    };
 
     for (const id of BOSS_IDS) {
       expect(BOSSES[id].hitboxRadiusTiles).toBeLessThan(framePx[id] / 2 / 16);
