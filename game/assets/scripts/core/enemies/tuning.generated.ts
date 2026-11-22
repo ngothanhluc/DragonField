@@ -149,11 +149,14 @@ export const TUNING_DATA = {
   },
   waves: {
     aliveCap: 24,
+    aliveCapStart: 3,
+    aliveCapStepPerRoom: 3,
     spawnIntervalMs: 1800,
     spawnBatchSize: 4,
     spawnJitterTiles: 3,
     telegraphMs: 800,
     minSpawnDistanceTiles: 6,
+    maxSpawnDistanceTiles: 18,
     aggroRadiusTiles: 160,
     chapterTotals: [
       {

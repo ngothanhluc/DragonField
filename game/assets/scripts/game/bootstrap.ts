@@ -731,7 +731,7 @@ export class Bootstrap extends Component {
     this.status = 'playing';
     this.screens.setScreen('playing');
     this.persistBest(run.room);
-    this.combat.startWaves(this.waveSeed(firstRoom));
+    this.combat.startWaves(this.waveSeed(firstRoom), run.room);
     if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
     this.hud?.setSkills(this.skills.entries);
     this.displayedGold = 0;
@@ -862,7 +862,8 @@ export class Bootstrap extends Component {
       this.createRoom(level, asset);
       this.combat?.enterRoom(level);
       this.player?.teleport(level.playerStart);
-      this.combat?.startWaves(this.waveSeed(level));
+      // A dev room is inspected on its own: treat it as the run's first slot (smallest crowd).
+      this.combat?.startWaves(this.waveSeed(level), 1);
       const player = this.player;
       if (this.hud !== null && player !== null) syncCombatHud(this.hud, player, this.combat);
 
@@ -1576,7 +1577,7 @@ export class Bootstrap extends Component {
     } else {
       this.audio?.playMusic(chapterMusic(level.chapter));
     }
-    this.combat?.startWaves(this.waveSeed(level));
+    this.combat?.startWaves(this.waveSeed(level), run.room);
     const player = this.player;
     if (this.hud !== null && player !== null) {
       syncCombatHud(this.hud, player, this.combat);

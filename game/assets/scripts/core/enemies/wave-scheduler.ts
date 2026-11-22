@@ -8,9 +8,10 @@
  * - `roomEnemyTotal()` decides how many enemies a room spawns: 8× the count the `.tmx` authors,
  *   clamped into the chapter's range in `config/tuning.json` (`waves.chapterTotals`), seeded so
  *   two runs of the same room are not identical.
- * - `step()` releases them in batches at most `waves.aliveCap` alive at once, on free ground at
- *   least `waves.minSpawnDistanceTiles` from the player. The role mix (and which ones are elite)
- *   cycles the room's own spawn list, so the authored composition is what the room plays.
+ * - `step()` releases them in batches at most `aliveCapForSlot(runSlot)` alive at once (a run opens
+ *   small and grows room by room, never past `waves.aliveCap`), on free ground at least
+ *   `waves.minSpawnDistanceTiles` from the player. The role mix (and which ones are elite) cycles
+ *   the room's own spawn list, so the authored composition is what the room plays.
  * - A spawn that lands inside the current view carries `telegraphMs > 0`: the game shows its
  *   spawn telegraph and the enemy only becomes active afterwards, so nothing ever appears on top
  *   of the player.
@@ -169,10 +170,27 @@ function shuffleInPlace(points: Vec2[], rng: SeededRng): void {
   }
 }
 
+/**
+ * Alive cap of one run slot (#41). A run opens with a small crowd (`aliveCapStart`) and grows by
+ * `aliveCapStepPerRoom` per drawn room, never past `aliveCap` (24). That way room 1 of a chapter is
+ * a fair fight for a player with no skills yet, while the late rooms still reach the full wave.
+ * `slot` is 1-based: the drawn room's position in the run.
+ */
+export function aliveCapForSlot(slot: number): number {
+  const max = Math.max(0, Math.floor(WAVES_TUNING.aliveCap));
+  if (!Number.isFinite(slot)) return max;
+  const start = Math.min(Math.max(0, Math.floor(WAVES_TUNING.aliveCapStart)), max);
+  const step = Math.max(0, Math.floor(WAVES_TUNING.aliveCapStepPerRoom));
+  const index = Math.max(0, Math.ceil(slot) - 1);
+  return Math.min(max, start + step * index);
+}
+
 export class WaveScheduler {
   private readonly rng: SeededRng;
   /** Role + elite of every spawn, in order (the room's own list, cycled to the total). */
   private readonly queue: AuthoredSpawn[];
+  /** This room's alive cap: the run-slot ramp, never above `waves.aliveCap`. */
+  private readonly cap: number;
   private spawnedCount = 0;
   /** Simulated time the next batch may leave, ms. */
   private nextSpawnAtMs = 0;
@@ -181,11 +199,17 @@ export class WaveScheduler {
   /** Candidate spawn points, built once (authored points + jitter, then a free-ground grid). */
   private points: Vec2[] | null = null;
 
+  /**
+   * `runSlot` is the drawn room's position in the run (1-based, default 1 = the run's first room),
+   * which caps how many enemies this room holds at once — see `aliveCapForSlot`.
+   */
   constructor(
     readonly level: LevelData,
     readonly seed: number,
+    readonly runSlot = 1,
   ) {
     this.rng = new SeededRng(roomSeed(level, seed) ^ 0x5bf03635);
+    this.cap = aliveCapForSlot(runSlot);
     const total = roomEnemyTotal(level, seed);
     const authored = authoredSpawns(level);
     this.queue = [];
@@ -204,19 +228,31 @@ export class WaveScheduler {
     return this.spawnedCount;
   }
 
+  /** Enemies of this room allowed alive at once (the run-slot ramp). */
+  get aliveCap(): number {
+    return this.cap;
+  }
+
   /** Spawns to create now (may be empty). Never lets `alive` exceed the cap. */
   step(args: SchedulerStepArgs): ScheduledSpawn[] {
     const { nowMs, player, view, alive } = args;
     if (this.spawnedCount >= this.total) return [];
 
-    const cap = Math.max(0, WAVES_TUNING.aliveCap);
+    const cap = Math.max(0, this.cap);
     const free = Math.min(cap - alive, this.total - this.spawnedCount);
     if (free <= 0) return [];
     // Pacing: one batch per interval. A stalled spawn (cap full) does not queue several batches —
     // the next batch is released as soon as a slot frees up.
     if (nowMs < this.nextSpawnAtMs) return [];
 
-    const batch = Math.min(Math.max(1, WAVES_TUNING.spawnBatchSize), free);
+    // The first batch of a room is at most half its cap: opening a room with the whole crowd at
+    // once reads as an ambush, and the player needs a moment to see where the room is.
+    const firstBatchCap =
+      this.spawnedCount === 0 ? Math.max(1, Math.ceil(cap / 2)) : Number.POSITIVE_INFINITY;
+    const batch = Math.min(
+      Math.max(1, WAVES_TUNING.spawnBatchSize),
+      Math.min(free, firstBatchCap),
+    );
     const spawns: ScheduledSpawn[] = [];
     for (let index = 0; index < batch; index += 1) {
       const queued = this.queue[this.spawnedCount + index];
@@ -242,19 +278,21 @@ export class WaveScheduler {
   }
 
   /**
-   * First candidate from the rotating cursor that is free ground and far enough from the player.
-   * Falls back to the free point farthest from the player, so a spawn is never skipped (a skipped
-   * spawn would mean the room can never clear).
+   * First candidate from the rotating cursor that is free ground and within the spawn band
+   * (`minSpawnDistanceTiles` .. `maxSpawnDistanceTiles`) around the player. When no candidate fits
+   * the band, the lower bound alone still applies (a spawn must never land on the player), and as
+   * a last resort the free point farthest from the player is used — a skipped spawn would mean the
+   * room can never clear.
    */
   private pickPoint(player: Vec2): Vec2 {
     const points = this.points ?? (this.points = this.buildPoints());
-    for (let attempt = 0; attempt < points.length; attempt += 1) {
-      const point = points[(this.cursor + attempt) % points.length];
-      if (point === undefined) continue;
-      if (distance(point, player) < WAVES_TUNING.minSpawnDistanceTiles) continue;
-      this.cursor = (this.cursor + attempt + 1) % points.length;
-      return { x: point.x, y: point.y };
-    }
+    const min = WAVES_TUNING.minSpawnDistanceTiles;
+    const max = WAVES_TUNING.maxSpawnDistanceTiles;
+
+    const nearest = this.search(player, points, min, max);
+    if (nearest !== null) return nearest;
+    const anyFar = this.search(player, points, min, Number.POSITIVE_INFINITY);
+    if (anyFar !== null) return anyFar;
 
     let best: Vec2 = { x: this.level.size.cols / 2, y: this.level.size.rows / 2 };
     let bestGap = -1;
@@ -266,6 +304,24 @@ export class WaveScheduler {
       }
     }
     return { x: best.x, y: best.y };
+  }
+
+  /** One pass over the candidate ring: the first point inside `[min, max]` distance, or null. */
+  private search(
+    player: Vec2,
+    points: readonly Vec2[],
+    min: number,
+    max: number,
+  ): Vec2 | null {
+    for (let attempt = 0; attempt < points.length; attempt += 1) {
+      const point = points[(this.cursor + attempt) % points.length];
+      if (point === undefined) continue;
+      const gap = distance(point, player);
+      if (gap < min || gap > max) continue;
+      this.cursor = (this.cursor + attempt + 1) % points.length;
+      return { x: point.x, y: point.y };
+    }
+    return null;
   }
 
   /** Authored points with seeded jitter first, then a free-ground grid; shuffled once, seeded. */

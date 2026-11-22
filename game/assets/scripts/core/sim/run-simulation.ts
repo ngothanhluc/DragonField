@@ -286,7 +286,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       // One-screen room (boss arena, hand-built fixture): its authored list, all of it.
       return level.waves.flatMap((_, wave) => spawnWave(level, wave));
     }
-    scheduler = new WaveScheduler(level, waveSeed(level, options.seed, atRoomIndex));
+    scheduler = new WaveScheduler(level, waveSeed(level, options.seed, atRoomIndex), atRoomIndex + 1);
     return [];
   };
 

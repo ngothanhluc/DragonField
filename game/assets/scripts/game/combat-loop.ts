@@ -383,11 +383,12 @@ export class CombatLoop {
 
   /**
    * Fill the room (#41). A multi-screen normal room starts empty and receives its 8× total from
-   * the `WaveScheduler` over time (under the alive cap, with spawn telegraphs); a one-screen room
-   * (boss arena, dev room) keeps its authored list, exactly as before. Call after `enterRoom`
-   * (and after the boss is spawned).
+   * the `WaveScheduler` over time (under the run-slot alive cap, with spawn telegraphs); a
+   * one-screen room (boss arena, dev room) keeps its authored list, exactly as before. Call after
+   * `enterRoom` (and after the boss is spawned). `runSlot` is the room's 1-based position in the
+   * run — room 1 opens with the smallest crowd (see `aliveCapForSlot`).
    */
-  startWaves(seed: number): void {
+  startWaves(seed: number, runSlot = 1): void {
     this.scheduler = null;
     this.pendingSpawns.length = 0;
     this.spawnedSequence = 0;
@@ -400,7 +401,7 @@ export class CombatLoop {
       }
       return;
     }
-    this.scheduler = new WaveScheduler(level, seed);
+    this.scheduler = new WaveScheduler(level, seed, runSlot);
   }
 
   /** One combat frame. `realDeltaMs` has already been capped by bootstrap. */

@@ -168,8 +168,16 @@ export interface ChapterWaveTotal {
  * `core/enemies/behaviours.ts` (aggro radius).
  */
 export interface WavesTuning {
-  /** Most enemies alive at once in a normal room. */
+  /** Most enemies alive at once in a normal room (the ramped cap never exceeds it). */
   readonly aliveCap: number;
+  /**
+   * Alive cap of the **first** room of a run. A run opens with a smaller crowd and grows from room
+   * to room (see `aliveCapStepPerRoom`), so a fresh chapter's room 1 is a fair fight against a
+   * 0-skill player instead of the full late-room wave.
+   */
+  readonly aliveCapStart: number;
+  /** Added to the alive cap per run slot; `cap(slot) = min(aliveCap, aliveCapStart + step·(slot-1))`. */
+  readonly aliveCapStepPerRoom: number;
   /** Simulated time between two spawn batches, ms. */
   readonly spawnIntervalMs: number;
   /** Enemies per batch; the alive cap still wins when fewer slots are free. */
@@ -180,6 +188,13 @@ export interface WavesTuning {
   readonly telegraphMs: number;
   /** A spawn is never closer to the player than this, tiles. */
   readonly minSpawnDistanceTiles: number;
+  /**
+   * Preferred upper bound of the spawn distance, tiles (0 = no bound): a room's authored points
+   * are spread over 16 screens, so without this the far corner feeds enemies that take 20+ s to
+   * walk in and the room stops responding to the player's damage. Spawns outside the band are
+   * used only when no free point inside it exists.
+   */
+  readonly maxSpawnDistanceTiles: number;
   /** Enemies farther from the player than this idle instead of walking toward it, tiles. */
   readonly aggroRadiusTiles: number;
   /** Per chapter: the room total range (one entry per chapter). */
@@ -472,11 +487,14 @@ const NAVIGATION_FIELDS = [
 
 const WAVES_FIELDS = [
   'aliveCap',
+  'aliveCapStart',
+  'aliveCapStepPerRoom',
   'spawnIntervalMs',
   'spawnBatchSize',
   'spawnJitterTiles',
   'telegraphMs',
   'minSpawnDistanceTiles',
+  'maxSpawnDistanceTiles',
   'aggroRadiusTiles',
   'chapterTotals',
 ] as const;
@@ -1054,11 +1072,14 @@ function parseWaveTotals(
 function zeroWaves(): WavesTuning {
   return {
     aliveCap: 1,
+    aliveCapStart: 1,
+    aliveCapStepPerRoom: 0,
     spawnIntervalMs: 0,
     spawnBatchSize: 1,
     spawnJitterTiles: 0,
     telegraphMs: 0,
     minSpawnDistanceTiles: 0,
+    maxSpawnDistanceTiles: 0,
     aggroRadiusTiles: 0,
     chapterTotals: Array.from({ length: CHAPTERS_PER_RUN }, () => ({ min: 1, max: 1 })),
   };
@@ -1069,9 +1090,23 @@ function parseWaves(raw: Record<string, unknown>, problems: ProblemList): WavesT
   if (source === undefined) return zeroWaves();
 
   const path = 'waves';
+  const aliveCap =
+    readNumber(source, 'aliveCap', path, problems, { integer: true, positive: true }) ?? 1;
+  const aliveCapStart =
+    readNumber(source, 'aliveCapStart', path, problems, { integer: true, positive: true }) ??
+    aliveCap;
+  if (aliveCapStart > aliveCap) {
+    problems.add(
+      `${path}.aliveCapStart`,
+      `must be <= aliveCap (${aliveCap}), got ${aliveCapStart}`,
+    );
+  }
+
   return {
-    aliveCap:
-      readNumber(source, 'aliveCap', path, problems, { integer: true, positive: true }) ?? 1,
+    aliveCap,
+    aliveCapStart: Math.min(aliveCapStart, aliveCap),
+    aliveCapStepPerRoom:
+      readNumber(source, 'aliveCapStepPerRoom', path, problems, { integer: true }) ?? 0,
     spawnIntervalMs:
       readNumber(source, 'spawnIntervalMs', path, problems, { positive: true }) ?? 0,
     spawnBatchSize:
@@ -1080,6 +1115,8 @@ function parseWaves(raw: Record<string, unknown>, problems: ProblemList): WavesT
     telegraphMs: readNumber(source, 'telegraphMs', path, problems) ?? 0,
     minSpawnDistanceTiles:
       readNumber(source, 'minSpawnDistanceTiles', path, problems) ?? 0,
+    maxSpawnDistanceTiles:
+      readNumber(source, 'maxSpawnDistanceTiles', path, problems) ?? 0,
     aggroRadiusTiles:
       readNumber(source, 'aggroRadiusTiles', path, problems, { positive: true }) ?? 1,
     chapterTotals: parseWaveTotals(source.chapterTotals, problems),

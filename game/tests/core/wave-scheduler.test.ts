@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   WaveScheduler,
+  aliveCapForSlot,
   canAttackFrom,
   edgeArrowTargets,
   enemyStateFromSpawn,
@@ -69,9 +70,34 @@ describe('roomEnemyTotal', () => {
 });
 
 describe('WaveScheduler', () => {
-  it('never exceeds the alive cap even when nothing dies', () => {
+  it('ramps the alive cap by run slot and never past aliveCap', () => {
+    expect(aliveCapForSlot(1)).toBe(WAVES_TUNING.aliveCapStart);
+    expect(aliveCapForSlot(2)).toBe(
+      Math.min(WAVES_TUNING.aliveCap, WAVES_TUNING.aliveCapStart + WAVES_TUNING.aliveCapStepPerRoom),
+    );
+    expect(aliveCapForSlot(99)).toBe(WAVES_TUNING.aliveCap);
+    expect(new WaveScheduler(normalRoom(1), 1, 1).aliveCap).toBe(WAVES_TUNING.aliveCapStart);
+    expect(new WaveScheduler(normalRoom(1), 1, 8).aliveCap).toBe(WAVES_TUNING.aliveCap);
+    // A missing/odd slot must never produce a negative or unbounded cap.
+    expect(aliveCapForSlot(0)).toBe(WAVES_TUNING.aliveCapStart);
+    expect(aliveCapForSlot(Number.NaN)).toBe(WAVES_TUNING.aliveCap);
+  });
+
+  it('opens a room with at most half its cap in the first batch', () => {
     const level = normalRoom(3);
-    const scheduler = new WaveScheduler(level, 41);
+    const scheduler = new WaveScheduler(level, 41, 1);
+    const player = level.playerStart;
+    const view = viewAround(player, level);
+    const first = scheduler.step({ nowMs: 0, player, view, alive: 0 });
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.length).toBeLessThanOrEqual(Math.ceil(scheduler.aliveCap / 2));
+  });
+
+  it('never exceeds the run slot’s alive cap even when nothing dies', () => {
+    const level = normalRoom(3);
+    const scheduler = new WaveScheduler(level, 41, 8);
+    const cap = scheduler.aliveCap;
+    expect(cap).toBe(WAVES_TUNING.aliveCap);
     const player = level.playerStart;
     const view = viewAround(player, level);
     let alive = 0;
@@ -79,16 +105,16 @@ describe('WaveScheduler', () => {
     let nowMs = 0;
 
     // Nobody dies: the scheduler fills to the cap and then holds.
-    for (; nowMs < 300_000 && alive < WAVES_TUNING.aliveCap; nowMs += 100) {
+    for (; nowMs < 300_000 && alive < cap; nowMs += 100) {
       const before = spawned;
       const spawns = scheduler.step({ nowMs, player, view, alive });
       alive += spawns.length;
       spawned += spawns.length;
-      expect(alive).toBeLessThanOrEqual(WAVES_TUNING.aliveCap);
+      expect(alive).toBeLessThanOrEqual(cap);
       if (spawns.length === 0 && before === spawned && nowMs > 60_000) break;
     }
-    expect(alive).toBe(WAVES_TUNING.aliveCap);
-    expect(spawned).toBe(WAVES_TUNING.aliveCap);
+    expect(alive).toBe(cap);
+    expect(spawned).toBe(cap);
     expect(scheduler.isCleared(alive)).toBe(false);
 
     // Kills free slots: the rest of the room follows, still under the cap.
@@ -98,7 +124,7 @@ describe('WaveScheduler', () => {
       const spawns = scheduler.step({ nowMs, player, view, alive });
       alive += spawns.length;
       spawned += spawns.length;
-      expect(alive).toBeLessThanOrEqual(WAVES_TUNING.aliveCap);
+      expect(alive).toBeLessThanOrEqual(cap);
     }
 
     expect(spawned).toBe(scheduler.total);
