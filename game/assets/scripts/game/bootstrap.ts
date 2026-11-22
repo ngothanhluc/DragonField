@@ -2010,7 +2010,10 @@ export class Bootstrap extends Component {
   /** Spendable gold shown on the HUD: the save's meta gold plus this run's arrived coins. */
   private hudGoldTotal(): number {
     const save = this.save?.gold ?? 0;
-    return Math.min(Number.MAX_SAFE_INTEGER, save + this.displayedGold);
+    // A shop purchase spends from the ledger while some coins may still be in flight; never let
+    // those late coins show more than the run still holds (the ledger is the source of truth).
+    const arrived = Math.min(this.displayedGold, this.rewards.goldEarned);
+    return Math.min(Number.MAX_SAFE_INTEGER, save + arrived);
   }
 
   /** Spendable gold the shop shows: the save's gold plus the run's earned gold (the HUD total). */
