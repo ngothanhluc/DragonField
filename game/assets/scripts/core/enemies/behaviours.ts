@@ -501,7 +501,11 @@ function isCoolingDown(state: EnemyState, nowMs: number, tuning: EnemyRoleTuning
  * A point `preferredRangeMaxTiles` from the player along the direction from player to enemy:
  * too close means that is the retreat point, too far means the approach point.
  *
- * If that point falls inside an obstacle, stand still instead of charging into a wall.
+ * If that point falls inside an obstacle (a pillar, a house, a prop), stand-off is impossible
+ * there. Walk toward the player instead of returning the enemy's **own** position: a `walk`
+ * whose target is where the walker already stands moves it nowhere while the stuck guard keeps
+ * detouring it, forever. Closing the distance is always legal and the band check stops the walk
+ * as soon as the caster is in range again.
  */
 function holdRangeTarget(
   state: EnemyState,
@@ -516,7 +520,7 @@ function holdRangeTarget(
   });
 
   if (obstacleAt(level, atRange) !== null) {
-    return { x: state.position.x, y: state.position.y };
+    return clampToRoom(level, player);
   }
   return atRange;
 }

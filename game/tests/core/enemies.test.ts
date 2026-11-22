@@ -179,7 +179,7 @@ describe('enemy behaviours — caster', () => {
     expect(decideAction({ state, player, nowMs: 2200, level }).kind).toBe('telegraph');
   });
 
-  it('only stands still when the spacing point falls inside an obstacle', () => {
+  it('closes the distance when the spacing point falls inside an obstacle', () => {
     const blockedLevel = makeLevel([{ kind: 'pillar', x: 18, y: 2, width: 2, height: 2 }]);
     const state = enemy({ role: 'caster', x: 15, y: 3 });
     const player = { x: 13, y: 3 };
@@ -193,7 +193,10 @@ describe('enemy behaviours — caster', () => {
       level: blockedLevel,
     });
 
-    expect(action).toEqual({ kind: 'walk', target: { x: state.position.x, y: state.position.y } });
+    // No stand-off spot exists there, so approach instead of standing on the spot: a `walk` whose
+    // target is the walker's own position reports "walking" forever while moving nowhere (the stuck
+    // guard then detours in circles). The range band stops the walk again once it is close enough.
+    expect(action).toEqual({ kind: 'walk', target: { x: player.x, y: player.y } });
   });
 });
 
