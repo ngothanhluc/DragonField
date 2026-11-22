@@ -1499,7 +1499,7 @@ export class Bootstrap extends Component {
     const specialKind = this.pendingSpecial;
     this.pendingSpecial = null;
     if (specialKind !== null) {
-      this.enterSpecialRoom(roomNumber, specialKind, level);
+      this.enterSpecialRoom(roomNumber, specialKind);
       return;
     }
 
@@ -1548,16 +1548,23 @@ export class Bootstrap extends Component {
   }
 
   /**
-   * Enter a special slot: the drawn room is only the **floor** source (32×18 of the chapter's
-   * tiles), while the actual room has no enemies, one NPC/chest and one door out.
+   * Enter a special slot: 32×18 of the **chapter's own** floor, no enemies, one NPC/chest and
+   * one door out.
+   *
+   * The floor comes from the chapter's **boss room**, not from the drawn normal room: normal
+   * rooms are 128×72 (ADR-018), and `buildRoom` draws a one-screen `LevelData` through a single
+   * `TiledMap`, which overflows the 2D batcher on a 128×72 asset (Error 9004, #37). The boss
+   * room is exactly 32×18, so its asset is safe in the one-screen path.
    */
-  private enterSpecialRoom(roomNumber: number, kind: SpecialKind, drawn: LevelData): void {
+  private enterSpecialRoom(roomNumber: number, kind: SpecialKind): void {
     const run = this.run;
-    if (run === null) return;
+    const chapter = this.chapter;
+    if (run === null || chapter === null) return;
 
-    const asset = this.chapterAssets.get(drawn.room);
+    const bossRoom = chapter.rooms.find((room) => room.isBossRoom);
+    const asset = bossRoom === undefined ? undefined : this.chapterAssets.get(bossRoom.room);
     if (asset === undefined) {
-      this.fail(new Error(`TiledMapAsset not loaded for the ${kind} room (floor room ${drawn.room})`));
+      this.fail(new Error(`TiledMapAsset not loaded for the ${kind} room's 32×18 floor`));
       return;
     }
 
@@ -1587,7 +1594,7 @@ export class Bootstrap extends Component {
     if (this.hud !== null && player !== null) syncCombatHud(this.hud, player, this.combat);
     console.log(
       `[YokaiField] Entering the ${kind} room in slot ${run.roomLabel} ` +
-        `(floor from pool room ${drawn.room}, no enemies).`,
+        `(32×18 chapter floor, no enemies).`,
     );
   }
 
