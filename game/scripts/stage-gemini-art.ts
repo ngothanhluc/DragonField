@@ -297,6 +297,10 @@ function stage(
   const prepared = prepare(asset, palette, force);
   const mapped = prepared.image;
   const cells = sourceCells(asset);
+  // Kinds fitted into a frame line their output grid up with the source's pixel grid, so a
+  // feature narrower than one output pixel (an eye) keeps its own block. `ui` stretches and
+  // `tileset` slices whole cells, so both keep their exact mapping.
+  const align = defaults.fit === 'feet' || defaults.fit === 'center';
 
   if (defaults.register === 'tileset') {
     const columns = asset.columns ?? 1;
@@ -326,6 +330,7 @@ function stage(
           frameHeight: asset.frameHeight,
           anchor: defaults.anchor,
           share: defaults.share,
+          align,
         }),
       ),
       palette,
@@ -350,6 +355,7 @@ function stage(
     frameHeight: asset.frameHeight,
     anchor: defaults.anchor,
     share: defaults.share,
+    align,
     weights: salienceWeights(mapped),
     ...(asset.fitBox === undefined ? {} : { fitBox: asset.fitBox }),
   };

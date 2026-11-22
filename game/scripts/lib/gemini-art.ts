@@ -56,6 +56,12 @@ export interface FitCellsOptions {
    * behaviour: `frameWidth - 1 × frameHeight - 1` for `feet`, the frame for `center`.
    */
   readonly fitBox?: readonly [number, number];
+  /**
+   * Shift the shared crop window by up to one output block so the output grid lines up with
+   * the source's pixel grid. A feature narrower than one output pixel (an eye) then lands in
+   * one block instead of straddling two and losing both. Off by default.
+   */
+  readonly align?: boolean;
 }
 
 /** A point in output-frame pixels. */
@@ -677,6 +683,28 @@ function crop(image: PngImage, box: Box): PngImage {
   return { width, height, data };
 }
 
+/** Crop `width × height` at `(x0, y0)`, treating everything outside `bounds` as transparent. */
+function cropWindow(
+  image: PngImage,
+  x0: number,
+  y0: number,
+  width: number,
+  height: number,
+  bounds: Box,
+): PngImage {
+  const data = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = y0 + y;
+    if (sourceY < bounds.y0 || sourceY >= bounds.y1) continue;
+    const left = Math.max(0, bounds.x0 - x0);
+    const right = Math.min(width, bounds.x1 - x0);
+    if (right <= left) continue;
+    const from = (sourceY * image.width + x0 + left) * 4;
+    data.set(image.data.subarray(from, from + (right - left) * 4), (y * width + left) * 4);
+  }
+  return { width, height, data };
+}
+
 /**
  * Normalise each direction column to fill its frame cells.
  *
@@ -1117,6 +1145,154 @@ interface FitPlan {
   readonly scale: number;
   readonly fitWidth: number;
   readonly fitHeight: number;
+  /** Source pixels the window starts before the region when `align` is on; `[0, 0]` otherwise. */
+  readonly offset: readonly [number, number];
+}
+
+/** Most distinct colours per cell the alignment score tracks; a palette-mapped sheet uses ~10. */
+const ALIGN_COLOR_LIMIT = 24;
+/** Prefix-sum cells the score may allocate (~32 MB of Uint32 per cell), so huge cells track fewer colours. */
+const ALIGN_PREFIX_BUDGET = 8_000_000;
+
+/** Per-pixel colour of a cell, as prefix sums the alignment score can query per block in O(1). */
+interface AlignCounts {
+  readonly originX: number;
+  readonly originY: number;
+  readonly width: number;
+  readonly height: number;
+  readonly stride: number;
+  /** One prefix sum per tracked colour; untracked colours are counted by `opaque` minus their sum. */
+  readonly colours: readonly Uint32Array[];
+  readonly opaque: Uint32Array;
+}
+
+function regionSum(prefix: Uint32Array, stride: number, x0: number, y0: number, x1: number, y1: number): number {
+  return prefix[y1 * stride + x1]! - prefix[y0 * stride + x1]! - prefix[y1 * stride + x0]! + prefix[y0 * stride + x0]!;
+}
+
+/**
+ * Colour prefix sums over one cell. The offset search queries thousands of block rectangles,
+ * so counting their pixels per candidate would be quadratic; prefix sums make each query O(1).
+ */
+function alignCounts(image: PngImage, box: Box): AlignCounts {
+  const width = box.x1 - box.x0;
+  const height = box.y1 - box.y0;
+  const stride = width + 1;
+  const packed = new Int32Array(width * height).fill(-1);
+  const histogram = new Map<number, number>();
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const from = ((box.y0 + y) * image.width + box.x0 + x) * 4;
+      if (image.data[from + 3]! < 128) continue;
+      const colour = (image.data[from]! << 16) | (image.data[from + 1]! << 8) | image.data[from + 2]!;
+      packed[y * width + x] = colour;
+      histogram.set(colour, (histogram.get(colour) ?? 0) + 1);
+    }
+  }
+  const budget = Math.max(1, Math.floor(ALIGN_PREFIX_BUDGET / (stride * (height + 1))));
+  const tracked = Array.from(histogram.entries())
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+    .slice(0, Math.min(ALIGN_COLOR_LIMIT, budget))
+    .map(([colour]) => colour);
+  const slotOf = new Map<number, number>();
+  tracked.forEach((colour, index) => slotOf.set(colour, index + 1));
+  const colours = tracked.map(() => new Uint32Array(stride * (height + 1)));
+  const opaque = new Uint32Array(stride * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const colour = packed[y * width + x]!;
+      const slot = colour < 0 ? 0 : slotOf.get(colour) ?? 0;
+      const here = (y + 1) * stride + x + 1;
+      for (let k = 0; k < colours.length; k += 1) {
+        const prefix = colours[k]!;
+        prefix[here] = prefix[y * stride + x + 1]! + prefix[(y + 1) * stride + x]! - prefix[y * stride + x]! + (slot === k + 1 ? 1 : 0);
+      }
+      opaque[here] = opaque[y * stride + x + 1]! + opaque[(y + 1) * stride + x]! - opaque[y * stride + x]! + (colour < 0 ? 0 : 1);
+    }
+  }
+  return { originX: box.x0, originY: box.y0, width, height, stride, colours, opaque };
+}
+
+/**
+ * Mean dominant-colour share of one cell's output blocks for one window offset.
+ *
+ * Blocks are laid out exactly like `resamplePixelArt` lays them out for a window of
+ * `fitWidth × blk` source pixels, so the score measures the pixels the fit would actually
+ * pick. Transparent pixels (including anything outside the cell) vote as a colour; a block
+ * that is mostly backdrop cannot win over a solid sprite pixel, and the eye that lands in
+ * one block outright beats the skin around it, which is what vanishes otherwise.
+ */
+function alignCellScore(
+  counts: AlignCounts,
+  region: Box,
+  scale: number,
+  frameWidth: number,
+  frameHeight: number,
+  ox: number,
+  oy: number,
+): number {
+  const blk = 1 / scale;
+  const fitWidth = clamp(Math.ceil((region.x1 - region.x0 + ox) * scale), 1, frameWidth);
+  const fitHeight = clamp(Math.ceil((region.y1 - region.y0 + oy) * scale), 1, frameHeight);
+  const windowWidth = fitWidth * blk;
+  const windowHeight = fitHeight * blk;
+  const windowX = counts.originX + region.x0 - ox;
+  const windowY = counts.originY + region.y0 - oy;
+  let score = 0;
+  for (let by = 0; by < fitHeight; by += 1) {
+    const ys = Math.floor((by * windowHeight) / fitHeight);
+    const ye = Math.max(ys + 1, Math.floor(((by + 1) * windowHeight) / fitHeight));
+    for (let bx = 0; bx < fitWidth; bx += 1) {
+      const xs = Math.floor((bx * windowWidth) / fitWidth);
+      const xe = Math.max(xs + 1, Math.floor(((bx + 1) * windowWidth) / fitWidth));
+      const area = (xe - xs) * (ye - ys);
+      const cx0 = clamp(windowX + xs - counts.originX, 0, counts.width);
+      const cx1 = clamp(windowX + xe - counts.originX, 0, counts.width);
+      const cy0 = clamp(windowY + ys - counts.originY, 0, counts.height);
+      const cy1 = clamp(windowY + ye - counts.originY, 0, counts.height);
+      const inside = Math.max(0, cx1 - cx0) * Math.max(0, cy1 - cy0);
+      let best = area - inside;
+      let tracked = 0;
+      for (const prefix of counts.colours) {
+        const count = regionSum(prefix, counts.stride, cx0, cy0, cx1, cy1);
+        if (count > best) best = count;
+        tracked += count;
+      }
+      const opaqueInside = regionSum(counts.opaque, counts.stride, cx0, cy0, cx1, cy1);
+      if (opaqueInside - tracked > best) best = opaqueInside - tracked;
+      if (inside - opaqueInside > best) best = inside - opaqueInside;
+      score += best / area;
+    }
+  }
+  return score / (fitWidth * fitHeight);
+}
+
+/** Window offset (source px before the region) where the group's blocks are most uniform. */
+function bestAlignOffset(
+  image: PngImage,
+  members: readonly Cell[],
+  region: Box,
+  scale: number,
+  frameWidth: number,
+  frameHeight: number,
+): readonly [number, number] {
+  const span = Math.max(1, Math.ceil(1 / scale));
+  const totals = new Float64Array(span * span);
+  for (const cell of members) {
+    if (cell.local === null) continue;
+    const counts = alignCounts(image, cell.box);
+    for (let oy = 0; oy < span; oy += 1) {
+      for (let ox = 0; ox < span; ox += 1) {
+        totals[oy * span + ox]! += alignCellScore(counts, region, scale, frameWidth, frameHeight, ox, oy);
+      }
+    }
+  }
+  // Ascending index keeps the smallest offset on a tie, so aligned art never moves.
+  let best = 0;
+  for (let index = 1; index < totals.length; index += 1) {
+    if (totals[index]! > totals[best]!) best = index;
+  }
+  return [best % span, Math.floor(best / span)];
 }
 
 interface Fitting {
@@ -1169,13 +1345,18 @@ function planFitting(image: PngImage, options: FitCellsOptions): Fitting {
 
   const groupOf = (row: number, column: number): number =>
     share === 'sheet' ? 0 : share === 'column' ? column : row * columns + column;
+  const members = new Map<number, Cell[]>();
   const regions = new Map<number, Box | null>();
   cells.forEach((cell, index) => {
     const group = groupOf(Math.floor(index / columns), index % columns);
+    const list = members.get(group);
+    if (list === undefined) members.set(group, [cell]);
+    else list.push(cell);
     const current = regions.has(group) ? regions.get(group)! : null;
     regions.set(group, unionBox(current, cell.local));
   });
 
+  const align = options.align === true;
   const [boxWidth, boxHeight] =
     options.fitBox ?? (anchor === 'feet' ? [frameWidth - 1, frameHeight - 1] : [frameWidth, frameHeight]);
   const plans = new Map<number, FitPlan>();
@@ -1185,11 +1366,25 @@ function planFitting(image: PngImage, options: FitCellsOptions): Fitting {
     const regionHeight = region.y1 - region.y0;
     if (regionWidth <= 0 || regionHeight <= 0) continue;
     const scale = Math.min(boxWidth / regionWidth, boxHeight / regionHeight);
+    if (!align) {
+      plans.set(group, {
+        region,
+        scale,
+        offset: [0, 0],
+        fitWidth: Math.min(frameWidth, Math.max(1, Math.round(regionWidth * scale))),
+        fitHeight: Math.min(frameHeight, Math.max(1, Math.round(regionHeight * scale))),
+      });
+      continue;
+    }
+    // The window grows by the offset it starts before the region, so it always covers the
+    // whole region; the extra block is what makes up the sub-pixel shift.
+    const offset = bestAlignOffset(image, members.get(group) ?? [], region, scale, frameWidth, frameHeight);
     plans.set(group, {
       region,
       scale,
-      fitWidth: Math.min(frameWidth, Math.max(1, Math.round(regionWidth * scale))),
-      fitHeight: Math.min(frameHeight, Math.max(1, Math.round(regionHeight * scale))),
+      offset,
+      fitWidth: Math.min(frameWidth, Math.max(1, Math.ceil((regionWidth + offset[0]) * scale))),
+      fitHeight: Math.min(frameHeight, Math.max(1, Math.ceil((regionHeight + offset[1]) * scale))),
     });
   }
   return { cellWidth, cellHeight, cells, groupOf, plans };
@@ -1197,6 +1392,31 @@ function planFitting(image: PngImage, options: FitCellsOptions): Fitting {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Frame-local top-left corner of a plan's piece. `feet` puts the frame's lowest opaque output
+ * row on the cell floor; `center` centres the piece. An aligned window may start before the
+ * region, so its extra rows count towards where the feet land; either way the piece and its
+ * placement stay inside the frame.
+ */
+function piecePlacement(plan: FitPlan, local: Box, options: FitCellsOptions): Point {
+  const { frameWidth, frameHeight, anchor, align } = options;
+  const { region, scale, fitWidth, fitHeight, offset } = plan;
+  if (align === true) {
+    return [
+      clamp(Math.floor((frameWidth - fitWidth) / 2), 0, frameWidth - fitWidth),
+      anchor === 'feet'
+        ? clamp(frameHeight - Math.ceil((local.y1 - region.y0 + offset[1]) * scale), 0, frameHeight - fitHeight)
+        : clamp(Math.floor((frameHeight - fitHeight) / 2), 0, frameHeight - fitHeight),
+    ];
+  }
+  return [
+    Math.floor((frameWidth - fitWidth) / 2),
+    anchor === 'feet'
+      ? Math.max(0, frameHeight - Math.round((local.y1 - region.y0) * scale))
+      : Math.floor((frameHeight - fitHeight) / 2),
+  ];
 }
 
 /**
@@ -1211,7 +1431,7 @@ function clamp(value: number, min: number, max: number): number {
  * own feet on the cell floor, exactly like `fitColumnsToCells`.
  */
 export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
-  const { columns, rows, frameWidth, frameHeight, anchor, weights } = options;
+  const { columns, rows, frameWidth, frameHeight, weights, align } = options;
   const { cells, groupOf, plans } = planFitting(image, options);
 
   const outWidth = frameWidth * columns;
@@ -1221,19 +1441,35 @@ export function fitCells(image: PngImage, options: FitCellsOptions): PngImage {
     const column = index % columns;
     const plan = plans.get(groupOf(row, column));
     if (plan === undefined || cell.local === null) return;
-    const { region, scale, fitWidth, fitHeight } = plan;
-    const window: Box = {
-      x0: cell.box.x0 + region.x0,
-      y0: cell.box.y0 + region.y0,
-      x1: cell.box.x0 + region.x1,
-      y1: cell.box.y0 + region.y1,
-    };
-    const piece = resamplePixelArt(crop(image, window), fitWidth, fitHeight, weights);
-    const left = column * frameWidth + Math.floor((frameWidth - fitWidth) / 2);
-    const top =
-      anchor === 'feet'
-        ? row * frameHeight + Math.max(0, frameHeight - Math.round((cell.local.y1 - region.y0) * scale))
-        : row * frameHeight + Math.floor((frameHeight - fitHeight) / 2);
+    const { region, scale, fitWidth, fitHeight, offset } = plan;
+    let piece: PngImage;
+    if (align === true) {
+      // The window starts `offset` before the region and is a whole number of blocks wide, so
+      // every output block is exactly one source block and the feature that straddled two
+      // blocks now sits inside one.
+      const windowWidth = Math.ceil(fitWidth / scale);
+      const windowHeight = Math.ceil(fitHeight / scale);
+      const windowed = cropWindow(
+        image,
+        cell.box.x0 + region.x0 - offset[0],
+        cell.box.y0 + region.y0 - offset[1],
+        windowWidth,
+        windowHeight,
+        cell.box,
+      );
+      piece = resamplePixelArt(windowed, fitWidth, fitHeight, weights);
+    } else {
+      const window: Box = {
+        x0: cell.box.x0 + region.x0,
+        y0: cell.box.y0 + region.y0,
+        x1: cell.box.x0 + region.x1,
+        y1: cell.box.y0 + region.y1,
+      };
+      piece = resamplePixelArt(crop(image, window), fitWidth, fitHeight, weights);
+    }
+    const [pieceLeft, pieceTop] = piecePlacement(plan, cell.local, options);
+    const left = column * frameWidth + pieceLeft;
+    const top = row * frameHeight + pieceTop;
     for (let y = 0; y < fitHeight; y += 1) {
       for (let x = 0; x < fitWidth; x += 1) {
         const from = (y * fitWidth + x) * 4;
@@ -1738,7 +1974,7 @@ export function removeMarker(
  * Staging uses it to turn a marker centre into an attachment grip.
  */
 export function fitPoint(image: PngImage, options: FitCellsOptions, point: readonly [number, number]): Point {
-  const { columns, rows, frameWidth, frameHeight, anchor } = options;
+  const { columns, rows, frameWidth, frameHeight } = options;
   const { cellWidth, cellHeight, cells, groupOf, plans } = planFitting(image, options);
   const column = clamp(Math.floor(point[0] / cellWidth), 0, columns - 1);
   const row = clamp(Math.floor(point[1] / cellHeight), 0, rows - 1);
@@ -1746,12 +1982,20 @@ export function fitPoint(image: PngImage, options: FitCellsOptions, point: reado
   const plan = plans.get(groupOf(row, column));
   const middle: Point = [Math.floor(frameWidth / 2), Math.floor(frameHeight / 2)];
   if (plan === undefined || cell.local === null) return middle;
-  const { region, scale, fitWidth, fitHeight } = plan;
-  const left = Math.floor((frameWidth - fitWidth) / 2);
-  const top =
-    anchor === 'feet'
-      ? Math.max(0, frameHeight - Math.round((cell.local.y1 - region.y0) * scale))
-      : Math.floor((frameHeight - fitHeight) / 2);
+  const { region, scale, fitWidth, fitHeight, offset } = plan;
+  const [left, top] = piecePlacement(plan, cell.local, options);
+  if (options.align === true) {
+    // Same window, block count and placement `fitCells` uses, so the grip lands on the pixel
+    // the staged sheet shows.
+    const windowWidth = Math.ceil(fitWidth / scale);
+    const windowHeight = Math.ceil(fitHeight / scale);
+    const windowX = cell.box.x0 + region.x0 - offset[0];
+    const windowY = cell.box.y0 + region.y0 - offset[1];
+    return [
+      clamp(left + Math.floor(((point[0] - windowX) * fitWidth) / windowWidth), 0, frameWidth - 1),
+      clamp(top + Math.floor(((point[1] - windowY) * fitHeight) / windowHeight), 0, frameHeight - 1),
+    ];
+  }
   return [
     clamp(left + Math.floor((point[0] - (cell.box.x0 + region.x0)) * scale), 0, frameWidth - 1),
     clamp(top + Math.floor((point[1] - (cell.box.y0 + region.y0)) * scale), 0, frameHeight - 1),

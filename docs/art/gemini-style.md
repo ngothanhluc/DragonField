@@ -141,6 +141,8 @@ Gemini usually ignores "transparent background" and paints an opaque one. Add `"
 
 `"fit": "cell"` (default for grid layouts) crops each direction to its opaque bbox — unioned across that column's frames so the scale stays constant — resamples the crop to the frame height and puts each frame's feet on the cell floor. Without it, a character Gemini drew at 8–10 px stays tiny inside the 16 px frame. Shrinking uses the dominant colour of each source block, not a single nearest sample, which keeps edges from turning into noise. `"fit": "none"` keeps the raw cell mapping.
 
+Staging also **aligns** the downscale grid with the source's pixel grid (`align` in `fitCells`, on for every fitted kind). The crop window normally starts at the sprite's bbox, which can sit any fraction of an output block off the grid Gemini drew on; an eye narrower than one output pixel then straddles two blocks, loses the dominant-colour vote in both and disappears. The fit tries every sub-block offset of the window that keeps the scale, scores each by the mean dominant-colour share of its output blocks, and keeps the best one — shared by every frame of the same window (a direction column, the whole sheet or one icon cell), so frames stay aligned with each other. A source already aligned keeps offset zero, and the piece never grows past the frame, so feet still rest on the cell floor.
+
 ### Colours and mirroring
 
 Staging maps the image onto the palette **at full resolution** and **per colour cluster**:
