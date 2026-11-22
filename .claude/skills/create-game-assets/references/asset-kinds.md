@@ -48,6 +48,14 @@ lines/watermark, and that the subject keeps the same proportions on every frame.
   attachment frame it may fill.
 - One point per facing is the grip (where the hand/wrist holds it); the pipeline records
   it, the game aligns it to the body's hand or back point.
+- Give the grip directly instead of hand-placing coordinates: ask the generator to paint
+  **one small block of a single marker colour** (a bright hue that appears nowhere else)
+  exactly where the hand closes, one per facing. The pipeline reads the marker's centre as
+  that facing's grip, then removes the marker — its pixels take the surrounding item colour,
+  or disappear when it sits on the keyed backdrop. Naming a marker colour but getting no
+  marker in a cell fails staging with that facing named, so a forgotten or misplaced mark is
+  caught. An explicit grip entry in the spec still overrides the marker; with neither, the
+  grip stays the frame centre.
 - Held items and worn items are the same kind of asset; the spec says which slot it goes
   on and which facings draw it behind the body.
 

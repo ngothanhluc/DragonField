@@ -171,6 +171,23 @@ Small blobs spilled across a cell boundary (feet one row too low) are cleared fi
 they do not trip the gate. `bun run stage:gen --force` stages despite issues and only
 prints them — use it for a comparison, never for an asset you commit.
 
+### Resolution warning
+
+The prompt asks for 16 px art scaled up 16×, but the model can answer on a much finer pixel
+grid: a 2048 px download drawn with 16 px blocks is 29 blocks tall for a figure that is
+fitted to 15 px. One block is then smaller than one output pixel, so 1-block details — eyes,
+a gem, an emblem — are gone after the downscale. For fitted kinds with directions, staging
+measures the download's native block size and, when a direction's sprite is more than 1.5×
+taller in blocks than the pixels it is fitted to, prints one warning per direction:
+
+```text
+warn  attachment.sword-back down: resolution — drawn 29 blocks tall, staged 15 px — 1-block details (eyes) will be lost; ask for fewer, larger blocks
+```
+
+The warning **never** fails staging, with or without `--force`, and it does not change the
+staged pixels: it is advice to regenerate on a coarser grid with fewer, larger blocks (and
+less detail), not an error to work around.
+
 ## Kinds
 
 Every spec asset declares a `kind`. It decides how the download is split, fitted, gated,
@@ -228,6 +245,15 @@ the body frame, the game places it. `fitBox` caps how much of the 16×16 frame t
 weapon may fill, so a back sword stays shorter than the body. `grip` is the point the hand
 or back holds, in the item frame; `behind` overrides the slot's default draw order.
 
+Instead of hand-placing `grip`, paint **one small block of a marker colour** on the weapon
+wherever the hand closes — one per facing. Staging reads the marker's centre as that
+facing's grip, then removes the marker: its pixels take the most common item colour around
+them (they vanish when the marker sits on the backdrop). The marker colour must not appear
+in the art; a bright hue from outside the palette, e.g. `#00ffff`, is safe. A spec with
+`gripMarker` and a cell without a marker fails staging with that direction named, so a
+forgotten or misplaced mark shows up immediately. An explicit `grip` entry still wins over
+the marker; without either, the grip stays the frame centre.
+
 ```json
 {
   "key": "attachment.sword-back",
@@ -237,7 +263,7 @@ or back holds, in the item frame; `behind` overrides the slot's default draw ord
   "frameWidth": 16, "frameHeight": 16,
   "layout": "grid", "directions": ["down", "up", "left", "right"], "frames": 1,
   "slot": "back",
-  "grip": { "down": [8, 10], "up": [8, 10], "left": [8, 10], "right": [8, 10] },
+  "gripMarker": "#00ffff",
   "fitBox": [14, 14],
   "background": "#ff00ff"
 }

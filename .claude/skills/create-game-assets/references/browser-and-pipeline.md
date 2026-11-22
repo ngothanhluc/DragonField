@@ -153,7 +153,9 @@ directory named in the style brief; raw downloads never enter a commit.
 3. Run the project's staging command: palette mapping at full size, colour limit,
    quality gate (aborts on cells crossing edges or recoloured frames), deterministic
    downscale, binary alpha, stable `.meta` uuid, merged manifest. A gate failure is a
-   regenerate, not a flag to bypass.
+   regenerate, not a flag to bypass. A `resolution` warning (the download's blocks are far
+   smaller than the fitted pixels) is informational — staging succeeds, but the prompt
+   should ask for fewer, larger blocks.
 4. Re-running with the same spec must reproduce the same bytes (uuids preserved).
 5. New actors go into the project's generated-art allowlist (staging writes it).
 6. Finish with the project's full check command, then commit locally. Never push.
