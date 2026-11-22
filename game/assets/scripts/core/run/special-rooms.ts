@@ -87,7 +87,10 @@ export function shopOffers(
  * price is refused instead of minting a free purchase.
  */
 export function buyFromShop(save: SaveData, offer: ShopOffer): PurchaseResult {
-  const price = Number.isFinite(offer.price) ? Math.max(0, Math.trunc(offer.price)) : null;
+  // Only a whole, non-negative price is a real price; a broken one is refused, never clamped
+  // (clamping a negative price would turn it into a free purchase).
+  const price =
+    Number.isInteger(offer.price) && offer.price >= 0 ? offer.price : null;
   const gold = Number.isFinite(save.gold) ? save.gold : 0;
   if (price === null || gold < price) {
     return { ok: false, reason: 'not-enough-gold', save };

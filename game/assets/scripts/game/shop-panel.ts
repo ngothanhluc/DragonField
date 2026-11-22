@@ -165,7 +165,7 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
   title.color = TITLE_COLOR;
   title.node.setPosition(0, 112, 0);
 
-  const hint = createLabel(root, 'shop-hint', 'Click a card, press 1 / 2 / 3, or Esc to leave');
+  const hint = createLabel(root, 'shop-hint', 'Click a card, press 1 / 2 / 3, or Esc / LEAVE');
   hint.fontSize = 10;
   hint.color = MUTED_COLOR;
   hint.node.setPosition(0, 92, 0);
@@ -175,6 +175,24 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
   goldLabel.color = PRICE_COLOR;
   goldLabel.node.setPosition(-182, 112, 0);
   goldHolder.label = goldLabel;
+
+  // Mouse exit: in fullscreen the browser eats Esc, so Esc must never be the only way out
+  // (AGENTS.md trap). A player with 0 gold can always leave through this button.
+  const leave = createBackdropPanel(root, 'shop-leave', 76, 26, 150);
+  leave.setPosition(190, 112, 0);
+  const leaveTransform: UITransform =
+    leave.getComponent(CocosUITransform) ?? leave.addComponent(CocosUITransform);
+  leaveTransform.setContentSize(76, 26);
+  const leaveButton: Button = leave.addComponent(CocosButton);
+  leaveButton.transition = CocosButton.Transition.NONE;
+  leave.on(CocosButton.EventType.CLICK, () => {
+    playSfx('ui-move');
+    close();
+  });
+  const leaveLabel = createLabel(leave, 'shop-leave-label', 'LEAVE');
+  leaveLabel.fontSize = 11;
+  leaveLabel.color = TEXT_COLOR;
+  leaveLabel.node.setPosition(0, 0, 0);
 
   const message = createLabel(root, 'shop-message', pendingMessage ?? '');
   message.fontSize = 12;

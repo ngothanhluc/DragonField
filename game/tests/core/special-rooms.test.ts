@@ -73,6 +73,16 @@ describe('buyFromShop', () => {
     expect(buyFromShop(save, { item: 'x', price: Number.NaN }).ok).toBe(false);
     expect(buyFromShop(save, { item: 'x', price: 10 }).save.gold).toBe(0);
   });
+
+  it('refuses a negative or fractional price instead of clamping it', () => {
+    const save = { ...createDefaultSave(), gold: 50 };
+    for (const price of [-1, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = buyFromShop(save, { item: 'x', price });
+      expect(result.ok, `price ${price}`).toBe(false);
+      expect(result.save, `price ${price}`).toBe(save);
+      expect(result.save.gold, `price ${price}`).toBe(50);
+    }
+  });
 });
 
 describe('chestReward', () => {
@@ -140,5 +150,28 @@ describe('simulateRun models special rooms', () => {
       return sum;
     }, 0);
     expect(result.goldEarned).toBe(fromEvents);
+  });
+
+  it('a heal room from 1/6 hearts ends at 4/6 (adds the difference, not the total)', () => {
+    const healAmount = (TUNING as unknown as { specialRooms: { healHearts: number } })
+      .specialRooms.healHearts;
+    let healed: number | null = null;
+
+    for (let seed = 1; seed <= 200 && healed === null; seed += 1) {
+      const result = simulateRun({
+        seed,
+        level: chapterOne,
+        policy: () => ({ up: false, down: false, left: false, right: false }),
+        godMode: true,
+        playerHearts: 1,
+        chooseDoor: (offers) => offers.indexOf('heal'),
+      });
+      const event = result.events.find(
+        (candidate) => candidate.kind === 'special' && candidate.reward === 'heal',
+      );
+      if (event !== undefined && event.kind === 'special') healed = event.hearts;
+    }
+
+    expect(healed).toBe(Math.min(6, 1 + healAmount));
   });
 });

@@ -140,6 +140,8 @@ export interface SimulationOptions {
   readonly maxDurationMs?: number;
   /** Test hook: the player takes no damage. */
   readonly godMode?: boolean;
+  /** Test hook: start the run at this many hearts (defaults to the derived max). */
+  readonly playerHearts?: number;
   /** Owned skills, `Map<skillId, stacks>` like the game's `RunState`. */
   readonly skills?: ReadonlyMap<string, number>;
   /**
@@ -167,7 +169,12 @@ export type SimulationEvent =
   /** The clear reward of room `room`; `gold` is the door bonus paid for a `gold` reward, else 0. */
   | (SimEventBase & { readonly kind: 'reward'; readonly reward: DoorReward; readonly gold: number })
   /** A special room used in slot `room` (#40): heal / shop (never buys) / chest reward. */
-  | (SimEventBase & { readonly kind: 'special'; readonly reward: SpecialKind })
+  | (SimEventBase & {
+      readonly kind: 'special';
+      readonly reward: SpecialKind;
+      /** Hearts after the room's effect (lets a test prove a heal's exact amount). */
+      readonly hearts: number;
+    })
   | { readonly kind: 'run-won' | 'run-lost'; readonly nowMs: number };
 
 export interface SimulationResult {
@@ -202,10 +209,17 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
   const rng = new SeededRng(options.seed);
   const stats = computeDerivedStats(options.skills ?? new Map<string, number>());
-  const health = new HealthState({
-    playerMaxHearts: stats.maxHearts,
-    invulnerabilityMs: stats.invulnerabilityMs,
-  });
+  const startHearts =
+    options.playerHearts !== undefined && Number.isFinite(options.playerHearts)
+      ? Math.max(1, Math.min(stats.maxHearts, Math.trunc(options.playerHearts)))
+      : stats.maxHearts;
+  const health = new HealthState(
+    {
+      playerMaxHearts: stats.maxHearts,
+      invulnerabilityMs: stats.invulnerabilityMs,
+    },
+    startHearts,
+  );
   const shield = new ShieldCharger(
     stats.shield?.charges ?? 0,
     stats.shield?.cooldownMs ?? 0,
@@ -681,9 +695,14 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         const specialSlot = roomPosition + 1;
         let bonusGold = 0;
         if (chosen === 'heal') {
-          health.heal(
-            healHearts(health.current, stats.maxHearts, SPECIAL_ROOMS_TUNING.healHearts),
+          // `healHearts` returns the new TOTAL; `HealthState.heal` ADDS. Pass the difference
+          // (same rule as the game's heal NPC) or the player would gain the total again.
+          const healed = healHearts(
+            health.current,
+            stats.maxHearts,
+            SPECIAL_ROOMS_TUNING.healHearts,
           );
+          health.heal(healed - health.current);
         }
         if (chosen === 'chest') {
           const chest = chestReward(options.seed, specialSlot);
@@ -699,7 +718,13 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           room: nextRoom.room,
           gold: slotGold,
         });
-        events.push({ kind: 'special', nowMs: durationMs, room: specialSlot, reward: chosen });
+        events.push({
+          kind: 'special',
+          nowMs: durationMs,
+          room: specialSlot,
+          reward: chosen,
+          hearts: health.current,
+        });
 
         // One door out: the boss door when the special is the last normal slot, otherwise a
         // plain exit (its room keeps the default `skill` clear reward — there is no choice).
