@@ -62,6 +62,8 @@ export interface FitCellsOptions {
    * one block instead of straddling two and losing both. Off by default.
    */
   readonly align?: boolean;
+  /** Ticket #27 (stub): give back one pixel to small blobs (eyes) the dominant-colour vote erased. */
+  readonly keepDetails?: boolean;
 }
 
 /** A point in output-frame pixels. */
