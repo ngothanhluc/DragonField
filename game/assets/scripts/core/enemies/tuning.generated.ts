@@ -44,9 +44,9 @@ export const TUNING_DATA = {
       scale: 1.15,
       chaser: {
         pounceTelegraphMs: 300,
-        pounceSpeedTilesPerSecond: 6,
+        pounceSpeedTilesPerSecond: 5,
         pounceDurationMs: 300,
-        pounceCooldownMs: 900,
+        pounceCooldownMs: 1200,
         pounceRangeTiles: 6,
       },
       caster: {
@@ -60,7 +60,7 @@ export const TUNING_DATA = {
     roles: {
       chaser: {
         health: 6,
-        speedTilesPerSecond: 3.2,
+        speedTilesPerSecond: 2.6,
         attackCooldownMs: 0,
         telegraphMs: 0,
         preferredRangeMinTiles: 0.75,
@@ -73,7 +73,7 @@ export const TUNING_DATA = {
       caster: {
         health: 4,
         speedTilesPerSecond: 1.6,
-        attackCooldownMs: 1200,
+        attackCooldownMs: 3000,
         telegraphMs: 500,
         preferredRangeMinTiles: 4,
         preferredRangeMaxTiles: 6,
@@ -85,19 +85,19 @@ export const TUNING_DATA = {
       tank: {
         health: 10,
         speedTilesPerSecond: 1.2,
-        attackCooldownMs: 1600,
+        attackCooldownMs: 2200,
         telegraphMs: 700,
         preferredRangeMinTiles: 0,
         preferredRangeMaxTiles: 8,
         contactDamage: 2,
-        chargeSpeedTilesPerSecond: 5,
+        chargeSpeedTilesPerSecond: 4,
         chargeDurationMs: 350,
         scale: 1.75,
       },
       sniper: {
         health: 4,
         speedTilesPerSecond: 1.1,
-        attackCooldownMs: 1800,
+        attackCooldownMs: 4000,
         telegraphMs: 900,
         preferredRangeMinTiles: 8,
         preferredRangeMaxTiles: 12,
@@ -105,11 +105,11 @@ export const TUNING_DATA = {
         chargeSpeedTilesPerSecond: 0,
         chargeDurationMs: 0,
         scale: 1,
-        projectileSpeedTilesPerSecond: 11,
+        projectileSpeedTilesPerSecond: 10,
       },
       splitter: {
         health: 8,
-        speedTilesPerSecond: 2.1,
+        speedTilesPerSecond: 1.7,
         attackCooldownMs: 0,
         telegraphMs: 0,
         preferredRangeMinTiles: 0.75,
@@ -122,7 +122,7 @@ export const TUNING_DATA = {
       },
       splitling: {
         health: 2,
-        speedTilesPerSecond: 3.6,
+        speedTilesPerSecond: 2.6,
         attackCooldownMs: 0,
         telegraphMs: 0,
         preferredRangeMinTiles: 0.6,
@@ -152,7 +152,7 @@ export const TUNING_DATA = {
   waves: {
     aliveCap: 24,
     aliveCapStart: 3,
-    aliveCapStepPerRoom: 1,
+    aliveCapStepPerRoom: 3,
     spawnIntervalMs: 1800,
     spawnBatchSize: 4,
     spawnJitterTiles: 3,

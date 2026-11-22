@@ -58,11 +58,14 @@ const DODGE_DIRECTIONS: readonly Direction[] = [
 ];
 
 const DODGE_HORIZON_SECONDS = 1.2;
-const DODGE_SAMPLES = 8;
+const DODGE_SAMPLES = 12;
 /** Distance to the nearest enemy the policy aims for: inside the auto-aim range (8), outside contact. */
 const DODGE_ENGAGE_TILES = 6;
+/** A hurt player keeps more distance: still inside the auto-aim range (8), out of contact. */
+const DODGE_ENGAGE_HURT_TILES = 8;
+const DODGE_HURT_HEARTS = 4;
 const DODGE_TOO_CLOSE_TILES = 2.5;
-const DODGE_BULLET_CLEAR_TILES = 1.2;
+const DODGE_BULLET_CLEAR_TILES = 1.6;
 const MIN_X = 0.5;
 const MIN_Y = 0.5;
 /**
@@ -71,6 +74,12 @@ const MIN_Y = 0.5;
  */
 const MAX_X = ROOM_COLS * 2 - 0.5;
 const MAX_Y = ROOM_ROWS * 2 - 0.5;
+/**
+ * A wall this close is a trap: melee enemies pin the player there and its 1.2 s path has no room
+ * left to sidestep. A competent player keeps the fight away from the room edge (#66, with the
+ * 24-alive cap the back rows of a 64×36 room are crowded).
+ */
+const DODGE_WALL_CLEAR_TILES = 4;
 
 export function makeDodgePolicy(): InputPolicy {
   let lastIndex = 0;
@@ -100,6 +109,11 @@ export function makeDodgePolicy(): InputPolicy {
 
     const enemyShots = world.bullets.filter((bullet) => bullet.owner === 'enemy');
     const speed = DEFAULT_COMBAT.moveSpeedTilesPerSecond;
+    // A player on the last hearts plays for space instead of standing in the fight.
+    const engageTiles =
+      world.hearts <= DODGE_HURT_HEARTS ? DODGE_ENGAGE_HURT_TILES : DODGE_ENGAGE_TILES;
+    const tooCloseTiles =
+      world.hearts <= DODGE_HURT_HEARTS ? DODGE_TOO_CLOSE_TILES + 2 : DODGE_TOO_CLOSE_TILES;
 
     let bestIndex = lastIndex;
     let bestCost = Number.POSITIVE_INFINITY;
@@ -142,17 +156,24 @@ export function makeDodgePolicy(): InputPolicy {
         if (bulletGap < DODGE_BULLET_CLEAR_TILES) {
           cost += (DODGE_BULLET_CLEAR_TILES - bulletGap) * 4;
         }
-        if (enemyGap < DODGE_TOO_CLOSE_TILES) {
-          cost += (DODGE_TOO_CLOSE_TILES - enemyGap) * 3;
+        if (enemyGap < tooCloseTiles) {
+          cost += (tooCloseTiles - enemyGap) * 3;
         }
         // Pull to the fighting distance: walk in when far (no clamp — a far enemy must still pull
         // the player in), back off when stacked on one.
-        cost += Math.abs(enemyGap - DODGE_ENGAGE_TILES) * 0.3;
+        cost += Math.abs(enemyGap - engageTiles) * 0.3;
+        // Do not walk into the room edge: it removes the escape path and melee enemies pin the
+        // player there.
+        const wallGap = Math.min(x - MIN_X, MAX_X - x, y - MIN_Y, MAX_Y - y);
+        if (wallGap < DODGE_WALL_CLEAR_TILES) {
+          cost += (DODGE_WALL_CLEAR_TILES - wallGap) * 0.8;
+        }
         // Blocked by a wall means a shorter actual path — treat it as worse.
         cost += Math.hypot(x - rawX, y - rawY) * 2;
       }
 
-      // Hysteresis: keep the current direction unless another is clearly better.
+      // Hysteresis: keep the current direction unless another is clearly better. While committed
+      // (a real player holds a dodge for a moment) the bar to switch is much higher.
       if (index === lastIndex) cost -= 0.3;
       // A direction that just pushed the player into a prop is avoided for a moment.
       if (index === blockedIndex && world.nowMs < blockedUntilMs) cost += 100;

@@ -143,7 +143,8 @@ describe('enemy behaviours — caster', () => {
 
   it('telegraphs before firing, and an attack in telegraph runs to completion', () => {
     const player = { x: 5, y: 5 };
-    const start = 1200;
+    // Cooldown derived from tuning (#66 retuned it); the timestamp only has to be past it.
+    const start = ENEMY_TUNING.roles.caster.attackCooldownMs;
     const state = enemy({ role: 'caster', x: 10, y: 5 });
 
     // 5 tiles: inside 4–6, cooldown already elapsed.
@@ -174,10 +175,14 @@ describe('enemy behaviours — caster', () => {
 
   it('does not fire again right after the previous shot — waits for the cooldown', () => {
     const player = { x: 5, y: 5 };
+    const cooldownMs = ENEMY_TUNING.roles.caster.attackCooldownMs;
     const state = enemy({ role: 'caster', x: 10, y: 5, actionStartedMs: 1000 });
 
-    expect(decideAction({ state, player, nowMs: 1500, level })).toEqual({ kind: 'idle' });
-    expect(decideAction({ state, player, nowMs: 2200, level }).kind).toBe('telegraph');
+    // Exactly one cooldown after the last shot: idle before it, telegraph at it.
+    expect(decideAction({ state, player, nowMs: 1000 + cooldownMs - 1, level })).toEqual({
+      kind: 'idle',
+    });
+    expect(decideAction({ state, player, nowMs: 1000 + cooldownMs, level }).kind).toBe('telegraph');
   });
 
   it('closes the distance when the spacing point falls inside an obstacle', () => {

@@ -24,7 +24,7 @@ import { distance, type Vec2 } from '../math/vec2';
 import { SeededRng } from '../rng';
 import { insideViewRect } from '../view/view-rect';
 import { maxHealthFor, type EnemyState } from './behaviours';
-import { WAVES_TUNING, type ChapterWaveTotal } from './tuning';
+import { ENEMY_TUNING, WAVES_TUNING, type ChapterWaveTotal } from './tuning';
 
 export { canAttackFrom } from '../view/view-rect';
 
@@ -117,8 +117,13 @@ export function roomEnemyTotal(level: LevelData, seed: number): number {
 
 /**
  * One enemy state for a scheduled spawn, with the chapter's health scaling applied. A fresh
- * enemy stands still (`idle`) and waits out one attack cooldown (see `behaviours.ts`), so
- * `actionStartedMs` starts at the spawn time instead of 0 (which would be long past).
+ * enemy stands still (`idle`) and waits out an attack cooldown, so `actionStartedMs` starts at
+ * the spawn time instead of 0 (which would be long past).
+ *
+ * The wait is capped at the role's own telegraph (#66): a denser 64×36 room needs the slow roles
+ * to fire less often, but a caster that spawns with a full 2.6 s cooldown ahead of it is killed by
+ * the player's auto-aim before its first shot — the balance sim pins "every caster fires before
+ * dying". Capping the *first* wait leaves the between-shots cooldown untouched.
  */
 export function enemyStateFromSpawn(
   level: LevelData,
@@ -127,6 +132,8 @@ export function enemyStateFromSpawn(
   nowMs = 0,
 ): EnemyState {
   const maxHealth = maxHealthFor(spawn.role, spawn.elite, undefined, level.chapter);
+  const cooldownMs = ENEMY_TUNING.roles[spawn.role].attackCooldownMs;
+  const graceMs = Math.min(cooldownMs, ENEMY_TUNING.roles[spawn.role].telegraphMs);
   return {
     id: `r${level.room}-s${index}`,
     role: spawn.role,
@@ -135,7 +142,7 @@ export function enemyStateFromSpawn(
     health: maxHealth,
     maxHealth,
     action: { kind: 'idle' },
-    actionStartedMs: nowMs,
+    actionStartedMs: nowMs - (cooldownMs - graceMs),
   };
 }
 

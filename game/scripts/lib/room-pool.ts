@@ -320,7 +320,7 @@ const SPAWN_MAX_DISTANCE = 9.5;
 /**
  * Casters stand at the back of the pack: the player's auto-aim locks the **nearest** target, and
  * an enemy under constant fire keeps its attack cycle but is delayed, so a caster that spawns
- * closest is held under fire and never gets its (1200 ms + 500 ms telegraph) shot off — the
+ * closest is held under fire and never gets its (3000 ms + 500 ms telegraph) shot off — the
  * balance sim pins "every caster fires before dying". Spawning it behind the melee line (just
  * outside the 6-tile hold band, at
  * the edge of the 8-tile auto-aim range) gives it the walk-in time to fire first, then die.
