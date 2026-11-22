@@ -9,29 +9,41 @@
 import {
   Button as CocosButton,
   Color as CocosColor,
+  Graphics as CocosGraphics,
   Layers,
   Node as CocosNode,
   Rect,
   Size,
   Sprite as CocosSprite,
   SpriteFrame as CocosSpriteFrame,
+  Tween,
   UITransform as CocosUITransform,
   Vec2 as EngineVec2,
+  tween,
   view,
 } from 'cc';
 import { describeSkill } from '../core/skills/description';
 import { getSkill } from '../core/skills/pool';
 import type { SkillDef } from '../core/skills/pool';
 import type { ShopOffer } from '../core/run/special-rooms';
+import {
+  nextShopFocus,
+  shopOfferState,
+  type ShopFocusInput,
+  type ShopFocusStep,
+  type ShopOfferState,
+} from '../core/run/shop-focus';
 import { loadPixelTexture } from './assets/texture-cache';
 import { loadSkillCardIcon, SKILL_ICON_SIZE_PX } from './assets/skill-icon';
 import { playSfx } from './audio/sfx';
 import { createBackdropPanel, createLabel, RARITY_COLORS } from './hud';
-import { sliceSliced } from './screens/menu';
+import { MENU_FOCUS_COLOR, sliceSliced } from './screens/menu';
 import type { TileRect } from './level-view';
 
 /** `cc` is an any module: import names only work in value position. */
 type Button = InstanceType<typeof CocosButton>;
+type Color = InstanceType<typeof CocosColor>;
+type Graphics = InstanceType<typeof CocosGraphics>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = InstanceType<typeof CocosSpriteFrame>;
@@ -59,6 +71,17 @@ const PRICE_COLOR = new CocosColor(255, 214, 90, 255);
 const DENIED_COLOR = new CocosColor(255, 110, 110, 255);
 const CARD_TINT = new CocosColor(150, 110, 90, 255);
 
+/** Hover/focus feedback (#65): same ring look as the menu, eased in and out. */
+const CARD_FOCUS_SCALE = 1.05;
+const FOCUS_TWEEN_SECONDS = 0.1;
+/** Brighter than `CARD_TINT` so the highlighted card pops without changing the art. */
+const CARD_FOCUS_TINT = new CocosColor(196, 152, 124, 255);
+/** Dimmed card (unaffordable/maxed): darker than the rest, with a grey ring. */
+const CARD_DIM_TINT = new CocosColor(104, 78, 64, 255);
+const DIM_RING_COLOR = new CocosColor(128, 128, 128, 255);
+/** Reason line sits just under the row of cards, above the shop message. */
+const REASON_Y = CARD_Y - CARD_HEIGHT / 2 - 12;
+
 export interface ShopBuyResult {
   readonly ok: boolean;
   /** Shop total (save gold + this run's gold) after the attempt; unchanged on failure. */
@@ -85,6 +108,13 @@ export interface ShopPanel {
   destroy(): void;
 }
 
+/** One offer card: its node (for hover listeners) and the highlight it should show. */
+interface ShopCard {
+  readonly node: Node;
+  /** The buy highlight or the dimmed one with its reason; `null` clears the highlight. */
+  setHighlight(state: ShopOfferState | null): void;
+}
+
 /** Build the shop panel under `parent` (the UI canvas). */
 export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPanel> {
   // Keys are wired **before** the card texture loads: the player may hit 1/2/3 or Esc on the
@@ -95,6 +125,7 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
   let rootNode: Node | null = null;
   const messageHolder: { label: ReturnType<typeof createLabel> | null } = { label: null };
   const goldHolder: { label: ReturnType<typeof createLabel> | null } = { label: null };
+  const reasonHolder: { label: ReturnType<typeof createLabel> | null } = { label: null };
   let pendingMessage: string | null = null;
   const setMessage = (text: string): void => {
     pendingMessage = text;
@@ -102,6 +133,38 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
   };
   const setGold = (value: number): void => {
     if (goldHolder.label !== null) goldHolder.label.string = `Gold ${value}`;
+  };
+
+  // One highlight shared by mouse and keyboard (`core/run/shop-focus` decides it). Nothing is
+  // highlighted when the shop opens.
+  const cards: ShopCard[] = [];
+  let focusedIndex: number | null = null;
+  let firstX = 0;
+  const stateOf = (index: number): ShopOfferState | null => {
+    const offer = options.offers[index];
+    return offer === undefined ? null : shopOfferState(offer, gold, options.owned);
+  };
+  const renderFocus = (): void => {
+    cards.forEach((card, index) => {
+      card.setHighlight(index === focusedIndex ? stateOf(index) : null);
+    });
+    const reason = reasonHolder.label;
+    if (reason === null) return;
+    const state = focusedIndex === null ? null : stateOf(focusedIndex);
+    const dimmed = state !== null && state.kind !== 'buy';
+    reason.string = dimmed ? (state.reason ?? '') : '';
+    if (dimmed && focusedIndex !== null) {
+      reason.node.setPosition(firstX + focusedIndex * (CARD_WIDTH + CARD_GAP), REASON_Y, 0);
+    }
+  };
+  const applyFocus = (step: ShopFocusStep): void => {
+    // Soft tick only when the highlight lands on another offer, not when it clears or repeats.
+    if (step.playMove) playSfx('ui-move');
+    focusedIndex = step.index;
+    renderFocus();
+  };
+  const moveFocus = (input: ShopFocusInput): void => {
+    applyFocus(nextShopFocus(focusedIndex, input, options.offers.length));
   };
 
   const detach = (): void => {
@@ -129,8 +192,11 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
     playSfx('ui-move');
     setMessage(result.message ?? 'Not enough gold');
     setGold(gold);
+    // The refusal may have been about gold: dim the card the player is on right away.
+    renderFocus();
   };
   function onKey(event: KeyboardEvent): void {
+    if (event.repeat) return;
     if (event.key === 'Escape' || event.keyCode === 27) {
       event.preventDefault();
       close();
@@ -139,7 +205,26 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
     const digit = /^Digit([1-3])$/.exec(event.code) ?? /^([1-3])$/.exec(event.key);
     if (digit !== null) {
       event.preventDefault();
-      buy(Number(digit[1]) - 1);
+      const index = Number(digit[1]) - 1;
+      // 1/2/3 keep buying directly: highlight the offer they buy, then try it.
+      moveFocus({ kind: 'hotkey', index });
+      buy(index);
+      return;
+    }
+    const key = event.key;
+    const code = event.keyCode;
+    const left = key === 'ArrowLeft' || code === 37;
+    const right = key === 'ArrowRight' || code === 39;
+    const up = key === 'ArrowUp' || code === 38;
+    const down = key === 'ArrowDown' || code === 40;
+    if (left || right || up || down) {
+      event.preventDefault();
+      moveFocus({ kind: 'move', delta: left || up ? -1 : 1 });
+      return;
+    }
+    if (key === 'Enter' || key === ' ' || code === 13 || code === 32) {
+      event.preventDefault();
+      if (focusedIndex !== null) buy(focusedIndex);
     }
   }
   document.addEventListener('keydown', onKey, true);
@@ -166,7 +251,11 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
   title.color = TITLE_COLOR;
   title.node.setPosition(0, 112, 0);
 
-  const hint = createLabel(root, 'shop-hint', 'Click a card, press 1 / 2 / 3, or Esc / LEAVE');
+  const hint = createLabel(
+    root,
+    'shop-hint',
+    'Click a card, 1 / 2 / 3, ←/→ + Enter, or Esc / LEAVE',
+  );
   hint.fontSize = 10;
   hint.color = MUTED_COLOR;
   hint.node.setPosition(0, 92, 0);
@@ -198,15 +287,23 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
   const message = createLabel(root, 'shop-message', pendingMessage ?? '');
   message.fontSize = 12;
   message.color = DENIED_COLOR;
-  message.node.setPosition(0, -104, 0);
+  message.node.setPosition(0, -116, 0);
   messageHolder.label = message;
+
+  // Why a dimmed card cannot be bought; follows the highlighted card, blank when it can buy.
+  const reason = createLabel(root, 'shop-reason', '');
+  reason.fontSize = 9;
+  reason.lineHeight = 10;
+  reason.color = DENIED_COLOR;
+  reason.node.setPosition(0, REASON_Y, 0);
+  reasonHolder.label = reason;
 
   const count = options.offers.length;
   const rowWidth = count * CARD_WIDTH + Math.max(0, count - 1) * CARD_GAP;
-  const firstX = -rowWidth / 2 + CARD_WIDTH / 2;
+  firstX = -rowWidth / 2 + CARD_WIDTH / 2;
 
   options.offers.forEach((offer, index) => {
-    makeCard(
+    const card = makeCard(
       root,
       frame,
       offer,
@@ -215,7 +312,13 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
       firstX + index * (CARD_WIDTH + CARD_GAP),
       () => buy(index),
     );
+    // Mouse and keyboard share the one highlight: entering a card focuses it, leaving clears it.
+    card.node.on(CocosNode.EventType.MOUSE_ENTER, () => moveFocus({ kind: 'hover', index }));
+    card.node.on(CocosNode.EventType.MOUSE_LEAVE, () => moveFocus({ kind: 'unhover', index }));
+    cards.push(card);
   });
+  // A key pressed during the texture load already moved the highlight: draw it now.
+  renderFocus();
 
   if (closed) {
     // Esc pressed while the texture was loading: do not leave a panel behind.
@@ -246,7 +349,7 @@ function makeCard(
   hotkey: number,
   x: number,
   onPick: () => void,
-): Node {
+): ShopCard {
   const node = new CocosNode(`shop-card-${offer.item}`);
   node.layer = Layers.Enum.UI_2D;
   node.parent = parent;
@@ -261,6 +364,20 @@ function makeCard(
 
   const transform: UITransform | null = node.getComponent(CocosUITransform);
   if (transform !== null) transform.setContentSize(CARD_WIDTH, CARD_HEIGHT);
+
+  // Same ring look as the menu (`createFocusRing`): 2 px, 2 px outside the card.
+  const ring = new CocosNode('focus-ring');
+  ring.layer = Layers.Enum.UI_2D;
+  ring.parent = node;
+  const graphics: Graphics = ring.addComponent(CocosGraphics);
+  const drawRing = (color: Color): void => {
+    graphics.clear();
+    graphics.lineWidth = 2;
+    graphics.strokeColor = color;
+    graphics.rect(-CARD_WIDTH / 2 - 2, -CARD_HEIGHT / 2 - 2, CARD_WIDTH + 4, CARD_HEIGHT + 4);
+    graphics.stroke();
+  };
+  ring.active = false;
 
   const button: Button = node.addComponent(CocosButton);
   button.transition = CocosButton.Transition.NONE;
@@ -329,7 +446,58 @@ function makeCard(
   price.color = PRICE_COLOR;
   price.node.setPosition(0, -CARD_HEIGHT / 2 + 12, 0);
 
-  return node;
+  // Highlight feedback (`game-feel`: small tier — eased scale + tint, no shake). One tween drives
+  // both properties from wherever the card is now, so a fast hover in/out retargets smoothly.
+  const tint = new CocosColor(CARD_TINT.r, CARD_TINT.g, CARD_TINT.b, CARD_TINT.a);
+  const fromTint = new CocosColor(CARD_TINT.r, CARD_TINT.g, CARD_TINT.b, CARD_TINT.a);
+  const toTint = new CocosColor(CARD_TINT.r, CARD_TINT.g, CARD_TINT.b, CARD_TINT.a);
+  const progress = { t: 1 };
+  let fromScale = 1;
+  let toScale = 1;
+  const applyTween = (): void => {
+    if (!node.isValid) {
+      Tween.stopAllByTarget(progress);
+      return;
+    }
+    const t = progress.t;
+    const scale = fromScale + (toScale - fromScale) * t;
+    node.setScale(scale, scale, 1);
+    tint.r = Math.round(fromTint.r + (toTint.r - fromTint.r) * t);
+    tint.g = Math.round(fromTint.g + (toTint.g - fromTint.g) * t);
+    tint.b = Math.round(fromTint.b + (toTint.b - fromTint.b) * t);
+    sprite.color = tint;
+  };
+  const easeTo = (scale: number, target: Color): void => {
+    fromScale = node.scale.x;
+    fromTint.set(tint);
+    toScale = scale;
+    toTint.set(target);
+    Tween.stopAllByTarget(progress);
+    progress.t = 0;
+    tween(progress)
+      .to(FOCUS_TWEEN_SECONDS, { t: 1 }, { easing: 'quadOut', onUpdate: applyTween })
+      .start();
+  };
+
+  let shown = 'none';
+  const setHighlight = (state: ShopOfferState | null): void => {
+    const kind = state === null ? 'none' : state.kind;
+    if (kind === shown) return;
+    shown = kind;
+    ring.active = state !== null;
+    if (state !== null) drawRing(state.kind === 'buy' ? MENU_FOCUS_COLOR : DIM_RING_COLOR);
+    // An offer the player cannot buy is dimmed and stays at rest: no scale-up.
+    easeTo(
+      state?.kind === 'buy' ? CARD_FOCUS_SCALE : 1,
+      state?.kind === 'buy'
+        ? CARD_FOCUS_TINT
+        : state === null
+          ? CARD_TINT
+          : CARD_DIM_TINT,
+    );
+  };
+
+  return { node, setHighlight };
 }
 
 /** `getSkill` throws for an unknown id; a stale offer must not crash the shop. */
