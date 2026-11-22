@@ -127,7 +127,7 @@
     <property name="kind" type="string" value="pillar"/>
    </properties>
   </object>
-  <object id="13" name="prop" x="144" y="256" width="32" height="32">
+  <object id="13" name="prop" x="0" y="48" width="32" height="32">
    <properties>
     <property name="key" value="bush-blue"/>
    </properties>
@@ -137,12 +137,12 @@
     <property name="key" value="tree-mossy-cluster-alt"/>
    </properties>
   </object>
-  <object id="15" name="prop" x="0" y="48" width="32" height="32">
+  <object id="15" name="prop" x="16" y="96" width="32" height="32">
    <properties>
     <property name="key" value="tree-dead"/>
    </properties>
   </object>
-  <object id="16" name="prop" x="0" y="208" width="32" height="32">
+  <object id="16" name="prop" x="480" y="176" width="32" height="32">
    <properties>
     <property name="key" value="stump-big"/>
    </properties>

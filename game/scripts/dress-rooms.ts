@@ -499,6 +499,13 @@ const TILE = 16;
 /** Rooms 1–3 of a chapter are its entrance: props there stay small (see `planProps`). */
 const ENTRANCE_ROOMS = 3;
 
+/**
+ * Rows at the bottom of a room that no solid prop may block. That band is the lane the player
+ * retreats along when dodging; a wall touching the bottom edge turns it into a pocket where a
+ * caster can keep its distance while the player cannot reach it, and the room never clears.
+ */
+const SOLID_BOTTOM_CLEAR_ROWS = 4;
+
 interface PropTheme {
   /** At most one landmark per room (a house, a tent, a statue), and only in every third room. */
   readonly landmarks: readonly string[];
@@ -667,6 +674,8 @@ function planProps(
         const prop: PlacedProp = { key: placeKey, x: anchor.x, y: anchor.y };
         const collider = propCollider(prop, def);
         if (collider !== null) {
+          // Keep the dodging lane along the bottom edge open (see SOLID_BOTTOM_CLEAR_ROWS).
+          if (collider.y + collider.height > ROWS - SOLID_BOTTOM_CLEAR_ROWS) continue;
           if (reserved.points.some((point) => gapToRect(point, collider) < 0.5)) continue;
           const trial = [...blockers, collider];
           if (reserved.doors.some((door) => !reachable(trial, from, door))) continue;

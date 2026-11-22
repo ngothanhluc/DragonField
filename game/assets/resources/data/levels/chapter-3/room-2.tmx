@@ -120,7 +120,7 @@
     <property name="kind" type="string" value="pillar"/>
    </properties>
   </object>
-  <object id="12" name="prop" x="304" y="272" width="16" height="16">
+  <object id="12" name="prop" x="272" y="16" width="16" height="16">
    <properties>
     <property name="key" value="stump"/>
    </properties>

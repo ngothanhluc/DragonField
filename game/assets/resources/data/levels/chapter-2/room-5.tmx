@@ -126,12 +126,12 @@
     <property name="key" value="tree-green"/>
    </properties>
   </object>
-  <object id="14" name="prop" x="496" y="224" width="16" height="16">
+  <object id="14" name="prop" x="176" y="16" width="16" height="16">
    <properties>
     <property name="key" value="rock-small-gray"/>
    </properties>
   </object>
-  <object id="15" name="prop" x="176" y="16" width="32" height="32">
+  <object id="15" name="prop" x="16" y="96" width="32" height="32">
    <properties>
     <property name="key" value="rock-boulder-gray"/>
    </properties>

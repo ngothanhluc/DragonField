@@ -147,7 +147,7 @@
     <property name="key" value="tree-pine"/>
    </properties>
   </object>
-  <object id="17" name="prop" x="0" y="224" width="64" height="48">
+  <object id="17" name="prop" x="160" y="16" width="64" height="48">
    <properties>
     <property name="key" value="rock-cluster"/>
    </properties>
@@ -162,27 +162,27 @@
     <property name="key" value="flower-red"/>
    </properties>
   </object>
-  <object id="20" name="prop" x="160" y="32" width="16" height="16">
+  <object id="20" name="prop" x="400" y="112" width="16" height="16">
    <properties>
     <property name="key" value="bush-dark"/>
    </properties>
   </object>
-  <object id="21" name="prop" x="400" y="112" width="16" height="16">
+  <object id="21" name="prop" x="464" y="192" width="16" height="16">
    <properties>
     <property name="key" value="grass-tall"/>
    </properties>
   </object>
-  <object id="22" name="prop" x="464" y="192" width="16" height="16">
+  <object id="22" name="prop" x="144" y="192" width="16" height="16">
    <properties>
     <property name="key" value="flower-yellow"/>
    </properties>
   </object>
-  <object id="23" name="prop" x="144" y="192" width="16" height="16">
+  <object id="23" name="prop" x="448" y="208" width="16" height="16">
    <properties>
     <property name="key" value="flower-sun"/>
    </properties>
   </object>
-  <object id="24" name="prop" x="448" y="208" width="16" height="16">
+  <object id="24" name="prop" x="368" y="208" width="16" height="16">
    <properties>
     <property name="key" value="bush-green"/>
    </properties>

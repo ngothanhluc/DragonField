@@ -116,7 +116,7 @@
     <property name="key" value="boat"/>
    </properties>
   </object>
-  <object id="12" name="prop" x="144" y="256" width="32" height="32">
+  <object id="12" name="prop" x="16" y="32" width="32" height="32">
    <properties>
     <property name="key" value="tree-round"/>
    </properties>
@@ -126,17 +126,17 @@
     <property name="key" value="tree-cluster-pines"/>
    </properties>
   </object>
-  <object id="14" name="prop" x="16" y="32" width="32" height="32">
+  <object id="14" name="prop" x="464" y="16" width="32" height="32">
    <properties>
     <property name="key" value="tree-pine"/>
    </properties>
   </object>
-  <object id="15" name="prop" x="480" y="224" width="16" height="16">
+  <object id="15" name="prop" x="496" y="144" width="16" height="16">
    <properties>
     <property name="key" value="stump"/>
    </properties>
   </object>
-  <object id="16" name="prop" x="352" y="272" width="16" height="16">
+  <object id="16" name="prop" x="16" y="192" width="16" height="16">
    <properties>
     <property name="key" value="rock-small-gray"/>
    </properties>

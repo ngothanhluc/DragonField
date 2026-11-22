@@ -98,7 +98,7 @@
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
-  <object id="10" name="prop" x="496" y="256" width="16" height="16">
+  <object id="10" name="prop" x="160" y="16" width="16" height="16">
    <properties>
     <property name="key" value="stump"/>
    </properties>

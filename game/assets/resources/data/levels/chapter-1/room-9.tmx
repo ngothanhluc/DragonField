@@ -92,7 +92,7 @@
   </object>
   <object id="8" name="door" x="256" y="8"><point/></object>
   <object id="9" name="bossStart" x="256" y="80"><point/></object>
-  <object id="10" name="prop" x="48" y="256" width="32" height="32">
+  <object id="10" name="prop" x="0" y="16" width="32" height="32">
    <properties>
     <property name="key" value="bush-blue"/>
    </properties>

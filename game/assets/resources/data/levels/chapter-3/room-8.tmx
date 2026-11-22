@@ -137,27 +137,27 @@
     <property name="key" value="crate"/>
    </properties>
   </object>
-  <object id="15" name="prop" x="16" y="224" width="64" height="48">
+  <object id="15" name="prop" x="160" y="16" width="64" height="48">
    <properties>
     <property name="key" value="tree-mossy-cluster"/>
    </properties>
   </object>
-  <object id="16" name="prop" x="112" y="256" width="32" height="32">
+  <object id="16" name="prop" x="368" y="16" width="32" height="32">
    <properties>
     <property name="key" value="tree-green"/>
    </properties>
   </object>
-  <object id="17" name="prop" x="160" y="16" width="64" height="48">
+  <object id="17" name="prop" x="0" y="176" width="64" height="48">
    <properties>
     <property name="key" value="tree-mossy-cluster-alt"/>
    </properties>
   </object>
-  <object id="18" name="prop" x="0" y="176" width="64" height="48">
+  <object id="18" name="prop" x="112" y="96" width="64" height="48">
    <properties>
     <property name="key" value="rock-cluster"/>
    </properties>
   </object>
-  <object id="19" name="prop" x="368" y="16" width="32" height="32">
+  <object id="19" name="prop" x="64" y="16" width="32" height="32">
    <properties>
     <property name="key" value="tree-mossy-alt"/>
    </properties>
