@@ -7,10 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { LevelData, Obstacle } from '../../assets/scripts/core/level/level-data';
 import { obstacleAt, parseLevelData } from '../../assets/scripts/core/level/level-data';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
-import {
-  moveTowardsWithCollision,
-  moveWithCollision,
-} from '../../assets/scripts/core/movement/collision';
+import { moveWithCollision } from '../../assets/scripts/core/movement/collision';
 
 const MARGIN = 0.5;
 const PLAYER_RADIUS = 0.25;
@@ -89,46 +86,6 @@ describe('moveWithCollision — sliding and bounds', () => {
     const free = moveWithCollision({ x: 5, y: 5 }, { x: 0.3, y: -0.2 }, PLAYER_RADIUS, level, MARGIN);
     expect(free.x).toBeCloseTo(5.3, 9);
     expect(free.y).toBeCloseTo(4.8, 9);
-  });
-});
-
-describe('moveWithCollision — walking around a blocker', () => {
-  it('a walker pressed head-on into a wall gets around it instead of wedging forever', () => {
-    const wall: Obstacle = { kind: 'wall', x: 15, y: 10, width: 2, height: 1 };
-    const level = room([wall]);
-    const target: Vec2 = { x: 16, y: 15 };
-    let position: Vec2 = { x: 16, y: 9 };
-
-    for (let frame = 0; frame < 400; frame += 1) {
-      position = moveTowardsWithCollision(position, target, 0.064, 0.4, level, MARGIN);
-      expect(obstacleAt(level, position)).toBeNull();
-    }
-
-    expect(position.x).toBeCloseTo(target.x, 6);
-    expect(position.y).toBeCloseTo(target.y, 6);
-  });
-
-  it('a walker with a clear path goes straight to the target and never overshoots', () => {
-    const level = room();
-    const end = moveTowardsWithCollision({ x: 5, y: 5 }, { x: 5.1, y: 5 }, 1, 0.4, level, MARGIN);
-
-    expect(end.x).toBeCloseTo(5.1, 9);
-    expect(end.y).toBeCloseTo(5, 9);
-  });
-
-  it('a walker facing the middle of a long wall goes around a wall end', () => {
-    const wall: Obstacle = { kind: 'wall', x: 12, y: 10, width: 6, height: 1 };
-    const level = room([wall]);
-    const target: Vec2 = { x: 15, y: 15 };
-    let position: Vec2 = { x: 15, y: 9 };
-
-    for (let frame = 0; frame < 600; frame += 1) {
-      position = moveTowardsWithCollision(position, target, 0.064, 0.4, level, MARGIN);
-      expect(obstacleAt(level, position)).toBeNull();
-    }
-
-    expect(position.x).toBeCloseTo(target.x, 6);
-    expect(position.y).toBeCloseTo(target.y, 6);
   });
 });
 

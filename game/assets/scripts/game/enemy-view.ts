@@ -53,10 +53,16 @@ import { nextActionStartedMs } from '../core/enemies/attack-cycle';
 import { eliteScale, spriteActorFor } from '../core/enemies/elite';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
-import { moveTowardsWithCollision, moveWithCollision } from '../core/movement/collision';
+import { moveWithCollision } from '../core/movement/collision';
+import {
+  StuckGuard,
+  walkTowards,
+  type FlowField,
+  type RoomNavigation,
+} from '../core/enemies/navigation';
 import type { DerivedStats } from '../core/skills/derived-stats';
 import { squashScale } from '../core/feel/squash';
-import { FEEL_TUNING } from '../core/enemies/tuning';
+import { FEEL_TUNING, NAVIGATION_TUNING } from '../core/enemies/tuning';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { loadTexture } from './assets/texture-cache';
 import type { FxPool } from './fx/effect-pool';
@@ -160,6 +166,11 @@ export interface EnemyViewInitArgs {
    * boss art is already large and `boss-defs.ts` owns its hitbox.
    */
   readonly roleScale?: number;
+  /**
+   * Random source for the stuck-guard detour (the run's `SeededRng`). Optional so a test can
+   * pass a fixed value; the guard is a safety net, its choice does not matter beyond variety.
+   */
+  readonly random?: () => number;
 }
 
 /** One enemy frame result — the combat adapter uses it to spawn bullets and sweep charges. */
@@ -207,6 +218,14 @@ export class EnemyView extends Component {
   private chargeUntilMs = -1;
   /** Freeze/Poison from player skills; core decides timing, the view only holds state. */
   private readonly statuses = new StatusEffects();
+  /** Stuck guard for this enemy (one window): walking 2 s without progress ⇒ 1 s detour. */
+  private readonly stuckGuard = new StuckGuard(
+    NAVIGATION_TUNING.stuckWindowMs,
+    NAVIGATION_TUNING.stuckDistanceTiles,
+    NAVIGATION_TUNING.detourMs,
+  );
+  /** Random source for the detour direction — the run's seeded RNG, from `init`. */
+  private random: () => number = () => 0.5;
 
   get id(): string {
     return this.state?.id ?? '';
@@ -271,6 +290,7 @@ export class EnemyView extends Component {
     this.baseScale = args.baseScale * roleScale;
     this.ringScaleCompensation = roleScale > 0 ? 1 / roleScale : 1;
     this.fx = args.fx ?? null;
+    this.random = args.random ?? this.random;
     this.hitRadius = args.radiusTiles ?? DEFAULT_ENEMY_RADIUS_TILES * roleScale;
     this.contactRange = args.contactRangeTiles ?? CHASER_CONTACT_RANGE_TILES * roleScale;
     this.animator = this.getComponent(SpriteAnimator);
@@ -288,8 +308,19 @@ export class EnemyView extends Component {
     });
   }
 
-  /** One frame: ask core for the next action, write it back, then apply movement + visuals. */
-  step(nowMs: number, deltaMs: number, player: Vec2): EnemyStepResult {
+  /**
+   * One frame: ask core for the next action, write it back, then apply movement + visuals.
+   *
+   * `navigation` is the room's shared flow field (one per radius class, owned by `CombatLoop`),
+   * used exactly like the balance sim: straight while the target is in sight, around the wall
+   * otherwise, with the stuck guard as the last resort.
+   */
+  step(
+    nowMs: number,
+    deltaMs: number,
+    player: Vec2,
+    navigation: RoomNavigation,
+  ): EnemyStepResult {
     const state = this.state;
     const level = this.level;
     const result: EnemyStepResult = { released: null, chargeSweep: null };
@@ -332,7 +363,16 @@ export class EnemyView extends Component {
     }
 
     const before: Vec2 = { x: state.position.x, y: state.position.y };
-    this.advance(next, deltaMs, this.statuses.speedMultiplier(nowMs));
+    const field = navigation.field(this.hitRadius, player, nowMs);
+    const detour = this.stuckGuard.update(
+      state.id,
+      state.position,
+      next.kind === 'walk',
+      nowMs,
+      field,
+      this.random,
+    );
+    this.advance(next, deltaMs, this.statuses.speedMultiplier(nowMs), field, detour);
     this.applyKnockback(deltaMs);
     this.syncNodePosition();
 
@@ -413,11 +453,23 @@ export class EnemyView extends Component {
     this.chargeHitDone = true;
   }
 
+  /**
+   * Move the body without a decision — used by the room's separation pass (core computes the
+   * non-overlapping position, the view writes it back and re-syncs the node).
+   */
+  moveTo(position: Vec2): void {
+    const state = this.state;
+    if (state === null) return;
+    state.position = position;
+    this.syncNodePosition();
+  }
+
   private die(): void {
     const state = this.state;
     if (state !== null) {
       state.health = 0;
       state.action = { kind: 'dead' };
+      this.stuckGuard.forget(state.id);
     }
     this.dead = true;
     this.animator?.stop();
@@ -433,7 +485,13 @@ export class EnemyView extends Component {
     this.node.active = false;
   }
 
-  private advance(action: EnemyAction, deltaMs: number, speedMultiplier = 1): void {
+  private advance(
+    action: EnemyAction,
+    deltaMs: number,
+    speedMultiplier: number,
+    field: FlowField,
+    detour: Vec2 | null,
+  ): void {
     const state = this.state;
     const level = this.level;
     if (state === null || level === null) return;
@@ -454,16 +512,18 @@ export class EnemyView extends Component {
     }
     if (action.kind !== 'walk') return;
 
-    // No overshoot in one frame (a long frame ≠ a teleport), and step around a blocker
-    // instead of pressing into it forever (pathfinding is a later ticket).
-    state.position = moveTowardsWithCollision(
-      state.position,
-      action.target,
-      speedFor(state.role, state.elite) * seconds,
-      this.hitRadius,
+    // Straight while the target is in sight, the shared flow field around a wall, a short
+    // detour when the stuck guard fires — the same rule as `run-simulation.ts`.
+    state.position = walkTowards({
+      position: state.position,
+      target: action.target,
+      field,
+      maxDistanceTiles: speedFor(state.role, state.elite) * seconds,
+      radiusTiles: this.hitRadius,
       level,
-      ROOM_EDGE_MARGIN_TILES,
-    );
+      marginTiles: ROOM_EDGE_MARGIN_TILES,
+      detour,
+    });
   }
 
   /** Small knockback after a bullet hit; same rig as the player but a shorter distance. */

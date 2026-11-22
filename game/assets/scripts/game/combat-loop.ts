@@ -38,9 +38,10 @@ import { StatusEffects } from '../core/combat/status-effects';
 import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
 import type { EnemyState } from '../core/enemies/behaviours';
-import { maxHealthFor } from '../core/enemies/behaviours';
-import { FEEL_TUNING } from '../core/enemies/tuning';
+import { ROOM_EDGE_MARGIN_TILES, maxHealthFor } from '../core/enemies/behaviours';
+import { FEEL_TUNING, NAVIGATION_TUNING } from '../core/enemies/tuning';
 import { eliteVolleyAngles } from '../core/enemies/elite';
+import { RoomNavigation, separateEnemies, type SeparationBody } from '../core/enemies/navigation';
 import type { ScreenShake } from '../core/feel/screen-shake';
 import { spawnWave } from '../core/enemies/waves';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
@@ -170,6 +171,11 @@ export class CombatLoop {
   private readonly rewarded = new Set<string>();
   private bossRewarded = false;
   private readonly bossStatus = new StatusEffects();
+  /**
+   * Shared enemy navigation for the current room: one flow field per radius class, rebuilt only
+   * when the player changes tile and at most every `navigation.rebuildMinMs` (#34).
+   */
+  private navigation: RoomNavigation;
   private level: LevelData;
   private waveIndex = 0;
   private nowMs = 0;
@@ -188,6 +194,11 @@ export class CombatLoop {
     this.manifest = options.manifest;
     this.actorLayer = options.actorLayer;
     this.level = options.level;
+    this.navigation = new RoomNavigation(
+      options.level,
+      ROOM_EDGE_MARGIN_TILES,
+      NAVIGATION_TUNING.rebuildMinMs,
+    );
     this.monsterFor = options.monsterFor;
     this.rng = options.rng;
     this.onBossPhase = options.onBossPhase ?? (() => undefined);
@@ -266,6 +277,11 @@ export class CombatLoop {
   enterRoom(level: LevelData): void {
     this.clear();
     this.level = level;
+    this.navigation = new RoomNavigation(
+      level,
+      ROOM_EDGE_MARGIN_TILES,
+      NAVIGATION_TUNING.rebuildMinMs,
+    );
     this.waveIndex = 0;
     this.playerDied = false;
     this.awaitingAdvance = false;
@@ -410,7 +426,7 @@ export class CombatLoop {
     for (const enemy of this.enemies) {
       if (enemy.isDead) continue;
 
-      const step = enemy.step(this.nowMs, deltaMs, player.position);
+      const step = enemy.step(this.nowMs, deltaMs, player.position, this.navigation);
 
       if (step.released === 'shot') {
         const role = enemy.role;
@@ -435,6 +451,30 @@ export class CombatLoop {
         enemy.markChargeHit();
         this.damagePlayer(enemy.contactDamage, sweep.to);
       }
+    }
+
+    this.separateEnemyBodies();
+  }
+
+  /**
+   * Push overlapping bodies apart (spatial hash in core, cell ≈ 1 tile, so not O(n²)).
+   * Same rule as the balance sim; the push goes through `moveWithCollision`, so it never
+   * ends inside an obstacle.
+   */
+  private separateEnemyBodies(): void {
+    const bodies: SeparationBody[] = [];
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      bodies.push({ id: enemy.id, position: enemy.position, radiusTiles: enemy.radiusTiles });
+    }
+    if (bodies.length < 2) return;
+
+    const moved = separateEnemies(bodies, this.level, ROOM_EDGE_MARGIN_TILES);
+    if (moved.size === 0) return;
+
+    for (const enemy of this.enemies) {
+      const position = moved.get(enemy.id);
+      if (position !== undefined) enemy.moveTo(position);
     }
   }
 
@@ -821,6 +861,7 @@ export class CombatLoop {
       radiusTiles: options.radiusTiles,
       contactRangeTiles: options.contactRangeTiles,
       roleScale: options.roleScale,
+      random: () => this.rng.next(),
       ...(this.fx !== null ? { fx: this.fx } : {}),
     });
 
