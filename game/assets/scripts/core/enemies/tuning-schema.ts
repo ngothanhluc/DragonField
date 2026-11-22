@@ -242,6 +242,8 @@ export interface DoorsTuning {
   readonly goldBonus: number;
   /** Heal/shop/chest doors exist in the offer logic; #40 ships the rooms behind them. */
   readonly specialRoomsEnabled: boolean;
+  /** How long the "choose a door" hint stays up after the doors open, ms (#63). */
+  readonly hintMs: number;
   /** Relative weight of each reward in a door offer; all > 0 so every enabled reward comes up. */
   readonly weights: DoorWeightsTuning;
 }
@@ -508,7 +510,7 @@ const CAMERA_FIELDS = [
 
 const COVER_FIELDS = ['overlayAlpha', 'actorInCoverAlpha', 'fadeRate'] as const;
 
-const DOORS_FIELDS = ['goldBonus', 'specialRoomsEnabled', 'weights'] as const;
+const DOORS_FIELDS = ['goldBonus', 'specialRoomsEnabled', 'hintMs', 'weights'] as const;
 
 const DOOR_WEIGHT_FIELDS = ['skill', 'gold', 'heal', 'shop', 'chest'] as const;
 
@@ -1329,6 +1331,7 @@ function zeroDoors(): DoorsTuning {
   return {
     goldBonus: 1,
     specialRoomsEnabled: false,
+    hintMs: 2000,
     weights: { skill: 1, gold: 1, heal: 0, shop: 0, chest: 0 },
   };
 }
@@ -1358,6 +1361,8 @@ function parseDoors(raw: Record<string, unknown>, problems: ProblemList): DoorsT
       problems,
       false,
     ),
+    hintMs:
+      readNumber(source, 'hintMs', path, problems, { integer: true, positive: true }) ?? 2000,
     weights,
   };
 }

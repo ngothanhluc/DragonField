@@ -47,7 +47,7 @@ export interface DoorSnapshot {
 }
 
 /** A reward icon: resources sheet, sheet rect and displayed size in world units. */
-interface IconSpec {
+export interface IconSpec {
   readonly sheet: string;
   readonly x: number;
   readonly y: number;
@@ -61,8 +61,10 @@ interface IconSpec {
  * Reward → pack icon. `skill` reuses the power-up skill icon, `gold` the coin sheet, and the
  * specials map to the closest pack item; #40 owns their rooms, so they only show once the
  * `doors.specialRoomsEnabled` flag is on. `boss` gets the skull so the last door reads as danger.
+ *
+ * Exported for the HUD's door arrows (#63): an arrow must show the same icon its door shows.
  */
-const ICONS: Readonly<Record<DoorReward, IconSpec>> = {
+export const ICONS: Readonly<Record<DoorReward, IconSpec>> = {
   skill: { sheet: 'resources/art/ui/skill-icons/AttackUpgrade.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
   gold: { sheet: 'resources/art/ui/coin/Coin2.png', x: 0, y: 0, width: 10, height: 10, tiles: 1.5 },
   heal: { sheet: 'resources/art/ui/skill-icons/Heal.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
@@ -89,7 +91,8 @@ const ICON_LIFT = 0.95;
 /** One cached frame per icon sheet (textures are already cached by `loadPixelTexture`). */
 const iconFrames = new Map<string, Promise<SpriteFrame>>();
 
-function loadIconFrame(spec: IconSpec): Promise<SpriteFrame> {
+/** Icon frame of a reward, at NEAREST filtering — shared by the door and the HUD arrows. */
+export function loadRewardIconFrame(spec: IconSpec): Promise<SpriteFrame> {
   const cached = iconFrames.get(spec.sheet);
   if (cached !== undefined) return cached;
 
@@ -179,7 +182,7 @@ export class DoorView {
     node.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
 
     // Missing art must not break the run flow: the glowing doorway still shows.
-    void loadIconFrame(spec)
+    void loadRewardIconFrame(spec)
       .then((frame) => {
         if (node.isValid) sprite.spriteFrame = frame;
       })

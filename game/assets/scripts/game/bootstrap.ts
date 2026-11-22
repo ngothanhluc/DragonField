@@ -113,12 +113,18 @@ import {
 import { FeelView } from './feel-view';
 import { FpsMeter } from './fps-meter';
 import { Hud, HEART_SHEET, MAX_EDGE_ARROWS } from './hud';
+import type { DoorArrowOffset } from './hud';
 import { syncCombatHud } from './hud-sync';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
 import type { PropView, RoomLayers } from './level-view';
 import { PlayerController } from './player-controller';
 import { attachRoomWater } from './room-water';
 import { WORLD_DRAW_LAYERS } from '../core/view/cover';
+import {
+  doorArrowTargets,
+  doorHintVisible,
+  type DoorArrowSource,
+} from '../core/view/door-arrows';
 import { WorldCamera } from './world-camera';
 import { cullWorld } from './world-culler';
 import type { CameraFocus } from './world-camera';
@@ -284,6 +290,8 @@ export class Bootstrap extends Component {
   private clearReward: DoorReward | null = null;
   /** Clock for the door phase: `CombatLoop` stops advancing once the room is cleared. */
   private doorClockMs = 0;
+  /** Time since the doors opened, ms — drives the "choose a door" hint (#63). */
+  private doorHintElapsedMs = 0;
   /** Door reward of the special slot the run just entered; consumed by `enterRoom`. */
   private pendingSpecial: SpecialKind | null = null;
   /** Live special room (#40): kind, its NPC/chest view and whether it was used. */
@@ -361,7 +369,9 @@ export class Bootstrap extends Component {
   /** Reused buffers of the HUD edge-arrow pass (#41): no array allocation per frame. */
   private readonly arrowTargets: Vec2[] = [];
   private readonly arrowOffsets: Vec2[] = [];
-  private readonly doorTargets: Vec2[] = [];
+  /** #63: drawn doors + their reward, and the door-arrow offsets built from them. */
+  private readonly doorArrowSource: DoorArrowSource[] = [];
+  private readonly doorArrowOffsets: DoorArrowOffset[] = [];
   /** Real frame time of the last N frames — the debug `fps()` reads from here. */
   private readonly fpsMeter = new FpsMeter();
   private status: BootstrapStatus = 'loading';
@@ -510,34 +520,58 @@ export class Bootstrap extends Component {
 
   /**
    * Border arrows for what the player cannot see (#41): the nearest off-screen enemies while the
-   * room is not cleared, the doors once it is. The target list is core's `edgeArrowTargets`
-   * (tested); here it is only turned into offsets from the camera centre.
+   * room is not cleared. Once the doors are open (#63) the arrows point at the **drawn** doors
+   * only — each with its offered reward — so the HUD can show the same icon and a door colour.
+   * Target selection is core (`doorArrowTargets` for doors, `edgeArrowTargets` for enemies, both
+   * tested); here it is only turned into offsets from the camera centre.
    */
   private updateHudArrows(): void {
     const hud = this.hud;
     const camera = this.camera;
-    const level = this.currentLevel;
     const player = this.player;
     const combat = this.combat;
-    if (hud === null || camera === null || level === null || player === null || combat === null) {
+    if (hud === null || camera === null || player === null || combat === null) return;
+
+    const view = camera.tileViewRect();
+    const centre = camera.position;
+
+    // Doors are drawn from `doorOfferList` (not `level.doors`): the last normal room offers one
+    // boss door, and pointing at a door that is not drawn sends the player to an empty spot.
+    const doors = this.doorView?.doors ?? [];
+    if (doors.length > 0) {
+      this.doorArrowSource.length = 0;
+      for (const door of doors) {
+        this.doorArrowSource.push({ at: { x: door.x, y: door.y }, reward: door.reward });
+      }
+      const doorTargets = doorArrowTargets(
+        player.position,
+        view,
+        this.doorArrowSource,
+        MAX_EDGE_ARROWS,
+      );
+      this.doorArrowOffsets.length = 0;
+      for (const target of doorTargets) {
+        this.doorArrowOffsets.push({
+          x: target.x - centre.x,
+          y: target.y - centre.y,
+          reward: target.reward,
+        });
+      }
+      hud.setDoorArrows(this.doorArrowOffsets);
       return;
     }
 
-    const view = camera.tileViewRect();
-    this.doorTargets.length = 0;
-    for (const door of level.doors) this.doorTargets.push({ x: door.at.x, y: door.at.y });
     this.arrowTargets.length = 0;
     combat.collectAlivePositions(this.arrowTargets);
     const targets = edgeArrowTargets(
       player.position,
       view,
       this.arrowTargets,
-      this.doorTargets,
-      combat.roomCleared,
+      [],
+      false,
       MAX_EDGE_ARROWS,
     );
 
-    const centre = camera.position;
     this.arrowOffsets.length = 0;
     for (const target of targets) {
       this.arrowOffsets.push({ x: target.x - centre.x, y: target.y - centre.y });
@@ -1442,6 +1476,9 @@ export class Bootstrap extends Component {
     this.doorView = new DoorView(parent, spots);
     this.doorOfferList = offers;
     this.doorClockMs = this.combat?.clockMs ?? 0;
+    // #63: fresh hint window; the arrows for these doors are drawn by `updateDoorPhase`.
+    this.doorHintElapsedMs = 0;
+    this.hud?.setDoorHint(doorHintVisible(this.doorHintElapsedMs));
     // The fight is over: drop leftover bullets (the enemy is gone, but a shot may be mid-flight)
     // so nothing frozen hangs on screen while the player walks to a door.
     this.combat?.clear();
@@ -1451,6 +1488,8 @@ export class Bootstrap extends Component {
     this.screens.setScreen('playing');
     this.roomClearBanner?.destroy();
     this.roomClearBanner = null;
+    // Draw the door arrows on the frame the doors open, instead of one frame later.
+    this.updateHudArrows();
     console.log(
       `[YokaiField] Doors after room ${run.roomLabel}: ${offers.join(', ')}.`,
     );
@@ -1483,9 +1522,14 @@ export class Bootstrap extends Component {
     if (player === null || level === null || view === null) return;
 
     this.doorClockMs += deltaMs;
+    this.doorHintElapsedMs += deltaMs;
     player.step(this.doorClockMs, deltaMs, [], level);
     this.fx?.update(deltaMs);
     this.updateDepthAndCover(deltaMs);
+    // The player walks while the doors are open, so the edge arrows must follow the camera and the
+    // hint must expire (#63) — neither is updated by the cleared combat loop any more.
+    this.hud?.setDoorHint(doorHintVisible(this.doorHintElapsedMs));
+    this.updateHudArrows();
 
     const doors = view.doors;
     for (let index = 0; index < doors.length; index += 1) {
@@ -1508,6 +1552,7 @@ export class Bootstrap extends Component {
     this.doorView?.destroy();
     this.doorView = null;
     this.doorOfferList = [];
+    this.hud?.setDoorHint(false);
     // `boss` carries no clear reward; the next room is the boss arena. A special door replaces
     // the next slot with a heal/shop/chest room (`enterRoom` reads `pendingSpecial`).
     this.roomReward = chosen === 'boss' ? null : chosen;
@@ -1895,6 +1940,9 @@ export class Bootstrap extends Component {
     this.doorView = new DoorView(parent, spots);
     this.doorOfferList = offers;
     this.doorClockMs = this.specialClockMs;
+    // A special room has one exit, not a choice: no "choose a door" hint (#63).
+    this.doorHintElapsedMs = DOORS_TUNING.hintMs;
+    this.hud?.setDoorHint(false);
     this.combat?.clear();
     this.bulletView?.sync();
     this.doorPhase = true;
