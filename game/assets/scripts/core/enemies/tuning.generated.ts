@@ -200,13 +200,25 @@ export const TUNING_DATA = {
   },
   doors: {
     goldBonus: 15,
-    specialRoomsEnabled: false,
+    specialRoomsEnabled: true,
     weights: {
       skill: 40,
       gold: 30,
       heal: 12,
       shop: 10,
       chest: 8,
+    },
+  },
+  specialRooms: {
+    healHearts: 3,
+    chestGold: 15,
+    shop: {
+      heartRefill: 20,
+      skillPrices: {
+        common: 15,
+        rare: 25,
+        epic: 40,
+      },
     },
   },
 } as const;

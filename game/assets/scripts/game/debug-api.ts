@@ -7,6 +7,7 @@
  */
 import type { DerivedStats } from '../core/skills/derived-stats';
 import type { DoorReward } from '../core/run/doors';
+import type { SpecialKind } from '../core/run/special-rooms';
 import { keyLog } from './keyboard-move';
 
 export type DebugStatus =
@@ -16,6 +17,7 @@ export type DebugStatus =
   | 'paused'
   | 'room-clear'
   | 'skill-pick'
+  | 'special'
   | 'dying'
   | 'lost'
   | 'won'
@@ -136,6 +138,19 @@ export interface DebugDoorSnapshot {
   readonly roomReward: DoorReward | null;
 }
 
+/** Live heal/shop/chest room (#40), so the browser proof can reach and use it. */
+export interface DebugSpecialSnapshot {
+  /** Kind of the room the player is in, `null` outside a special room. */
+  readonly kind: SpecialKind | null;
+  /** Interaction point in tile space (y down), same unit as the player position. */
+  readonly x: number | null;
+  readonly y: number | null;
+  /** The NPC/chest was already used (no second heal/chest reward). */
+  readonly used: boolean;
+  /** The room is finished and the exit door is open. */
+  readonly finished: boolean;
+}
+
 /** Data bootstrap supplies to the API; every method is a live closure. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
@@ -193,6 +208,10 @@ export interface DebugProvider {
   readonly doors: () => DebugDoorSnapshot;
   /** Debug: walk into door `index`; `false` outside the door phase or with a bad index. */
   readonly takeDoor: (index: number) => boolean;
+  /** Live heal/shop/chest room (#40); `kind: null` outside one. */
+  readonly special: () => DebugSpecialSnapshot;
+  /** Debug: teleport onto the special room's NPC/chest and use it; `false` when not in one. */
+  readonly useSpecial: () => boolean;
 }
 
 export type YokaiDebugApi = Omit<
@@ -247,6 +266,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
     nodeCount: { value: provider.nodeCount, enumerable: true },
     doors: { value: provider.doors, enumerable: true },
     takeDoor: { value: provider.takeDoor, enumerable: true },
+    special: { value: provider.special, enumerable: true },
+    useSpecial: { value: provider.useSpecial, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -256,7 +277,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, loadRoom, ' +
       'screen, save, setGold, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
-      'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, keyLog).',
+      'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, keyLog).',
   );
   return true;
 }

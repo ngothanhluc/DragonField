@@ -171,6 +171,8 @@ export interface TuningConfig {
   readonly cover: CoverTuning;
   /** Door choice after each normal room (#39, ADR-014). */
   readonly doors: DoorsTuning;
+  /** Heal / mid-run shop / chest rooms (#40). */
+  readonly specialRooms: SpecialRoomsTuning;
 }
 
 /** One weight per door reward (skills and gold are the two fights). */
@@ -189,10 +191,36 @@ export interface DoorWeightsTuning {
 export interface DoorsTuning {
   /** Extra gold paid when a room's clear reward is `gold` instead of a skill pick. */
   readonly goldBonus: number;
-  /** Heal/shop/chest doors exist in the offer logic but stay off until #40 ships them. */
+  /** Heal/shop/chest doors exist in the offer logic; #40 ships the rooms behind them. */
   readonly specialRoomsEnabled: boolean;
   /** Relative weight of each reward in a door offer; all > 0 so every enabled reward comes up. */
   readonly weights: DoorWeightsTuning;
+}
+
+/** Mid-run shop prices in **meta gold** (the save's gold, GDD §13.2). */
+export interface ShopPricesTuning {
+  readonly common: number;
+  readonly rare: number;
+  readonly epic: number;
+}
+
+/** The mid-run shop: a flat heart refill plus one price per skill rarity. */
+export interface ShopTuning {
+  /** Price of the `heart-refill` offer (restores every heart). */
+  readonly heartRefill: number;
+  readonly skillPrices: ShopPricesTuning;
+}
+
+/**
+ * Special-room numbers (#40). Prices are in meta gold: the shop spends the same gold the save
+ * keeps, so a purchase during a run means coming home with less (GDD §13.2).
+ */
+export interface SpecialRoomsTuning {
+  /** Hearts restored by the heal NPC, capped at the player's max. */
+  readonly healHearts: number;
+  /** Gold a chest gives when its seeded reward is `gold`. */
+  readonly chestGold: number;
+  readonly shop: ShopTuning;
 }
 
 /**
@@ -420,6 +448,12 @@ const COVER_FIELDS = ['overlayAlpha', 'actorInCoverAlpha', 'fadeRate'] as const;
 const DOORS_FIELDS = ['goldBonus', 'specialRoomsEnabled', 'weights'] as const;
 
 const DOOR_WEIGHT_FIELDS = ['skill', 'gold', 'heal', 'shop', 'chest'] as const;
+
+const SPECIAL_ROOMS_FIELDS = ['healHearts', 'chestGold', 'shop'] as const;
+
+const SHOP_FIELDS = ['heartRefill', 'skillPrices'] as const;
+
+const SHOP_PRICE_FIELDS = ['common', 'rare', 'epic'] as const;
 
 const SHAKE_FIELDS = [
   'maxOffsetTiles',
@@ -1167,6 +1201,58 @@ function parseDoors(raw: Record<string, unknown>, problems: ProblemList): DoorsT
   };
 }
 
+function zeroSpecialRooms(): SpecialRoomsTuning {
+  return {
+    healHearts: 1,
+    chestGold: 1,
+    shop: { heartRefill: 1, skillPrices: { common: 1, rare: 1, epic: 1 } },
+  };
+}
+
+function parseSpecialRooms(
+  raw: Record<string, unknown>,
+  problems: ProblemList,
+): SpecialRoomsTuning {
+  const source = readObject(raw, 'specialRooms', '', problems, SPECIAL_ROOMS_FIELDS);
+  if (source === undefined) return zeroSpecialRooms();
+
+  const path = 'specialRooms';
+  const shopSource = readObject(source, 'shop', path, problems, SHOP_FIELDS) ?? {};
+  const priceSource =
+    readObject(shopSource, 'skillPrices', `${path}.shop`, problems, SHOP_PRICE_FIELDS) ?? {};
+
+  return {
+    healHearts:
+      readNumber(source, 'healHearts', path, problems, { integer: true, positive: true }) ?? 1,
+    chestGold:
+      readNumber(source, 'chestGold', path, problems, { integer: true, positive: true }) ?? 1,
+    shop: {
+      heartRefill:
+        readNumber(shopSource, 'heartRefill', `${path}.shop`, problems, {
+          integer: true,
+          positive: true,
+        }) ?? 1,
+      skillPrices: {
+        common:
+          readNumber(priceSource, 'common', `${path}.shop.skillPrices`, problems, {
+            integer: true,
+            positive: true,
+          }) ?? 1,
+        rare:
+          readNumber(priceSource, 'rare', `${path}.shop.skillPrices`, problems, {
+            integer: true,
+            positive: true,
+          }) ?? 1,
+        epic:
+          readNumber(priceSource, 'epic', `${path}.shop.skillPrices`, problems, {
+            integer: true,
+            positive: true,
+          }) ?? 1,
+      },
+    },
+  };
+}
+
 function zeroCover(): CoverTuning {
   return { overlayAlpha: 1, actorInCoverAlpha: 1, fadeRate: 1 };
 }
@@ -1232,6 +1318,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     feel: parseFeel(raw, problems),
     cover: parseCover(raw, problems),
     doors: parseDoors(raw, problems),
+    specialRooms: parseSpecialRooms(raw, problems),
   };
 
   problems.throwIfAny();
