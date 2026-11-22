@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="15">
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="24">
  <properties>
     <property name="chapter" type="int" value="3"/>
     <property name="room" type="int" value="8"/>
@@ -130,6 +130,56 @@
   <object id="13" name="obstacle" x="288" y="64" width="16" height="16">
    <properties>
     <property name="kind" type="string" value="pillar"/>
+   </properties>
+  </object>
+  <object id="14" name="prop" x="336" y="16" width="16" height="16">
+   <properties>
+    <property name="key" value="crate"/>
+   </properties>
+  </object>
+  <object id="15" name="prop" x="160" y="16" width="64" height="48">
+   <properties>
+    <property name="key" value="tree-mossy-cluster"/>
+   </properties>
+  </object>
+  <object id="16" name="prop" x="368" y="16" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-green"/>
+   </properties>
+  </object>
+  <object id="17" name="prop" x="0" y="176" width="64" height="48">
+   <properties>
+    <property name="key" value="tree-mossy-cluster-alt"/>
+   </properties>
+  </object>
+  <object id="18" name="prop" x="112" y="96" width="64" height="48">
+   <properties>
+    <property name="key" value="rock-cluster"/>
+   </properties>
+  </object>
+  <object id="19" name="prop" x="64" y="16" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-mossy-alt"/>
+   </properties>
+  </object>
+  <object id="20" name="prop" x="80" y="192" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-red"/>
+   </properties>
+  </object>
+  <object id="21" name="prop" x="208" y="192" width="16" height="16">
+   <properties>
+    <property name="key" value="grass-tall"/>
+   </properties>
+  </object>
+  <object id="22" name="prop" x="128" y="240" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-yellow"/>
+   </properties>
+  </object>
+  <object id="23" name="prop" x="272" y="32" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-green"/>
    </properties>
   </object>
  </objectgroup>

@@ -279,10 +279,9 @@ function sheetPath(sheet: string): string {
 }
 
 /** Same rule as `level-view.ts`: a 1×1 pillar uses the `pillarSmall` visual. */
-function visualKey(obstacle: Obstacle): ObstacleVisualKey {
+function visualKey(obstacle: Obstacle & { kind: Exclude<Obstacle['kind'], 'prop'> }): ObstacleVisualKey {
   return obstacle.kind === 'pillar' && obstacle.width <= 1 && obstacle.height <= 1 ? 'pillarSmall' : obstacle.kind;
 }
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -293,7 +292,12 @@ describe('#7 every room keeps its collision', () => {
       readFileSync(join(HERE, '../fixtures/level-obstacles.json'), 'utf8'),
     ) as Record<string, Obstacle[]>;
     const now: Record<string, Obstacle[]> = {};
-    for (const file of findTmxFiles()) now[file.name] = parseTmxLevel(file.xml, { source: file.name }).obstacles;
+    for (const file of findTmxFiles()) {
+      // #35 adds generated `prop` obstacles on top of these; the snapshot pins the authored ones.
+      now[file.name] = parseTmxLevel(file.xml, { source: file.name }).obstacles.filter(
+        (obstacle) => (obstacle.kind as string) !== 'prop',
+      );
+    }
 
     expect(Object.keys(now)).toHaveLength(27);
     expect(now).toEqual(before);
@@ -445,7 +449,10 @@ describe('#7 obstacle visuals', () => {
     const module = await loadObstacleVisuals();
     expect(module).not.toBeNull();
     for (const room of chapterRooms(3)) {
-      for (const obstacle of room.obstacles) {
+      for (const obstacle of room.obstacles.filter(
+        (candidate): candidate is Obstacle & { kind: Exclude<Obstacle['kind'], 'prop'> } =>
+          (candidate.kind as string) !== 'prop',
+      )) {
         const label = `${room.file.name} ${obstacle.kind} ${obstacle.width}x${obstacle.height} at (${obstacle.x},${obstacle.y})`;
         const visual = module!.obstacleVisual(3, visualKey(obstacle));
         const { rect } = visual;

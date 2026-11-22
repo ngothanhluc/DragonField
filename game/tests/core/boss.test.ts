@@ -672,7 +672,7 @@ describe('the boss sprite never spills outside the room', () => {
         }
       }
     }
-  });
+  }, 30_000); // 8 bosses × 3 phases × edge players: well over the 5 s default on a busy runner.
 
   it('a spawn near the corner is pulled into the valid standing area', () => {
     for (const id of BOSS_IDS) {

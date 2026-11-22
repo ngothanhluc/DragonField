@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="4" nextobjectid="11">
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="4" nextobjectid="21">
  <properties>
     <property name="chapter" type="int" value="1"/>
     <property name="room" type="int" value="7"/>
@@ -98,5 +98,65 @@
     <property name="toRoom" type="int" value="8"/>
    </properties>
   <point/></object>
-   </objectgroup>
+  <object id="9" name="prop" x="144" y="16" width="64" height="48">
+   <properties>
+    <property name="key" value="house-orange"/>
+   </properties>
+  </object>
+  <object id="10" name="prop" x="400" y="16" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-dead"/>
+   </properties>
+  </object>
+  <object id="11" name="prop" x="16" y="80" width="32" height="32">
+   <properties>
+    <property name="key" value="rock-boulder"/>
+   </properties>
+  </object>
+  <object id="12" name="prop" x="496" y="160" width="16" height="16">
+   <properties>
+    <property name="key" value="rock-small"/>
+   </properties>
+  </object>
+  <object id="13" name="prop" x="480" y="176" width="32" height="32">
+   <properties>
+    <property name="key" value="cart"/>
+   </properties>
+  </object>
+  <object id="14" name="prop" x="224" y="160" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-red"/>
+   </properties>
+  </object>
+  <object id="15" name="prop" x="32" y="176" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-dark"/>
+   </properties>
+  </object>
+  <object id="16" name="prop" x="336" y="80" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-light"/>
+   </properties>
+  </object>
+  <object id="17" name="prop" x="224" y="96" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-clover"/>
+   </properties>
+  </object>
+  <object id="18" name="prop" x="400" y="128" width="16" height="16">
+   <properties>
+    <property name="key" value="grass-tall"/>
+   </properties>
+  </object>
+  <object id="19" name="prop" x="144" y="240" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-yellow"/>
+   </properties>
+  </object>
+  <object id="20" name="prop" x="112" y="128" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-sun"/>
+   </properties>
+  </object>
+ </objectgroup>
 </map>

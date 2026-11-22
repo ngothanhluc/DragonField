@@ -21,6 +21,7 @@
  *   | `obstacle`   | rect     | `kind` ∈ pillar/wall/pit            | obstacle: x/y/width/height are pixels |
  *   | `door`       | point    | `toRoom` (int ≥ 1) or absent        | no `toRoom` = chapter exit door (`null`) |
  *   | `bossStart`  | point    | — (boss room only)                  | where the boss stands; default (16, 5) |
+ *   | `prop`       | rect     | `key` (a `PROP_CATALOGUE[chapter]` key) | one drawn prop: x/y = **sprite** top-left in pixels; a solid prop adds its collider as an `obstacle` of kind `prop` |
  *
  *   An object with any other name ⇒ **error**, so a typo cannot silently become a skipped object.
  *   `rotation` must be 0 (collisions are axis-aligned rectangles).
@@ -46,7 +47,17 @@ import {
   TILE_SIZE_PX,
   parseLevelData,
 } from './level-data';
-import type { BossInfo, Door, EnemyRole, EnemySpawn, LevelData, ObstacleKind, Wave } from './level-data';
+import type {
+  BossInfo,
+  Door,
+  EnemyRole,
+  EnemySpawn,
+  LevelData,
+  ObstacleKind,
+  PlacedProp,
+  Wave,
+} from './level-data';
+import { propCollider, propDef } from './props';
 import { childrenNamed, elementText, firstChild, parseXml } from './xml';
 import type { XmlElement } from './xml';
 
@@ -57,7 +68,17 @@ export const TMX_OBJECTS = {
   obstacle: 'obstacle',
   door: 'door',
   bossStart: 'bossStart',
+  prop: 'prop',
 } as const;
+
+/**
+ * Obstacle kinds an author may write by hand. `prop` is **generated** from a `prop` object's
+ * catalogue collider, so a raw `obstacle kind="prop"` would block without drawing anything.
+ */
+type AuthoredObstacleKind = Exclude<ObstacleKind, 'prop'>;
+const AUTHORED_OBSTACLE_KINDS: readonly AuthoredObstacleKind[] = OBSTACLE_KINDS.filter(
+  (kind): kind is AuthoredObstacleKind => kind !== 'prop',
+);
 
 /** Collect every problem then throw a single `Error` (same shape as `level-data.ts`). */
 class ProblemList {
@@ -245,8 +266,8 @@ function isEnemyRole(value: string): value is EnemyRole {
   return (ENEMY_ROLES as readonly string[]).includes(value);
 }
 
-function isObstacleKind(value: string): value is ObstacleKind {
-  return (OBSTACLE_KINDS as readonly string[]).includes(value);
+function isAuthoredObstacleKind(value: string): value is AuthoredObstacleKind {
+  return (AUTHORED_OBSTACLE_KINDS as readonly string[]).includes(value);
 }
 
 /** Tiled pixel coordinates → tile units. No rounding: Tiled allows half tiles. */
@@ -263,13 +284,22 @@ interface RawObject {
 
 function readObjects(
   map: XmlElement,
+  chapter: number,
   problems: ProblemList,
-): { playerStart: Vec2 | null; bossStart: Vec2 | null; waves: Wave[]; obstacles: LevelData['obstacles']; doors: Door[] } {
+): {
+  playerStart: Vec2 | null;
+  bossStart: Vec2 | null;
+  waves: Wave[];
+  obstacles: LevelData['obstacles'];
+  props: PlacedProp[];
+  doors: Door[];
+} {
   const result = {
     playerStart: null as Vec2 | null,
     bossStart: null as Vec2 | null,
     waves: [] as Wave[],
     obstacles: [] as LevelData['obstacles'],
+    props: [] as PlacedProp[],
     doors: [] as Door[],
   };
 
@@ -371,11 +401,15 @@ function readObjects(
       case TMX_OBJECTS.obstacle: {
         const kind = readStringProperty(properties, 'kind', problems);
         if (kind === null) {
-          problems.add(path, `obstacle requires the "kind" property (${OBSTACLE_KINDS.join('|')})`);
+          problems.add(path, `obstacle requires the "kind" property (${AUTHORED_OBSTACLE_KINDS.join('|')})`);
           break;
         }
-        if (!isObstacleKind(kind)) {
-          problems.add(path, `invalid kind ${JSON.stringify(kind)}; expected one of ${OBSTACLE_KINDS.join(', ')}`);
+        if (!isAuthoredObstacleKind(kind)) {
+          problems.add(
+            path,
+            `invalid kind ${JSON.stringify(kind)}; expected one of ${AUTHORED_OBSTACLE_KINDS.join(', ')} ` +
+              '(the "prop" obstacle is generated from a prop object, not written by hand)',
+          );
           break;
         }
 
@@ -390,6 +424,27 @@ function readObjects(
           width: pixelsToTiles(width),
           height: pixelsToTiles(height),
         });
+        break;
+      }
+
+      case TMX_OBJECTS.prop: {
+        const key = readStringProperty(properties, 'key', problems);
+        if (key === null || key.trim() === '') {
+          problems.add(path, 'prop requires the "key" property (a key of the chapter prop catalogue)');
+          break;
+        }
+
+        const def = propDef(chapter, key);
+        if (def === undefined) {
+          problems.add(path, `unknown prop ${JSON.stringify(key)} in chapter ${chapter} (see core/level/props.ts)`);
+          break;
+        }
+
+        // `x`/`y` are the sprite's top-left in Tiled pixels; the collider becomes the obstacle.
+        const prop: PlacedProp = { key, x: pixelsToTiles(x), y: pixelsToTiles(y) };
+        result.props.push(prop);
+        const obstacle = propCollider(prop, def);
+        if (obstacle !== null) result.obstacles.push(obstacle);
         break;
       }
 
@@ -544,7 +599,7 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
     problems.add('map.properties.room', `must be an integer >= 1, got ${room}`);
   }
 
-  const objects = readObjects(root, problems);
+  const objects = readObjects(root, chapter ?? 1, problems);
 
   problems.throwIfAny(source);
 
@@ -561,6 +616,7 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
     playerStart: objects.playerStart,
     waves: objects.waves,
     obstacles: objects.obstacles,
+    props: objects.props,
     doors: objects.doors,
     ...(bossName !== null ? { boss: { name: bossName } satisfies BossInfo } : {}),
     ...(objects.bossStart !== null ? { bossStart: objects.bossStart } : {}),

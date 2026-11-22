@@ -97,6 +97,7 @@ const EMPTY_ROOM: LevelData = {
   playerStart: { x: 16, y: 9 },
   waves: [],
   obstacles: [],
+  props: [],
   doors: [],
 };
 

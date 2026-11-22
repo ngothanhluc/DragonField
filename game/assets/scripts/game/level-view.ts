@@ -31,17 +31,26 @@ import type { TiledMapAsset as CocosTiledMapAsset } from 'cc';
 import type { LevelData, Obstacle } from '../core/level/level-data';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import {
-  obstacleSheets,
+  obstacleSheets as obstacleSheetsCore,
   obstacleVisual,
   type TileRect,
 } from '../core/level/obstacle-visuals';
+import { propDef, propSheets } from '../core/level/props';
 import type { Vec2 } from '../core/math/vec2';
 import { loadTexture } from './assets/texture-cache';
 
 // Kept re-exported for the UI modules that slice their own frames with `TileRect`
 // and for `bootstrap`'s preload list; the definitions now live in core.
-export { obstacleSheets };
 export type { TileRect };
+
+/**
+ * Every sheet a chapter's rooms need preloaded: obstacle art plus the catalogue's prop art
+ * (#35). Props are whole drawings from a sheet, so a room with a house pops if the sheet is
+ * not preloaded — `bootstrap` and the menu backdrop both go through this list.
+ */
+export function obstacleSheets(chapter: number): string[] {
+  return Array.from(new Set([...obstacleSheetsCore(chapter), ...propSheets(chapter)]));
+}
 
 /**
  * `cc` is an any module in this repo (see `types/cc.d.ts`), so import names only work in
@@ -174,6 +183,14 @@ export function buildRoom(
   map.tmxAsset = tmxAsset;
   map.enableCulling = false;
 
+  // The props container exists before any texture loads, so its depth is fixed: above the tile
+  // map (and the water, which inserts itself at index 1 later), below obstacles and actors.
+  const props = new CocosNode('props');
+  props.parent = root;
+
+  void buildProps(props, level).catch((error: unknown) => {
+    reportLoadFailure('props', `chapter ${level.chapter}`, error);
+  });
   void buildObstacles(root, level).catch((error: unknown) => {
     reportLoadFailure('obstacles', `chapter ${level.chapter}`, error);
   });
@@ -183,7 +200,12 @@ export function buildRoom(
 
 /** Obstacles: one tiled sprite per `Obstacle`, exactly its tile size. */
 async function buildObstacles(root: Node, level: LevelData): Promise<void> {
-  const sheets = obstacleSheets(level.chapter);
+  // A `prop` obstacle is the collider of a prop sprite; drawing it again would show a boulder
+  // or crate on top of the tree/house. The prop itself is drawn by `buildProps`.
+  const drawable = level.obstacles.filter((obstacle) => obstacle.kind !== 'prop');
+  if (drawable.length === 0) return;
+
+  const sheets = obstacleSheetsCore(level.chapter);
   const textures = await Promise.all(sheets.map((sheet) => loadTexture(sheet)));
   if (!root.isValid) return;
 
@@ -205,7 +227,7 @@ async function buildObstacles(root: Node, level: LevelData): Promise<void> {
   const obstacles = new CocosNode('obstacles');
   obstacles.parent = root;
 
-  level.obstacles.forEach((obstacle, index) => {
+  drawable.forEach((obstacle, index) => {
     const small = obstacle.kind === 'pillar' && obstacle.width <= 1 && obstacle.height <= 1;
     const key = small ? 'pillarSmall' : obstacle.kind;
     const visual = frames.get(key);
@@ -223,6 +245,67 @@ async function buildObstacles(root: Node, level: LevelData): Promise<void> {
     node.parent = obstacles;
     node.setPosition(rect.x + rect.width / 2, rect.y + rect.height / 2, 0);
   });
+}
+
+/**
+ * Props (#35): one sprite per catalogue entry, sliced **whole** from its sheet (a 32×32 tree,
+ * a 64×48 house front) — never re-tiled. Nearest filtering comes from the texture cache and the
+ * scale is the actor rule (1 texture px = 1/16 unit), so a prop matches the tiles it stands on.
+ */
+async function buildProps(container: Node, level: LevelData): Promise<void> {
+  const wanted = level.props.flatMap((prop) => {
+    const def = propDef(level.chapter, prop.key);
+    return def === undefined ? [] : [{ prop, def }];
+  });
+  if (wanted.length === 0) return;
+
+  const sheets = Array.from(new Set(wanted.map(({ def }) => def.sheet)));
+  const textures = await Promise.all(sheets.map((sheet) => loadTexture(sheet)));
+  if (!container.isValid) return;
+
+  const textureOf = new Map<string, Awaited<ReturnType<typeof loadTexture>>>();
+  sheets.forEach((sheet, index) => {
+    const texture = textures[index];
+    if (texture !== undefined) textureOf.set(sheet, texture);
+  });
+
+  const frames = new Map<string, SpriteFrame>();
+  for (const { def } of wanted) {
+    if (frames.has(def.key)) continue;
+    const texture = textureOf.get(def.sheet);
+    if (texture !== undefined) frames.set(def.key, sliceFrame(texture, def.rect));
+  }
+
+  for (const { prop, def } of wanted) {
+    const frame = frames.get(def.key);
+    if (frame === undefined) continue;
+
+    const width = def.rect.width / TILE_SIZE_PX;
+    const height = def.rect.height / TILE_SIZE_PX;
+    const node = makePropNode(`prop-${prop.key}`, frame, def.rect);
+    node.parent = container;
+    // `LevelData` is top-left/y-down: the sprite's top-left sits at (x, rows - y).
+    node.setPosition(prop.x + width / 2, ROOM_ROWS - prop.y - height / 2, 0);
+  }
+}
+
+/** Prop sprite: `SIMPLE` (the drawing is the frame), content size = the sheet rect in pixels. */
+function makePropNode(name: string, frame: SpriteFrame, rect: TileRect): Node {
+  const node = new CocosNode(name);
+
+  const sprite: Sprite = node.addComponent(CocosSprite);
+  sprite.type = CocosSprite.Type.SIMPLE;
+  sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+  sprite.trim = false;
+  sprite.spriteFrame = frame;
+
+  const transform: UITransform | null = node.getComponent(CocosUITransform);
+  // `CUSTOM` takes its size from UITransform.contentSize (defaults to 100×100), not the frame:
+  // without this line a 32 px tree draws ~3× too big even with the right rect and scale.
+  if (transform !== null) transform.setContentSize(rect.width, rect.height);
+
+  node.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
+  return node;
 }
 
 /**

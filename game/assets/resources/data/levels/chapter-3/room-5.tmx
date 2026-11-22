@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="14">
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="25">
  <properties>
     <property name="chapter" type="int" value="3"/>
     <property name="room" type="int" value="5"/>
@@ -43,13 +43,13 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,189,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 472,0,0,0,0,0,0,237,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,329,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,329,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,190,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,348,349,0,0,0,406,0,0,0,0,329,0,
-0,0,307,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,368,369,0,0,0,0,0,0,0,0,0,474,
-0,0,327,0,329,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,331,0,0,0,0,0,0,0,0,0,
-0,328,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,309,310,0,0,308,0,0,0,0,0,0,0,0,0,
-474,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,330,0,0,405,0,0,0,405,0,0,0,0,0,
+0,308,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,348,349,0,0,406,0,0,0,0,329,0,
+0,0,0,0,307,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,368,369,0,0,0,0,0,0,0,0,474,
+0,0,0,0,327,0,329,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,331,0,0,0,0,0,0,0,0,
+0,0,0,328,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,309,310,0,240,308,0,0,0,0,0,0,0,0,
+474,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,330,0,0,405,0,0,405,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,329,0,237,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,472,0,0,0,467,0,0,0,0,0,0,0,0,0,228,0,0,0,0,0,0,0,0
   </data>
@@ -127,5 +127,60 @@
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
+  <object id="14" name="prop" x="480" y="176" width="32" height="32">
+   <properties>
+    <property name="key" value="rock-boulder"/>
+   </properties>
+  </object>
+  <object id="15" name="prop" x="480" y="128" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-mossy"/>
+   </properties>
+  </object>
+  <object id="16" name="prop" x="176" y="16" width="64" height="48">
+   <properties>
+    <property name="key" value="tree-mossy-cluster-alt"/>
+   </properties>
+  </object>
+  <object id="17" name="prop" x="16" y="176" width="32" height="32">
+   <properties>
+    <property name="key" value="stump-big"/>
+   </properties>
+  </object>
+  <object id="18" name="prop" x="0" y="16" width="32" height="32">
+   <properties>
+    <property name="key" value="tree-dead"/>
+   </properties>
+  </object>
+  <object id="19" name="prop" x="368" y="16" width="64" height="48">
+   <properties>
+    <property name="key" value="tree-mossy-cluster"/>
+   </properties>
+  </object>
+  <object id="20" name="prop" x="288" y="160" width="16" height="16">
+   <properties>
+    <property name="key" value="grass-tall"/>
+   </properties>
+  </object>
+  <object id="21" name="prop" x="64" y="160" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-green"/>
+   </properties>
+  </object>
+  <object id="22" name="prop" x="160" y="80" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-clover"/>
+   </properties>
+  </object>
+  <object id="23" name="prop" x="368" y="224" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-dark"/>
+   </properties>
+  </object>
+  <object id="24" name="prop" x="384" y="240" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-yellow"/>
+   </properties>
+  </object>
   </objectgroup>
 </map>

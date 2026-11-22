@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="13">
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="32" height="18" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="21">
  <properties>
     <property name="chapter" type="int" value="2"/>
     <property name="room" type="int" value="3"/>
@@ -37,16 +37,16 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,792,0,0,0,793,0,0,0,793,0,0,0,0,0,797,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,805,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,818,799,
-0,0,0,819,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,793,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,799,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,793,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,805,0,794,792,0,0,794,804,0,797,792,805,0,797,0,0,0,0,0,0,0,0,
 798,0,0,0,0,0,0,0,804,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,797,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,796,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,798,805,793,792,798,796,0,0,799,0,0,796,0,793,797,0,0,0,0,0,0,0,
-798,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,819,0,0,0,0,799,0,0,0,0,0,0,0,0,793,
+798,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,819,0,0,0,0,797,0,0,0,0,0,0,0,0,793,
 0,0,0,0,0,0,817,0,0,0,804,816,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,794,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,794,0,0,0,0,794,818,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,819,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,794,0,805,0,797,0,797,0,797,0,794,0,0,0,796,0,805,0,0,0,0,0,798,0,793,0,0,0,0,0
@@ -111,5 +111,45 @@
     <property name="elite" type="bool" value="false"/>
    </properties>
   <point/></object>
+  <object id="13" name="prop" x="272" y="128" width="80" height="32">
+   <properties>
+    <property name="key" value="boat"/>
+   </properties>
+  </object>
+  <object id="14" name="prop" x="112" y="32" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-green"/>
+   </properties>
+  </object>
+  <object id="15" name="prop" x="336" y="176" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-light"/>
+   </properties>
+  </object>
+  <object id="16" name="prop" x="416" y="48" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-yellow"/>
+   </properties>
+  </object>
+  <object id="17" name="prop" x="128" y="176" width="16" height="16">
+   <properties>
+    <property name="key" value="bush-dark"/>
+   </properties>
+  </object>
+  <object id="18" name="prop" x="368" y="208" width="33" height="25">
+   <properties>
+    <property name="key" value="fishnet"/>
+   </properties>
+  </object>
+  <object id="19" name="prop" x="416" y="80" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-sun"/>
+   </properties>
+  </object>
+  <object id="20" name="prop" x="416" y="32" width="16" height="16">
+   <properties>
+    <property name="key" value="flower-red"/>
+   </properties>
+  </object>
    </objectgroup>
 </map>
