@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
 import { makeDodgePolicy } from '../helpers/dodge-policy';
 import { CHASER_CONTACT_RANGE_TILES } from '../../assets/scripts/core/enemies/behaviours';
@@ -22,6 +22,17 @@ import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import { join } from 'node:path';
 
 const chapterOne = loadChapterOne();
+
+/**
+ * Yield one real macrotask between tests. Every sim here is synchronous and the whole file adds
+ * up to well over a minute (#41: whole-chapter runs at 8× enemies), while vitest's worker RPC
+ * (`onTaskUpdate`) times out after 60 s of a blocked event loop — microtasks are not enough to
+ * receive the reply. Without this tick vitest reports a spurious "Timeout calling
+ * onTaskUpdate" although every test passed. It yields, it changes no timing or threshold.
+ */
+afterEach(async () => {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+});
 
 /** No keys pressed: used for both god mode and the "stand still" player. */
 const standStill: InputPolicy = () => ({ up: false, down: false, left: false, right: false });
