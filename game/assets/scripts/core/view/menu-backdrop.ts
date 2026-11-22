@@ -35,6 +35,8 @@ export interface TileRect {
 export interface MenuRoom {
   readonly playerStart: Vec2;
   readonly obstacles: readonly TileRect[];
+  /** Room size in tiles (a normal room may be several screens, ADR-018); defaults to one screen. */
+  readonly size?: { readonly cols: number; readonly rows: number };
 }
 
 /** A point is clear of a rectangle when it is at least `margin` tiles away on some side. */
@@ -59,11 +61,9 @@ export function menuBackdropChapter(input: MenuBackdropChapterInput): number {
   return MENU_BACKDROP_ROOM;
 }
 
-/** Whole tiles the ninja's feet may occupy: room for the sprite inside the 32×18 room. */
+/** Whole tiles the ninja's feet may occupy: room for the sprite inside one screen. */
 const MIN_FEET_X = 1;
-const MAX_FEET_X = ROOM_COLS - 1;
 const MIN_FEET_Y = 2;
-const MAX_FEET_Y = ROOM_ROWS - 1;
 
 /**
  * Where the idle ninja stands so the panel does not hide it. Keeps `playerStart` when that spot
@@ -75,11 +75,13 @@ export function menuPlayerSpot(room: MenuRoom, keepOut: TileRect): Vec2 {
   const start = room.playerStart;
   if (isClearOf(start, keepOut, 1)) return start;
 
+  const maxFeetX = (room.size?.cols ?? ROOM_COLS) - 1;
+  const maxFeetY = (room.size?.rows ?? ROOM_ROWS) - 1;
   let best: Vec2 | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
-  for (let y = MIN_FEET_Y; y <= MAX_FEET_Y; y += 1) {
-    for (let x = MIN_FEET_X; x <= MAX_FEET_X; x += 1) {
+  for (let y = MIN_FEET_Y; y <= maxFeetY; y += 1) {
+    for (let x = MIN_FEET_X; x <= maxFeetX; x += 1) {
       const spot: Vec2 = { x, y };
       if (!isClearOf(spot, keepOut, 1)) continue;
       if (!room.obstacles.every((obstacle) => isClearOf(spot, obstacle, 1))) continue;

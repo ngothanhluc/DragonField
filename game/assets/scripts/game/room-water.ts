@@ -20,7 +20,7 @@ import {
   warn,
 } from 'cc';
 import type { WaterArea } from '../core/level/water-layout';
-import { ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
+import { TILE_SIZE_PX } from '../core/level/level-data';
 import { loadTexture } from './assets/texture-cache';
 import { sliceFrame } from './level-view';
 
@@ -53,8 +53,11 @@ interface AnimatedTile {
 export class WaterView extends Component {
   private readonly tiles: AnimatedTile[] = [];
   private elapsedMs = 0;
+  /** Room height (tiles): tile y (down) → world y (up) flip. */
+  private rows = 18;
 
-  init(areas: readonly WaterArea[]): void {
+  init(areas: readonly WaterArea[], rows: number): void {
+    this.rows = rows;
     void this.build(areas).catch((error: unknown) => {
       warn(`[YokaiField] Could not build water: ${String(error)}`);
     });
@@ -128,7 +131,7 @@ export class WaterView extends Component {
     graphics.rect(-area.width / 2, -area.height / 2, area.width, area.height);
     graphics.fill();
 
-    node.setPosition(area.x + area.width / 2, ROOM_ROWS - area.y - area.height / 2, 0);
+    node.setPosition(area.x + area.width / 2, this.rows - area.y - area.height / 2, 0);
   }
 
   private addTile(
@@ -153,7 +156,7 @@ export class WaterView extends Component {
     if (transform !== null) transform.setContentSize(FRAME_PX, FRAME_PX);
 
     node.setScale(1 / TILE_SIZE_PX, 1 / TILE_SIZE_PX, 1);
-    node.setPosition(tileX + 0.5, ROOM_ROWS - tileY - 0.5, 0);
+    node.setPosition(tileX + 0.5, this.rows - tileY - 0.5, 0);
     this.tiles.push({ sprite, frames, fps, offset, index: 0 });
   }
 }
@@ -161,13 +164,14 @@ export class WaterView extends Component {
 /**
  * Attach water to the room root. The water node sits after the tile map (`siblingIndex = 1`)
  * so obstacles/actors draw on top; destroying the room takes the water with it.
+ * `rows` is the room height used to flip tile y to world y.
  */
-export function attachRoomWater(roomRoot: Node, areas: readonly WaterArea[]): void {
+export function attachRoomWater(roomRoot: Node, areas: readonly WaterArea[], rows: number): void {
   if (areas.length === 0) return;
   const node = new CocosNode('water');
   node.parent = roomRoot;
   node.setSiblingIndex(1);
 
   const view: WaterView = node.addComponent(WaterView);
-  view.init(areas);
+  view.init(areas, rows);
 }

@@ -47,6 +47,11 @@ export interface FeelViewOptions {
   readonly goldAnchor: () => Vec2;
   /** A coin just reached the HUD; credit exactly the amount it carried. */
   readonly onCoinArrive: (amount: number) => void;
+  /**
+   * Camera centre in room tiles (y down). Rooms larger than a screen pan the camera, so a world
+   * point must be mapped through the camera, not through the room centre (#37).
+   */
+  readonly cameraCentre: () => Vec2;
 }
 
 interface CoinSlot {
@@ -327,12 +332,13 @@ export class FeelView {
     };
   }
 
-  /** `LevelData` tile (y down) → UI canvas design pixels. */
+  /** `LevelData` tile (y down) → UI canvas design pixels, through the camera's current centre. */
   private toCanvas(tile: Vec2): Vec2 {
     const tilePx = TILE_SIZE_PX * this.hudScale;
+    const centre = this.options?.cameraCentre() ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 };
     return {
-      x: (tile.x - ROOM_COLS / 2) * tilePx,
-      y: (ROOM_ROWS / 2 - tile.y) * tilePx,
+      x: (tile.x - centre.x) * tilePx,
+      y: (centre.y - tile.y) * tilePx,
     };
   }
 }

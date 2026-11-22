@@ -1,9 +1,12 @@
 /**
  * Rooms from text layouts (ticket #20).
  *
- * A room spec is 18 rows of 32 characters; a legend maps each character to a tile gid and
- * optionally to an object (obstacle, player start, spawn, door). `buildRoomTmx` writes a
+ * A room spec is a rectangular grid of characters; a legend maps each character to a tile gid
+ * and optionally to an object (obstacle, player start, spawn, door). `buildRoomTmx` writes a
  * `.tmx` that `parseTmxLevel` accepts. `buildTsx` writes the tileset file Tiled rooms reference.
+ *
+ * The grid size is the room size: it must be a whole multiple of the 32×18 screen (ADR-018), so
+ * the same authoring format writes a 32×18 chapter room and a 128×72 dev room.
  */
 import type { EnemyRole, ObstacleKind } from '../../assets/scripts/core/level/level-data';
 
@@ -38,9 +41,9 @@ export interface TsxSpec {
   readonly imageHeight: number;
 }
 
-/** A room is exactly `ROOM_COLS × ROOM_ROWS` tiles of `TILE_SIZE_PX` (see `core/level/tmx.ts`). */
-const COLS = 32;
-const ROWS = 18;
+/** One screen: a room is a whole multiple of this many tiles (see `core/level/tmx.ts`). */
+const SCREEN_COLS = 32;
+const SCREEN_ROWS = 18;
 const TILE = 16;
 
 function escapeXml(value: string): string {
@@ -63,7 +66,7 @@ interface Rect {
  * Merge same-kind obstacle cells into rectangles: horizontal runs first, then stack equal
  * runs vertically. Every obstacle cell is covered exactly once.
  */
-function mergeObstacles(mask: readonly (readonly boolean[])[]): Rect[] {
+function mergeObstacles(mask: readonly (readonly boolean[])[], cols: number): Rect[] {
   interface Run {
     readonly x: number;
     readonly width: number;
@@ -73,13 +76,13 @@ function mergeObstacles(mask: readonly (readonly boolean[])[]): Rect[] {
   const runs: Run[] = [];
   mask.forEach((row, y) => {
     let x = 0;
-    while (x < COLS) {
+    while (x < cols) {
       if (!row[x]) {
         x += 1;
         continue;
       }
       const start = x;
-      while (x < COLS && row[x]) x += 1;
+      while (x < cols && row[x]) x += 1;
       runs.push({ x: start, width: x - start, y, height: 1 });
     }
   });
@@ -107,12 +110,21 @@ function property(name: string, value: string, type?: 'int' | 'bool'): string {
 
 /** `.tmx` from a text layout. Throws on anything `parseTmxLevel` would reject later. */
 export function buildRoomTmx(spec: RoomLayoutSpec): string {
-  if (spec.rows.length !== ROWS) {
-    throw new Error(`room layout must have exactly 18 rows, got ${spec.rows.length}`);
+  const cols = spec.rows[0]?.length ?? 0;
+  const rows = spec.rows.length;
+  if (rows < SCREEN_ROWS || rows % SCREEN_ROWS !== 0) {
+    throw new Error(
+      `room layout must have a whole multiple of ${SCREEN_ROWS} rows (>= ${SCREEN_ROWS}), got ${rows}`,
+    );
+  }
+  if (cols < SCREEN_COLS || cols % SCREEN_COLS !== 0) {
+    throw new Error(
+      `room layout must be a whole multiple of ${SCREEN_COLS} columns (>= ${SCREEN_COLS}), got ${cols}`,
+    );
   }
   spec.rows.forEach((row, y) => {
-    if (row.length !== COLS) {
-      throw new Error(`room layout row ${y} must have exactly 32 characters, got ${row.length}`);
+    if (row.length !== cols) {
+      throw new Error(`room layout row ${y} must have exactly ${cols} characters, got ${row.length}`);
     }
     [...row].forEach((char, x) => {
       if (spec.legend[char] === undefined) {
@@ -133,7 +145,7 @@ export function buildRoomTmx(spec: RoomLayoutSpec): string {
   const obstacleRects: Array<{ kind: ObstacleKind; rect: Rect }> = [];
   for (const kind of obstacleKinds) {
     const mask = spec.rows.map((row) => [...row].map((char) => spec.legend[char]!.obstacle === kind));
-    for (const rect of mergeObstacles(mask)) obstacleRects.push({ kind, rect });
+    for (const rect of mergeObstacles(mask, cols)) obstacleRects.push({ kind, rect });
   }
 
   const objects: Array<() => string> = [];
@@ -187,13 +199,13 @@ export function buildRoomTmx(spec: RoomLayoutSpec): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" ` +
-      `width="${COLS}" height="${ROWS}" tilewidth="${TILE}" tileheight="${TILE}" infinite="0" ` +
-      `nextlayerid="2" nextobjectid="${nextObjectId}">`,
+      `width="${cols}" height="${rows}" tilewidth="${TILE}" tileheight="${TILE}" infinite="0" ` +
+      `nextlayerid="3" nextobjectid="${nextObjectId}">`,
     ' <properties>',
     properties,
     ' </properties>',
     tilesets,
-    ' <layer id="1" name="floor" width="32" height="18">',
+    ` <layer id="1" name="floor" width="${cols}" height="${rows}">`,
     '  <data encoding="csv">',
     csv,
     '  </data>',

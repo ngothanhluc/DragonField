@@ -10,7 +10,7 @@
  * Other files (`player-controller`, `enemy-view`, `bullet-view`) reuse these exact
  * functions so the room has **one** axis-flip convention.
  *
- * `TiledMap` draws the tile layer in **pixels** (512×288 px map, bottom-left origin, row 0
+ * `TiledMap` draws the tile layer in **pixels** (cols×rows×16 px map, bottom-left origin, row 0
  * at the top). The map node is scaled `1/16` and placed at the room centre, so it matches
  * world units exactly: cell `(col,row)` covers exactly `[col, col+1) × [rows-row-1, rows-row)`.
  *
@@ -29,7 +29,7 @@ import {
 } from 'cc';
 import type { TiledMapAsset as CocosTiledMapAsset } from 'cc';
 import type { LevelData, Obstacle } from '../core/level/level-data';
-import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
+import { ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import {
   obstacleSheets as obstacleSheetsCore,
   obstacleVisual,
@@ -75,15 +75,19 @@ const OBSTACLE_KEYS = ['pillar', 'pillarSmall', 'wall', 'pit'] as const;
 // ---------------------------------------------------------------------------
 
 /**
- * Point in `LevelData` (tiles, top-left origin, y down) → world (units, bottom-left origin, y up).
- * `worldX = x`, `worldY = 18 - y` — exactly the world convention formula.
+ * Room height in tiles used by `tileToWorld`, set once per room by `buildRoom`. The axis flip is
+ * the **room's** height (a 72-tall room flips at 72), but every actor/bullet/FX adapter converts
+ * tile → world without carrying a `LevelData`; the game has one live room, so it lives here.
  */
+let roomRows = ROOM_ROWS;
+
+/** Point in `LevelData` (tiles, top-left origin, y down) → world (units, bottom-left origin, y up). */
 export function tileToWorld(point: Vec2): Vec2 {
-  return { x: point.x, y: ROOM_ROWS - point.y };
+  return { x: point.x, y: roomRows - point.y };
 }
 
 /** World rectangle of an obstacle: bottom-left corner + size, both in units. */
-function obstacleWorldRect(obstacle: Obstacle): {
+function obstacleWorldRect(obstacle: Obstacle, rows: number): {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -91,7 +95,7 @@ function obstacleWorldRect(obstacle: Obstacle): {
 } {
   return {
     x: obstacle.x,
-    y: ROOM_ROWS - obstacle.y - obstacle.height,
+    y: rows - obstacle.y - obstacle.height,
     width: obstacle.width,
     height: obstacle.height,
   };
@@ -150,8 +154,9 @@ export function sliceFrame(texture: Texture2D, rect: TileRect): SpriteFrame {
  * `tile-map` node is scaled `1/16` (`ACTOR_SCALE`) so TMX pixels match world units. Obstacles
  * therefore reuse the milestone's unit coordinates instead of switching to pixels.
  *
- * Culling is off because a room is only 576 tiles and the world camera is letterboxed
- * (`Camera.rect`), a case where culling easily clips the wrong things.
+ * Culling of the TiledMap stays off (the world camera is letterboxed via `Camera.rect`, a case
+ * where `TiledMap.enableCulling` clips the wrong things); small world sprites of a big room are
+ * culled by `world-culler.ts` instead (ticket #37).
  *
  * Obstacles: 1×1 unit sprites as before, with rectangles from the object layer (already parsed
  * into `LevelData.obstacles`) — there is no second pipeline.
@@ -161,6 +166,9 @@ export function buildRoom(
   level: LevelData,
   tmxAsset: TiledMapAsset,
 ): Node {
+  // Every actor/bullet/FX adapter flips tile → world with this; set it before any node is placed.
+  roomRows = level.size.rows;
+
   const root = new CocosNode(`room-${level.id}`);
   root.parent = parent;
 
@@ -175,8 +183,8 @@ export function buildRoom(
 
   const scale = TILE_WORLD_UNITS / TILE_SIZE_PX;
   mapNode.setScale(scale, scale, 1);
-  // Map centre = room centre: 512×288 px map × 1/16 = 32×18 units.
-  mapNode.setPosition(ROOM_COLS / 2, ROOM_ROWS / 2, 0);
+  // Map centre = room centre: (cols×rows)×16 px map × 1/16 = cols×rows units.
+  mapNode.setPosition(level.size.cols / 2, level.size.rows / 2, 0);
 
   // Assign the asset AFTER the node has its anchor/scale/parent: `_buildLayerAndGroup`
   // creates the layers under this node and reads the map anchor once.
@@ -233,7 +241,7 @@ async function buildObstacles(root: Node, level: LevelData): Promise<void> {
     const visual = frames.get(key);
     if (visual === undefined) return;
 
-    const rect = obstacleWorldRect(obstacle);
+    const rect = obstacleWorldRect(obstacle, level.size.rows);
     const node = makeObstacleNode(
       `obstacle-${index}-${obstacle.kind}`,
       visual.frame,

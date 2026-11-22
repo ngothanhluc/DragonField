@@ -5,8 +5,9 @@
  *
  * ## Room file convention (`assets/resources/data/levels/chapter-<n>/room-<r>.tmx`)
  *
- * - Map: `orientation="orthogonal"`, `width=32`, `height=18`, `tilewidth=16`,
- *   `tileheight=16`. Wrong dimensions are an error: each room is exactly one 512×288 screen.
+ * - Map: `orientation="orthogonal"`, `width`/`height` a whole multiple of the 32×18 screen
+ *   (one screen for boss rooms), `tilewidth=16`, `tileheight=16`. Wrong dimensions are an error:
+ *   a room is `n×m` screens of 512×288 px.
  * - Tile layers: the `<layer>`s (usually just one `floor` layer) are drawn by the
  *   `TiledMap` component. The parser does **not** infer collision from tiles; collision data lives
  *   in the object layer. The data layer should be `encoding="csv"` (the parser checks the cell count when it
@@ -270,6 +271,11 @@ function isAuthoredObstacleKind(value: string): value is AuthoredObstacleKind {
   return (AUTHORED_OBSTACLE_KINDS as readonly string[]).includes(value);
 }
 
+/** A room side is a whole number of screens: 64 = 2×32, 128 = 4×32, 40 is not. */
+function isScreenMultiple(value: number, unit: number): boolean {
+  return Number.isInteger(value) && value >= unit && value % unit === 0;
+}
+
 /** Tiled pixel coordinates → tile units. No rounding: Tiled allows half tiles. */
 function pixelsToTiles(value: number): number {
   return value / TILE_SIZE_PX;
@@ -489,7 +495,12 @@ function readObjects(
 }
 
 /** Check the tile layer: correct map size, and enough cells for CSV. */
-function checkTileLayers(map: XmlElement, problems: ProblemList): void {
+function checkTileLayers(
+  map: XmlElement,
+  problems: ProblemList,
+  cols: number,
+  rows: number,
+): void {
   const layers = childrenNamed(map, 'layer');
   if (layers.length === 0) {
     problems.add('map', 'at least one <layer> floor is required for TiledMap to draw the room');
@@ -502,11 +513,11 @@ function checkTileLayers(map: XmlElement, problems: ProblemList): void {
 
     const width = requiredNumber(layer, 'width', path, problems);
     const height = requiredNumber(layer, 'height', path, problems);
-    if (width !== null && width !== ROOM_COLS) {
-      problems.add(path, `width must equal ${ROOM_COLS}, got ${width}`);
+    if (width !== null && width !== cols) {
+      problems.add(path, `width must equal the map width ${cols}, got ${width}`);
     }
-    if (height !== null && height !== ROOM_ROWS) {
-      problems.add(path, `height must equal ${ROOM_ROWS}, got ${height}`);
+    if (height !== null && height !== rows) {
+      problems.add(path, `height must equal the map height ${rows}, got ${height}`);
     }
 
     const data = firstChild(layer, 'data');
@@ -518,10 +529,10 @@ function checkTileLayers(map: XmlElement, problems: ProblemList): void {
     if (data.attributes['encoding'] !== 'csv') return;
 
     const values = elementText(data).split(',');
-    if (values.length !== ROOM_COLS * ROOM_ROWS) {
+    if (values.length !== cols * rows) {
       problems.add(
         path,
-        `CSV has ${values.length} cells, expected ${ROOM_COLS * ROOM_ROWS} (${ROOM_COLS}×${ROOM_ROWS})`,
+        `CSV has ${values.length} cells, expected ${cols * rows} (${cols}×${rows})`,
       );
       return;
     }
@@ -571,11 +582,19 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
   const tileWidth = requiredNumber(root, 'tilewidth', 'map', problems);
   const tileHeight = requiredNumber(root, 'tileheight', 'map', problems);
 
-  if (width !== null && width !== ROOM_COLS) {
-    problems.add('map', `width must equal ${ROOM_COLS}, got ${width}`);
+  // Room size rules live in `parseLevelData`; here only check that each side is a whole number
+  // of screens so layer/CSV checks below can use the maps's real size.
+  if (width !== null && !isScreenMultiple(width, ROOM_COLS)) {
+    problems.add(
+      'map',
+      `width must be a whole multiple of ${ROOM_COLS} (>= ${ROOM_COLS}), got ${width}`,
+    );
   }
-  if (height !== null && height !== ROOM_ROWS) {
-    problems.add('map', `height must equal ${ROOM_ROWS}, got ${height}`);
+  if (height !== null && !isScreenMultiple(height, ROOM_ROWS)) {
+    problems.add(
+      'map',
+      `height must be a whole multiple of ${ROOM_ROWS} (>= ${ROOM_ROWS}), got ${height}`,
+    );
   }
   if (tileWidth !== null && tileWidth !== TILE_SIZE_PX) {
     problems.add('map', `tilewidth must equal ${TILE_SIZE_PX}, got ${tileWidth}`);
@@ -584,7 +603,9 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
     problems.add('map', `tileheight must equal ${TILE_SIZE_PX}, got ${tileHeight}`);
   }
 
-  checkTileLayers(root, problems);
+  const cols = width !== null && isScreenMultiple(width, ROOM_COLS) ? width : ROOM_COLS;
+  const rows = height !== null && isScreenMultiple(height, ROOM_ROWS) ? height : ROOM_ROWS;
+  checkTileLayers(root, problems, cols, rows);
 
   const mapProperties = readProperties(root, 'map', problems);
   const chapter = readIntegerProperty(mapProperties, 'chapter', 'map', true, problems);
@@ -611,7 +632,7 @@ export function parseTmxLevel(xml: string, options: ParseTmxOptions = {}): Level
     chapter: chapterValue,
     room: roomValue,
     isBossRoom,
-    size: { cols: ROOM_COLS, rows: ROOM_ROWS },
+    size: { cols, rows },
     tileSizePx: TILE_SIZE_PX,
     playerStart: objects.playerStart,
     waves: objects.waves,

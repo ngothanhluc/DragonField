@@ -32,6 +32,7 @@
 import { TUNING_DATA } from './tuning.generated';
 import {
   parseTuning,
+  type CameraTuning,
   type CombatTuning,
   type EnemiesTuning,
   type FeelTuning,
@@ -61,6 +62,9 @@ export const CHAPTER_TUNING = TUNING.chapters;
 
 /** Enemy navigation numbers (#34) — the sim and the game adapter read them. */
 export const NAVIGATION_TUNING: NavigationTuning = TUNING.navigation;
+
+/** Follow camera numbers (#37) — `game/world-camera.ts` hands them to the pure follow camera. */
+export const CAMERA_TUNING: CameraTuning = TUNING.camera;
 
 /** Juice numbers (ticket #2) — the `game/` adapter reads them; `core/feel/` only takes numbers as parameters. */
 export const FEEL_TUNING: FeelTuning = TUNING.feel;
