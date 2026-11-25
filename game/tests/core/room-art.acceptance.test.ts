@@ -16,7 +16,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { LevelData, Obstacle } from '../../assets/scripts/core/level/level-data';
+import { obstacleVisual } from '../../assets/scripts/core/level/obstacle-visuals';
 import { propDef } from '../../assets/scripts/core/level/props';
+import { firstHit } from '../../assets/scripts/core/combat/bullets';
 import { parseTmxLevel } from '../../assets/scripts/core/level/tmx';
 import { childrenNamed, elementText, firstChild, parseXml } from '../../assets/scripts/core/level/xml';
 import { LEVELS_ROOT } from '../helpers/tmx-levels';
@@ -522,4 +524,107 @@ describe('set pieces leave the fight readable', () => {
       expect(problems.slice(0, 12)).toEqual([]);
     });
   }
+});
+
+
+describe('chapter 3 village ruins (#67 R9)', () => {
+  const RUIN_ANCHORS = new Set([
+    'house-ruined',
+    'ruined-house-orange',
+    'house-mossy',
+    'house-mossy-alt',
+    'watchtower-ruined',
+    'ruined-shelter',
+    'house-timber',
+    'house-timber-large',
+    'ruined-wall-cross',
+    'broken-wall-arch',
+    'big-pillar-ruined',
+  ]);
+
+  it('uses weathered ruins ground distinct from ch1/ch2 grass, and never places intact bright houses', () => {
+    const ch1Floor = layer(chapterRooms(1)[0]!, 'floor')[0];
+    for (const file of chapterRooms(3)) {
+      const floor = layer(file, 'floor');
+      expect(floor[0], `${file.level.id}: base floor distinct from ch1`).not.toBe(ch1Floor);
+      for (const prop of file.level.props) {
+        expect(['house-orange', 'house-red', 'house-beige', 'house-green', 'fence'], file.level.id).not.toContain(
+          prop.key,
+        );
+      }
+    }
+  });
+
+  it('every room holds a multi-piece village ruin (anchor + ≥ 3 ruin remnants/props within 3 tiles)', () => {
+    const companionKinds = new Set(['house', 'structure', 'stump']);
+    const withRuins = chapterRooms(3).filter((file) => {
+      const props = drawnProps(file);
+      return props.some(
+        (anchor) =>
+          RUIN_ANCHORS.has(anchor.key) &&
+          props.filter(
+            (other) => other !== anchor && companionKinds.has(other.kind) && gapBetween(anchor.rect, other.rect) <= 3,
+          ).length >= 3,
+      );
+    });
+    expect(withRuins).toHaveLength(NORMAL_ROOMS);
+  });
+});
+
+describe('chapter 4 desert oasis pond & walled town (#67 R9)', () => {
+  it('draws ch4 pit obstacles as the 3×3 TilesetDesert oasis pond and lets bullets fly across it', () => {
+    const visual = obstacleVisual(4, 'pit');
+    expect(visual.sheet).toBe('resources/art/tilesets/TilesetDesert.png');
+    expect(visual.rect).toEqual({ x: 272, y: 112, width: 48, height: 48 });
+    expect(visual.tile).toBe(false);
+
+    const file = chapterRooms(4).find((candidate) =>
+      candidate.level.obstacles.some((o) => o.kind === 'pit'),
+    );
+    expect(file, 'at least one ch4 room has an oasis pit').toBeDefined();
+    if (file === undefined) return;
+    const pond = file.level.obstacles.find((o) => o.kind === 'pit')!;
+    expect([pond.width, pond.height]).toEqual([3, 3]);
+    // Bullets fly over water (`pit`), while solid props still stop bullets.
+    const acrossPond = firstHit(
+      { from: { x: pond.x - 1, y: pond.y + 1.5 }, to: { x: pond.x + 4, y: pond.y + 1.5 } },
+      { ...file.level, obstacles: [pond] },
+    );
+    expect(acrossPond).toBeNull();
+    const propObstacle = file.level.obstacles.find((o) => o.kind === 'prop')!;
+    const intoProp = firstHit(
+      {
+        from: { x: propObstacle.x - 1, y: propObstacle.y + propObstacle.height / 2 },
+        to: { x: propObstacle.x + propObstacle.width + 1, y: propObstacle.y + propObstacle.height / 2 },
+      },
+      { ...file.level, obstacles: [propObstacle] },
+    );
+    expect(intoProp).not.toBeNull();
+  });
+
+  it('at least 8 of 16 rooms hold an oasis pond with ≥ 2 palms grouped on its bank', () => {
+    const withOasis = chapterRooms(4).filter((file) => {
+      const ponds = file.level.obstacles.filter((o) => o.kind === 'pit' && o.width === 3 && o.height === 3);
+      const palms = drawnProps(file).filter((prop) => prop.kind === 'tree' && prop.key.startsWith('palm'));
+      return ponds.some(
+        (pond) => palms.filter((palm) => gapBetween(pond, palm.rect) <= 3).length >= 2,
+      );
+    });
+    expect(withOasis.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('at least 4 of 16 rooms feature walled-town or market architecture from TilesetDesert', () => {
+    const townKeys = new Set([
+      'desert-wall-segment',
+      'desert-wall-tower',
+      'desert-dome',
+      'desert-stall-red',
+      'desert-stall-yellow',
+      'desert-fountain',
+    ]);
+    const withWalledTown = chapterRooms(4).filter((file) =>
+      file.level.props.some((prop) => townKeys.has(prop.key)),
+    );
+    expect(withWalledTown.length).toBeGreaterThanOrEqual(4);
+  });
 });

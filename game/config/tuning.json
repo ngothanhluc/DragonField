@@ -238,6 +238,7 @@
     }
   },
   "roomArt": {
-    "detailDensity": 0.08
+    "detailDensity": 0.08,
+    "pathStoneDensity": 0.14
   }
 }

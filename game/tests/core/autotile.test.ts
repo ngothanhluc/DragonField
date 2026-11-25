@@ -3,6 +3,8 @@
  * `room-art.acceptance.test.ts`; these pin the pieces the acceptance test only reaches through
  * generated files: the blob ids per neighbour pattern and the terrain table.
  */
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   GROUND_TERRAINS,
@@ -11,6 +13,7 @@ import {
   pickBlobTile,
   type PatchMask,
 } from '../../assets/scripts/core/level/autotile';
+import { readPng } from '../../scripts/lib/png';
 
 function mask(rows: readonly string[]): PatchMask {
   const cols = rows[0]?.length ?? 0;
@@ -78,5 +81,30 @@ describe('GROUND_TERRAINS', () => {
     expect(tiles[10]).toBe(at(0, 2)); // 11 SW corner
     expect(tiles[11]).toBe(at(1, 2)); // 12 S edge
     expect(tiles[12]).toBe(at(2, 2)); // 13 SE corner
+  });
+
+  it('gives chapter 3 a weathered ruins earth terrain distinct from ch1/ch2 grass, with matching baked fringes', () => {
+    expect(GROUND_TERRAINS[3]?.plain).toBe(430);
+    expect(GROUND_TERRAINS[3]?.plain).not.toBe(GROUND_TERRAINS[1]?.plain);
+    expect(GROUND_TERRAINS[3]?.tiles).toEqual(floorBlockTiles(11, 14));
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const sheet = readPng(join(here, '../../assets/resources/art/tilesets/TilesetFloor.png'));
+    const pixel = (local: number, dx: number, dy: number): number[] => {
+      const col = (local - 1) % 22;
+      const row = Math.floor((local - 1) / 22);
+      const index = ((row * 16 + dy) * sheet.width + (col * 16 + dx)) * 4;
+      return [sheet.data[index] ?? 0, sheet.data[index + 1] ?? 0, sheet.data[index + 2] ?? 0, sheet.data[index + 3] ?? 0];
+    };
+
+    // Every chapter's NW corner outer pixel must match its `plain` floor tile so patches have no box seam.
+    for (const chapter of [1, 2, 3, 4]) {
+      const terrain = GROUND_TERRAINS[chapter];
+      expect(terrain).toBeDefined();
+      if (terrain === undefined) continue;
+      expect(pixel(terrain.tiles[0]!, 0, 0), `chapter ${chapter} NW fringe vs plain`).toEqual(
+        pixel(terrain.plain, 0, 0),
+      );
+    }
   });
 });

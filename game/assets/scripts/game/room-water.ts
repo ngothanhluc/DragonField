@@ -118,20 +118,32 @@ export class WaterView extends Component {
     }
   }
 
-  /** Flat water base under the ripple/waterfall sprites (Graphics, no texture needed). */
+  /**
+   * Flat water base under the ripple/waterfall sprites (Graphics, no texture needed).
+   * Chunked into ≤4-tile segments so `world-culler` (`CULL_MARGIN_TILES = 2`) never hides a
+   * wide river's base while one end of the river is still on screen.
+   */
   private addBase(area: WaterArea): void {
-    const node = new CocosNode('water-base');
-    node.parent = this.node;
-
-    const graphics: Graphics = node.addComponent(CocosGraphics);
-    graphics.fillColor =
+    const color =
       area.kind === 'river'
         ? new CocosColor(58, 156, 202, 255)
         : new CocosColor(92, 190, 224, 255);
-    graphics.rect(-area.width / 2, -area.height / 2, area.width, area.height);
-    graphics.fill();
+    const step = 4;
+    for (let dx = 0; dx < area.width; dx += step) {
+      const width = Math.min(step, area.width - dx);
+      for (let dy = 0; dy < area.height; dy += step) {
+        const height = Math.min(step, area.height - dy);
+        const node = new CocosNode('water-base');
+        node.parent = this.node;
 
-    node.setPosition(area.x + area.width / 2, this.rows - area.y - area.height / 2, 0);
+        const graphics: Graphics = node.addComponent(CocosGraphics);
+        graphics.fillColor = color;
+        graphics.rect(-width / 2, -height / 2, width, height);
+        graphics.fill();
+
+        node.setPosition(area.x + dx + width / 2, this.rows - (area.y + dy) - height / 2, 0);
+      }
+    }
   }
 
   private addTile(

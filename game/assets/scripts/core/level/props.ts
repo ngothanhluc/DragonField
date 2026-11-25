@@ -57,6 +57,7 @@ const NATURE = 'resources/art/tilesets/TilesetNature.png';
 const ELEMENT = 'resources/art/tilesets/TilesetElement.png';
 const HOUSE = 'resources/art/tilesets/TilesetHouse.png';
 const VILLAGE = 'resources/art/tilesets/TilesetVillageAbandoned.png';
+const TOWERS = 'resources/art/tilesets/TilesetTowers.png';
 const CAMP = 'resources/art/tilesets/tileset_camp.png';
 const DESERT = 'resources/art/tilesets/TilesetDesert.png';
 const PROPS = 'resources/art/props/';
@@ -184,6 +185,24 @@ const NATURE_PROPS: readonly PropDef[] = [
     rect: { x: 256, y: 80, width: 64, height: 48 },
     collider: { x: 0, y: 36, width: 60, height: 10 },
   }),
+  solid('rock-sandstone-mound', {
+    kind: 'rock',
+    sheet: NATURE,
+    rect: { x: 272, y: 160, width: 64, height: 48 },
+    collider: { x: 4, y: 32, width: 56, height: 15 },
+  }),
+  solid('rock-sandstone', {
+    kind: 'rock',
+    sheet: NATURE,
+    rect: { x: 240, y: 160, width: 32, height: 32 },
+    collider: { x: 2, y: 18, width: 28, height: 13 },
+  }),
+  solid('rock-sandstone-small', {
+    kind: 'rock',
+    sheet: NATURE,
+    rect: { x: 272, y: 208, width: 16, height: 16 },
+    collider: { x: 0, y: 8, width: 16, height: 8 },
+  }),
   solid('stump-big', {
     kind: 'stump',
     sheet: NATURE,
@@ -301,10 +320,14 @@ const CAMP_PROPS: readonly PropDef[] = [
   }),
 ];
 
-/** Abandoned-village ruins: houses, mossy trees, clusters and a frog statue. */
+/** Abandoned-village ruins: broken houses, watchtowers, crumbling stone walls, pillars and statues. */
 const VILLAGE_PROPS: readonly PropDef[] = [
   house('house-ruined', VILLAGE, { x: 0, y: 0, width: 64, height: 48 }, HOUSE_WALLS),
+  house('ruined-house-orange', VILLAGE, { x: 64, y: 0, width: 64, height: 48 }, HOUSE_WALLS),
   house('house-mossy', VILLAGE, { x: 176, y: 0, width: 48, height: 48 }, HOUSE_WALLS_NARROW),
+  house('house-mossy-alt', VILLAGE, { x: 176, y: 48, width: 48, height: 48 }, HOUSE_WALLS_NARROW),
+  house('watchtower-ruined', VILLAGE, { x: 224, y: 0, width: 48, height: 80 }, { x: 2, y: 56, width: 44, height: 24 }),
+  house('ruined-shelter', VILLAGE, { x: 272, y: 0, width: 48, height: 46 }, { x: 2, y: 30, width: 44, height: 16 }),
   house('house-timber', VILLAGE, { x: 192, y: 96, width: 64, height: 96 }, { x: 2, y: 64, width: 60, height: 32 }),
   house('house-timber-large', VILLAGE, { x: 256, y: 80, width: 64, height: 80 }, { x: 2, y: 64, width: 60, height: 16 }),
   tree('tree-mossy', VILLAGE, { x: 64, y: 96, width: 32, height: 32 }, TRUNK_ROUND),
@@ -321,11 +344,95 @@ const VILLAGE_PROPS: readonly PropDef[] = [
     rect: { x: 0, y: 144, width: 64, height: 48 },
     collider: { x: 6, y: 34, width: 52, height: 14 },
   }),
+  solid('ruined-wall-cross', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 128, y: 8, width: 48, height: 40 },
+    collider: { x: 2, y: 24, width: 44, height: 16 },
+  }),
+  solid('broken-wall-arch', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 272, y: 48, width: 48, height: 32 },
+    collider: { x: 2, y: 18, width: 44, height: 14 },
+  }),
+  solid('low-broken-wall', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 224, y: 80, width: 32, height: 16 },
+    collider: { x: 0, y: 6, width: 32, height: 10 },
+  }),
+  solid('palisade-ruined', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 144, y: 144, width: 48, height: 32 },
+    collider: { x: 2, y: 18, width: 44, height: 14 },
+  }),
+  solid('ruined-statue-tall', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 0, y: 48, width: 32, height: 48 },
+    collider: { x: 2, y: 32, width: 28, height: 16 },
+  }),
+  solid('pillar-broken', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 32, y: 54, width: 16, height: 42 },
+    collider: { x: 1, y: 28, width: 14, height: 14 },
+  }),
+  solid('pillar-stump', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 48, y: 58, width: 16, height: 22 },
+    collider: { x: 1, y: 10, width: 14, height: 12 },
+  }),
+  solid('big-pillar-ruined', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 112, y: 129, width: 32, height: 63 },
+    collider: { x: 2, y: 45, width: 28, height: 18 },
+  }),
+  solid('cart-ruined', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 147, y: 114, width: 27, height: 27 },
+    collider: { x: 2, y: 14, width: 23, height: 12 },
+  }),
+  solid('barrel-mossy', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 64, y: 58, width: 16, height: 22 },
+    collider: { x: 1, y: 10, width: 14, height: 12 },
+  }),
+  solid('barrel-open-mossy', {
+    kind: 'structure',
+    sheet: VILLAGE,
+    rect: { x: 80, y: 60, width: 16, height: 20 },
+    collider: { x: 1, y: 8, width: 14, height: 11 },
+  }),
+  solid('stump-mossy', {
+    kind: 'stump',
+    sheet: VILLAGE,
+    rect: { x: 112, y: 112, width: 16, height: 16 },
+    collider: { x: 1, y: 8, width: 14, height: 8 },
+  }),
   solid('frog-statue', {
     kind: 'structure',
     sheet: VILLAGE,
     rect: { x: 144, y: 80, width: 32, height: 32 },
     collider: { x: 2, y: 22, width: 28, height: 10 },
+  }),
+  solid('moss-tower-ruined', {
+    kind: 'structure',
+    sheet: TOWERS,
+    rect: { x: 66, y: 32, width: 26, height: 32 },
+    collider: { x: 2, y: 18, width: 22, height: 14 },
+  }),
+  solid('stone-tower-ruined', {
+    kind: 'structure',
+    sheet: TOWERS,
+    rect: { x: 260, y: 0, width: 26, height: 32 },
+    collider: { x: 2, y: 18, width: 22, height: 14 },
   }),
 ];
 
@@ -350,31 +457,83 @@ const WALK_OVER_NATURE = NATURE_PROPS.filter((def) => !def.solid);
  */
 const DESERT_PROPS: readonly PropDef[] = [
   house('desert-house', DESERT, { x: 96, y: 0, width: 56, height: 60 }, { x: 2, y: 44, width: 52, height: 14 }),
+  house('desert-dome', DESERT, { x: 0, y: 0, width: 48, height: 48 }, { x: 2, y: 32, width: 44, height: 16 }),
   house('desert-tower', DESERT, { x: 49, y: 0, width: 46, height: 80 }, { x: 4, y: 64, width: 38, height: 14 }),
+  house('desert-wall-tower', DESERT, { x: 224, y: 64, width: 48, height: 80 }, { x: 2, y: 58, width: 44, height: 22 }),
   tree('palm-cluster', DESERT, { x: 160, y: 64, width: 64, height: 42 }, { x: 26, y: 30, width: 12, height: 10 }),
   tree('palm-cluster-dusty', DESERT, { x: 160, y: 110, width: 64, height: 42 }, { x: 26, y: 30, width: 12, height: 10 }),
+  tree('palm-single', DESERT, { x: 160, y: 160, width: 32, height: 32 }, { x: 10, y: 21, width: 12, height: 10 }),
+  tree('palm-single-alt', DESERT, { x: 192, y: 160, width: 32, height: 32 }, { x: 10, y: 21, width: 12, height: 10 }),
+  solid('desert-wall-segment', {
+    kind: 'structure',
+    sheet: DESERT,
+    rect: { x: 272, y: 64, width: 48, height: 48 },
+    collider: { x: 0, y: 32, width: 48, height: 16 },
+  }),
+  solid('desert-stall-red', {
+    kind: 'structure',
+    sheet: DESERT,
+    rect: { x: 32, y: 160, width: 32, height: 31 },
+    collider: { x: 2, y: 19, width: 28, height: 12 },
+  }),
+  solid('desert-stall-yellow', {
+    kind: 'structure',
+    sheet: DESERT,
+    rect: { x: 64, y: 160, width: 32, height: 31 },
+    collider: { x: 2, y: 19, width: 28, height: 12 },
+  }),
+  solid('desert-fountain', {
+    kind: 'structure',
+    sheet: DESERT,
+    rect: { x: 128, y: 112, width: 32, height: 32 },
+    collider: { x: 2, y: 16, width: 28, height: 16 },
+  }),
+  solid('desert-well', {
+    kind: 'structure',
+    sheet: DESERT,
+    rect: { x: 0, y: 48, width: 32, height: 32 },
+    collider: { x: 3, y: 16, width: 26, height: 15 },
+  }),
+  solid('desert-tree-scrub', {
+    kind: 'structure',
+    sheet: DESERT,
+    rect: { x: 128, y: 160, width: 32, height: 31 },
+    collider: { x: 6, y: 20, width: 20, height: 11 },
+  }),
   solid('desert-skull', {
     kind: 'structure',
     sheet: DESERT,
-    rect: { x: 256, y: 160, width: 16, height: 16 },
+    rect: { x: 256, y: 176, width: 16, height: 16 },
     collider: { x: 1, y: 10, width: 14, height: 6 },
   }),
-  walkOver('desert-fish-bones', {
-    kind: 'decor',
+  walkOver('desert-agave', {
+    kind: 'bush',
     sheet: DESERT,
-    rect: { x: 240, y: 176, width: 16, height: 16 },
+    rect: { x: 144, y: 144, width: 16, height: 16 },
     collider: null,
   }),
-  walkOver('desert-shell', {
+  walkOver('desert-bush-dry', {
+    kind: 'bush',
+    sheet: DESERT,
+    rect: { x: 128, y: 144, width: 16, height: 15 },
+    collider: null,
+  }),
+  walkOver('desert-fish-bones', {
     kind: 'decor',
     sheet: DESERT,
     rect: { x: 272, y: 176, width: 16, height: 16 },
     collider: null,
   }),
+  walkOver('desert-shell', {
+    kind: 'decor',
+    sheet: DESERT,
+    rect: { x: 288, y: 176, width: 16, height: 16 },
+    collider: null,
+  }),
   walkOver('desert-potted-palm', {
     kind: 'decor',
     sheet: DESERT,
-    rect: { x: 224, y: 160, width: 16, height: 18 },
+    rect: { x: 224, y: 160, width: 16, height: 16 },
     collider: null,
   }),
 ];

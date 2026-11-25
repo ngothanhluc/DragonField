@@ -228,10 +228,12 @@ export interface TuningConfig {
 
 /**
  * Room art density (#67). `detailDensity` is the share of a room's tiles that carry a walkable
- * detail (grass tuft, pebble, bone): 0.12 means about one tile in eight.
+ * detail (grass tuft, pebble, bone): 0.12 means about one tile in eight. `pathStoneDensity` is the
+ * share of trail cells accented with walkable stepping-stone / cobble decals.
  */
 export interface RoomArtTuning {
   readonly detailDensity: number;
+  readonly pathStoneDensity: number;
 }
 
 /** One weight per door reward (skills and gold are the two fights). */
@@ -528,7 +530,7 @@ const SPECIAL_ROOMS_FIELDS = ['healHearts', 'chestGold', 'shop'] as const;
 
 const SHOP_FIELDS = ['heartRefill', 'skillPrices'] as const;
 
-const ROOM_ART_FIELDS = ['detailDensity'] as const;
+const ROOM_ART_FIELDS = ['detailDensity', 'pathStoneDensity'] as const;
 
 const SHOP_PRICE_FIELDS = ['common', 'rare', 'epic'] as const;
 
@@ -1089,14 +1091,19 @@ function parseWaveTotals(
  */
 function parseRoomArt(raw: Record<string, unknown>, problems: ProblemList): RoomArtTuning {
   const source = readObject(raw, 'roomArt', '', problems, ROOM_ART_FIELDS);
-  if (source === undefined) return { detailDensity: 0.12 };
+  if (source === undefined) return { detailDensity: 0.12, pathStoneDensity: 0.14 };
 
   const detailDensity =
     readNumber(source, 'detailDensity', 'roomArt', problems, { positive: true }) ?? 0.12;
   if (detailDensity > 0.3) {
     problems.add('roomArt.detailDensity', `must be <= 0.3, got ${detailDensity}`);
   }
-  return { detailDensity };
+  const pathStoneDensity =
+    readNumber(source, 'pathStoneDensity', 'roomArt', problems, { positive: true }) ?? 0.14;
+  if (pathStoneDensity > 0.5) {
+    problems.add('roomArt.pathStoneDensity', `must be <= 0.5, got ${pathStoneDensity}`);
+  }
+  return { detailDensity, pathStoneDensity };
 }
 
 function zeroWaves(): WavesTuning {

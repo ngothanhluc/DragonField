@@ -50,7 +50,7 @@ const CHUNK_HALF_ROWS = ROOM_ROWS / 2;
  */
 export function cullWorld(root: Node | null, view: CullRect, marginTiles = CULL_MARGIN_TILES): number {
   if (root === null || !root.isValid) return 0;
-  return cullChildren(root, view, marginTiles);
+  return cullChildren(root, view, marginTiles, true);
 }
 
 /**
@@ -87,7 +87,7 @@ export function pointInCullRect(
   return intersects(x, y, 0, 0, view, marginTiles);
 }
 
-function cullChildren(node: Node, view: CullRect, margin: number): number {
+function cullChildren(node: Node, view: CullRect, margin: number, isRoot = false): number {
   let hidden = 0;
   for (const child of node.children) {
     if (!child.isValid) continue;
@@ -98,9 +98,15 @@ function cullChildren(node: Node, view: CullRect, margin: number): number {
     }
 
     if (child.children.length > 0) {
-      hidden += cullChildren(child, view, margin);
+      if (!child.active) child.active = true;
+      hidden += cullChildren(child, view, margin, false);
       continue;
     }
+
+    // Direct children of `roomRoot` (`water`, `props`, `atmosphere-under`, `living-decor`,
+    // `obstacles`) are async group containers at `(0, 0)`, never leaf sprites: keep them active
+    // while their sheets load so their `Component.update` and children are not permanently hidden.
+    if (isRoot) continue;
 
     const position = child.position;
     const visible = intersects(
