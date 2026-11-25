@@ -151,6 +151,29 @@ export interface DebugSpecialSnapshot {
   readonly finished: boolean;
 }
 
+/** Selected/active playable character state and roster availability (M10). */
+export interface DebugCharacterSnapshot {
+  readonly id: string;
+  readonly name: string;
+  readonly cultivatorEnabled: boolean;
+  readonly available: string[];
+}
+
+/** Live player attachment child-node state (M10); `null` outside a run. */
+export interface DebugPlayerAttachmentSnapshot {
+  readonly hasNode: boolean;
+  readonly active: boolean;
+  readonly visible: boolean;
+  readonly hidden: boolean;
+  readonly behind: boolean;
+  readonly localX: number;
+  readonly localY: number;
+  readonly bobPx: number;
+  readonly spriteKey: string | null;
+  readonly direction: string;
+  readonly frame: number;
+}
+
 /** Data bootstrap supplies to the API; every method is a live closure. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
@@ -214,11 +237,38 @@ export interface DebugProvider {
   readonly special: () => DebugSpecialSnapshot;
   /** Debug: teleport onto the special room's NPC/chest and use it; `false` when not in one. */
   readonly useSpecial: () => boolean;
+  /** M10: active/selected character and cultivator migration flag state. */
+  readonly character?: () => DebugCharacterSnapshot;
+  /** M10: select a playable character by id when not mid-run; returns `false` if unavailable/mid-run. */
+  readonly selectCharacter?: (id: string) => boolean;
+  /** M10: toggle the cultivator migration flag; returns `true` when persisted. */
+  readonly setCultivatorEnabled?: (enabled: boolean) => boolean;
+  /** M10: live player attachment child-node state; `null` outside a run. */
+  readonly playerAttachment?: () => DebugPlayerAttachmentSnapshot | null;
+  /** M10: toggle manual hide on the player's attachment node. */
+  readonly setAttachmentHidden?: (hidden: boolean) => boolean;
+  /** M10: hide the player's attachment node for a skill id. */
+  readonly hideAttachmentForSkill?: (skillId: string) => boolean;
+  /** M10: clear a skill hide token on the player's attachment node. */
+  readonly showAttachmentForSkill?: (skillId: string) => boolean;
 }
+
+/** Alias for `DebugProvider`. */
+export type DebugHooks = DebugProvider;
 
 export type YokaiDebugApi = Omit<
   DebugProvider,
-  'status' | 'chapter' | 'room' | 'roomTotal'
+  | 'status'
+  | 'chapter'
+  | 'room'
+  | 'roomTotal'
+  | 'character'
+  | 'selectCharacter'
+  | 'setCultivatorEnabled'
+  | 'playerAttachment'
+  | 'setAttachmentHidden'
+  | 'hideAttachmentForSkill'
+  | 'showAttachmentForSkill'
 > & {
   /** The last 200 keyboard events (key/code/keyCode/isComposing) — for IME diagnosis. */
   readonly keyLog: typeof keyLog;
@@ -226,11 +276,34 @@ export type YokaiDebugApi = Omit<
   readonly chapter: number;
   readonly room: number;
   readonly roomTotal: number;
+  readonly character: () => DebugCharacterSnapshot;
+  readonly selectCharacter: (id: string) => boolean;
+  readonly setCultivatorEnabled: (enabled: boolean) => boolean;
+  readonly playerAttachment: () => DebugPlayerAttachmentSnapshot | null;
+  readonly setAttachmentHidden: (hidden: boolean) => boolean;
+  readonly hideAttachmentForSkill: (skillId: string) => boolean;
+  readonly showAttachmentForSkill: (skillId: string) => boolean;
+};
+
+const DEFAULT_CHARACTER_SNAPSHOT: DebugCharacterSnapshot = {
+  id: 'ninja',
+  name: 'Ninja',
+  cultivatorEnabled: false,
+  available: ['ninja'],
 };
 
 /** Install the API if `?debug=1`; returns `true` when installed. */
 export function installDebugApi(provider: DebugProvider): boolean {
   if (!isDebugEnabled()) return false;
+
+  const character = provider.character ?? ((): DebugCharacterSnapshot => DEFAULT_CHARACTER_SNAPSHOT);
+  const selectCharacter = provider.selectCharacter ?? ((): boolean => false);
+  const setCultivatorEnabled = provider.setCultivatorEnabled ?? ((): boolean => false);
+  const playerAttachment =
+    provider.playerAttachment ?? ((): DebugPlayerAttachmentSnapshot | null => null);
+  const setAttachmentHidden = provider.setAttachmentHidden ?? ((): boolean => false);
+  const hideAttachmentForSkill = provider.hideAttachmentForSkill ?? ((): boolean => false);
+  const showAttachmentForSkill = provider.showAttachmentForSkill ?? ((): boolean => false);
 
   const api: YokaiDebugApi = Object.defineProperties({} as YokaiDebugApi, {
     status: { get: provider.status, enumerable: true },
@@ -271,6 +344,13 @@ export function installDebugApi(provider: DebugProvider): boolean {
     takeDoor: { value: provider.takeDoor, enumerable: true },
     special: { value: provider.special, enumerable: true },
     useSpecial: { value: provider.useSpecial, enumerable: true },
+    character: { value: character, enumerable: true },
+    selectCharacter: { value: selectCharacter, enumerable: true },
+    setCultivatorEnabled: { value: setCultivatorEnabled, enumerable: true },
+    playerAttachment: { value: playerAttachment, enumerable: true },
+    setAttachmentHidden: { value: setAttachmentHidden, enumerable: true },
+    hideAttachmentForSkill: { value: hideAttachmentForSkill, enumerable: true },
+    showAttachmentForSkill: { value: showAttachmentForSkill, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -280,7 +360,9 @@ export function installDebugApi(provider: DebugProvider): boolean {
       '(status, chapter, room, roomTotal, killAll, spawn, stress, fps, godMode, enemies, bulletCount, ' +
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, loadRoom, ' +
       'screen, save, setGold, markChapterCleared, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
-      'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, keyLog).',
+      'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, ' +
+      'character, selectCharacter, setCultivatorEnabled, playerAttachment, setAttachmentHidden, ' +
+      'hideAttachmentForSkill, showAttachmentForSkill, keyLog).',
   );
   return true;
 }
