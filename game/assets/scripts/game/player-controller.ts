@@ -9,10 +9,25 @@
  * It does not run from `update()`: bootstrap calls `step()` so the frame order is
  * deterministic (player → enemy → bullets → collisions), the same as `core/sim/run-simulation.ts`.
  */
-import { _decorator, Color as CocosColor, Component, Sprite as CocosSprite } from 'cc';
+import {
+  _decorator,
+  Color as CocosColor,
+  Component,
+  Node as CocosNode,
+  Sprite as CocosSprite,
+} from 'cc';
+import type { AttachmentsData } from '../core/art/attachments';
 import type { AnimationManifest, Direction } from '../core/art/manifest';
 import { resolve } from '../core/art/manifest';
 import { directionFromVector, loopDurationMs } from '../core/art/runtime';
+import {
+  CHARACTERS,
+  DEFAULT_CHARACTER_ID,
+  characterAnimationKeys,
+  type CharacterAnimKind,
+  type CharacterDef,
+  type CharacterId,
+} from '../core/characters/roster';
 import { AutoFire } from '../core/combat/auto-fire';
 import { BulletPool } from '../core/combat/bullets';
 import { HealthState } from '../core/combat/health';
@@ -44,11 +59,17 @@ import { KeyboardMove } from './keyboard-move';
 import { playSfx } from './audio/sfx';
 import type { FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, tileToWorld } from './level-view';
+import {
+  PLAYER_BODY_NODE_NAME,
+  PlayerAttachmentView,
+  type PlayerAttachmentSnapshot,
+} from './player-attachment-view';
 
 const { ccclass } = _decorator;
 
 /** `cc` is an any module: import names only work in value position. */
 type Color = InstanceType<typeof CocosColor>;
+type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 
 /** Shield / hit tint (state is readable without a dedicated icon). */
@@ -91,6 +112,44 @@ const AURA_COLORS: Readonly<Record<VfxElement, Color>> = {
 /** Default facing while there is no input. */
 const START_FACING: Direction = 'down';
 
+/** Visual child node bundle created by `setupPlayerVisualNodes`. */
+export interface PlayerVisualNodes {
+  /** Child node (`player-body`) holding the player's `Sprite` and `SpriteAnimator`. */
+  readonly bodyNode: Node;
+  readonly bodySprite: Sprite;
+  readonly animator: SpriteAnimator;
+}
+
+/**
+ * Create (or reuse) the `player-body` child node under the `player` container node.
+ *
+ * Cocos 3.8 Batcher2D always renders a parent's own `Sprite` before its children regardless of
+ * sibling index. Keeping `player` sprite-free and placing `player-body` and `player-attachment`
+ * as sibling children lets `setSiblingIndex(behind ? 0 : 1)` genuinely draw back/hand items
+ * behind or in front of the body.
+ */
+export function setupPlayerVisualNodes(playerNode: Node): PlayerVisualNodes {
+  let bodyNode = playerNode.getChildByName(PLAYER_BODY_NODE_NAME);
+  if (bodyNode === null) {
+    bodyNode = new CocosNode(PLAYER_BODY_NODE_NAME);
+    bodyNode.parent = playerNode;
+  }
+
+  let bodySprite = bodyNode.getComponent(CocosSprite);
+  if (bodySprite === null) {
+    bodySprite = bodyNode.addComponent(CocosSprite);
+    bodySprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+    bodySprite.trim = false;
+  }
+
+  let animator = bodyNode.getComponent(SpriteAnimator);
+  if (animator === null) {
+    animator = bodyNode.addComponent(SpriteAnimator);
+  }
+
+  return { bodyNode, bodySprite, animator };
+}
+
 export interface PlayerInitArgs {
   readonly manifest: AnimationManifest;
   /** Spawn position in `LevelData` tile space, y down. */
@@ -99,6 +158,17 @@ export interface PlayerInitArgs {
   readonly rng?: SeededRng;
   /** FX pool (shield block). */
   readonly fx?: FxPool;
+  /** Playable character definition (defaults to `CHARACTERS[DEFAULT_CHARACTER_ID]`). */
+  readonly character?: CharacterDef;
+  /** Validated `attachments.json` rig data, or `null` when unavailable. */
+  readonly attachments?: AttachmentsData | null;
+  /**
+   * Sibling body node (`player-body`) holding `CocosSprite` + `SpriteAnimator`.
+   * When omitted, `init()` reuses an existing `player-body` child, falls back to a legacy
+   * single-node `player` with `Sprite`/`SpriteAnimator`, or creates `player-body` via
+   * `setupPlayerVisualNodes(this.node)`.
+   */
+  readonly bodyNode?: Node;
 }
 
 @ccclass('PlayerController')
@@ -111,6 +181,8 @@ export class PlayerController extends Component {
   private shield = new ShieldCharger(0, 0);
   private rng = SeededRng.fromSeed(1);
   private fx: FxPool | null = null;
+  private manifest: AnimationManifest | null = null;
+  private character: CharacterDef = CHARACTERS[DEFAULT_CHARACTER_ID];
   /** Live loadout (skill id → stacks) — drives the aura decision, cached until it changes. */
   private loadout: ReadonlyMap<string, number> = new Map();
   private effectsMode: EffectsMode = 'full';
@@ -120,7 +192,9 @@ export class PlayerController extends Component {
   private auraShown = false;
   /** Reused position (the aura is re-applied every frame; no object per frame). */
   private readonly auraAt = { x: 0, y: 0 };
+  private bodyNode: Node | null = null;
   private sprite: Sprite | null = null;
+  private attachmentView: PlayerAttachmentView | null = null;
   private tintUntilMs = 0;
   private tint: Color = PLAYER_NO_TINT;
   private readonly keyboard = new KeyboardMove();
@@ -131,6 +205,10 @@ export class PlayerController extends Component {
   private animator: SpriteAnimator | null = null;
   private animKey = '';
   private animDirection: Direction | null = null;
+  private attachmentAnimName = 'idle';
+  private lastAttachmentAnim = '';
+  private lastAttachmentDir: Direction | null = null;
+  private lastAttachmentFrame = -1;
   private attackUntilMs = 0;
   private hitUntilMs = 0;
   private attackAnimMs = 0;
@@ -142,6 +220,36 @@ export class PlayerController extends Component {
   private squashAmount = 0;
   /** Knockback running after a hit; `null` = not being pushed. */
   private knockback: KnockbackState | null = null;
+
+  /** Active playable character id for this run. */
+  get characterId(): CharacterId {
+    return this.character.id;
+  }
+
+  /** Active playable character definition for this run. */
+  get characterDef(): CharacterDef {
+    return this.character;
+  }
+
+  /** Hide the worn/held attachment while `skillId` is active (e.g. `'ten-thousand-swords'`). */
+  hideAttachmentForSkill(skillId: string): void {
+    this.attachmentView?.hideForSkill(skillId);
+  }
+
+  /** End a skill's attachment hide request for `skillId`. */
+  showAttachmentForSkill(skillId: string): void {
+    this.attachmentView?.showForSkill(skillId);
+  }
+
+  /** Imperatively hide or unhide the player's attachment sprite. */
+  setAttachmentHidden(hidden: boolean): void {
+    this.attachmentView?.setHidden(hidden);
+  }
+
+  /** Current attachment state snapshot for debug/acceptance hooks (`window.__yokai`). */
+  getAttachmentSnapshot(): PlayerAttachmentSnapshot | null {
+    return this.attachmentView?.getSnapshot() ?? null;
+  }
 
   /** Player bullets in flight — `bullet-view` reads this pool every frame. */
   get bullets(): BulletPool {
@@ -229,19 +337,47 @@ export class PlayerController extends Component {
 
   /** Call once after `addComponent`, before the first frame. */
   init(args: PlayerInitArgs): void {
-    this.animator = this.getComponent(SpriteAnimator);
-    this.sprite = this.getComponent(CocosSprite);
+    this.attachmentView?.destroy();
+    this.attachmentView = null;
+
+    this.manifest = args.manifest;
+    this.character = args.character ?? CHARACTERS[DEFAULT_CHARACTER_ID];
+    this.bindVisualNodes(args.bodyNode);
+
     this.baseScale = this.node.scale.x > 0 ? this.node.scale.x : 1;
     if (args.rng !== undefined) this.rng = args.rng;
     this.fx = args.fx ?? null;
-    this.attackAnimMs = Math.max(1, loopDurationMs(resolve(args.manifest, 'player.attack.down')));
+
+    const attackKeys = characterAnimationKeys(this.character, 'attack', START_FACING);
+    this.attackAnimMs = Math.max(
+      1,
+      loopDurationMs(resolve(args.manifest, attackKeys.key, attackKeys.fallback)),
+    );
 
     this.tilePosition = { x: args.startAt.x, y: args.startAt.y };
     this.facing = START_FACING;
     this.animKey = '';
     this.animDirection = null;
+    this.attachmentAnimName = 'idle';
+    this.lastAttachmentAnim = '';
+    this.lastAttachmentDir = null;
+    this.lastAttachmentFrame = -1;
     this.syncNodePosition();
-    this.playAnimation(`player.idle.${START_FACING}`, START_FACING);
+    this.playCharacterAnimation('idle', START_FACING);
+
+    this.attachmentView = new PlayerAttachmentView({
+      parent: this.node,
+      bodyNode: this.bodyNode ?? this.node,
+      manifest: args.manifest,
+      attachments: args.attachments ?? null,
+      character: this.character,
+      initialPose: {
+        animation: this.attachmentAnimName,
+        direction: this.facing,
+        frame: this.animator?.frameIndex ?? 0,
+      },
+    });
+    this.syncAttachmentPose(true);
   }
 
   /** Reset the position when entering a new room; health is untouched (it lasts the whole run). */
@@ -301,6 +437,7 @@ export class PlayerController extends Component {
     this.fireIfReady(nowMs, deltaMs, targets);
     this.updateAura();
     this.playCurrentAnimation(nowMs, moving);
+    this.syncAttachmentPose();
     this.applyStateTint(nowMs);
     this.applySquash(nowMs);
   }
@@ -325,7 +462,8 @@ export class PlayerController extends Component {
     this.hitUntilMs = nowMs + HIT_ANIM_MS;
     this.tintUntilMs = nowMs + PLAYER_TINT_MS;
     this.tint = PLAYER_HURT_TINT;
-    this.playAnimation(`player.hit.${this.facing}`, this.facing);
+    this.playCharacterAnimation('hit', this.facing);
+    this.syncAttachmentPose();
     playSfx('player-hurt');
 
     if (result.dead) {
@@ -333,7 +471,8 @@ export class PlayerController extends Component {
       this.node.setScale(this.baseScale, this.baseScale, 1);
       this.fx?.setAura(null, null);
       this.auraShown = false;
-      this.playAnimation('player.dead');
+      this.playCharacterAnimation('dead');
+      this.syncAttachmentPose();
       playSfx('game-over');
       return true;
     }
@@ -377,6 +516,11 @@ export class PlayerController extends Component {
 
   protected onDisable(): void {
     this.keyboard.detach();
+  }
+
+  protected onDestroy(): void {
+    this.attachmentView?.destroy();
+    this.attachmentView = null;
   }
 
   private fireIfReady(nowMs: number, deltaMs: number, targets: readonly Targetable[]): void {
@@ -443,45 +587,122 @@ export class PlayerController extends Component {
    * "shield icon/tint" — looking at the character tells you whether the shield still holds.
    */
   private applyStateTint(nowMs: number): void {
-    const sprite = this.sprite;
-    if (sprite === null) return;
+    const color =
+      nowMs < this.tintUntilMs
+        ? this.tint
+        : this.shield.charges > 0
+          ? PLAYER_SHIELD_TINT
+          : PLAYER_NO_TINT;
 
-    if (nowMs < this.tintUntilMs) {
-      sprite.color = this.tint;
-      return;
+    if (this.sprite !== null) {
+      this.sprite.color = color;
     }
-    sprite.color = this.shield.charges > 0 ? PLAYER_SHIELD_TINT : PLAYER_NO_TINT;
+    const attachmentSprite = this.attachmentView?.sprite ?? null;
+    if (attachmentSprite !== null) {
+      attachmentSprite.color = color;
+    }
   }
 
   private playCurrentAnimation(nowMs: number, moving: boolean): void {
     if (this.health.isDead) return;
 
     if (nowMs < this.hitUntilMs) {
-      this.playAnimation(`player.hit.${this.facing}`, this.facing);
+      this.playCharacterAnimation('hit', this.facing);
       return;
     }
     // The throw pose only reads when standing still; running keeps the walk cycle (ticket #3).
     if (!moving && nowMs < this.attackUntilMs) {
-      this.playAnimation(`player.attack.${this.facing}`, this.facing);
+      this.playCharacterAnimation('attack', this.facing);
       return;
     }
-    const clip = moving ? 'walk' : 'idle';
+    const clip: CharacterAnimKind = moving ? 'walk' : 'idle';
     this.animator?.setPlaybackScale(
       moving
         ? this.stats.moveSpeedTilesPerSecond / DEFAULT_COMBAT.moveSpeedTilesPerSecond
         : 1,
     );
-    this.playAnimation(`player.${clip}.${this.facing}`, this.facing);
+    this.playCharacterAnimation(clip, this.facing);
   }
 
-  /** Only `play` when the clip or direction changes — `play` resets time, so calling it every frame freezes. */
-  private playAnimation(key: string, direction?: Direction): void {
+  /**
+   * Resolve character animation keys + fallback and only `play` when the effective clip or
+   * direction changes — `play` resets time, so calling it every frame freezes.
+   */
+  private playCharacterAnimation(kind: CharacterAnimKind, direction?: Direction): void {
+    const dir = direction ?? this.facing;
+    const { key, fallback } = characterAnimationKeys(this.character, kind, dir);
+    const resolvedKey =
+      this.manifest !== null && this.manifest.sprites[key] === undefined ? fallback : key;
     const sameDirection = direction === undefined || this.animDirection === direction;
-    if (this.animKey === key && sameDirection) return;
+    if (this.animKey === resolvedKey && sameDirection) return;
 
-    this.animKey = key;
+    this.animKey = resolvedKey;
     this.animDirection = direction ?? this.animDirection;
-    this.animator?.play(key, direction);
+    this.attachmentAnimName = resolvedKey.split('.')[1] ?? kind;
+    this.animator?.play(key, direction, fallback);
+  }
+
+  private bindVisualNodes(bodyNodeArg?: Node): void {
+    if (bodyNodeArg !== undefined) {
+      this.bodyNode = bodyNodeArg;
+      let bodySprite = bodyNodeArg.getComponent(CocosSprite);
+      if (bodySprite === null) {
+        bodySprite = bodyNodeArg.addComponent(CocosSprite);
+        bodySprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+        bodySprite.trim = false;
+      }
+      this.sprite = bodySprite;
+      this.animator =
+        bodyNodeArg.getComponent(SpriteAnimator) ?? bodyNodeArg.addComponent(SpriteAnimator);
+      return;
+    }
+
+    const existingBody = this.node.getChildByName(PLAYER_BODY_NODE_NAME);
+    if (existingBody !== null) {
+      const visual = setupPlayerVisualNodes(this.node);
+      this.bodyNode = visual.bodyNode;
+      this.sprite = visual.bodySprite;
+      this.animator = visual.animator;
+      return;
+    }
+
+    const ownSprite = this.getComponent(CocosSprite);
+    const ownAnimator = this.getComponent(SpriteAnimator);
+    if (ownSprite !== null || ownAnimator !== null) {
+      // Backwards compatibility for legacy callers that still attach Sprite/SpriteAnimator on `player`.
+      this.bodyNode = this.node;
+      this.sprite = ownSprite;
+      this.animator = ownAnimator;
+      return;
+    }
+
+    const visual = setupPlayerVisualNodes(this.node);
+    this.bodyNode = visual.bodyNode;
+    this.sprite = visual.bodySprite;
+    this.animator = visual.animator;
+  }
+
+  private syncAttachmentPose(force = false): void {
+    const view = this.attachmentView;
+    if (view === null) return;
+
+    const animation = this.attachmentAnimName;
+    const direction = this.facing;
+    const frame = this.animator?.frameIndex ?? 0;
+
+    if (
+      !force &&
+      this.lastAttachmentAnim === animation &&
+      this.lastAttachmentDir === direction &&
+      this.lastAttachmentFrame === frame
+    ) {
+      return;
+    }
+
+    this.lastAttachmentAnim = animation;
+    this.lastAttachmentDir = direction;
+    this.lastAttachmentFrame = frame;
+    view.updatePose({ animation, direction, frame });
   }
 
   /**

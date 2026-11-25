@@ -43,13 +43,14 @@ export interface CoverBody extends Body {
 /** The alpha is "there" once it is within one 8-bit step of the target. */
 const ALPHA_EPSILON = 1 / 255;
 
-/** Writes a node's sprite alpha with one reused `Color` (no per-frame allocation). */
+/** Writes sprite alpha on a node and all child sprites with one reused `Color` (no per-frame allocation). */
 class Fade {
   private readonly scratch = new CocosColor(255, 255, 255, 255);
-  private readonly sprite: Sprite | null;
+  private sprites: Sprite[] = [];
+  private cachedChildCount = -1;
 
   constructor(private readonly node: Node) {
-    this.sprite = node.getComponent(CocosSprite);
+    this.refreshSprites();
   }
 
   get isValid(): boolean {
@@ -57,15 +58,31 @@ class Fade {
   }
 
   set(alpha: number): void {
-    const sprite = this.sprite;
-    if (sprite === null || !this.node.isValid) return;
+    if (!this.node.isValid) return;
+    if (this.cachedChildCount !== this.node.children.length) {
+      this.refreshSprites();
+    }
 
-    const color: Color = sprite.color;
-    this.scratch.r = color.r;
-    this.scratch.g = color.g;
-    this.scratch.b = color.b;
-    this.scratch.a = Math.round(Math.min(1, Math.max(0, alpha)) * 255);
-    sprite.color = this.scratch;
+    const a = Math.round(Math.min(1, Math.max(0, alpha)) * 255);
+    for (const sprite of this.sprites) {
+      if (!sprite.isValid) continue;
+      const color: Color = sprite.color;
+      this.scratch.r = color.r;
+      this.scratch.g = color.g;
+      this.scratch.b = color.b;
+      this.scratch.a = a;
+      sprite.color = this.scratch;
+    }
+  }
+
+  private refreshSprites(): void {
+    if (!this.node.isValid) {
+      this.sprites = [];
+      this.cachedChildCount = -1;
+      return;
+    }
+    this.sprites = this.node.getComponentsInChildren(CocosSprite);
+    this.cachedChildCount = this.node.children.length;
   }
 }
 

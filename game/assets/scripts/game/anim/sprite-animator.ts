@@ -134,27 +134,40 @@ export class SpriteAnimator extends Component {
     return this.anchorY;
   }
 
+  /** Current frame index (0-based) so attachments can track live animation bob. */
+  get frameIndex(): number {
+    return Math.max(0, this.requestedIndex);
+  }
+
   /** Whether a non-looping clip has finished (holding the last frame). */
   get isFinished(): boolean {
     return this.finished;
   }
 
-  /** Play `key` (e.g. `player.walk.left`). Without `direction`, the current facing is kept. */
-  play(key: string, direction?: Direction): void {
+  /**
+   * Play `key` (e.g. `player.walk.left`). Without `direction`, the current facing is kept.
+   * When `fallbackKey` is supplied and `key` is absent from the manifest, `resolve()` falls
+   * back cleanly without reporting a placeholder problem.
+   */
+  play(key: string, direction?: Direction, fallbackKey?: string): void {
     this.entryKey = key;
     this.facing = direction ?? this.facing;
     this.entry = null;
     this.reset();
 
+    const playToken = this.token;
     loadAnimationManifest()
       .then((manifest) => {
-        if (this.entryKey !== key || !this.isValid) return; // another clip was played
+        if (playToken !== this.token || !this.isValid) return; // another clip was played or stopped
         let found: SpriteEntry;
         try {
-          found = resolve(manifest, key);
+          found = resolve(manifest, key, fallbackKey);
         } catch (error) {
           reportAnimationProblem(error instanceof Error ? error.message : String(error));
           return;
+        }
+        if (manifest.sprites[key] === undefined && fallbackKey !== undefined) {
+          this.entryKey = fallbackKey;
         }
         this.entry = found;
         this.applyFrameGeometry(found);

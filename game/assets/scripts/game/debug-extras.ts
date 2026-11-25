@@ -6,9 +6,20 @@ import { Sprite as CocosSprite } from 'cc';
 import type { Node as CocosNode } from 'cc';
 import { SpriteAnimator, animationProblemSnapshot } from './anim/sprite-animator';
 import type { DebugAnimationSnapshot } from './debug-api';
+import {
+  PLAYER_ATTACHMENT_NODE_NAME,
+  PLAYER_BODY_NODE_NAME,
+} from './player-attachment-view';
 
 type Node = InstanceType<typeof CocosNode>;
 const PLACEHOLDER_NAME = /placeholder|fallback|missing/i;
+
+function isPlayerBodyNode(node: Node): boolean {
+  return (
+    node.name === 'player' ||
+    (node.name === PLAYER_BODY_NODE_NAME && node.parent?.name === 'player')
+  );
+}
 
 /**
  * Placeholder art still on screen:
@@ -33,7 +44,9 @@ function visit(node: Node, issues: Set<string>): void {
   if (PLACEHOLDER_NAME.test(node.name)) issues.add(`node:${node.name}`);
 
   const sprite = node.getComponent(CocosSprite);
-  if (sprite !== null && sprite.spriteFrame === null) issues.add(`sprite:${node.name}:null-frame`);
+  if (sprite !== null && sprite.enabled && sprite.spriteFrame === null) {
+    issues.add(`sprite:${node.name}:null-frame`);
+  }
 
   const animator = node.getComponent(SpriteAnimator);
   if (animator !== null && animator.key === '' && node.name.startsWith('fx-')) {
@@ -54,8 +67,10 @@ export function collectAnimations(root: Node | null): DebugAnimationSnapshot {
 
     const animator = node.getComponent(SpriteAnimator);
     if (animator !== null && animator.key !== '') {
-      if (node.name === 'player') player = animator.key;
-      else if (node.name.startsWith('boss-')) boss = animator.key;
+      if (isPlayerBodyNode(node)) player = animator.key;
+      else if (node.name === PLAYER_ATTACHMENT_NODE_NAME) {
+        // Attachment sprites belong to the player rig, never enemies.
+      } else if (node.name.startsWith('boss-')) boss = animator.key;
       else if (!node.name.startsWith('fx-')) enemies[node.name] = animator.key;
     }
     for (const child of node.children) visitNode(child);
@@ -71,7 +86,11 @@ export function animationOfNode(root: Node | null, name: string): string | null 
 
   const found = findNode(root, name);
   if (found === null) return null;
-  const animator = found.getComponent(SpriteAnimator);
+  const animator =
+    found.getComponent(SpriteAnimator) ??
+    (found.name === 'player'
+      ? (found.getChildByName(PLAYER_BODY_NODE_NAME)?.getComponent(SpriteAnimator) ?? null)
+      : null);
   return animator === null || animator.key === '' ? null : animator.key;
 }
 
