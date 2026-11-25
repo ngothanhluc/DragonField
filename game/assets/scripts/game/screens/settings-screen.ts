@@ -18,6 +18,7 @@ export interface SettingsScreenOptions {
   readonly onToggleScreenShake: () => void;
   readonly onToggleDamageNumbers: () => void;
   readonly onToggleEffects: () => void;
+  readonly onToggleCultivator?: () => void;
   readonly onBack: () => void;
 }
 
@@ -67,6 +68,12 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     screen?.updateItem(4, formatEffects(current.effects));
   };
 
+  const toggleCultivator = (): void => {
+    current = { ...current, cultivatorEnabled: !current.cultivatorEnabled };
+    options.onToggleCultivator?.();
+    screen?.updateItem(5, formatToggle('Cultivator', current.cultivatorEnabled));
+  };
+
   const items: MenuItem[] = [
     {
       label: formatVolume(current.volume),
@@ -93,6 +100,11 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
       detail: 'Enter / click to toggle',
       activate: () => toggleEffects(),
     },
+    {
+      label: formatToggle('Cultivator', current.cultivatorEnabled),
+      detail: 'Enter / click to toggle',
+      activate: () => toggleCultivator(),
+    },
     { label: 'Back', activate: options.onBack },
   ];
 
@@ -101,8 +113,8 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     name: 'settings',
     title: 'SETTINGS',
     subtitle: 'Saved to this browser',
-    // Compact: the screen has 6 rows, so keybinds are merged into one line; otherwise the Back
-    // button falls off the canvas at low viewports (1280×720) and the hint overlaps the last row.
+    // Compact: 7 rows inside [-144, +144] above hint (y = -132). With h=22, gap=3, Back ends
+    // at y = -120 and label/detail (font 10 / 8) stay strictly inside [-11, +11].
     info: ['Keybinds fixed: WASD/arrows move · Esc/P pause · Enter/Space menus'],
     items,
     onBack: options.onBack,
@@ -110,9 +122,9 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
       if (index === 0) changeVolume(delta);
     },
     hint: '↑/↓ select · ←/→ adjust volume · Esc back',
-    buttonHeight: 26,
-    // 6 rows since the Effects row (#3): gap 6 pushed Back into the bottom hint at 1280×720.
-    buttonGap: 4,
+    buttonHeight: 22,
+    buttonGap: 3,
+    buttonFontSize: 10,
   });
 
   return task.then((built) => {
