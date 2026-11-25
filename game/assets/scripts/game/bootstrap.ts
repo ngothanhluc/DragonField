@@ -31,13 +31,19 @@ import {
   Node as CocosNode,
   RenderRoot2D,
   ResolutionPolicy,
-  Sprite as CocosSprite,
   TiledMapAsset as CocosTiledMapAsset,
   resources,
   view,
 } from 'cc';
+import { validateAttachments, type AttachmentsData } from '../core/art/attachments';
 import { resolve, validateManifest } from '../core/art/manifest';
 import type { AnimationManifest } from '../core/art/manifest';
+import {
+  CHARACTER_ROSTER,
+  resolveCharacterAnimKey,
+  type CharacterAnimKind,
+  type CharacterDef,
+} from '../core/characters/roster';
 import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
@@ -84,7 +90,6 @@ import type { SaveData } from '../core/save/save-data';
 import { applySettings } from '../core/save/settings';
 import type { Settings } from '../core/save/settings';
 import type { SaveRepository } from '../core/save/storage';
-import { SpriteAnimator } from './anim/sprite-animator';
 import { preloadSheets } from './assets/texture-cache';
 import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
@@ -118,7 +123,7 @@ import type { DoorArrowOffset } from './hud';
 import { syncCombatHud } from './hud-sync';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
 import type { PropView, RoomLayers } from './level-view';
-import { PlayerController } from './player-controller';
+import { PlayerController, setupPlayerVisualNodes } from './player-controller';
 import { attachRoomWater } from './room-water';
 import { WORLD_DRAW_LAYERS } from '../core/view/cover';
 import {
@@ -151,11 +156,11 @@ type Canvas = InstanceType<typeof CocosCanvas>;
 type Color = InstanceType<typeof CocosColor>;
 type JsonAsset = InstanceType<typeof CocosJsonAsset>;
 type Node = InstanceType<typeof CocosNode>;
-type Sprite = InstanceType<typeof CocosSprite>;
 type TiledMapAsset = InstanceType<typeof CocosTiledMapAsset>;
 
-/** Resources path (no `resources/` prefix, no file extension). */
+/** Resources paths (no `resources/` prefix, no file extension). */
 const MANIFEST_PATH = 'data/animations';
+const ATTACHMENTS_PATH = 'data/attachments';
 
 /**
  * TMX folder of each chapter **that has data in this build** (M4: all 3, #45 adds the desert).
@@ -247,14 +252,9 @@ const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, st
   },
 };
 
-/** Player animations whose sheets must be ready before the first frame (`roll` unused in M1). */
-const PLAYER_KEYS = [
-  'player.idle.down',
-  'player.walk.down',
-  'player.attack.down',
-  'player.hit.down',
-  'player.dead',
-] as const;
+/** Logical player animations whose sheets must be ready before the first frame (`roll` unused). */
+const CHARACTER_ANIM_KINDS: readonly CharacterAnimKind[] = ['idle', 'walk', 'attack', 'hit', 'dead'];
+const CARDINAL_DIRECTIONS = ['down', 'up', 'left', 'right'] as const;
 
 /** Bootstrap state — not `RunState` state. */
 export type BootstrapStatus = DebugStatus;
@@ -268,6 +268,7 @@ interface LoadedChapter {
 @ccclass('Bootstrap')
 export class Bootstrap extends Component {
   private manifest: AnimationManifest | null = null;
+  private attachments: AttachmentsData | null = null;
   private waterLayout: WaterLayout | null = null;
   private atmosphereConfig: AtmosphereConfig | null = null;
   private chapter: ChapterData | null = null;
@@ -338,6 +339,8 @@ export class Bootstrap extends Component {
   private menuBackdrop: MenuBackdrop | null = null;
 
   private player: PlayerController | null = null;
+  /** Playable character locked for the active run (M10: one character per run, no mid-run swap). */
+  private runCharacter: CharacterDef | null = null;
   private bulletView: BulletView | null = null;
   private combat: CombatLoop | null = null;
   private hud: Hud | null = null;
@@ -408,6 +411,9 @@ export class Bootstrap extends Component {
     },
     setVolume: (volume) => this.audio?.setVolume(volume),
     applyFeelSettings: (settings) => this.setFeelSettings(settings),
+    onCharacterChanged: (character) => {
+      this.menuBackdrop?.setCharacter(character, this.attachments);
+    },
     fail: (error) => this.fail(error),
   });
 
@@ -623,6 +629,7 @@ export class Bootstrap extends Component {
     this.installDebugHook();
 
     this.manifest = await this.loadManifest();
+    this.attachments = await this.loadAttachments();
     this.waterLayout = await this.loadWaterLayout();
     this.atmosphereConfig = await this.loadAtmosphere();
     this.camera = new WorldCamera(this.node, DESIGN_WIDTH, DESIGN_HEIGHT);
@@ -643,6 +650,8 @@ export class Bootstrap extends Component {
       worldScale: () => this.camera?.hudScale ?? 1,
       chapterFolder: (chapter) => CHAPTER_FOLDERS[chapter],
       loadChapter: (folder) => this.loadChapter(folder),
+      character: () => this.screens.selectedCharacter(),
+      attachments: () => this.attachments,
     });
     await this.screens.showTitle();
   }
@@ -691,6 +700,8 @@ export class Bootstrap extends Component {
     const seed =
       seedArg ?? ((Date.now() ^ (chapterNumber * 0x9e3779b1)) >>> 0);
     this.runSeed = seed;
+    // Lock the playable character once when the run starts (M10: one character per run, no mid-run swap).
+    this.runCharacter = this.screens.selectedCharacter();
     // Run baseline = base stats + purchased meta (hearts/damage/fire rate).
     this.skills.reset(seed, metaBaseline(DEFAULT_COMBAT, save));
     this.rewards = new RunRewards();
@@ -788,6 +799,17 @@ export class Bootstrap extends Component {
         return validateManifest(json);
       } catch (error: unknown) {
         throw new Error(`"resources/${MANIFEST_PATH}.json" is invalid: ${errorMessage(error)}`);
+      }
+    });
+  }
+
+  /** Playable character attach points and per-frame bob (M10). */
+  private loadAttachments(): Promise<AttachmentsData> {
+    return this.loadJson(ATTACHMENTS_PATH).then((json) => {
+      try {
+        return validateAttachments(json);
+      } catch (error: unknown) {
+        throw new Error(`"resources/${ATTACHMENTS_PATH}.json" is invalid: ${errorMessage(error)}`);
       }
     });
   }
@@ -947,8 +969,25 @@ export class Bootstrap extends Component {
   private collectSheets(manifest: AnimationManifest, chapter: ChapterData): string[] {
     const sheets = new Set<string>();
 
-    for (const key of PLAYER_KEYS) {
-      sheets.add(resolve(manifest, key).sheet);
+    for (const character of CHARACTER_ROSTER) {
+      for (const kind of CHARACTER_ANIM_KINDS) {
+        const key = resolveCharacterAnimKey(manifest, character, kind, 'down');
+        sheets.add(resolve(manifest, key).sheet);
+      }
+      if (
+        character.defaultLoadout.weaponForm === 'attachment' &&
+        character.defaultLoadout.attachmentItemId !== null
+      ) {
+        const itemDef = this.attachments?.items[character.defaultLoadout.attachmentItemId];
+        const spritePrefix =
+          itemDef !== undefined
+            ? itemDef.sprite
+            : `attachment.${character.defaultLoadout.attachmentItemId}`;
+        for (const dir of CARDINAL_DIRECTIONS) {
+          const entry = manifest.sprites[`${spritePrefix}.${dir}`];
+          if (entry !== undefined) sheets.add(entry.sheet);
+        }
+      }
     }
 
     for (const room of chapter.rooms) {
@@ -1185,25 +1224,26 @@ export class Bootstrap extends Component {
       throw new Error('Bootstrap: no manifest/actor-layer — cannot build the player');
     }
 
+    // Keep `player` sprite-free so `player-body` and `player-attachment` sit as sibling children
+    // and `setSiblingIndex` draws attachments behind or in front of the body (M10).
     const node = new CocosNode('player');
     node.parent = actorLayer;
 
-    const sprite: Sprite = node.addComponent(CocosSprite);
-    // CUSTOM: the animator sets contentSize/anchor per frame (Idle 32×32, Dead 32×64).
-    sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
-    sprite.trim = false;
-
-    // 1 texture px = 1/16 unit. Player frame 32 px → 2 units, the art itself is ~1 tile.
+    // 1 texture px = 1/16 unit. Player frame 32 px → 2 units, Cultivator 16 px → 1 unit.
     const scale = ACTOR_SCALE;
     node.setScale(scale, scale, 1);
 
-    node.addComponent(SpriteAnimator);
+    const { bodyNode } = setupPlayerVisualNodes(node);
+    const character = this.runCharacter ?? this.screens.selectedCharacter();
     const player: PlayerController = node.addComponent(PlayerController);
     player.init({
       manifest,
       startAt,
       rng: this.combatRng,
       ...(this.fx !== null ? { fx: this.fx } : {}),
+      character,
+      attachments: this.attachments,
+      bodyNode,
     });
 
     this.player = player;
@@ -2068,6 +2108,7 @@ export class Bootstrap extends Component {
     this.fx = null;
     this.player?.node.destroy();
     this.player = null;
+    this.runCharacter = null;
     this.bulletView?.node.destroy();
     this.bulletView = null;
     this.hud?.node.destroy();
@@ -2188,6 +2229,29 @@ export class Bootstrap extends Component {
       takeDoor: (index) => this.debugTakeDoor(index),
       special: () => this.debugSpecial(),
       useSpecial: () => this.debugUseSpecial(),
+      character: () => {
+        const snap = this.screens.characterSnapshot();
+        const active = this.runCharacter;
+        return active === null ? snap : { ...snap, id: active.id, name: active.name };
+      },
+      selectCharacter: (id) => this.screens.selectCharacter(id),
+      setCultivatorEnabled: (enabled) => this.screens.setCultivatorEnabled(enabled),
+      playerAttachment: () => this.player?.getAttachmentSnapshot() ?? null,
+      setAttachmentHidden: (hidden) => {
+        if (this.player === null) return false;
+        this.player.setAttachmentHidden(hidden);
+        return true;
+      },
+      hideAttachmentForSkill: (skillId) => {
+        if (this.player === null) return false;
+        this.player.hideAttachmentForSkill(skillId);
+        return true;
+      },
+      showAttachmentForSkill: (skillId) => {
+        if (this.player === null) return false;
+        this.player.showAttachmentForSkill(skillId);
+        return true;
+      },
     });
   }
 

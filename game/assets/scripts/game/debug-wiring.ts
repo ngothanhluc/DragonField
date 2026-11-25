@@ -12,9 +12,11 @@ import type {
   DebugAtmosphereSnapshot,
   DebugAudioSnapshot,
   DebugBossSnapshot,
+  DebugCharacterSnapshot,
   DebugDoorSnapshot,
   DebugEnemySnapshot,
   DebugMenuBackdropSnapshot,
+  DebugPlayerAttachmentSnapshot,
   DebugProvider,
   DebugScreenId,
   DebugSpecialSnapshot,
@@ -71,6 +73,13 @@ export interface DebugWiringHost {
   readonly takeDoor: (index: number) => boolean;
   readonly special: () => DebugSpecialSnapshot;
   readonly useSpecial: () => boolean;
+  readonly character: () => DebugCharacterSnapshot;
+  readonly selectCharacter: (id: string) => boolean;
+  readonly setCultivatorEnabled: (enabled: boolean) => boolean;
+  readonly playerAttachment: () => DebugPlayerAttachmentSnapshot | null;
+  readonly setAttachmentHidden: (hidden: boolean) => boolean;
+  readonly hideAttachmentForSkill: (skillId: string) => boolean;
+  readonly showAttachmentForSkill: (skillId: string) => boolean;
 }
 
 /** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
@@ -138,6 +147,13 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     takeDoor: host.takeDoor,
     special: host.special,
     useSpecial: host.useSpecial,
+    character: host.character,
+    selectCharacter: host.selectCharacter,
+    setCultivatorEnabled: host.setCultivatorEnabled,
+    playerAttachment: host.playerAttachment,
+    setAttachmentHidden: host.setAttachmentHidden,
+    hideAttachmentForSkill: host.hideAttachmentForSkill,
+    showAttachmentForSkill: host.showAttachmentForSkill,
     nodeCount: () => {
       const scene: Node | null = director.getScene() as Node | null;
       return scene === null ? 0 : countNodes(scene);
