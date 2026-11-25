@@ -268,6 +268,26 @@ export function validateAttachments(raw: unknown): AttachmentsData {
 }
 
 /**
+ * Read the per-frame vertical bob (in output-frame pixels, positive = lower) for one rig frame.
+ *
+ * Returns `0` when the rig does not record a bob array for `animation` or `direction` (missing
+ * animations are optional). Wraps `frame` safely across the recorded column length, including
+ * negative frame indices.
+ */
+export function bobOffset(
+  rig: CharacterRig,
+  animation: string,
+  direction: string,
+  frame: number,
+): number {
+  const column = rig.bob[animation]?.[direction];
+  if (column === undefined || column.length === 0) return 0;
+  const normalizedFrame = Number.isFinite(frame) ? Math.trunc(frame) : 0;
+  const index = ((normalizedFrame % column.length) + column.length) % column.length;
+  return column[index] ?? 0;
+}
+
+/**
  * Place one item on one body frame.
  *
  * `x = point.x - grip.x`, `y = point.y - grip.y + bob`, where the bob comes from the
@@ -290,10 +310,7 @@ export function placeAttachment(data: AttachmentsData, query: PlaceAttachmentQue
     throw new Error(`item "${query.item}" has no grip for direction "${query.direction}"`);
   }
 
-  const column = character.bob[query.animation]?.[query.direction];
-  const bob = column === undefined || column.length === 0
-    ? 0
-    : column[((query.frame % column.length) + column.length) % column.length] ?? 0;
+  const bob = bobOffset(character, query.animation, query.direction, query.frame);
 
   const behind =
     item.behind !== undefined
