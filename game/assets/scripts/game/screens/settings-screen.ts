@@ -47,7 +47,7 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
   const changeVolume = (delta: number): void => {
     current = { ...current, volume: stepVolume(current.volume, delta) };
     options.onVolume(current.volume);
-    screen?.updateItem(0, formatVolume(current.volume), 'Left / Right or click (+10%)');
+    screen?.updateItem(0, formatVolume(current.volume));
   };
 
   const toggleScreenShake = (): void => {
@@ -77,32 +77,26 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
   const items: MenuItem[] = [
     {
       label: formatVolume(current.volume),
-      detail: 'Left / Right or click (+10%)',
       activate: () => changeVolume(1),
     },
     {
       label: formatFullscreen(current.fullscreen),
-      detail: 'Enter / click to toggle',
       activate: options.onToggleFullscreen,
     },
     {
       label: formatToggle('Screen shake', current.screenShake),
-      detail: 'Enter / click to toggle',
       activate: () => toggleScreenShake(),
     },
     {
       label: formatToggle('Damage numbers', current.damageNumbers),
-      detail: 'Enter / click to toggle',
       activate: () => toggleDamageNumbers(),
     },
     {
       label: formatEffects(current.effects),
-      detail: 'Enter / click to toggle',
       activate: () => toggleEffects(),
     },
     {
       label: formatToggle('Cultivator', current.cultivatorEnabled),
-      detail: 'Enter / click to toggle',
       activate: () => toggleCultivator(),
     },
     { label: 'Back', activate: options.onBack },
@@ -113,8 +107,8 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     name: 'settings',
     title: 'SETTINGS',
     subtitle: 'Saved to this browser',
-    // Compact: 7 rows inside [-144, +144] above hint (y = -132). With h=22, gap=3, Back ends
-    // at y = -120 and label/detail (font 10 / 8) stay strictly inside [-11, +11].
+    // Compact: 7 single-line rows inside [-144, +144] above hint (y = -132). With h=22, gap=3,
+    // Back ends at y = -120 and each font-10 label (~15.1 px) stays strictly inside [-11, +11].
     info: ['Keybinds fixed: WASD/arrows move · Esc/P pause · Enter/Space menus'],
     items,
     onBack: options.onBack,
