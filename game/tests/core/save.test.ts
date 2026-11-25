@@ -19,6 +19,7 @@ import {
   parseSaveData,
   serializeSave,
   withBest,
+  withSelectedCharacter,
 } from '../../assets/scripts/core/save/save-data';
 import type { SaveData } from '../../assets/scripts/core/save/save-data';
 import { DEFAULT_VOLUME, applySettings, clampVolume } from '../../assets/scripts/core/save/settings';
@@ -60,12 +61,21 @@ describe('SaveData — defaults', () => {
   it('the default save is valid and round-trips through serialize/parse', () => {
     const defaults = createDefaultSave();
 
+    expect(SAVE_VERSION).toBe(3);
     expect(defaults.version).toBe(SAVE_VERSION);
     expect(defaults.gold).toBe(0);
     expect(defaults.upgrades).toEqual({ hearts: 0, damage: 0, fireRate: 0 });
     expect(defaults.chaptersUnlocked).toBe(1);
     expect(defaults.best).toEqual({ chapter: 0, room: 0 });
-    expect(defaults.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false, effects: 'full' });
+    expect(defaults.settings).toEqual({
+      volume: 0.8,
+      fullscreen: false,
+      screenShake: true,
+      damageNumbers: false,
+      effects: 'full',
+      cultivatorEnabled: false,
+    });
+    expect(defaults.selectedCharacter).toBe('ninja');
 
     expect(parseSaveData(defaults)).toEqual(defaults);
     expect(parseSaveData(JSON.parse(serializeSave(defaults)))).toEqual(defaults);
@@ -78,7 +88,15 @@ describe('SaveData — defaults', () => {
       upgrades: { hearts: 0, damage: 0, fireRate: 0 },
       chaptersUnlocked: 1,
       best: { chapter: 0, room: 0 },
-      settings: { volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false, effects: 'full' },
+      settings: {
+        volume: 0.8,
+        fullscreen: false,
+        screenShake: true,
+        damageNumbers: false,
+        effects: 'full',
+        cultivatorEnabled: false,
+      },
+      selectedCharacter: 'ninja',
     });
   });
 
@@ -104,7 +122,8 @@ describe('SaveData — migrate', () => {
       upgrades: { hearts: 2, damage: 1, fireRate: 3 },
       chaptersUnlocked: 2,
       best: { chapter: 1, room: 4 },
-      settings: { volume: 0.5, fullscreen: true },
+      settings: { volume: 0.5, fullscreen: true, cultivatorEnabled: true },
+      selectedCharacter: 'cultivator',
     });
 
     expect(migrated).toEqual({
@@ -113,8 +132,101 @@ describe('SaveData — migrate', () => {
       upgrades: { hearts: 2, damage: 1, fireRate: 3 },
       chaptersUnlocked: 2,
       best: { chapter: 1, room: 4 },
-      settings: { volume: 0.5, fullscreen: true, screenShake: true, damageNumbers: false, effects: 'full' },
+      settings: {
+        volume: 0.5,
+        fullscreen: true,
+        screenShake: true,
+        damageNumbers: false,
+        effects: 'full',
+        cultivatorEnabled: true,
+      },
+      selectedCharacter: 'cultivator',
     });
+  });
+
+  it('migrates v1 and v2 saves forward to v3 preserving every field and initializing M10 defaults', () => {
+    const v1 = {
+      version: 1,
+      gold: 250,
+      upgrades: { hearts: 2, damage: 4, fireRate: 1 },
+      chaptersUnlocked: 3,
+      best: { chapter: 3, room: 8 },
+      settings: {
+        volume: 0.6,
+        fullscreen: true,
+        screenShake: false,
+        damageNumbers: true,
+        effects: 'reduced',
+      },
+    };
+    const fromV1 = migrate(v1);
+    expect(fromV1).toEqual({
+      version: SAVE_VERSION,
+      gold: 250,
+      upgrades: { hearts: 2, damage: 4, fireRate: 1 },
+      chaptersUnlocked: 3,
+      best: { chapter: 3, room: 8 },
+      settings: {
+        volume: 0.6,
+        fullscreen: true,
+        screenShake: false,
+        damageNumbers: true,
+        effects: 'reduced',
+        cultivatorEnabled: false,
+      },
+      selectedCharacter: 'ninja',
+    });
+
+    const v2 = {
+      version: 2,
+      gold: 980,
+      upgrades: { hearts: 5, damage: 7, fireRate: 6 },
+      chaptersUnlocked: 4,
+      best: { chapter: 4, room: 9 },
+      settings: {
+        volume: 0.3,
+        fullscreen: false,
+        screenShake: true,
+        damageNumbers: true,
+        effects: 'full',
+      },
+    };
+    const fromV2 = migrate(v2);
+    expect(fromV2).toEqual({
+      version: SAVE_VERSION,
+      gold: 980,
+      upgrades: { hearts: 5, damage: 7, fireRate: 6 },
+      chaptersUnlocked: 4,
+      best: { chapter: 4, room: 9 },
+      settings: {
+        volume: 0.3,
+        fullscreen: false,
+        screenShake: true,
+        damageNumbers: true,
+        effects: 'full',
+        cultivatorEnabled: false,
+      },
+      selectedCharacter: 'ninja',
+    });
+  });
+
+  it('falls back cleanly to default ninja when selectedCharacter is unknown or corrupt', () => {
+    for (const badId of ['archer', 'unknown', '', null, 42, { id: 'ninja' }]) {
+      const migrated = migrate({
+        version: SAVE_VERSION,
+        gold: 75,
+        upgrades: { hearts: 1, damage: 2, fireRate: 0 },
+        chaptersUnlocked: 2,
+        best: { chapter: 1, room: 5 },
+        settings: { volume: 0.7, fullscreen: false },
+        selectedCharacter: badId,
+      });
+
+      expect(migrated.selectedCharacter).toBe('ninja');
+      expect(migrated.gold).toBe(75);
+      expect(migrated.upgrades).toEqual({ hearts: 1, damage: 2, fireRate: 0 });
+      expect(migrated.chaptersUnlocked).toBe(2);
+    }
   });
 
   it('patches missing fields with defaults (partial save)', () => {
@@ -124,7 +236,15 @@ describe('SaveData — migrate', () => {
     expect(migrated.upgrades).toEqual({ hearts: 1, damage: 0, fireRate: 0 });
     expect(migrated.chaptersUnlocked).toBe(1);
     expect(migrated.best).toEqual({ chapter: 0, room: 0 });
-    expect(migrated.settings).toEqual({ volume: 0.8, fullscreen: false, screenShake: true, damageNumbers: false, effects: 'full' });
+    expect(migrated.settings).toEqual({
+      volume: 0.8,
+      fullscreen: false,
+      screenShake: true,
+      damageNumbers: false,
+      effects: 'full',
+      cultivatorEnabled: false,
+    });
+    expect(migrated.selectedCharacter).toBe('ninja');
   });
 
   it('reads the old key names from the GDD §10 draft (hp, firerate)', () => {
@@ -156,6 +276,7 @@ describe('SaveData — validate', () => {
       chaptersUnlocked: 99,
       best: { chapter: 0, room: 0 },
       settings: { volume: 2, fullscreen: 'có' }, // i18n-allow: sample bad data
+      selectedCharacter: 'ninja',
     };
 
     const message = errorMessage(() => parseSaveData(broken));
@@ -166,6 +287,19 @@ describe('SaveData — validate', () => {
     expect(message).toContain('settings.volume');
     expect(message).toContain('settings.fullscreen');
     expect(message).toMatch(/5 problem/);
+  });
+
+  it('rejects unknown selectedCharacter and mistyped settings.cultivatorEnabled', () => {
+    const message = errorMessage(() =>
+      parseSaveData({
+        ...createDefaultSave(),
+        settings: { ...createDefaultSave().settings, cultivatorEnabled: 'yes' },
+        selectedCharacter: 'archer',
+      }),
+    );
+
+    expect(message).toContain('settings.cultivatorEnabled');
+    expect(message).toContain('selectedCharacter');
   });
 
   it('reports nested problems (upgrades + best) too', () => {
@@ -224,6 +358,37 @@ describe('SaveData — withBest', () => {
     expect(() => withBest(createDefaultSave(), 5, 1)).toThrow(/chapter/);
     expect(() => withBest(createDefaultSave(), 1, 0)).toThrow(/room/);
     expect(() => withBest(createDefaultSave(), 1, 2.5)).toThrow(/room/);
+  });
+});
+
+describe('SaveData — withSelectedCharacter', () => {
+  it('updates selectedCharacter on a new save without mutating the input and round-trips through storage', () => {
+    const base = createDefaultSave();
+    const next = withSelectedCharacter(base, 'cultivator');
+
+    expect(next.selectedCharacter).toBe('cultivator');
+    expect(base.selectedCharacter).toBe('ninja');
+    expect(withSelectedCharacter(next, 'cultivator')).toEqual(next);
+
+    const storage = new MemorySaveStorage();
+    const saveWithFlag = {
+      ...next,
+      settings: { ...next.settings, cultivatorEnabled: true },
+    };
+    new SaveRepository(storage).save(saveWithFlag);
+    const loaded = new SaveRepository(storage).load();
+
+    expect(loaded).toEqual(saveWithFlag);
+    expect(loaded.selectedCharacter).toBe('cultivator');
+    expect(loaded.settings.cultivatorEnabled).toBe(true);
+  });
+
+  it('rejects an unknown character id or invalid save', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately invalid id
+    expect(() => withSelectedCharacter(createDefaultSave(), 'archer' as any)).toThrow(
+      /withSelectedCharacter/,
+    );
+    expect(() => withSelectedCharacter(saveWith({ gold: -1 }), 'cultivator')).toThrow(/gold/);
   });
 });
 
@@ -455,15 +620,23 @@ describe('Settings', () => {
     const input = { volume: 2, fullscreen: true };
     const applied = applySettings(input);
 
-    expect(applied).toEqual({ volume: 1, fullscreen: true, screenShake: true, damageNumbers: false, effects: 'full' });
+    expect(applied).toEqual({
+      volume: 1,
+      fullscreen: true,
+      screenShake: true,
+      damageNumbers: false,
+      effects: 'full',
+      cultivatorEnabled: false,
+    });
     expect(input.volume).toBe(2);
 
-    expect(applySettings({ volume: -1, fullscreen: false })).toEqual({
+    expect(applySettings({ volume: -1, fullscreen: false, cultivatorEnabled: true })).toEqual({
       volume: 0,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      cultivatorEnabled: true,
     });
   });
 
@@ -474,6 +647,7 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      cultivatorEnabled: false,
     });
     expect(applySettings({ volume: Number.NaN })).toEqual({
       volume: DEFAULT_VOLUME,
@@ -481,8 +655,16 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      cultivatorEnabled: false,
     });
-    // Plain object: all 5 own keys, JSON.stringify emits every field.
-    expect(Object.keys(applySettings())).toEqual(['volume', 'fullscreen', 'screenShake', 'damageNumbers', 'effects']);
+    // Plain object: all 6 own keys, JSON.stringify emits every field.
+    expect(Object.keys(applySettings())).toEqual([
+      'volume',
+      'fullscreen',
+      'screenShake',
+      'damageNumbers',
+      'effects',
+      'cultivatorEnabled',
+    ]);
   });
 });

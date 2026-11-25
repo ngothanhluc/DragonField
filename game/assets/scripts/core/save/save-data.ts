@@ -7,6 +7,12 @@
  * - `migrate` — upgrades an old save / missing `version` to `SAVE_VERSION`.
  * - `serializeSave` — canonical JSON, fixed key order so diffs are readable.
  */
+import {
+  CHARACTER_IDS,
+  DEFAULT_CHARACTER_ID,
+  isCharacterId,
+} from '../characters/roster';
+import type { CharacterId } from '../characters/roster';
 import { UPGRADE_TRACKS, createDefaultUpgrades, maxLevelFor } from '../meta/upgrades';
 import type { UpgradeTrack } from '../meta/upgrades';
 import { CHAPTERS_PER_RUN } from '../run/run-state';
@@ -17,8 +23,12 @@ import type { Settings } from './settings';
  * v2 (#45): chapter 4 exists. The schema itself is unchanged — v1 already held every field —
  * but a v1 save cannot record that chapter 3's boss was beaten (the old cap was 3 unlocked
  * chapters), so migration keeps `chaptersUnlocked` as it was: ch4 opens when ch3 is cleared again.
+ *
+ * v3 (M10): adds `selectedCharacter` (default `'ninja'`) and `settings.cultivatorEnabled`
+ * (default `false`). v1 and v2 saves migrate forward cleanly while keeping all existing progress;
+ * unknown or corrupt `selectedCharacter` values fall back to `'ninja'` during migration.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 /** Furthest record reached. `chapter`/`room` = 0 means never played. */
 export interface BestProgress {
@@ -35,6 +45,8 @@ export interface SaveData {
   readonly chaptersUnlocked: number;
   readonly best: BestProgress;
   readonly settings: Settings;
+  /** Active playable character selected for new runs (M10). */
+  readonly selectedCharacter: CharacterId;
 }
 
 /** Collect every problem then throw a single `Error`, instead of stopping at the first one. */
@@ -135,6 +147,7 @@ export function createDefaultSave(): SaveData {
     chaptersUnlocked: 1,
     best: { chapter: 0, room: 0 },
     settings: { ...DEFAULT_SETTINGS },
+    selectedCharacter: DEFAULT_CHARACTER_ID,
   };
 }
 
@@ -212,7 +225,7 @@ export function parseSaveData(raw: unknown): SaveData {
   if (!isRecord(rawSettings)) {
     problems.add(
       'settings',
-      `must be an object { volume, fullscreen, screenShake, damageNumbers, effects }, got ${describeValue(rawSettings)}`,
+      `must be an object { volume, fullscreen, screenShake, damageNumbers, effects, cultivatorEnabled }, got ${describeValue(rawSettings)}`,
     );
   } else {
     const volume = rawSettings.volume;
@@ -229,11 +242,11 @@ export function parseSaveData(raw: unknown): SaveData {
       );
     }
 
-    // Accessibility flags added in ticket #2, effects mode in #3: an older v1 save lacks the
-    // field, so take the default — no SAVE_VERSION bump. Only report a present, wrong value.
+    // Optional flags added across milestones: absent → default via `applySettings`, wrong type → error.
     const screenShake = readFlag(rawSettings, 'screenShake', problems);
     const damageNumbers = readFlag(rawSettings, 'damageNumbers', problems);
     const effects = readEffects(rawSettings, problems);
+    const cultivatorEnabled = readFlag(rawSettings, 'cultivatorEnabled', problems);
 
     // Only use the read value when the field is valid; otherwise keep the default.
     settings = applySettings({
@@ -242,7 +255,18 @@ export function parseSaveData(raw: unknown): SaveData {
       ...(screenShake !== undefined ? { screenShake } : {}),
       ...(damageNumbers !== undefined ? { damageNumbers } : {}),
       ...(effects !== undefined ? { effects } : {}),
+      ...(cultivatorEnabled !== undefined ? { cultivatorEnabled } : {}),
     });
+  }
+
+  let selectedCharacter: CharacterId = DEFAULT_CHARACTER_ID;
+  if (isCharacterId(raw.selectedCharacter)) {
+    selectedCharacter = raw.selectedCharacter;
+  } else {
+    problems.add(
+      'selectedCharacter',
+      `must be one of ${CHARACTER_IDS.join('/')}, got ${describeValue(raw.selectedCharacter)}`,
+    );
   }
 
   problems.throwIfAny('Invalid SaveData');
@@ -254,11 +278,13 @@ export function parseSaveData(raw: unknown): SaveData {
     chaptersUnlocked,
     best: { chapter: bestChapter, room: bestRoom },
     settings,
+    selectedCharacter,
   };
 }
 
 /**
- * Canonical JSON: fixed key order per GDD §10, containing only validated fields.
+ * Canonical JSON: fixed key order per GDD §10 (extended in M10 with `selectedCharacter`),
+ * containing only validated fields.
  * Throws when `data` is invalid — better to lose one save than write garbage into the slot.
  */
 export function serializeSave(data: SaveData): string {
@@ -280,7 +306,9 @@ export function serializeSave(data: SaveData): string {
       screenShake: valid.settings.screenShake,
       damageNumbers: valid.settings.damageNumbers,
       effects: valid.settings.effects,
+      cultivatorEnabled: valid.settings.cultivatorEnabled,
     },
+    selectedCharacter: valid.selectedCharacter,
   });
 }
 
@@ -334,6 +362,23 @@ export function unlockNextChapter(save: SaveData, clearedChapter: number): SaveD
 }
 
 /**
+ * Return a new save with `selectedCharacter` set to `characterId` (M10).
+ *
+ * Returns a **new** save without modifying the input; throws on an invalid save or unknown
+ * character id (never write garbage into the slot).
+ */
+export function withSelectedCharacter(save: SaveData, characterId: CharacterId): SaveData {
+  const valid = parseSaveData(save);
+  if (!isCharacterId(characterId)) {
+    throw new Error(
+      `withSelectedCharacter: characterId must be one of ${CHARACTER_IDS.join('/')}, got ${describeValue(characterId)}`,
+    );
+  }
+  if (valid.selectedCharacter === characterId) return valid;
+  return { ...valid, selectedCharacter: characterId };
+}
+
+/**
  * The health/fire-rate track names were `hp`/`firerate` in the GDD §10 draft; they now use the
  * `UpgradeTrack` keys. Old names are still read during migration so progress is not lost.
  */
@@ -384,14 +429,24 @@ function migrateSettings(raw: unknown, fallback: Settings): unknown {
     screenShake: pick(raw, 'screenShake', fallback.screenShake),
     damageNumbers: pick(raw, 'damageNumbers', fallback.damageNumbers),
     effects: pick(raw, 'effects', fallback.effects),
+    cultivatorEnabled: pick(raw, 'cultivatorEnabled', fallback.cultivatorEnabled),
   };
+}
+
+/**
+ * Keep a valid character id; fall back cleanly to `DEFAULT_CHARACTER_ID` when absent, unknown,
+ * or corrupt so an outdated/tampered character id never wipes the rest of the player's save.
+ */
+function migrateSelectedCharacter(raw: unknown, fallback: CharacterId): CharacterId {
+  return isCharacterId(raw) ? raw : fallback;
 }
 
 /**
  * Upgrade an old save to `SAVE_VERSION`.
  *
  * - missing `version` → treated as 0 (a save from before versioning).
- * - missing field → default; wrong type → left for `parseSaveData` to report.
+ * - missing field → default; wrong type → left for `parseSaveData` to report
+ *   (except `selectedCharacter`, where unknown/corrupt values fall back cleanly to default `'ninja'`).
  * - `version` newer than the game → throw a clear error, **never** guess and overwrite the
  *   save of a newer game version (that would lose data).
  */
@@ -414,10 +469,9 @@ export function migrate(raw: unknown): SaveData {
 
   const defaults = createDefaultSave();
 
-  // v1 → v2 (#45): chapter 4 exists, but the schema gained no field. A v1 save could not record
-  // that chapter 3's boss was beaten (unlocks capped at 3), so `chaptersUnlocked` is kept
-  // **unchanged** — ch4 stays locked until chapter 3 is cleared again. Only patch missing fields
-  // and rename old keys here; `parseSaveData` stays the single validator.
+  // v1 → v2 (#45): chapter 4 exists; `chaptersUnlocked` stays unchanged so ch4 opens after ch3 clear.
+  // v2 → v3 (M10): adds `selectedCharacter` (defaults to `'ninja'`, unknown/corrupt values fall back)
+  // and `settings.cultivatorEnabled` (defaults to `false`). `parseSaveData` stays the single validator.
   const migrated = {
     version: SAVE_VERSION,
     gold: pick(raw, 'gold', defaults.gold),
@@ -425,6 +479,10 @@ export function migrate(raw: unknown): SaveData {
     chaptersUnlocked: pick(raw, 'chaptersUnlocked', defaults.chaptersUnlocked),
     best: migrateBest(raw.best, defaults.best),
     settings: migrateSettings(raw.settings, defaults.settings),
+    selectedCharacter: migrateSelectedCharacter(
+      raw.selectedCharacter,
+      defaults.selectedCharacter,
+    ),
   };
 
   return parseSaveData(migrated);

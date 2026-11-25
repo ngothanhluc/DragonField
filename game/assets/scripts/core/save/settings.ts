@@ -19,6 +19,8 @@ export interface Settings {
   readonly damageNumbers: boolean;
   /** VFX level: `full` (default) or `reduced`. */
   readonly effects: EffectsMode;
+  /** M10 migration flag: unlock the unarmed Cultivator + back sword character (off by default). */
+  readonly cultivatorEnabled: boolean;
 }
 
 /** GDD §10 uses 0.8 as the default. */
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   screenShake: true,
   damageNumbers: false,
   effects: 'full',
+  cultivatorEnabled: false,
 };
 
 /**
@@ -58,8 +61,8 @@ export function stepVolume(volume: number, steps: number): number {
  * Normalised settings: volume clamped, missing/mistyped fields take defaults.
  * Takes `Partial` because data from an old save may lack fields.
  *
- * Returns a **plain object** with all 5 own keys in serialize order (volume, fullscreen,
- * screenShake, damageNumbers, effects) — spread/JSON.stringify/direct reads all behave correctly.
+ * Returns a **plain object** with all 6 own keys in serialize order (volume, fullscreen,
+ * screenShake, damageNumbers, effects, cultivatorEnabled) — spread/JSON.stringify/direct reads all behave correctly.
  */
 export function applySettings(settings: Partial<Settings> = {}): Settings {
   const volume = settings.volume === undefined ? DEFAULT_VOLUME : settings.volume;
@@ -73,5 +76,9 @@ export function applySettings(settings: Partial<Settings> = {}): Settings {
         ? settings.damageNumbers
         : DEFAULT_SETTINGS.damageNumbers,
     effects: settings.effects === 'reduced' ? 'reduced' : DEFAULT_SETTINGS.effects,
+    cultivatorEnabled:
+      typeof settings.cultivatorEnabled === 'boolean'
+        ? settings.cultivatorEnabled
+        : DEFAULT_SETTINGS.cultivatorEnabled,
   };
 }
