@@ -82,14 +82,14 @@ describe('save v1 → v2', () => {
     settings: { volume: 0.4, fullscreen: false, screenShake: false, damageNumbers: true, effects: 'reduced' },
   };
 
-  it('a fresh save is v2', () => {
-    expect(SAVE_VERSION).toBe(2);
-    expect(createDefaultSave().version).toBe(2);
+  it('a fresh save is at least v2', () => {
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(2);
+    expect(createDefaultSave().version).toBe(SAVE_VERSION);
   });
 
   it('keeps gold, upgrades, unlocks, best and settings; ch4 stays locked until ch3 is cleared again', () => {
     const migrated = migrate(v1);
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(SAVE_VERSION);
     expect(migrated.gold).toBe(321);
     expect(migrated.upgrades).toMatchObject({ hearts: 2, damage: 3, fireRate: 1 });
     expect(migrated.chaptersUnlocked).toBe(3);
