@@ -210,7 +210,7 @@ Design: GDD §14. The art side (unarmed bodies, separate attachments, rig data) 
 - Character select round-trips through the save (`version` bump + migration), and a run started with each roster entry reaches the chapter boss with 0 console errors.
 - `bun run check` green; `run-simulation` green **without changing `tuning.json`** (a different body must not change hitbox, damage or spawn numbers).
 
-**Status: ⏳ Not started** (waiting on M9 and the ticket #20 art pipeline).
+**Status: ✅ Done (2026-11-26).** Landed on `m10-characters`. `bun run check` green (97 test files / 1274 tests incl. `attachment-node`, `characters-roster`, save v3 migration, and `run-simulation` on unchanged `tuning.json`). Optional `player-attachment` child node sits alongside `player-body` under a sprite-free `player` container (never created for projectile weapons), applying per-direction `hand`/`back` and `behind` draw order, per-frame bob from `attachments.json`, and skill hide/show (`hideAttachmentForSkill`/`showAttachmentForSkill`). Data-driven roster (`ninja` default, `cultivator` gated behind Settings `cultivatorEnabled`) wired through Title character select (locked for the whole run), living menu backdrop, and save v3 (`v1`/`v2` → `v3`). Cocos 3.8.8 `web-desktop` build + Chrome verification at 1920×1080, 1280×720, and 1024×768: 0 clipped/overflow labels, 4-direction idle/moving Cultivator `sword-back` placement and skill hide/show verified visually, and both Ninja and Cultivator reached the Chapter 1 boss with `placeholders()` empty and 0 console errors. Honest limitations: Cultivator falls back to `idle` for `walk`/`attack`/`hit`/`dead` until additional clips are authored; `game/deploy/` not rebuilt/pushed yet.
 
 ---
 
