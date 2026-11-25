@@ -57,7 +57,12 @@ export const NORMAL_ROOMS = 16;
  * rooms the balance sims play, so a re-roll has to be re-validated with `bun run check` (the sims
  * run fixed seeds; what changes is the pool, never a balance number).
  */
-const ROOM_SEED_SALT = 27;
+const CHAPTER_SEED_SALT: Readonly<Record<number, number>> = {
+  1: 27,
+  2: 27,
+  3: 5,
+  4: 27,
+};
 /** The boss room is the last room, so `chapterFromLevels` still sees 1..N contiguous. */
 export const BOSS_ROOM = NORMAL_ROOMS + 1;
 
@@ -119,17 +124,17 @@ function floorGid(chapter: number): number {
 
 /**
  * Detail decals per chapter, 1-based local ids of `floordetail.tsx` (16×5 tiles):
- * - row 0 (`1..16`): brown/tan pebbles (`2, 5, 10`), twigs (`6, 7, 8`), sand ripples (`11`),
+ * - row 0 (`1..16`): brown/tan pebbles (`2, 4, 5, 10`), twigs (`6, 7, 8`),
  *   shells/skulls/bones (`13, 14, 15`), small sandstone rock (`16`),
  * - row 1 (`17`): dark grey cobble/rubble pebbles,
- * - row 2 (`33..40`): green grass tufts, clover, sprouts and wildflowers (note: 32 is transparent),
- * - row 3 (`49..56`): pale/weathered ashen tufts for abandoned ruins.
+ * - row 2 (`33..40`): green grass tufts, clover, sprouts and wildflowers (note: 32 is transparent,
+ *   `49..56` are snowy winter grass and `11` is snow bumps — never used in temperate/ruins/desert).
  */
 const DETAIL_TILES: Readonly<Record<number, readonly number[]>> = {
-  1: [2, 5, 10, 33, 34, 35, 36, 37, 38, 39, 40],
+  1: [2, 5, 33, 34, 35, 36, 37, 38, 39, 40],
   2: [2, 17, 33, 34, 35, 36, 37, 39, 40],
-  3: [2, 5, 6, 7, 8, 14, 15, 17, 33, 36, 49, 50, 52, 53, 55, 56],
-  4: [3, 4, 5, 6, 10, 11, 13, 14, 15, 16],
+  3: [2, 5, 6, 7, 8, 14, 15, 17, 33, 35, 36],
+  4: [4, 5, 6, 10, 13, 14, 15, 16],
 };
 
 /** Stepping-stone / cobble decals stamped along the trail (`floordetail.tsx` 1-based locals). */
@@ -137,7 +142,7 @@ const PATH_STONE_TILES: Readonly<Record<number, readonly number[]>> = {
   1: [2, 5, 10],
   2: [2, 17],
   3: [2, 5, 17],
-  4: [5, 10, 11],
+  4: [5, 10, 16],
 };
 
 /**
@@ -176,14 +181,13 @@ const NATURE_TREES: readonly BorderStamp[] = [
   sheetStamp('nature', 24, 288, 0, 32, 32),
 ];
 
-/** 4×3 tree clusters and 3×3 big trees: the masses that break the row of single trees. */
+/** 4×3 tree clusters and 3×3 big trees: the masses that break the row of single trees (no snow tree). */
 const NATURE_MASSES: readonly BorderStamp[] = [
   sheetStamp('nature', 24, 0, 32, 64, 48),
   sheetStamp('nature', 24, 64, 32, 64, 48),
   sheetStamp('nature', 24, 256, 32, 64, 48),
   sheetStamp('nature', 24, 0, 288, 48, 48),
   sheetStamp('nature', 24, 48, 288, 48, 48),
-  sheetStamp('nature', 24, 96, 288, 48, 48),
 ];
 
 /** Mossy trees (2×2) and clusters (4×3) of `TilesetVillageAbandoned.png` (20 columns), ch3. */
@@ -198,13 +202,13 @@ const VILLAGE_MASSES: readonly BorderStamp[] = [
 
 /**
  * The tree line of a chapter's room edge (ch4 rings the room with its sand cliff instead). ch3
- * mixes the abandoned-village trees with the forest sheet: ruins swallowed by the wood.
+ * mixes the abandoned-village trees with dark/dead forest trees (no pink cherry-blossom trees).
  */
 function borderArt(chapter: number): { readonly trees: readonly BorderStamp[]; readonly masses: readonly BorderStamp[] } {
   if (chapter === 3) {
     return {
-      trees: [...VILLAGE_TREES, ...NATURE_TREES.filter((stamp, index) => index % 2 === 0)],
-      masses: [...VILLAGE_MASSES, ...NATURE_MASSES],
+      trees: [...VILLAGE_TREES, ...NATURE_TREES.filter((_, index) => index === 0 || index === 2 || index === 5 || index === 6)],
+      masses: [...VILLAGE_MASSES, ...NATURE_MASSES.filter((_, index) => index !== 3)],
     };
   }
   return { trees: NATURE_TREES, masses: NATURE_MASSES };
@@ -435,7 +439,6 @@ const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
       'house-mossy',
       'house-mossy-alt',
       'watchtower-ruined',
-      'ruined-shelter',
       'house-timber',
       'house-timber-large',
     ],
@@ -496,7 +499,7 @@ const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
       'camp-barrel',
       'desert-skull',
     ],
-    fences: [],
+    fences: ['desert-wall-segment'],
     walkOvers: ['desert-agave', 'desert-bush-dry', 'desert-fish-bones', 'desert-shell', 'desert-potted-palm'],
   },
 };
@@ -869,15 +872,30 @@ interface PatchPlan {
 }
 
 /**
- * The ground patch mask: noise → top N cells → `normalizePatchMask`. Cells over the river are
- * dropped (a patch cannot float on water) and every surviving cell sits in a full 2×2 block, so
- * the 13-piece sheet always has the piece the edge picker asks for.
+ * The ground patch mask: noise → top N cells → `normalizePatchMask`. Cells over the river or
+ * within 1 tile of `pathCells` are dropped before `normalizePatchMask`, so `path` (layer 3) and
+ * `ground` (layer 2) never overlap and never stamp conflicting baked-floor fringes.
  */
-function planPatches(rng: Rng, water: readonly WaterArea[]): PatchPlan {
+function planPatches(rng: Rng, water: readonly WaterArea[], pathCells: ReadonlySet<string>): PatchPlan {
+  const nearPath = new Array<boolean>(COLS * ROWS).fill(false);
+  for (const key of pathCells) {
+    const parts = key.split(',');
+    const px = Number(parts[0]);
+    const py = Number(parts[1]);
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const nx = px + dx;
+        const ny = py + dy;
+        if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS) nearPath[ny * COLS + nx] = true;
+      }
+    }
+  }
+
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const noise = noiseField(rng);
     const candidates: number[] = [];
     for (let index = 0; index < COLS * ROWS; index += 1) {
+      if (nearPath[index] === true) continue;
       const x = index % COLS;
       const y = Math.floor(index / COLS);
       const point = { x: x + 0.5, y: y + 0.5 };
@@ -1496,7 +1514,6 @@ function planGeometry(args: GeometryArgs): GeometryResult {
       'watchtower-ruined',
       'ruined-wall-cross',
       'broken-wall-arch',
-      'ruined-shelter',
       'big-pillar-ruined',
       'house-ruined',
       'ruined-house-orange',
@@ -1639,13 +1656,19 @@ function planGeometry(args: GeometryArgs): GeometryResult {
     return false;
   };
 
-  // -- Set piece: desert cliff plateau (a raised sand shelf with a rock face at its foot) ------
+  // -- Set piece: desert cliff plateau (a raised sand mesa from TilesetRelief) -------------------
   const placeCliff = (): boolean => {
     const widths = [6, 7, 8] as const;
     const width = widths[int(rng, widths.length)] ?? 8;
-    // Two rows of shelf and a two-row rock face: at one tile the face reads as planks, at two it
-    // reads as the cliff the demo's plateaus stand on.
-    const height = 4;
+    // Four rows from `TilesetRelief` (20 cols, 1-based locals): black-outlined top rim, flat pale
+    // sand shelf, overhang lip, and rock base rim — seamless mesa with zero ground-fringe gap.
+    const mesaRows: readonly (readonly [number, number, number])[] = [
+      [102, 103, 104],
+      [122, 123, 124],
+      [105, 106, 107],
+      [145, 146, 147],
+    ];
+    const height = mesaRows.length;
     for (let attempt = 0; attempt < 24; attempt += 1) {
       const minX = BORDER_TILES + 1;
       const minY = BORDER_TILES + 1;
@@ -1656,17 +1679,14 @@ function planGeometry(args: GeometryArgs): GeometryResult {
       if (!colliderFits(rect, rect, MIN_OBSTACLE_GAP)) continue;
       book.rects.push(rect);
       obstacles.push({ kind: 'edge', ...rect });
-      // The shelf (the top rows) joins the ground-patch mask, so `paintGround` gives it a fringed
-      // outer edge like every other shelf. The bottom rows are the cliff face on the front border
-      // layer: the shelf lip over the rock face, with its base rim at the bottom.
-      for (let col = 0; col < width; col += 1) {
-        for (let row = 0; row < height - 2; row += 1) plateauSurface.push(cellKey(x + col, y + row));
-        const lip = CLIFF_LIP[int(rng, CLIFF_LIP.length)] ?? 125;
-        const face = CLIFF_BASE[int(rng, CLIFF_BASE.length)] ?? 145;
-        plateauFace.push({ index: (y + height - 2) * COLS + (x + col), value: gid(chapter, 'relief', lip) });
-        plateauFace.push({ index: (y + height - 1) * COLS + (x + col), value: gid(chapter, 'relief', face) });
+      for (let row = 0; row < height; row += 1) {
+        const [west, mid, east] = mesaRows[row]!;
+        for (let col = 0; col < width; col += 1) {
+          const local = col === 0 ? west : col === width - 1 ? east : mid;
+          plateauFace.push({ index: (y + row) * COLS + (x + col), value: gid(chapter, 'relief', local) });
+        }
       }
-      // Tuck a sandstone rock or dry bush at the cliff foot, as in `desert-town.png`.
+      // Tuck a sandstone rock at the cliff foot, as in `desert-town.png`.
       placeNearHouse(rect, rng() < 0.6 ? 'rock-sandstone' : 'rock-sandstone-small');
       return true;
     }
@@ -1947,6 +1967,13 @@ export function validatePlan(plan: RoomPlan): string[] {
     }
   }
 
+  for (let index = 0; index < plan.ground.length; index += 1) {
+    if ((plan.ground[index] ?? 0) !== 0 && (plan.path[index] ?? 0) !== 0) {
+      problems.push(`ground/path overlap at ${index % COLS},${Math.floor(index / COLS)}`);
+      break;
+    }
+  }
+
   return problems;
 }
 
@@ -2211,15 +2238,16 @@ export function roomTmx(plan: RoomPlan): string {
  * Plan normal room `room` (1..`NORMAL_ROOMS`) of `chapter`. Retries with the next sub-seed when
  * validation fails, so the caller always gets a room that passes `validatePlan`.
  */
-export function generateRoom(chapter: number, room: number): RoomPlan {
+export function generateRoom(chapter: number, room: number, saltOverride?: number): RoomPlan {
   const theme = PROP_THEMES[chapter];
   if (theme === undefined) throw new Error(`chapter ${chapter} has no prop theme`);
   const baseFloor = floorGid(chapter);
+  const salt = saltOverride ?? CHAPTER_SEED_SALT[chapter] ?? 27;
 
   const failures: string[] = [];
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      const rng = mulberry32((chapter * 1_000_003 + room * 7919 + attempt * 104_729) ^ (ROOM_SEED_SALT * 2_654_435_761) >>> 0);
+      const rng = mulberry32((chapter * 1_000_003 + room * 7919 + attempt * 104_729) ^ (salt * 2_654_435_761) >>> 0);
       const playerStart = planPlayerStart(room, rng);
       const doors: Vec2[] = [
         { x: playerStart.x, y: ROWS - 0.5 },
@@ -2229,7 +2257,7 @@ export function generateRoom(chapter: number, room: number): RoomPlan {
 
       const border = planBorder(chapter, rng, doors);
       const path = planPath(chapter, rng, doors, playerStart, water, room % 2 === 0);
-      const patches = planPatches(rng, water);
+      const patches = planPatches(rng, water, path.cells);
 
       const blocked = new Set<string>([...border.blocked, ...path.blocked]);
       const { obstacles, props, village, ruins, oasis, plateauSurface, plateauFace, decorStamps } = planGeometry({

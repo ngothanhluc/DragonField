@@ -444,7 +444,7 @@ describe('desert elevation', () => {
       for (const [name, values] of file.layers) {
         values.forEach((value, index) => {
           const local = value - first + 1;
-          if (value === 0 || local < 121 || local > 187) return;
+          if (value === 0 || local < 101 || local > 187) return;
           cliffCells += 1;
           const x = (index % COLS) + 0.5;
           const y = Math.floor(index / COLS) + 0.5;
@@ -534,7 +534,6 @@ describe('chapter 3 village ruins (#67 R9)', () => {
     'house-mossy',
     'house-mossy-alt',
     'watchtower-ruined',
-    'ruined-shelter',
     'house-timber',
     'house-timber-large',
     'ruined-wall-cross',
@@ -626,5 +625,22 @@ describe('chapter 4 desert oasis pond & walled town (#67 R9)', () => {
       file.level.props.some((prop) => townKeys.has(prop.key)),
     );
     expect(withWalledTown.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('ground and path layers never overlap in any chapter room (no hard square baked-fringe seams)', () => {
+    const problems: string[] = [];
+    for (const chapter of CHAPTERS) {
+      for (const file of chapterRooms(chapter)) {
+        const ground = layer(file, 'ground');
+        const path = layer(file, 'path');
+        for (let index = 0; index < ground.length; index += 1) {
+          if ((ground[index] ?? 0) !== 0 && (path[index] ?? 0) !== 0) {
+            problems.push(`${file.level.id}: ground & path overlap at ${index % COLS},${Math.floor(index / COLS)}`);
+            break;
+          }
+        }
+      }
+    }
+    expect(problems).toEqual([]);
   });
 });

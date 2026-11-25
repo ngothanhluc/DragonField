@@ -327,7 +327,6 @@ const VILLAGE_PROPS: readonly PropDef[] = [
   house('house-mossy', VILLAGE, { x: 176, y: 0, width: 48, height: 48 }, HOUSE_WALLS_NARROW),
   house('house-mossy-alt', VILLAGE, { x: 176, y: 48, width: 48, height: 48 }, HOUSE_WALLS_NARROW),
   house('watchtower-ruined', VILLAGE, { x: 224, y: 0, width: 48, height: 80 }, { x: 2, y: 56, width: 44, height: 24 }),
-  house('ruined-shelter', VILLAGE, { x: 272, y: 0, width: 48, height: 46 }, { x: 2, y: 30, width: 44, height: 16 }),
   house('house-timber', VILLAGE, { x: 192, y: 96, width: 64, height: 96 }, { x: 2, y: 64, width: 60, height: 32 }),
   house('house-timber-large', VILLAGE, { x: 256, y: 80, width: 64, height: 80 }, { x: 2, y: 64, width: 60, height: 16 }),
   tree('tree-mossy', VILLAGE, { x: 64, y: 96, width: 32, height: 32 }, TRUNK_ROUND),
@@ -371,8 +370,8 @@ const VILLAGE_PROPS: readonly PropDef[] = [
   solid('ruined-statue-tall', {
     kind: 'structure',
     sheet: VILLAGE,
-    rect: { x: 0, y: 48, width: 32, height: 48 },
-    collider: { x: 2, y: 32, width: 28, height: 16 },
+    rect: { x: 0, y: 48, width: 32, height: 31 },
+    collider: { x: 2, y: 19, width: 28, height: 12 },
   }),
   solid('pillar-broken', {
     kind: 'structure',
@@ -456,12 +455,12 @@ const WALK_OVER_NATURE = NATURE_PROPS.filter((def) => !def.solid);
  * are walk-under (the same rule as the nature trees).
  */
 const DESERT_PROPS: readonly PropDef[] = [
-  house('desert-house', DESERT, { x: 96, y: 0, width: 56, height: 60 }, { x: 2, y: 44, width: 52, height: 14 }),
+  house('desert-house', DESERT, { x: 96, y: 0, width: 64, height: 48 }, { x: 2, y: 30, width: 60, height: 18 }),
   house('desert-dome', DESERT, { x: 0, y: 0, width: 48, height: 48 }, { x: 2, y: 32, width: 44, height: 16 }),
   house('desert-tower', DESERT, { x: 49, y: 0, width: 46, height: 80 }, { x: 4, y: 64, width: 38, height: 14 }),
-  house('desert-wall-tower', DESERT, { x: 224, y: 64, width: 48, height: 80 }, { x: 2, y: 58, width: 44, height: 22 }),
-  tree('palm-cluster', DESERT, { x: 160, y: 64, width: 64, height: 42 }, { x: 26, y: 30, width: 12, height: 10 }),
-  tree('palm-cluster-dusty', DESERT, { x: 160, y: 110, width: 64, height: 42 }, { x: 26, y: 30, width: 12, height: 10 }),
+  house('desert-wall-tower', DESERT, { x: 224, y: 64, width: 48, height: 96 }, { x: 2, y: 74, width: 44, height: 22 }),
+  tree('palm-cluster', DESERT, { x: 160, y: 65, width: 64, height: 46 }, { x: 26, y: 34, width: 12, height: 11 }),
+  tree('palm-cluster-dusty', DESERT, { x: 160, y: 113, width: 64, height: 46 }, { x: 26, y: 34, width: 12, height: 11 }),
   tree('palm-single', DESERT, { x: 160, y: 160, width: 32, height: 32 }, { x: 10, y: 21, width: 12, height: 10 }),
   tree('palm-single-alt', DESERT, { x: 192, y: 160, width: 32, height: 32 }, { x: 10, y: 21, width: 12, height: 10 }),
   solid('desert-wall-segment', {
