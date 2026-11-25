@@ -411,7 +411,9 @@ export class PlayerController extends Component {
 
     if (moving) {
       const previousFacing = this.facing;
-      this.facing = directionFromVector(moveIntent, this.facing);
+      // `directionFromVector` uses screen-space y-up (`+y` = `'up'`), matching `input2D` rather
+      // than tile-space y-down `moveIntent`.
+      this.facing = directionFromVector(input2D, this.facing);
       // A turn gets a small "pop" so movement carries weight.
       if (this.facing !== previousFacing) {
         this.startSquash(
