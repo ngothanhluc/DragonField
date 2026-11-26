@@ -26,8 +26,8 @@ export interface TmxFile {
   readonly xml: string;
 }
 
-/** Folders under `levels/` that are not chapter data (debug rooms for the browser proof). */
-const NON_CHAPTER_FOLDERS = new Set(['dev']);
+/** Folders under `levels/` that are not chapter data (debug rooms and the M21 village hub). */
+const NON_CHAPTER_FOLDERS = new Set(['dev', 'village']);
 
 /**
  * Every chapter `.tmx` file under `root` (recursive), sorted by path so tests are deterministic.

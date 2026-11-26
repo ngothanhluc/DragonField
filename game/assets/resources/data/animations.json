@@ -12124,6 +12124,886 @@
       "loop": true,
       "anchor": "center",
       "footPx": 8
+    },
+    "npc.villager-1": {
+      "sheet": "resources/art/npc/villager-1/villager-1.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 2,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-1-stand.down": {
+      "sheet": "resources/art/npc/villager-1/villager-1-stand-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-1-step.down": {
+      "sheet": "resources/art/npc/villager-1/villager-1-step-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-1-stand.up": {
+      "sheet": "resources/art/npc/villager-1/villager-1-stand-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-1-step.up": {
+      "sheet": "resources/art/npc/villager-1/villager-1-step-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-1-stand.left": {
+      "sheet": "resources/art/npc/villager-1/villager-1-stand-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-1-step.left": {
+      "sheet": "resources/art/npc/villager-1/villager-1-step-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-1-stand.right": {
+      "sheet": "resources/art/npc/villager-1/villager-1-stand-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-1-step.right": {
+      "sheet": "resources/art/npc/villager-1/villager-1-step-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2": {
+      "sheet": "resources/art/npc/villager-2/villager-2.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 2,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2-stand.down": {
+      "sheet": "resources/art/npc/villager-2/villager-2-stand-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2-step.down": {
+      "sheet": "resources/art/npc/villager-2/villager-2-step-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2-stand.up": {
+      "sheet": "resources/art/npc/villager-2/villager-2-stand-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2-step.up": {
+      "sheet": "resources/art/npc/villager-2/villager-2-step-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2-stand.left": {
+      "sheet": "resources/art/npc/villager-2/villager-2-stand-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2-step.left": {
+      "sheet": "resources/art/npc/villager-2/villager-2-step-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2-stand.right": {
+      "sheet": "resources/art/npc/villager-2/villager-2-stand-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-2-step.right": {
+      "sheet": "resources/art/npc/villager-2/villager-2-step-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3": {
+      "sheet": "resources/art/npc/villager-3/villager-3.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 2,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3-stand.down": {
+      "sheet": "resources/art/npc/villager-3/villager-3-stand-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3-step.down": {
+      "sheet": "resources/art/npc/villager-3/villager-3-step-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3-stand.up": {
+      "sheet": "resources/art/npc/villager-3/villager-3-stand-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3-step.up": {
+      "sheet": "resources/art/npc/villager-3/villager-3-step-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3-stand.left": {
+      "sheet": "resources/art/npc/villager-3/villager-3-stand-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3-step.left": {
+      "sheet": "resources/art/npc/villager-3/villager-3-step-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3-stand.right": {
+      "sheet": "resources/art/npc/villager-3/villager-3-stand-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-3-step.right": {
+      "sheet": "resources/art/npc/villager-3/villager-3-step-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4": {
+      "sheet": "resources/art/npc/villager-4/villager-4.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 2,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4-stand.down": {
+      "sheet": "resources/art/npc/villager-4/villager-4-stand-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4-step.down": {
+      "sheet": "resources/art/npc/villager-4/villager-4-step-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4-stand.up": {
+      "sheet": "resources/art/npc/villager-4/villager-4-stand-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4-step.up": {
+      "sheet": "resources/art/npc/villager-4/villager-4-step-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4-stand.left": {
+      "sheet": "resources/art/npc/villager-4/villager-4-stand-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4-step.left": {
+      "sheet": "resources/art/npc/villager-4/villager-4-step-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4-stand.right": {
+      "sheet": "resources/art/npc/villager-4/villager-4-stand-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-4-step.right": {
+      "sheet": "resources/art/npc/villager-4/villager-4-step-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5": {
+      "sheet": "resources/art/npc/villager-5/villager-5.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 2,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5-stand.down": {
+      "sheet": "resources/art/npc/villager-5/villager-5-stand-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5-step.down": {
+      "sheet": "resources/art/npc/villager-5/villager-5-step-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5-stand.up": {
+      "sheet": "resources/art/npc/villager-5/villager-5-stand-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5-step.up": {
+      "sheet": "resources/art/npc/villager-5/villager-5-step-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5-stand.left": {
+      "sheet": "resources/art/npc/villager-5/villager-5-stand-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5-step.left": {
+      "sheet": "resources/art/npc/villager-5/villager-5-step-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5-stand.right": {
+      "sheet": "resources/art/npc/villager-5/villager-5-stand-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.villager-5-step.right": {
+      "sheet": "resources/art/npc/villager-5/villager-5-step-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 2,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper-stand.down": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper-stand-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper-step.down": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper-step-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper-stand.up": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper-stand-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper-step.up": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper-step-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper-stand.left": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper-stand-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper-step.left": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper-step-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper-stand.right": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper-stand-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.shopkeeper-step.right": {
+      "sheet": "resources/art/npc/shopkeeper/shopkeeper-step-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 2,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master-stand.down": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master-stand-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master-step.down": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master-step-down.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "down"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master-stand.up": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master-stand-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master-step.up": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master-step-up.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "up"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master-stand.left": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master-stand-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master-step.left": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master-step-left.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "left"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master-stand.right": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master-stand-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "npc.dojo-master-step.right": {
+      "sheet": "resources/art/npc/dojo-master/dojo-master-step-right.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "animal.bird": {
+      "sheet": "resources/art/characters/animals/bird.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 2,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
     }
   }
 }
