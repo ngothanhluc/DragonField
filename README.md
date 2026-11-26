@@ -70,10 +70,13 @@ required, but it is appreciated. Links from the pack:
 - Itchio: <https://pixel-boy.itch.io/>
 - Pack: <https://pixel-boy.itch.io/ninja-adventure-asset-pack>
 
-The pack supplies the tilesets, backgrounds, base actors, FX, UI, the
-`NormalFont.ttf` pixel font and every music/SFX track. Additional pixel art is
-generated during development with `create-game-assets` and follows the style
-brief in `docs/art/gemini-style.md`. Extra audio packs are not used.
+The pack supplies the tilesets, backgrounds, base actors, FX, UI and every music/SFX track.
+Additional pixel art is generated during development with `create-game-assets` and follows the
+style brief in `docs/art/gemini-style.md`. Extra audio packs are not used.
+
+**VT323 Pixel Font** — designed by [Peter Hull](https://github.com/phoikoi/VT323) and bundled at
+`game/assets/resources/art/ui/fonts/NormalFont.ttf` for full Vietnamese diacritic coverage.
+Released under the **SIL Open Font License 1.1 (OFL-1.1)**.
 
 Engine: **Cocos Creator 3.8.8** (free, Cocos license).
 Code and game design: Yokai Field project.
@@ -82,4 +85,4 @@ Code and game design: Yokai Field project.
 
 Game code © the Yokai Field project. Pack art/audio © Pixel-boy & AAA, CC0 1.0
 (see the pack's `LICENSE.txt`; CC0 allows commercial use and does not require
-attribution). Generated art is © the Yokai Field project.
+attribution). VT323 font © Peter Hull, SIL Open Font License 1.1. Generated art is © the Yokai Field project.

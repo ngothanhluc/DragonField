@@ -16,7 +16,8 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT = join(HERE, '..', '..');
 const FONT = join(PROJECT, 'assets', 'resources', 'art', 'ui', 'fonts', 'NormalFont.ttf');
-const SPACE_ADVANCE = 682;
+/** Minimum space advance as a fraction of unitsPerEm (1/3 em prevents word collapse in Cocos). */
+const MIN_SPACE_EM_RATIO = 1 / 3;
 
 interface Table {
   readonly tag: string;
@@ -101,10 +102,15 @@ function spaceGlyph(buffer: Buffer, list: readonly Table[]): number {
   throw new Error('font has no space glyph');
 }
 
-export function fixFontSpacing(path: string = FONT): { readonly glyph: number; readonly oldAdvance: number } {
+export function fixFontSpacing(
+  path: string = FONT,
+): { readonly glyph: number; readonly oldAdvance: number; readonly newAdvance: number; readonly unitsPerEm: number } {
   const buffer = Buffer.from(readFileSync(path));
   const list = tables(buffer);
   const gid = spaceGlyph(buffer, list);
+  const head = table(list, 'head');
+  const unitsPerEm = buffer.readUInt16BE(head.offset + 18);
+  const minAdvance = Math.round(unitsPerEm * MIN_SPACE_EM_RATIO);
   const hhea = table(list, 'hhea');
   const hmtx = table(list, 'hmtx');
   const metrics = buffer.readUInt16BE(hhea.offset + 34);
@@ -112,7 +118,11 @@ export function fixFontSpacing(path: string = FONT): { readonly glyph: number; r
 
   const advanceAt = hmtx.offset + gid * 4;
   const oldAdvance = buffer.readUInt16BE(advanceAt);
-  buffer.writeUInt16BE(SPACE_ADVANCE, advanceAt);
+  if (oldAdvance >= minAdvance) {
+    return { glyph: gid, oldAdvance, newAdvance: oldAdvance, unitsPerEm };
+  }
+
+  buffer.writeUInt16BE(minAdvance, advanceAt);
   // Recompute table checksums.
   for (const entry of list) {
     if (entry.tag === 'head') continue;
@@ -122,7 +132,6 @@ export function fixFontSpacing(path: string = FONT): { readonly glyph: number; r
   }
 
   // head.checkSumAdjustment = 0 then whole-file checksum.
-  const head = table(list, 'head');
   buffer.writeUInt32BE(0, head.offset + 8);
   const headSum = checksum(buffer, head.offset, head.length);
   const headAt = 12 + list.indexOf(head) * 16;
@@ -132,5 +141,5 @@ export function fixFontSpacing(path: string = FONT): { readonly glyph: number; r
   buffer.writeUInt32BE((0xb1b0afba - whole) >>> 0, head.offset + 8);
 
   writeFileSync(path, buffer);
-  return { glyph: gid, oldAdvance };
+  return { glyph: gid, oldAdvance, newAdvance: minAdvance, unitsPerEm };
 }
