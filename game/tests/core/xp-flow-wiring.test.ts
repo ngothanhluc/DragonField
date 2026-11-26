@@ -53,7 +53,7 @@ import { SKILLS } from '../../assets/scripts/core/skills/pool';
 import { hasAlternativeSkills } from '../../assets/scripts/core/skills/roll';
 import { spendSharedGoldForReroll } from '../../assets/scripts/core/xp/reroll';
 import { xpDoorClearBonus, xpForKill } from '../../assets/scripts/core/xp/xp-curve';
-import { ICONS } from '../../assets/scripts/game/door-view';
+import { doorVerticalLayout, ICONS } from '../../assets/scripts/game/door-view';
 import { commitRunEnd } from '../../assets/scripts/game/run-end';
 import { xpOrbTierForValue } from '../../assets/scripts/game/xp-orb-view';
 import { loadTmxLevels } from '../helpers/tmx-levels';
@@ -157,8 +157,8 @@ describe('xpOrbTierForValue & xp door visual asset', () => {
 
     for (let chapter = 1; chapter <= 4; chapter += 1) {
       const bonus = xpDoorClearBonus(chapter);
-      const count = Math.min(5, Math.max(3, Math.floor(bonus / 25)));
-      expect(count).toBeGreaterThanOrEqual(3);
+      const count = Math.min(5, Math.max(2, Math.floor(bonus / 25)));
+      expect(count).toBeGreaterThanOrEqual(2);
       expect(count).toBeLessThanOrEqual(5);
       expect(xpOrbTierForValue(Math.floor(bonus / count))).toBe('large');
     }
@@ -172,5 +172,20 @@ describe('xpOrbTierForValue & xp door visual asset', () => {
     expect(existsSync(`${pngPath}.meta`)).toBe(true);
     const meta = JSON.parse(readFileSync(`${pngPath}.meta`, 'utf8')) as { importer?: string };
     expect(meta.importer).toBe('image');
+  });
+
+  it('places north-edge door portal, icon, and label inside the room bounds', () => {
+    const roomRows = 36;
+    const north = doorVerticalLayout(0.5);
+    const northWorldY = roomRows - 0.5;
+    expect(northWorldY + north.portalBottomY + 1.9).toBeLessThanOrEqual(roomRows);
+    expect(northWorldY + north.iconY).toBeLessThan(roomRows - 1);
+    expect(northWorldY + north.labelY).toBeLessThan(northWorldY + north.iconY);
+
+    const south = doorVerticalLayout(35.5);
+    const southWorldY = roomRows - 35.5;
+    expect(southWorldY + south.portalBottomY).toBeGreaterThanOrEqual(0);
+    expect(southWorldY + south.iconY).toBeGreaterThan(southWorldY + 1.9);
+    expect(southWorldY + south.labelY).toBeGreaterThan(southWorldY + south.iconY);
   });
 });

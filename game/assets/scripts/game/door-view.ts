@@ -99,10 +99,43 @@ const LABEL_OUTLINE_COLOR = new CocosColor(12, 10, 16, 255);
 /** Doorway size, world units (1 unit = 1 tile). */
 const DOOR_WIDTH = 1.3;
 const DOOR_HEIGHT = 1.9;
-/** Icon centre above the doorway's top edge, tiles. */
+/** Icon centre distance from the doorway edge, tiles. */
 const ICON_LIFT = 0.95;
-/** Label centre above the reward icon, tiles. */
+/** Label centre distance past the reward icon, tiles. */
 const LABEL_LIFT = 0.95;
+/** Doors within this many tiles of the top border (`tileY = 0`) project inward (downward) so icon + label stay inside the room. */
+const TOP_EDGE_DOOR_THRESHOLD_TILES = 3.5;
+/** Top padding inside the door mouth for north-edge doors so the portal hugs the top border. */
+const TOP_EDGE_PORTAL_INSET = 0.4;
+
+export interface DoorVerticalLayout {
+  readonly portalBottomY: number;
+  readonly iconY: number;
+  readonly labelY: number;
+}
+
+/**
+ * Local Y offsets (world units, y up) for a door's portal rect, reward icon, and label.
+ * North-edge doors (`tileY <= 3.5`) project downward into the room so neither the icon nor the
+ * `'XP +ELITE'` label clips off the top edge of the camera band.
+ */
+export function doorVerticalLayout(tileY: number): DoorVerticalLayout {
+  if (tileY <= TOP_EDGE_DOOR_THRESHOLD_TILES) {
+    const portalBottomY = -DOOR_HEIGHT + TOP_EDGE_PORTAL_INSET;
+    const iconY = portalBottomY - ICON_LIFT;
+    return {
+      portalBottomY,
+      iconY,
+      labelY: iconY - LABEL_LIFT,
+    };
+  }
+  const iconY = DOOR_HEIGHT + ICON_LIFT;
+  return {
+    portalBottomY: 0,
+    iconY,
+    labelY: iconY + LABEL_LIFT,
+  };
+}
 
 /** One cached frame per icon sheet (textures are already cached by `loadPixelTexture`). */
 const iconFrames = new Map<string, Promise<SpriteFrame>>();
@@ -152,23 +185,24 @@ export class DoorView {
   private buildDoor(spot: DoorSpot): void {
     const world = tileToWorld(spot.at);
     const tint = TINTS[spot.reward];
+    const layout = doorVerticalLayout(spot.at.y);
 
     const door = new CocosNode(`door-${spot.reward}`);
     door.parent = this.node;
     door.setPosition(world.x, world.y, 0);
 
-    this.addGlow(door, tint);
-    this.addFrame(door, tint);
-    this.addIcon(door, ICONS[spot.reward]);
-    this.addLabel(door, DOOR_LABELS[spot.reward], tint);
+    this.addGlow(door, tint, layout.portalBottomY);
+    this.addFrame(door, tint, layout.portalBottomY);
+    this.addIcon(door, ICONS[spot.reward], layout.iconY);
+    this.addLabel(door, DOOR_LABELS[spot.reward], tint, layout.labelY);
   }
 
-  /** World-space pixel label above the reward icon (scaled by ACTOR_SCALE on the door's layer). */
-  private addLabel(door: Node, text: string, tint: Color): void {
+  /** World-space pixel label next to the reward icon (scaled by ACTOR_SCALE on the door's layer). */
+  private addLabel(door: Node, text: string, tint: Color, localY: number): void {
     const node = new CocosNode('reward-label');
     node.layer = door.layer;
     node.parent = door;
-    node.setPosition(0, DOOR_HEIGHT + ICON_LIFT + LABEL_LIFT, 0);
+    node.setPosition(0, localY, 0);
     node.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
 
     const label: Label = node.addComponent(CocosLabel);
@@ -183,29 +217,29 @@ export class DoorView {
   }
 
   /** Translucent fill: one `Graphics` per colour (fill() repaints every sub-path still buffered). */
-  private addGlow(door: Node, tint: Color): void {
+  private addGlow(door: Node, tint: Color, bottomY: number): void {
     const node = new CocosNode('glow');
     node.parent = door;
     const graphics: Graphics = node.addComponent(CocosGraphics);
     graphics.fillColor = new CocosColor(tint.r, tint.g, tint.b, 90);
-    graphics.rect(-DOOR_WIDTH / 2, 0, DOOR_WIDTH, DOOR_HEIGHT);
+    graphics.rect(-DOOR_WIDTH / 2, bottomY, DOOR_WIDTH, DOOR_HEIGHT);
     graphics.fill();
   }
 
-  private addFrame(door: Node, tint: Color): void {
+  private addFrame(door: Node, tint: Color, bottomY: number): void {
     const node = new CocosNode('frame');
     node.parent = door;
     const graphics: Graphics = node.addComponent(CocosGraphics);
     graphics.lineWidth = 0.08;
     graphics.strokeColor = tint;
-    graphics.rect(-DOOR_WIDTH / 2, 0, DOOR_WIDTH, DOOR_HEIGHT);
+    graphics.rect(-DOOR_WIDTH / 2, bottomY, DOOR_WIDTH, DOOR_HEIGHT);
     graphics.stroke();
   }
 
-  private addIcon(door: Node, spec: IconSpec): void {
+  private addIcon(door: Node, spec: IconSpec, localY: number): void {
     const node = new CocosNode('reward-icon');
     node.parent = door;
-    node.setPosition(0, DOOR_HEIGHT + ICON_LIFT, 0);
+    node.setPosition(0, localY, 0);
 
     const sprite: Sprite = node.addComponent(CocosSprite);
     sprite.type = CocosSprite.Type.SIMPLE;

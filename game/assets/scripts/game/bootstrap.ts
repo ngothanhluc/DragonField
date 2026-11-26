@@ -1557,9 +1557,9 @@ export class Bootstrap extends Component {
     view.sync(this.xpVisuals as readonly XpOrbVisual[], this.xpOrbElapsedSec);
   }
 
-  /** Split `'xp'` door room-clear bonus into 3–5 large diamond orbs around `center`. */
+  /** Split `'xp'` door room-clear bonus into 2–5 large diamond orbs around `center`. */
   private spawnXpBonusBurst(totalBonus: number, center: Vec2, level: LevelData): void {
-    const count = Math.min(5, Math.max(3, Math.floor(totalBonus / 25)));
+    const count = Math.min(5, Math.max(2, Math.floor(totalBonus / 25)));
     const base = Math.floor(totalBonus / count);
     let remainder = totalBonus - base * count;
     const radius = 2.2;
