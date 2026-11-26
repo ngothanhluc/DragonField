@@ -11,6 +11,7 @@
  */
 import { Button as CocosButton, Layers, Node as CocosNode } from 'cc';
 import type { CharacterId } from '../../core/characters/roster';
+import { t } from '../../core/i18n';
 import { UPGRADE_TRACKS, type UpgradeTrack } from '../../core/meta/upgrades';
 import type { SaveData } from '../../core/save/save-data';
 import {
@@ -168,43 +169,39 @@ export async function buildShopScreen(options: ShopScreenOptions): Promise<MenuS
   );
   panel.setPosition(layout.panelX, layout.panelY, 0);
 
-  const title = createLabel(root, 'shop-title', 'META SHOP');
+  const title = createLabel(root, 'shop-title', t('shop.title'));
   title.fontSize = layout.titleFontSize;
   title.lineHeight = layout.titleFontSize + 4;
   title.color = MENU_TITLE_COLOR;
   title.node.setPosition(0, layout.titleY, 0);
 
-  const subtitle = createLabel(
-    root,
-    'shop-subtitle',
-    `Gold: ${save.gold}g · Permanent stat, utility & hero unlocks`,
-  );
+  const subtitle = createLabel(root, 'shop-subtitle', t('shop.subtitle', { gold: save.gold }));
   subtitle.fontSize = layout.subtitleFontSize;
-  subtitle.lineHeight = layout.subtitleFontSize + 2;
+  subtitle.lineHeight = layout.subtitleFontSize + 4;
   subtitle.color = MENU_TEXT_COLOR;
   subtitle.node.setPosition(0, layout.subtitleY, 0);
 
   const info = createLabel(root, 'shop-info-0', formatShopBonusSummary(save));
   info.fontSize = layout.infoFontSize;
-  info.lineHeight = layout.infoFontSize + 2;
+  info.lineHeight = layout.infoFontSize + 4;
   info.color = MENU_MUTED_COLOR;
   info.node.setPosition(0, layout.infoY, 0);
 
-  const statHeader = createLabel(root, 'shop-col-stat', 'STAT UPGRADES');
+  const statHeader = createLabel(root, 'shop-col-stat', t('shop.colStat'));
   statHeader.fontSize = layout.sectionHeaderFontSize;
-  statHeader.lineHeight = layout.sectionHeaderFontSize + 2;
+  statHeader.lineHeight = layout.sectionHeaderFontSize + 4;
   statHeader.color = MENU_TITLE_COLOR;
   statHeader.node.setPosition(layout.statHeaderX, layout.sectionHeaderY, 0);
 
-  const utilHeader = createLabel(root, 'shop-col-utility', 'UTILITY UPGRADES');
+  const utilHeader = createLabel(root, 'shop-col-utility', t('shop.colUtility'));
   utilHeader.fontSize = layout.sectionHeaderFontSize;
-  utilHeader.lineHeight = layout.sectionHeaderFontSize + 2;
+  utilHeader.lineHeight = layout.sectionHeaderFontSize + 4;
   utilHeader.color = MENU_TITLE_COLOR;
   utilHeader.node.setPosition(layout.utilityHeaderX, layout.sectionHeaderY, 0);
 
-  const heroHeader = createLabel(root, 'shop-col-heroes', 'HERO UNLOCKS');
+  const heroHeader = createLabel(root, 'shop-col-heroes', t('shop.colHeroes'));
   heroHeader.fontSize = layout.sectionHeaderFontSize;
-  heroHeader.lineHeight = layout.sectionHeaderFontSize + 2;
+  heroHeader.lineHeight = layout.sectionHeaderFontSize + 4;
   heroHeader.color = MENU_TITLE_COLOR;
   heroHeader.node.setPosition(layout.heroHeaderX, layout.sectionHeaderY, 0);
 
@@ -256,7 +253,7 @@ export async function buildShopScreen(options: ShopScreenOptions): Promise<MenuS
       root,
       'shop-open-character-select',
       {
-        label: 'Character select',
+        label: t('shop.characterSelect'),
         activate: openSelect,
       },
       frames,
@@ -271,7 +268,7 @@ export async function buildShopScreen(options: ShopScreenOptions): Promise<MenuS
   const backHandle = createMenuButton(
     root,
     'shop-back',
-    { label: 'Back', activate: options.onBack },
+    { label: t('common.back'), activate: options.onBack },
     frames,
     { width: backBox.width, height: backBox.height, fontSize: backBox.fontSize },
   );
@@ -303,13 +300,9 @@ export async function buildShopScreen(options: ShopScreenOptions): Promise<MenuS
 
   setFocus(focused, false);
 
-  const hint = createLabel(
-    root,
-    'shop-hint',
-    'Arrows navigate · Enter buy/open · Esc back',
-  );
+  const hint = createLabel(root, 'shop-hint', t('shop.hint'));
   hint.fontSize = layout.hintFontSize;
-  hint.lineHeight = layout.hintFontSize + 2;
+  hint.lineHeight = layout.hintFontSize + 4;
   hint.color = MENU_MUTED_COLOR;
   hint.node.setPosition(0, layout.hintY, 0);
 

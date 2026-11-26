@@ -21,6 +21,7 @@ import {
 } from 'cc';
 import { loadPixelTexture } from './assets/texture-cache';
 import { cachedSkillIcon, loadSkillIcon, SKILL_ICON_SIZE_PX } from './assets/skill-icon';
+import { localizeBossDisplayName, t } from '../core/i18n';
 import type { OwnedSkillStacks } from '../core/skills/pool';
 import { skillAbbreviation } from '../core/skills/description';
 import type { Vec2 } from '../core/math/vec2';
@@ -53,6 +54,8 @@ import {
   computeHudLayout,
   computeHudXpFillRatio,
   formatHudActionStatusText,
+  formatHudEnemiesText,
+  formatHudGoldText,
   formatHudLevelText,
   formatHudXpProgressText,
   isHudActionReady,
@@ -467,7 +470,7 @@ export class Hud extends Component {
     const prevDigits = this.shownGold >= 0 ? String(this.shownGold).length : 0;
     const nextDigits = String(clamped).length;
     this.shownGold = clamped;
-    label.string = `Gold ${clamped}`;
+    label.string = formatHudGoldText(clamped);
     // Only recompute plate bounds when crossing 5+ digit gold (`Gold 10000+`).
     if (prevDigits !== nextDigits && (prevDigits >= 5 || nextDigits >= 5)) {
       this.applyTopLeftLayout();
@@ -730,7 +733,7 @@ export class Hud extends Component {
       label.node.active = false;
       if (this.enemyIconNode !== null) this.enemyIconNode.active = false;
     } else {
-      label.string = `Enemies ${normalized}`;
+      label.string = formatHudEnemiesText(normalized);
       label.node.active = true;
       if (this.enemyIconNode !== null) this.enemyIconNode.active = true;
     }
@@ -853,7 +856,10 @@ export class Hud extends Component {
       this.shownBossName = name;
       this.shownBossPhase = phase;
       if (this.bossTitle !== null) {
-        this.bossTitle.string = `${name}  ·  PHASE ${phase}`;
+        this.bossTitle.string = t('boss.hudTitle', {
+          name: localizeBossDisplayName(name),
+          phase,
+        });
       }
     }
 
@@ -1154,7 +1160,7 @@ export class Hud extends Component {
     createStyledLabel(
       root,
       'door-hint-label',
-      'Choose a door',
+      t('hud.chooseDoor'),
       HUD_LABEL_FONT_SIZE,
       HUD_LABEL_LINE_HEIGHT,
       TEXT_COLOR,

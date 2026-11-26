@@ -28,6 +28,7 @@ import {
   type CharacterDef,
   type CharacterId,
 } from '../../core/characters/roster';
+import { t } from '../../core/i18n';
 import { canBuyCharacter, type SaveData } from '../../core/save/save-data';
 import {
   PANEL_WELL_INSET_PX,
@@ -342,7 +343,7 @@ export async function buildCharacterSelectScreen(
   );
   panel.setPosition(layout.panelX, layout.panelY, 0);
 
-  const title = createLabel(root, 'character-select-title', 'CHARACTER SELECT');
+  const title = createLabel(root, 'character-select-title', t('charSelect.title'));
   title.fontSize = layout.titleFontSize;
   title.lineHeight = layout.titleFontSize + 4;
   title.color = MENU_TITLE_COLOR;
@@ -354,7 +355,7 @@ export async function buildCharacterSelectScreen(
     formatCharacterSelectSubtitle(currentSave.gold),
   );
   subtitle.fontSize = layout.subtitleFontSize;
-  subtitle.lineHeight = layout.subtitleFontSize + 2;
+  subtitle.lineHeight = layout.subtitleFontSize + 4;
   subtitle.color = MENU_TEXT_COLOR;
   subtitle.node.setPosition(layout.panelX, layout.subtitleY, 0);
 
@@ -466,19 +467,15 @@ export async function buildCharacterSelectScreen(
   const backBuilt = createDynamicButtonControl(
     root,
     'character-back',
-    { label: 'Back', disabled: false },
+    { label: t('common.back'), disabled: false },
     frames,
     layout.backButton,
   );
   controls.push(backBuilt.control);
 
-  const hint = createLabel(
-    root,
-    'character-select-hint',
-    'Arrows/1-4 preview · Enter equip/unlock · Esc back',
-  );
+  const hint = createLabel(root, 'character-select-hint', t('charSelect.hint'));
   hint.fontSize = layout.hintFontSize;
-  hint.lineHeight = layout.hintFontSize + 2;
+  hint.lineHeight = layout.hintFontSize + 4;
   hint.color = MENU_MUTED_COLOR;
   hint.node.setPosition(layout.panelX, layout.hintY, 0);
 

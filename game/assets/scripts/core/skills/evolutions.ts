@@ -5,6 +5,7 @@
  * Evolutions trigger realistically within a 12–16 level-up run). Once unlocked and not yet
  * owned, it enters the level-up roll pool at `'legendary'` rarity.
  */
+import { getLocale, localizeSkillName, t, type Locale } from '../i18n';
 import { clampSkillStacks, getSkill, type SkillDef } from './pool';
 
 export interface EvolutionDef extends SkillDef {
@@ -197,6 +198,7 @@ export function resolveOwnedEvolutions(
 export function evolutionHintsForSkill(
   skillId: string,
   owned: ReadonlyMap<string, number>,
+  locale: Locale = getLocale(),
 ): EvolutionHint[] {
   const hints: EvolutionHint[] = [];
 
@@ -215,14 +217,18 @@ export function evolutionHintsForSkill(
     );
     const partnerOwned = partnerStacks >= evo.minStacksEach;
     const ready = partnerOwned && selfStacksAfterPick >= evo.minStacksEach;
+    const localizedPartner = localizeSkillName(partnerDef.id, partnerDef.name, locale);
+    const localizedEvo = localizeSkillName(evo.id, evo.name, locale);
 
     hints.push({
       evolution: evo,
       partnerId,
-      partnerName: partnerDef.name,
+      partnerName: localizedPartner,
       partnerOwned,
       ready,
-      text: ready ? `Ready: ${evo.name}` : `Pair: ${partnerDef.name}`,
+      text: ready
+        ? t('skillPick.hintReady', { name: localizedEvo }, locale)
+        : t('skillPick.hintPair', { name: localizedPartner }, locale),
     });
   }
 

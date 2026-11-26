@@ -6,6 +6,8 @@
  * modifiers paired with higher Gold rewards.
  */
 
+import { getLocale, t, type Locale } from '../i18n';
+
 /** Highest selectable Ascension tier. Tier 0 represents Normal difficulty. */
 export const MAX_ASCENSION = 5;
 
@@ -102,10 +104,12 @@ export function ascensionModifiers(level: number): AscensionModifiers {
   return ASCENSION_TABLE[clamped] ?? ASCENSION_TABLE[0]!;
 }
 
-/** Human-readable label (`Normal` for tier 0, `Ascension 1..5` for tiers 1–5). */
-export function ascensionLabel(level: number): string {
+/** Human-readable label (`Normal` / `Thường` for tier 0, `Ascension 1..5` / `Thăng Hoa 1..5` for tiers 1–5). */
+export function ascensionLabel(level: number, locale: Locale = getLocale()): string {
   const clamped = clampAscension(level);
-  return clamped === 0 ? 'Normal' : `Ascension ${clamped}`;
+  return clamped === 0
+    ? t('ascension.normal', undefined, locale)
+    : t('ascension.tier', { level: clamped }, locale);
 }
 
 function bonusPercent(mult: number): number {
@@ -116,37 +120,44 @@ function bonusPercent(mult: number): number {
  * Compact UI description lines for Chapter Select showing active modifiers for `level`.
  * Wraps entries cleanly at `maxLineLength` so labels never clip at 512×288 design resolution.
  */
-export function ascensionSummaryLines(level: number, maxLineLength = 46): string[] {
+export function ascensionSummaryLines(
+  level: number,
+  maxLineLength = 46,
+  locale: Locale = getLocale(),
+): string[] {
   const mods = ascensionModifiers(level);
   if (mods.level === 0) {
-    return ['Standard difficulty'];
+    return [t('ascension.standardDifficulty', undefined, locale)];
   }
 
   const parts: string[] = [];
   if (mods.extraElitesPerRoom > 0) {
-    const noun = mods.extraElitesPerRoom === 1 ? 'Elite' : 'Elites';
-    parts.push(`+${mods.extraElitesPerRoom} ${noun}/room`);
+    parts.push(
+      mods.extraElitesPerRoom === 1
+        ? t('ascension.extraElitesOne', undefined, locale)
+        : t('ascension.extraElitesMany', { count: mods.extraElitesPerRoom }, locale),
+    );
   }
   if (mods.enemyHealthMult > 1) {
-    parts.push(`+${bonusPercent(mods.enemyHealthMult)}% Enemy HP`);
+    parts.push(t('ascension.enemyHp', { pct: bonusPercent(mods.enemyHealthMult) }, locale));
   }
   if (mods.bossHealthMult > 1) {
-    parts.push(`+${bonusPercent(mods.bossHealthMult)}% Boss HP`);
+    parts.push(t('ascension.bossHp', { pct: bonusPercent(mods.bossHealthMult) }, locale));
   }
   if (mods.enemyDamageMult > 1) {
-    parts.push(`+${bonusPercent(mods.enemyDamageMult)}% Enemy DMG`);
+    parts.push(t('ascension.enemyDmg', { pct: bonusPercent(mods.enemyDamageMult) }, locale));
   }
   if (mods.enemySpeedMult > 1) {
-    parts.push(`+${bonusPercent(mods.enemySpeedMult)}% Speed`);
+    parts.push(t('ascension.speed', { pct: bonusPercent(mods.enemySpeedMult) }, locale));
   }
   if (mods.enemyFireRateMult > 1) {
-    parts.push(`+${bonusPercent(mods.enemyFireRateMult)}% Fire rate`);
+    parts.push(t('ascension.fireRate', { pct: bonusPercent(mods.enemyFireRateMult) }, locale));
   }
   if (mods.shopPriceMult > 1) {
-    parts.push(`+${bonusPercent(mods.shopPriceMult)}% Shop price`);
+    parts.push(t('ascension.shopPrice', { pct: bonusPercent(mods.shopPriceMult) }, locale));
   }
   if (mods.goldRewardMult > 1) {
-    parts.push(`+${bonusPercent(mods.goldRewardMult)}% Gold`);
+    parts.push(t('ascension.gold', { pct: bonusPercent(mods.goldRewardMult) }, locale));
   }
 
   const lines: string[] = [];

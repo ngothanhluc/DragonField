@@ -67,22 +67,25 @@ describe('shop offer state: buy highlight or dimmed with a reason', () => {
     expect(shopOfferState(refill, 40, none)).toEqual({ kind: 'buy', reason: null });
   });
 
-  it('an offer the player cannot afford is dimmed with NOT ENOUGH GOLD', () => {
+  it('an offer the player cannot afford is dimmed with localized not-enough-gold reason', () => {
     expect(shopOfferState(sharpen, 14, none)).toEqual({
       kind: 'not-enough-gold',
-      reason: 'NOT ENOUGH GOLD',
+      reason: 'KHÔNG ĐỦ VÀNG',
     });
-    expect(shopOfferState(refill, 0, none)).toEqual({
+    expect(shopOfferState(refill, 0, none, 'en')).toEqual({
       kind: 'not-enough-gold',
       reason: 'NOT ENOUGH GOLD',
     });
   });
 
-  it('a skill at its stack cap is dimmed with ALREADY MAXED, even when affordable', () => {
+  it('a skill at its stack cap is dimmed with localized maxed reason, even when affordable', () => {
     const owned = new Map([['homing', 1]]);
-    expect(shopOfferState(homing, 999, owned)).toEqual({ kind: 'maxed', reason: 'ALREADY MAXED' });
+    expect(shopOfferState(homing, 999, owned)).toEqual({ kind: 'maxed', reason: 'ĐÃ TỐI ĐA' });
     // Maxed wins over gold, like the purchase check in bootstrap.
-    expect(shopOfferState(homing, 0, owned)).toEqual({ kind: 'maxed', reason: 'ALREADY MAXED' });
+    expect(shopOfferState(homing, 0, owned, 'en')).toEqual({
+      kind: 'maxed',
+      reason: 'ALREADY MAXED',
+    });
   });
 
   it('a skill below its cap is not maxed', () => {
@@ -92,7 +95,7 @@ describe('shop offer state: buy highlight or dimmed with a reason', () => {
   it('an unknown skill id is treated as maxed, never as buyable', () => {
     expect(shopOfferState({ item: 'no-such-skill', price: 1 }, 999, none)).toEqual({
       kind: 'maxed',
-      reason: 'ALREADY MAXED',
+      reason: 'ĐÃ TỐI ĐA',
     });
   });
 });

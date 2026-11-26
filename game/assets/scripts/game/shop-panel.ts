@@ -22,6 +22,7 @@ import {
   tween,
   view,
 } from 'cc';
+import { localizeRarity, localizeSkillName, t } from '../core/i18n';
 import { describeSkill } from '../core/skills/description';
 import { getSkill, type BaseSkillDef } from '../core/skills/pool';
 import type { ShopOffer } from '../core/run/special-rooms';
@@ -133,7 +134,7 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
     if (messageHolder.label !== null) messageHolder.label.string = text;
   };
   const setGold = (value: number): void => {
-    if (goldHolder.label !== null) goldHolder.label.string = `Gold ${value}`;
+    if (goldHolder.label !== null) goldHolder.label.string = t('hud.gold', { gold: value });
   };
 
   // One highlight shared by mouse and keyboard (`core/run/shop-focus` decides it). Nothing is
@@ -191,7 +192,7 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
     }
     busy = false;
     playSfx('ui-move');
-    setMessage(result.message ?? 'Not enough gold');
+    setMessage(result.message ?? t('runShop.notEnoughGold'));
     setGold(gold);
     // The refusal may have been about gold: dim the card the player is on right away.
     renderFocus();
@@ -252,48 +253,49 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
     options.priceMultiplier > 1
       ? Math.round((options.priceMultiplier - 1) * 100)
       : 0;
-  const titleText = surchargePct > 0 ? `SHOP (+${surchargePct}%)` : 'SHOP';
+  const titleText =
+    surchargePct > 0 ? t('runShop.titleSurcharge', { pct: surchargePct }) : t('runShop.title');
   const title = createLabel(root, 'shop-title', titleText);
   title.fontSize = 20;
-  title.lineHeight = 24;
+  title.lineHeight = 25;
   title.color = TITLE_COLOR;
   title.node.setPosition(0, 112, 0);
 
-  const hint = createLabel(
-    root,
-    'shop-hint',
-    'Click a card, 1 / 2 / 3, Arrows + Enter, or Esc / LEAVE',
-  );
+  const hint = createLabel(root, 'shop-hint', t('runShop.hint'));
   hint.fontSize = 10;
+  hint.lineHeight = 14;
   hint.color = MUTED_COLOR;
   hint.node.setPosition(0, 92, 0);
 
-  const goldLabel = createLabel(root, 'shop-gold', `Gold ${gold}`);
+  const goldLabel = createLabel(root, 'shop-gold', t('hud.gold', { gold }));
   goldLabel.fontSize = 12;
+  goldLabel.lineHeight = 16;
   goldLabel.color = PRICE_COLOR;
   goldLabel.node.setPosition(-182, 112, 0);
   goldHolder.label = goldLabel;
 
   // Mouse exit: in fullscreen the browser eats Esc, so Esc must never be the only way out
   // (AGENTS.md trap). A player with 0 gold can always leave through this button.
-  const leave = createBackdropPanel(root, 'shop-leave', 76, 26, 150);
-  leave.setPosition(190, 112, 0);
+  const leave = createBackdropPanel(root, 'shop-leave', 84, 26, 150);
+  leave.setPosition(186, 112, 0);
   const leaveTransform: UITransform =
     leave.getComponent(CocosUITransform) ?? leave.addComponent(CocosUITransform);
-  leaveTransform.setContentSize(76, 26);
+  leaveTransform.setContentSize(84, 26);
   const leaveButton: Button = leave.addComponent(CocosButton);
   leaveButton.transition = CocosButton.Transition.NONE;
   leave.on(CocosButton.EventType.CLICK, () => {
     playSfx('ui-move');
     close();
   });
-  const leaveLabel = createLabel(leave, 'shop-leave-label', 'LEAVE');
+  const leaveLabel = createLabel(leave, 'shop-leave-label', t('runShop.leave'));
   leaveLabel.fontSize = 11;
+  leaveLabel.lineHeight = 15;
   leaveLabel.color = TEXT_COLOR;
   leaveLabel.node.setPosition(0, 0, 0);
 
   const message = createLabel(root, 'shop-message', pendingMessage ?? '');
   message.fontSize = 12;
+  message.lineHeight = 16;
   message.color = DENIED_COLOR;
   message.node.setPosition(0, -116, 0);
   messageHolder.label = message;
@@ -301,7 +303,7 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
   // Why a dimmed card cannot be bought; follows the highlighted card, blank when it can buy.
   const reason = createLabel(root, 'shop-reason', '');
   reason.fontSize = 9;
-  reason.lineHeight = 10;
+  reason.lineHeight = 13;
   reason.color = DENIED_COLOR;
   reason.node.setPosition(0, REASON_Y, 0);
   reasonHolder.label = reason;
@@ -419,38 +421,41 @@ function makeCard(
       .catch(() => undefined);
   }
 
-  const nameText = skill === null ? 'Heart Refill' : skill.name;
+  const nameText =
+    skill === null ? t('runShop.heartRefill') : localizeSkillName(skill.id, skill.name);
   const name = createLabel(node, 'name', nameText);
   name.fontSize = 13;
-  name.lineHeight = 15;
+  name.lineHeight = 17;
   name.color = TEXT_COLOR;
   name.node.setPosition(0, 6, 0);
 
   const kind = createLabel(
     node,
     'kind',
-    skill === null ? 'RESTORE' : skill.rarity.toUpperCase(),
+    skill === null ? t('runShop.restoreKind') : localizeRarity(skill.rarity),
   );
   kind.fontSize = 9;
+  kind.lineHeight = 13;
   kind.color = skill === null ? new CocosColor(255, 130, 150, 255) : RARITY_COLORS[skill.rarity];
   kind.node.setPosition(0, -6, 0);
 
   const effect = createLabel(
     node,
     'effect',
-    skill === null ? 'Restore all hearts' : describeSkill(skill),
+    skill === null ? t('runShop.restoreEffect') : describeSkill(skill),
   );
   effect.fontSize = 9;
-  effect.lineHeight = 11;
+  effect.lineHeight = 13;
   effect.color = TEXT_COLOR;
   effect.enableWrapText = true;
   const effectTransform: UITransform | null = effect.node.getComponent(CocosUITransform);
-  if (effectTransform !== null) effectTransform.setContentSize(CARD_WIDTH - 16, 38);
+  if (effectTransform !== null) effectTransform.setContentSize(CARD_WIDTH - 16, 40);
   effect.node.setPosition(0, -32, 0);
   effect.updateRenderData?.(true);
 
-  const price = createLabel(node, 'price', `${offer.price} GOLD`);
+  const price = createLabel(node, 'price', t('runShop.price', { price: offer.price }));
   price.fontSize = 10;
+  price.lineHeight = 14;
   price.color = PRICE_COLOR;
   price.node.setPosition(0, -CARD_HEIGHT / 2 + 12, 0);
 

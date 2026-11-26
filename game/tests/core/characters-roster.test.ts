@@ -194,30 +194,35 @@ describe('Character roster — lookup and chapter-clear OR gold-buy unlock rules
     expect(isCharacterUnlocked('cultivator', fresh)).toBe(false);
     expect(isCharacterUnlocked('unknown', fresh)).toBe(false);
 
-    expect(characterUnlockReason('ninja', fresh)).toBe('Unlocked by default');
+    expect(characterUnlockReason('ninja', fresh)).toBe('Mở sẵn từ đầu');
     expect(characterUnlockReason('archer', fresh)).toBe(
+      `Vượt Chương 1 hoặc mua ${CHARACTERS.archer.unlockGoldCost} vàng`,
+    );
+    expect(characterUnlockReason('ninja', fresh, 'en')).toBe('Unlocked by default');
+    expect(characterUnlockReason('archer', fresh, 'en')).toBe(
       `Clear Chapter 1 or buy for ${CHARACTERS.archer.unlockGoldCost} gold`,
     );
-    expect(characterUnlockReason('mage', fresh)).toBe(
+    expect(characterUnlockReason('mage', fresh, 'en')).toBe(
       `Clear Chapter 2 or buy for ${CHARACTERS.mage.unlockGoldCost} gold`,
     );
-    expect(characterUnlockReason('cultivator', fresh)).toBe(
+    expect(characterUnlockReason('cultivator', fresh, 'en')).toBe(
       `Clear Chapter 3 or buy for ${CHARACTERS.cultivator.unlockGoldCost} gold`,
     );
-    expect(characterUnlockReason('unknown', fresh)).toBe('Unknown character');
+    expect(characterUnlockReason('unknown', fresh, 'en')).toBe('Unknown character');
   });
 
   it('unlocks archer after Ch1 clear, mage after Ch2 clear, and cultivator after Ch3 clear', () => {
     const afterCh1 = unlockNextChapter(createDefaultSave(), 1);
     expect(afterCh1.chaptersUnlocked).toBe(2);
     expect(getUnlockedCharacters(afterCh1).map((c) => c.id)).toEqual(['ninja', 'archer']);
-    expect(characterUnlockReason('archer', afterCh1)).toBe('Unlocked (Chapter 1 cleared)');
+    expect(characterUnlockReason('archer', afterCh1)).toBe('Đã mở (Vượt Chương 1)');
+    expect(characterUnlockReason('archer', afterCh1, 'en')).toBe('Unlocked (Chapter 1 cleared)');
     expect(isCharacterUnlocked('mage', afterCh1)).toBe(false);
 
     const afterCh2 = unlockNextChapter(afterCh1, 2);
     expect(afterCh2.chaptersUnlocked).toBe(3);
     expect(getUnlockedCharacters(afterCh2).map((c) => c.id)).toEqual(['ninja', 'archer', 'mage']);
-    expect(characterUnlockReason('mage', afterCh2)).toBe('Unlocked (Chapter 2 cleared)');
+    expect(characterUnlockReason('mage', afterCh2, 'en')).toBe('Unlocked (Chapter 2 cleared)');
     expect(isCharacterUnlocked('cultivator', afterCh2)).toBe(false);
 
     const afterCh3 = unlockNextChapter(afterCh2, 3);
@@ -228,7 +233,9 @@ describe('Character roster — lookup and chapter-clear OR gold-buy unlock rules
       'mage',
       'cultivator',
     ]);
-    expect(characterUnlockReason('cultivator', afterCh3)).toBe('Unlocked (Chapter 3 cleared)');
+    expect(characterUnlockReason('cultivator', afterCh3, 'en')).toBe(
+      'Unlocked (Chapter 3 cleared)',
+    );
   });
 
   it('unlocks locked classes early via Meta gold purchase even at chaptersUnlocked === 1', () => {
@@ -238,7 +245,8 @@ describe('Character roster — lookup and chapter-clear OR gold-buy unlock rules
     expect(isCharacterUnlocked('archer', withMage)).toBe(false);
     expect(isCharacterUnlocked('cultivator', withMage)).toBe(false);
     expect(getUnlockedCharacters(withMage).map((c) => c.id)).toEqual(['ninja', 'mage']);
-    expect(characterUnlockReason('mage', withMage)).toBe('Unlocked (Purchased)');
+    expect(characterUnlockReason('mage', withMage)).toBe('Đã mở (Đã mua)');
+    expect(characterUnlockReason('mage', withMage, 'en')).toBe('Unlocked (Purchased)');
   });
 
   it('resolveSelectedCharacter honors valid unlocked choices and falls back to ninja when locked or corrupt', () => {

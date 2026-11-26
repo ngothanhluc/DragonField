@@ -21,6 +21,7 @@ import {
   UITransform as CocosUITransform,
   Vec2 as EngineVec2,
 } from 'cc';
+import { localizeDoorReward } from '../core/i18n';
 import type { Vec2 } from '../core/math/vec2';
 import type { DoorReward } from '../core/run/doors';
 import { loadPixelTexture } from './assets/texture-cache';
@@ -83,15 +84,6 @@ const TINTS: Readonly<Record<DoorReward, Color>> = {
   shop: new CocosColor(120, 230, 150, 255),
   chest: new CocosColor(205, 150, 255, 255),
   boss: new CocosColor(255, 110, 90, 255),
-};
-
-const DOOR_LABELS: Readonly<Record<DoorReward, string>> = {
-  xp: 'XP +ELITE',
-  gold: 'GOLD',
-  heal: 'HEAL',
-  shop: 'SHOP',
-  chest: 'CHEST',
-  boss: 'BOSS',
 };
 
 const LABEL_OUTLINE_COLOR = new CocosColor(12, 10, 16, 255);
@@ -194,7 +186,7 @@ export class DoorView {
     this.addGlow(door, tint, layout.portalBottomY);
     this.addFrame(door, tint, layout.portalBottomY);
     this.addIcon(door, ICONS[spot.reward], layout.iconY);
-    this.addLabel(door, DOOR_LABELS[spot.reward], tint, layout.labelY);
+    this.addLabel(door, localizeDoorReward(spot.reward), tint, layout.labelY);
   }
 
   /** World-space pixel label next to the reward icon (scaled by ACTOR_SCALE on the door's layer). */
@@ -208,7 +200,7 @@ export class DoorView {
     const label: Label = node.addComponent(CocosLabel);
     label.string = text;
     label.fontSize = 8;
-    label.lineHeight = 10;
+    label.lineHeight = 12;
     label.color = tint;
     label.enableOutline = true;
     label.outlineColor = LABEL_OUTLINE_COLOR;

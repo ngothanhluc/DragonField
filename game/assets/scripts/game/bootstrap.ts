@@ -49,6 +49,7 @@ import {
   type CharacterDef,
 } from '../core/characters/roster';
 import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
+import { setLocale, t } from '../core/i18n';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
 import { DOORS_TUNING, SPECIAL_ROOMS_TUNING, XP_TUNING } from '../core/enemies/tuning';
@@ -864,6 +865,7 @@ export class Bootstrap extends Component {
     this.saveRepo = createSaveRepository();
     this.runSaveRepo = createRunSaveRepository();
     this.save = this.saveRepo.load();
+    setLocale(this.save.settings.locale);
     if (this.saveRepo.recoveredFromBackup) {
       console.warn('[YokaiField] Recovered profile save from .bak backup.');
     } else if (this.saveRepo.lastLoadError !== null) {
@@ -2149,7 +2151,7 @@ export class Bootstrap extends Component {
     this.roomClearElapsedMs = 0;
     this.clearClockMs = combat.clockMs;
     this.roomClearBanner?.destroy();
-    this.roomClearBanner = this.showBanner('room-clear', 'ROOM CLEAR', END_WIN_COLOR, 20);
+    this.roomClearBanner = this.showBanner('room-clear', t('banner.roomClear'), END_WIN_COLOR, 20);
     // Celebrate the clear — except on the chapter's last room, where `chapter-clear` plays
     // ~1 s later from `finishWin()`.
     if (!finalRoom) playSfx('room-clear');
@@ -2930,26 +2932,30 @@ export class Bootstrap extends Component {
     const repo = this.saveRepo;
     const offer = this.shopOfferList[index];
     if (save === null || repo === null || offer === undefined) {
-      return { ok: false, gold: this.shopGoldTotal(), message: 'SHOP UNAVAILABLE' };
+      return { ok: false, gold: this.shopGoldTotal(), message: t('runShop.unavailable') };
     }
 
     if (offer.item !== 'heart-refill') {
       const def = safeSkill(offer.item);
       if (def === null || this.skills.stacks(def.id) >= def.maxStacks) {
-        return { ok: false, gold: this.shopGoldTotal(), message: 'ALREADY MAXED' };
+        return { ok: false, gold: this.shopGoldTotal(), message: t('runShop.alreadyMaxed') };
       }
     }
 
     const result = buyFromShop(save, this.rewards.goldEarned, offer);
     if (!result.ok) {
-      return { ok: false, gold: shopGold(result.save, result.runGold), message: 'NOT ENOUGH GOLD' };
+      return {
+        ok: false,
+        gold: shopGold(result.save, result.runGold),
+        message: t('runShop.notEnoughGold'),
+      };
     }
 
     try {
       repo.save(result.save);
     } catch (error: unknown) {
       console.warn(`[YokaiField] Could not write the shop purchase: ${errorMessage(error)}`);
-      return { ok: false, gold: this.shopGoldTotal(), message: 'COULD NOT SAVE' };
+      return { ok: false, gold: this.shopGoldTotal(), message: t('runShop.couldNotSave') };
     }
     this.save = result.save;
 
@@ -3210,8 +3216,9 @@ export class Bootstrap extends Component {
     return save === null ? this.rewards.goldEarned : shopGold(save, this.rewards.goldEarned);
   }
 
-  /** Accessibility flags (shake, damage numbers) + effects mode applied immediately. */
+  /** Accessibility flags (shake, damage numbers), effects mode, and UI locale applied immediately. */
   private setFeelSettings(settings: Settings): void {
+    setLocale(settings.locale);
     if (this.camera !== null) this.camera.shake.enabled = settings.screenShake;
     if (this.feel !== null) this.feel.damageNumbersEnabled = settings.damageNumbers;
     this.player?.setEffectsMode(settings.effects);
@@ -3951,7 +3958,7 @@ export class Bootstrap extends Component {
     console.error(`[YokaiField] Bootstrap failed: ${message}`);
 
     try {
-      this.showBanner('load-error', `LOAD FAILED\n${message}`, END_LOSS_COLOR);
+      this.showBanner('load-error', t('banner.loadFailed', { message }), END_LOSS_COLOR);
     } catch (nested: unknown) {
       console.error(`[YokaiField] Could not build the error screen: ${errorMessage(nested)}`);
     }

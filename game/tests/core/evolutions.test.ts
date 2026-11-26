@@ -81,8 +81,18 @@ describe('Legendary Evolutions (M13, ADR-022)', () => {
     ).toEqual(['phantom-volley', 'blightfrost']);
   });
 
-  it('provides accurate pairing hints for prerequisite skill cards', () => {
-    const noneOwned = evolutionHintsForSkill('twin-shot', new Map());
+  it('provides accurate pairing hints for prerequisite skill cards in Vietnamese (default) and English', () => {
+    const noneOwnedVi = evolutionHintsForSkill('twin-shot', new Map());
+    expect(noneOwnedVi).toHaveLength(1);
+    expect(noneOwnedVi[0]).toMatchObject({
+      partnerId: 'piercing',
+      partnerName: 'Xuyên Thấu',
+      partnerOwned: false,
+      ready: false,
+      text: 'Ghép: Xuyên Thấu',
+    });
+
+    const noneOwned = evolutionHintsForSkill('twin-shot', new Map(), 'en');
     expect(noneOwned).toHaveLength(1);
     expect(noneOwned[0]).toMatchObject({
       partnerId: 'piercing',
@@ -92,7 +102,15 @@ describe('Legendary Evolutions (M13, ADR-022)', () => {
       text: 'Pair: Piercing',
     });
 
-    const partnerOwned = evolutionHintsForSkill('twin-shot', new Map([['piercing', 1]]));
+    const partnerOwnedVi = evolutionHintsForSkill('twin-shot', new Map([['piercing', 1]]));
+    expect(partnerOwnedVi[0]).toMatchObject({
+      partnerId: 'piercing',
+      partnerOwned: true,
+      ready: true,
+      text: 'Đủ bộ: Loạt Đạn Ảo Ảnh',
+    });
+
+    const partnerOwned = evolutionHintsForSkill('twin-shot', new Map([['piercing', 1]]), 'en');
     expect(partnerOwned).toHaveLength(1);
     expect(partnerOwned[0]).toMatchObject({
       partnerId: 'piercing',

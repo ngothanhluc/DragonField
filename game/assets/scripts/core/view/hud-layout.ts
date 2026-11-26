@@ -18,6 +18,7 @@
  *
  * Pure arithmetic — no `cc` import.
  */
+import { getLocale, t, type Locale } from '../i18n';
 import type { Vec2 } from '../math/vec2';
 import { letterboxRect, worldToUiScale } from './letterbox';
 
@@ -291,20 +292,21 @@ export function estimateHudLabelWidth(charCount: number, fontSize = HUD_LABEL_FO
   return Math.ceil(Math.max(0, charCount) * fontSize * GLYPH_WIDTH_ESTIMATE);
 }
 
-export function formatHudGoldText(gold: number): string {
+export function formatHudGoldText(gold: number, locale: Locale = getLocale()): string {
   const safe = Number.isFinite(gold) ? Math.max(0, Math.floor(gold)) : 0;
-  return `Gold ${safe}`;
+  return t('hud.gold', { gold: safe }, locale);
 }
 
-export function formatHudRoomText(roomLabel: string): string {
+export function formatHudRoomText(roomLabel: string, locale: Locale = getLocale()): string {
   const trimmed = roomLabel.trim();
-  if (trimmed === '') return 'Room 1/9';
-  return trimmed.startsWith('Room ') ? trimmed : `Room ${trimmed}`;
+  const value = trimmed === '' ? '1/9' : trimmed;
+  if (value.startsWith('Room ') || value.startsWith('Phòng ')) return value;
+  return t('hud.room', { room: value }, locale);
 }
 
-export function formatHudEnemiesText(enemiesLeft: number): string {
+export function formatHudEnemiesText(enemiesLeft: number, locale: Locale = getLocale()): string {
   const safe = Number.isFinite(enemiesLeft) ? Math.max(0, Math.floor(enemiesLeft)) : 0;
-  return `Enemies ${safe}`;
+  return t('hud.enemies', { count: safe }, locale);
 }
 
 /** Normalize a player XP level to an integer `>= 1`. */
@@ -327,9 +329,9 @@ export function computeHudXpFillRatio(currentXp: number, requiredXp: number): nu
   return Math.min(1, Math.max(0, currentXp / requiredXp));
 }
 
-/** Format the level badge text (`LV 1`, `LV 12`, …). */
-export function formatHudLevelText(level: number): string {
-  return `LV ${normalizeHudXpLevel(level)}`;
+/** Format the level badge text (`Cấp 1` / `LV 1`, …). */
+export function formatHudLevelText(level: number, locale: Locale = getLocale()): string {
+  return t('hud.level', { level: normalizeHudXpLevel(level) }, locale);
 }
 
 /**
@@ -364,10 +366,14 @@ export function isHudActionReady(readyRatio: number, cooldownSec: number): boole
 
 /**
  * Format compact status text inside a Dash or Signature Active cooldown track:
- * `'READY'` when ready, tenths-of-a-second countdown (`'1.8s'`, `'9.4s'`) while cooling down,
+ * `'SẴN'` / `'READY'` when ready, tenths-of-a-second countdown (`'1.8s'`, `'9.4s'`) while cooling down,
  * or integer percentage (`'50%'`) if a partial ratio is provided with `cooldownSec <= 0`.
  */
-export function formatHudActionStatusText(readyRatio: number, cooldownSec: number): string {
+export function formatHudActionStatusText(
+  readyRatio: number,
+  cooldownSec: number,
+  locale: Locale = getLocale(),
+): string {
   const safeSec = normalizeHudCooldownSeconds(cooldownSec);
   if (safeSec > 0) {
     if (safeSec >= 100) {
@@ -377,7 +383,7 @@ export function formatHudActionStatusText(readyRatio: number, cooldownSec: numbe
     return `${(tenths / 10).toFixed(1)}s`;
   }
   const safeRatio = computeHudActionReadyRatio(readyRatio);
-  if (safeRatio >= 1) return 'READY';
+  if (safeRatio >= 1) return t('hud.ready', undefined, locale);
   return `${Math.floor(safeRatio * 100)}%`;
 }
 

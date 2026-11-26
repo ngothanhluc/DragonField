@@ -459,13 +459,13 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
       panelFullHeight: true,
     },
     {
-      name: 'Settings (7 rows: Music + SFX + toggles)',
+      name: 'Settings (8 rows: Music + SFX + toggles + Language + Back)',
       titleFontSize: 20,
       hasSubtitle: true,
       infoCount: 1,
-      buttonHeights: [22, 22, 22, 22, 22, 22, 22],
-      buttonGap: 3,
-      panelWidth: 452,
+      buttonHeights: [20, 20, 20, 20, 20, 20, 20, 20],
+      buttonGap: 2,
+      panelWidth: 468,
       panelFullHeight: false,
     },
     {
@@ -544,31 +544,62 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
     }
   });
 
-  it('formats Continue Run subtitle and Title info lines within column bounds', () => {
+  it('formats Continue Run subtitle and Title info lines within column bounds (vi & en)', () => {
     expect(
       formatContinueRunDetail(
         makeSampleActiveRun({ characterId: 'ninja', chapter: 1, roomIndex: 2, ascension: 0, endlessLoop: 0 }),
+      ),
+    ).toBe('Ninja · Ch1 P2');
+    expect(
+      formatContinueRunDetail(
+        makeSampleActiveRun({ characterId: 'archer', chapter: 2, roomIndex: 5, ascension: 3, endlessLoop: 0 }),
+      ),
+    ).toBe('Cung Thủ · Ch2 P5 · A3');
+    expect(
+      formatContinueRunDetail(
+        makeSampleActiveRun({ characterId: 'cultivator', chapter: 4, roomIndex: 9, ascension: 5, endlessLoop: 2 }),
+      ),
+    ).toBe('Tu Tiên · Ch4 P9 · A5 · E2');
+
+    expect(
+      formatContinueRunDetail(
+        makeSampleActiveRun({ characterId: 'ninja', chapter: 1, roomIndex: 2, ascension: 0, endlessLoop: 0 }),
+        'en',
       ),
     ).toBe('Ninja · Ch1 R2');
     expect(
       formatContinueRunDetail(
         makeSampleActiveRun({ characterId: 'archer', chapter: 2, roomIndex: 5, ascension: 3, endlessLoop: 0 }),
+        'en',
       ),
     ).toBe('Archer · Ch2 R5 · A3');
     expect(
       formatContinueRunDetail(
         makeSampleActiveRun({ characterId: 'cultivator', chapter: 4, roomIndex: 9, ascension: 5, endlessLoop: 2 }),
+        'en',
       ),
     ).toBe('Cultivator · Ch4 R9 · A5 · E2');
 
-    const compactInfo = formatTitleInfoLines(
+    const compactInfoVi = formatTitleInfoLines(
+      99999,
+      { chapter: 4, room: 9 },
+      'Kỷ lục: Chương 4 · Phòng 9',
+      true,
+    );
+    expect(compactInfoVi).toEqual(['Vàng 99999 · Kỷ lục Ch4 P9']);
+    expect(compactInfoVi[0]!.length * 9 * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+      MENU_COLUMN_WIDTH - 30,
+    );
+
+    const compactInfoEn = formatTitleInfoLines(
       99999,
       { chapter: 4, room: 9 },
       'Best: chapter 4 · room 9',
       true,
+      'en',
     );
-    expect(compactInfo).toEqual(['Gold 99999 · Best Ch4 R9']);
-    expect(compactInfo[0]!.length * 9 * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+    expect(compactInfoEn).toEqual(['Gold 99999 · Best Ch4 R9']);
+    expect(compactInfoEn[0]!.length * 9 * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
       MENU_COLUMN_WIDTH - 30,
     );
   });
@@ -842,9 +873,14 @@ describe('M15 Chapter Select + Ascension 0–5 selector layout & bounds audit', 
     expect(lockedHint.length * layout.hintFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
       layout.dividerWidth,
     );
-    expect(formatChapterButtonDetail(true, true, true, 3, 5)).toBe('Enter · Ascension 3');
-    expect(formatChapterButtonDetail(true, true, false, 3, 4)).toBe('Enter · Max A4');
-    expect(formatChapterButtonDetail(false, true, false, 0, 0)).toBe('Locked — clear previous');
+    expect(formatChapterButtonDetail(true, true, true, 3, 5)).toBe('Vào · Thăng Hoa 3');
+    expect(formatChapterButtonDetail(true, true, false, 3, 4)).toBe('Vào · Tối đa A4');
+    expect(formatChapterButtonDetail(false, true, false, 0, 0)).toBe('Khóa — vượt chương trước');
+    expect(formatChapterButtonDetail(true, true, true, 3, 5, 'en')).toBe('Enter · Ascension 3');
+    expect(formatChapterButtonDetail(true, true, false, 3, 4, 'en')).toBe('Enter · Max A4');
+    expect(formatChapterButtonDetail(false, true, false, 0, 0, 'en')).toBe(
+      'Locked — clear previous',
+    );
 
     // Focus navigation across chapters, <, >, and Back.
     expect(nextChapterSelectFocus(0, 'down', 4)).toBe(1);
@@ -1164,12 +1200,17 @@ describe('M15 Expanded 3-column Meta Shop layout — STAT, UTILITY & HERO UNLOCK
     const boughtArcherSave = buyCharacter(richSave, 'archer');
 
     expect(characterShopRow(brokeSave, 'archer').disabled).toBe(true);
-    expect(characterShopRow(brokeSave, 'archer').detail).toContain('Need');
+    expect(characterShopRow(brokeSave, 'archer').detail).toContain('Thiếu');
+    expect(characterShopRow(brokeSave, 'archer', 'en').detail).toContain('Need');
     expect(characterShopRow(richSave, 'archer').disabled).toBe(false);
     expect(characterShopRow(boughtArcherSave, 'archer').disabled).toBe(true);
-    expect(characterShopRow(boughtArcherSave, 'archer').detail).toBe('Unlocked (Purchased)');
+    expect(characterShopRow(boughtArcherSave, 'archer').detail).toBe('Đã mở (Đã mua)');
+    expect(characterShopRow(boughtArcherSave, 'archer', 'en').detail).toBe('Unlocked (Purchased)');
     expect(characterShopRow(maxedSave, 'cultivator').disabled).toBe(true);
-    expect(characterShopRow(maxedSave, 'cultivator').detail).toBe('Unlocked (Chapter 3 cleared)');
+    expect(characterShopRow(maxedSave, 'cultivator').detail).toBe('Đã mở (Vượt Chương 3)');
+    expect(characterShopRow(maxedSave, 'cultivator', 'en').detail).toBe(
+      'Unlocked (Chapter 3 cleared)',
+    );
 
     for (const save of [brokeSave, richSave, maxedSave, boughtArcherSave]) {
       const bonusLine = formatShopBonusSummary(save);
@@ -1268,11 +1309,11 @@ describe('M15 Rich Results / Death screen layout & summary bounds audit', () => 
       canContinueEndless: true,
     });
 
-    expect(worstWin.title).toBe('CHAPTER CLEAR');
+    expect(worstWin.title).toBe('HOÀN THÀNH CHƯƠNG');
     expect(worstWin.lines.length).toBeLessThanOrEqual(7);
-    expect(worstWin.lines.some((l) => l.text.includes('Hero: Cultivator'))).toBe(true);
-    expect(worstWin.lines.some((l) => l.text.includes('Ascension 5'))).toBe(true);
-    expect(worstWin.lines.some((l) => l.text.includes('Endless Loop 12'))).toBe(true);
+    expect(worstWin.lines.some((l) => l.text.includes('Tướng: Tu Tiên'))).toBe(true);
+    expect(worstWin.lines.some((l) => l.text.includes('Thăng Hoa 5'))).toBe(true);
+    expect(worstWin.lines.some((l) => l.text.includes('Vòng Vô Tận 12'))).toBe(true);
     expect(worstWin.lines.some((l) => l.text.includes('Seed 4294967295'))).toBe(true);
     expect(worstWin.lines.some((l) => l.kind === 'evolution')).toBe(true);
     expect(worstWin.lines.some((l) => l.kind === 'skills')).toBe(true);
@@ -1354,7 +1395,7 @@ describe('M15 Rich Results / Death screen layout & summary bounds audit', () => 
         won: false,
         deathCause: { kind: 'enemy', role, elite: true },
       });
-      expect(summary.subtitle).toContain('Slain by Elite');
+      expect(summary.subtitle).toContain('Tinh Anh');
       expect(
         summary.subtitle.length * refLayout.subtitleFontSize * GLYPH_WIDTH_RATIO,
       ).toBeLessThanOrEqual(refLayout.dividerWidth);
@@ -1371,7 +1412,7 @@ describe('M15 Rich Results / Death screen layout & summary bounds audit', () => 
         won: false,
         deathCause: { kind: 'boss', bossId, phase: 3 },
       });
-      expect(summary.subtitle).toContain('(Phase 3)');
+      expect(summary.subtitle).toContain('(Giai đoạn 3)');
       expect(
         summary.subtitle.length * refLayout.subtitleFontSize * GLYPH_WIDTH_RATIO,
       ).toBeLessThanOrEqual(refLayout.dividerWidth);

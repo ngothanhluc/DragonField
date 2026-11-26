@@ -18,6 +18,7 @@ import {
   type CharacterDef,
   type CharacterId,
 } from '../core/characters/roster';
+import { setLocale } from '../core/i18n';
 import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
 import type { UpgradeTrack } from '../core/meta/upgrades';
 import { clampAscension } from '../core/run/ascension';
@@ -60,7 +61,10 @@ import {
   type RunResultData,
   type RunResultOwnedSkills,
 } from './screens/result-screen';
-import { buildSettingsScreen } from './screens/settings-screen';
+import {
+  SETTINGS_LANGUAGE_ROW_INDEX,
+  buildSettingsScreen,
+} from './screens/settings-screen';
 import {
   SHOP_CHARACTER_START_INDEX,
   SHOP_CHAR_SELECT_BUTTON_INDEX,
@@ -719,16 +723,18 @@ export class ScreenFlow {
     }
   }
 
-  private async showSettings(backTo: () => void): Promise<void> {
+  private async showSettings(backTo: () => void, initialFocus?: number): Promise<void> {
     const save = this.host.save();
     if (save === null) throw new Error('ScreenFlow: save not loaded');
 
+    setLocale(save.settings.locale);
     this.clearBackdrop();
     this.settingsBack = backTo;
     const token = this.nextMenuToken();
     const built = await buildSettingsScreen({
       parent: this.host.uiRoot(),
       settings: save.settings,
+      ...(initialFocus !== undefined ? { initialFocus } : {}),
       onMusicVolume: (musicVolume) => {
         const current = this.currentSettings(save.settings);
         this.persistSettings({
@@ -762,6 +768,15 @@ export class ScreenFlow {
           ...current,
           effects: current.effects === 'full' ? 'reduced' : 'full',
         });
+      },
+      onToggleLocale: (next) => {
+        const current = this.currentSettings(save.settings);
+        this.persistSettings({ ...current, locale: next });
+        setLocale(next);
+        // Rebuild Settings live on the Language row so every visible label updates immediately.
+        void this.showSettings(backTo, SETTINGS_LANGUAGE_ROW_INDEX).catch((error: unknown) =>
+          this.host.fail(error),
+        );
       },
       onBack: backTo,
     });
@@ -934,7 +949,8 @@ export class ScreenFlow {
       normalized.fullscreen === save.settings.fullscreen &&
       normalized.screenShake === save.settings.screenShake &&
       normalized.damageNumbers === save.settings.damageNumbers &&
-      normalized.effects === save.settings.effects
+      normalized.effects === save.settings.effects &&
+      normalized.locale === save.settings.locale
     ) {
       return;
     }
@@ -948,6 +964,7 @@ export class ScreenFlow {
       }
       repo.save(next);
       this.host.setSave(next);
+      setLocale(normalized.locale);
 
       if (normalized.musicVolume !== save.settings.musicVolume) {
         if (this.host.onMusicVolume !== undefined) {

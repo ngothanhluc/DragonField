@@ -5,6 +5,7 @@
  * screen, and `update()` only runs while `status === 'playing'`, so enemies, bullets,
  * telegraphs, hitstop and shield/i-frame timers all stand still (the sim clock does not advance).
  */
+import { t } from '../../core/i18n';
 import {
   applySettings,
   stepMusicVolume,
@@ -29,8 +30,6 @@ export interface PauseScreenOptions {
   readonly onVolume?: (volume: number) => void;
 }
 
-const SLIDER_DETAIL = 'Left / Right or click (+10%)';
-
 export function buildPauseScreen(options: PauseScreenOptions): Promise<MenuScreen> {
   let audio = applySettings({
     ...(options.volume !== undefined ? { volume: options.volume } : {}),
@@ -38,6 +37,7 @@ export function buildPauseScreen(options: PauseScreenOptions): Promise<MenuScree
     ...(options.sfxVolume !== undefined ? { sfxVolume: options.sfxVolume } : {}),
   });
   let screen: MenuScreen | null = null;
+  const sliderDetail = t('pause.sliderDetail');
 
   const changeMusicVolume = (delta: number): void => {
     audio = stepMusicVolume(audio, delta);
@@ -46,7 +46,7 @@ export function buildPauseScreen(options: PauseScreenOptions): Promise<MenuScree
     } else {
       options.onVolume?.(audio.musicVolume);
     }
-    screen?.updateItem(2, formatMusicVolume(audio.musicVolume), SLIDER_DETAIL);
+    screen?.updateItem(2, formatMusicVolume(audio.musicVolume), sliderDetail);
   };
 
   const changeSfxVolume = (delta: number): void => {
@@ -56,40 +56,40 @@ export function buildPauseScreen(options: PauseScreenOptions): Promise<MenuScree
     } else {
       options.onVolume?.(audio.sfxVolume);
     }
-    screen?.updateItem(3, formatSfxVolume(audio.sfxVolume), SLIDER_DETAIL);
+    screen?.updateItem(3, formatSfxVolume(audio.sfxVolume), sliderDetail);
   };
 
   const items: MenuItem[] = [
-    { label: 'Resume', detail: 'Esc', activate: options.onResume },
-    { label: 'Restart run', detail: 'New run, keep gold earned', activate: options.onRestart },
+    { label: t('pause.resume'), detail: t('pause.resumeDetail'), activate: options.onResume },
+    { label: t('pause.restart'), detail: t('pause.restartDetail'), activate: options.onRestart },
     {
       label: formatMusicVolume(audio.musicVolume),
-      detail: SLIDER_DETAIL,
+      detail: sliderDetail,
       activate: () => changeMusicVolume(1),
     },
     {
       label: formatSfxVolume(audio.sfxVolume),
-      detail: SLIDER_DETAIL,
+      detail: sliderDetail,
       activate: () => changeSfxVolume(1),
     },
-    { label: 'Quit to title', detail: 'Keep gold earned', activate: options.onQuit },
+    { label: t('pause.quit'), detail: t('pause.quitDetail'), activate: options.onQuit },
   ];
 
   return buildMenuScreen({
     parent: options.parent,
     name: 'pause',
-    title: 'PAUSED',
-    subtitle: 'Game time is frozen',
+    title: t('pause.title'),
+    subtitle: t('pause.subtitle'),
     items,
     onBack: options.onResume,
     onAdjust: (index, delta) => {
       if (index === 2) changeMusicVolume(delta);
       else if (index === 3) changeSfxVolume(delta);
     },
-    hint: '↑/↓ select · ←/→ adjust audio · Esc resume',
+    hint: t('pause.hint'),
     backdropAlpha: 184,
-    panelWidth: 364,
-    buttonWidth: 312,
+    panelWidth: 372,
+    buttonWidth: 316,
     buttonHeight: 31,
     buttonGap: 5,
     buttonFontSize: 11,

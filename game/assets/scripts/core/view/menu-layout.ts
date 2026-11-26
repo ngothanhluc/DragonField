@@ -20,6 +20,14 @@ import {
   type CharacterId,
 } from '../characters/roster';
 import {
+  getLocale,
+  localizeCharacterField,
+  localizeCharacterName,
+  localizeUpgradeTrack,
+  t,
+  type Locale,
+} from '../i18n';
+import {
   STAT_UPGRADE_TRACKS,
   UPGRADE_TRACKS,
   UTILITY_UPGRADE_TRACKS,
@@ -668,11 +676,13 @@ export function nextCharacterSelectFocus(
  * Concise `Continue Run` subtitle showing Hero, `Ch<N> R<M>`, and optional `A<X>` / `E<Y>` tags.
  * Fits cleanly inside Title's `224 × 29` button (`safeTextWidth = 208` px).
  */
-export function formatContinueRunDetail(run: ActiveRunSave): string {
-  const hero = isCharacterId(run.characterId)
-    ? CHARACTERS[run.characterId].name
-    : CHARACTERS[DEFAULT_CHARACTER_ID].name;
-  const parts = [hero, `Ch${run.chapter} R${run.roomIndex}`];
+export function formatContinueRunDetail(run: ActiveRunSave, locale: Locale = getLocale()): string {
+  const charId = isCharacterId(run.characterId) ? run.characterId : DEFAULT_CHARACTER_ID;
+  const hero = localizeCharacterName(charId, locale);
+  const parts = [
+    hero,
+    t('title.continueChapterRoom', { chapter: run.chapter, room: run.roomIndex }, locale),
+  ];
   if (run.ascension > 0) {
     parts.push(`A${clampAscension(run.ascension)}`);
   }
@@ -683,9 +693,9 @@ export function formatContinueRunDetail(run: ActiveRunSave): string {
 }
 
 /** Compact best-depth summary for single-line Title header when `Continue Run` is shown. */
-export function formatTitleCompactBest(best: BestProgress): string {
-  if (best.chapter <= 0 || best.room <= 0) return 'Best: —';
-  return `Best Ch${best.chapter} R${best.room}`;
+export function formatTitleCompactBest(best: BestProgress, locale: Locale = getLocale()): string {
+  if (best.chapter <= 0 || best.room <= 0) return t('title.bestNone', undefined, locale);
+  return t('title.bestCompact', { chapter: best.chapter, room: best.room }, locale);
 }
 
 /**
@@ -699,11 +709,14 @@ export function formatTitleInfoLines(
   best: BestProgress,
   fullBestText: string,
   hasContinueRun: boolean,
+  locale: Locale = getLocale(),
 ): readonly string[] {
   if (!hasContinueRun) {
-    return [`Gold ${gold}`, fullBestText];
+    return [t('title.goldLine', { gold }, locale), fullBestText];
   }
-  return [`Gold ${gold} · ${formatTitleCompactBest(best)}`];
+  return [
+    t('title.compactInfo', { gold, best: formatTitleCompactBest(best, locale) }, locale),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -836,34 +849,42 @@ export function formatChapterButtonDetail(
   isSelectedChapter: boolean,
   selectedAscension: number,
   maxAscension: number,
+  locale: Locale = getLocale(),
 ): string {
   if (!playable) {
-    return hasData ? 'Locked — clear previous' : 'No data';
+    return hasData
+      ? t('chapter.detailLocked', undefined, locale)
+      : t('chapter.detailNoData', undefined, locale);
   }
   const clampedSel = clampAscension(selectedAscension);
   const clampedMax = clampAscension(maxAscension);
   if (isSelectedChapter) {
-    return clampedSel > 0 ? `Enter · Ascension ${clampedSel}` : 'Enter chapter';
+    return clampedSel > 0
+      ? t('chapter.detailEnterAscension', { level: clampedSel }, locale)
+      : t('chapter.detailEnter', undefined, locale);
   }
-  return clampedMax > 0 ? `Enter · Max A${clampedMax}` : 'Enter chapter';
+  return clampedMax > 0
+    ? t('chapter.detailMaxAscension', { level: clampedMax }, locale)
+    : t('chapter.detailEnter', undefined, locale);
 }
 
 /** Subtle bottom hint explaining how higher Ascension tiers unlock on clear. */
 export function formatChapterAscensionHint(
   playable: boolean,
   maxUnlocked: number,
+  locale: Locale = getLocale(),
 ): string {
   if (!playable) {
-    return 'Clear previous chapter to unlock';
+    return t('chapter.hintLocked', undefined, locale);
   }
   const clampedMax = clampAscension(maxUnlocked);
   if (clampedMax >= MAX_ASCENSION) {
-    return 'All Ascension tiers (1–5) unlocked';
+    return t('chapter.hintAllAscension', undefined, locale);
   }
   if (clampedMax === 0) {
-    return 'Clear Normal to unlock Ascension 1';
+    return t('chapter.hintUnlockAsc1', undefined, locale);
   }
-  return `Clear A${clampedMax} to unlock Ascension ${clampedMax + 1}`;
+  return t('chapter.hintUnlockNextAsc', { current: clampedMax, next: clampedMax + 1 }, locale);
 }
 
 /**
@@ -1120,16 +1141,24 @@ export function nextShopScreenFocus(
 }
 
 /** Compact one-line summary of all 6 Stat + Utility Meta bonuses for the Shop header. */
-export function formatShopBonusSummary(save: SaveData): string {
+export function formatShopBonusSummary(save: SaveData, locale: Locale = getLocale()): string {
   const stat = applyUpgrades(save);
   const util = applyUtilityUpgrades(save);
   const dmgPct = Math.round((stat.damageMultiplier - 1) * 100);
   const ratePct = Math.round((stat.fireRateMultiplier - 1) * 100);
   const magPct = Math.round((util.xpMagnetMult - 1) * 100);
   const goldPct = Math.round((util.goldBonusMult - 1) * 100);
-  return (
-    `Bonus: +${stat.maxHeartsBonus} HP · +${dmgPct}% DMG · +${ratePct}% rate · ` +
-    `+${magPct}% magnet · +${goldPct}% gold · ${util.freeRerolls} rerolls`
+  return t(
+    'shop.bonusSummary',
+    {
+      hearts: stat.maxHeartsBonus,
+      dmg: dmgPct,
+      rate: ratePct,
+      magnet: magPct,
+      gold: goldPct,
+      rerolls: util.freeRerolls,
+    },
+    locale,
   );
 }
 
@@ -1139,24 +1168,19 @@ export interface ShopRowText {
   readonly disabled: boolean;
 }
 
-const SHOP_TRACK_NAMES: Readonly<Record<UpgradeTrack, string>> = {
-  hearts: 'Hearts',
-  damage: 'Damage',
-  fireRate: 'Fire rate',
-  xpMagnet: 'XP magnet',
-  goldBonus: 'Gold bonus',
-  freeRerolls: 'Free rerolls',
-};
-
 /** Label + detail for one permanent Stat or Utility upgrade track (`156 × 35` button). */
-export function upgradeRow(save: SaveData, track: UpgradeTrack): ShopRowText {
+export function upgradeRow(
+  save: SaveData,
+  track: UpgradeTrack,
+  locale: Locale = getLocale(),
+): ShopRowText {
   const level = save.upgrades[track];
   const max = maxLevelFor(track);
-  const name = SHOP_TRACK_NAMES[track];
-  const label = `${name}   Lv ${level}/${max}`;
+  const name = localizeUpgradeTrack(track, locale);
+  const label = t('shop.trackRowLabel', { name, level, max }, locale);
 
   if (level >= max) {
-    return { label, detail: 'Maxed out', disabled: true };
+    return { label, detail: t('shop.maxedOut', undefined, locale), disabled: true };
   }
 
   const price = costFor(track, level + 1);
@@ -1164,18 +1188,25 @@ export function upgradeRow(save: SaveData, track: UpgradeTrack): ShopRowText {
   const short = Math.max(0, price - save.gold);
   return {
     label,
-    detail: affordable ? `Next: ${price} gold` : `Next: ${price}g · need ${short}g`,
+    detail: affordable
+      ? t('shop.nextGold', { price }, locale)
+      : t('shop.nextNeed', { price, short }, locale),
     disabled: !affordable,
   };
 }
 
 /** Label + detail for one early character unlock row in Meta Shop (`156 × 35` button). */
-export function characterShopRow(save: SaveData, characterId: CharacterId): ShopRowText {
+export function characterShopRow(
+  save: SaveData,
+  characterId: CharacterId,
+  locale: Locale = getLocale(),
+): ShopRowText {
   const def = CHARACTERS[characterId];
+  const name = localizeCharacterName(characterId, locale);
   if (isCharacterUnlocked(characterId, save)) {
     return {
-      label: `${def.name} — UNLOCKED`,
-      detail: characterUnlockReason(characterId, save),
+      label: t('shop.heroUnlocked', { name }, locale),
+      detail: characterUnlockReason(characterId, save, locale),
       disabled: true,
     };
   }
@@ -1184,10 +1215,10 @@ export function characterShopRow(save: SaveData, characterId: CharacterId): Shop
   const affordable = canBuyCharacter(save, characterId);
   const short = Math.max(0, cost - save.gold);
   return {
-    label: `${def.name} — ${cost}g`,
+    label: t('shop.heroCost', { name, cost }, locale),
     detail: affordable
-      ? `Buy early (or clear Ch${def.unlockChapter})`
-      : `Need ${short}g (or clear Ch${def.unlockChapter})`,
+      ? t('shop.heroBuyEarly', { chapter: def.unlockChapter }, locale)
+      : t('shop.heroNeed', { short, chapter: def.unlockChapter }, locale),
     disabled: !affordable,
   };
 }
@@ -1290,6 +1321,7 @@ function packTokensToLines(
   separator: string,
   maxLineLength: number,
   maxLines: number,
+  locale: Locale,
 ): string[] {
   if (tokens.length === 0 || maxLines <= 0) return [];
   const lines: string[] = [];
@@ -1303,13 +1335,16 @@ function packTokensToLines(
     }
     const remaining = tokens.length - i;
     const isLastLine = lines.length === maxLines - 1;
-    const suffix = isLastLine && tokens.length - i - 1 > 0 ? ` (+${tokens.length - i - 1} more)` : '';
+    const suffix =
+      isLastLine && tokens.length - i - 1 > 0
+        ? t('result.moreSuffix', { count: tokens.length - i - 1 }, locale)
+        : '';
     const candidate = `${current}${separator}${token}`;
 
     if (candidate.length + suffix.length <= maxLineLength) {
       current = candidate;
     } else if (isLastLine) {
-      const overflow = `${current} (+${remaining} more)`;
+      const overflow = `${current}${t('result.moreSuffix', { count: remaining }, locale)}`;
       lines.push(
         overflow.length <= maxLineLength ? overflow : `${current.slice(0, maxLineLength - 8)} (+${remaining})`,
       );
@@ -1324,23 +1359,29 @@ function packTokensToLines(
   return lines;
 }
 
-function capBuildLines(rawLines: readonly string[], maxLineLength: number): ResultSummaryLine[] {
+function capBuildLines(
+  rawLines: readonly string[],
+  maxLineLength: number,
+  locale: Locale,
+): ResultSummaryLine[] {
   const capped: ResultSummaryLine[] = [];
-  const evoLines = rawLines.filter((line) => line.startsWith('Evolutions:'));
-  const otherLines = rawLines.filter((line) => !line.startsWith('Evolutions:'));
+  const evoPrefix = t('result.evolutionsPrefix', undefined, locale);
+  const evoLines = rawLines.filter((line) => line.startsWith(evoPrefix));
+  const otherLines = rawLines.filter((line) => !line.startsWith(evoPrefix));
 
   if (evoLines.length > 0) {
     // Keep Evolutions to 1 crisp line so total build lines never exceed 3 even with 7 Evolutions.
     const joinedEvos = evoLines
-      .map((line, idx) => (idx === 0 ? line.replace(/^Evolutions:\s*/, '') : line))
+      .map((line, idx) => (idx === 0 ? line.slice(evoPrefix.length) : line))
       .join(', ')
       .split(', ')
       .filter((s) => s.length > 0);
     const packedEvo = packTokensToLines(
-      joinedEvos.map((name, idx) => (idx === 0 ? `Evolutions: ${name}` : name)),
+      joinedEvos.map((name, idx) => (idx === 0 ? `${evoPrefix}${name}` : name)),
       ', ',
       maxLineLength,
       1,
+      locale,
     );
     if (packedEvo[0] !== undefined) {
       capped.push({ text: packedEvo[0], kind: 'evolution' });
@@ -1363,20 +1404,25 @@ function capBuildLines(rawLines: readonly string[], maxLineLength: number): Resu
  * Format title, cause-of-death / clear subtitle, and compact non-overflowing summary lines
  * (`<= 7` lines, `<= 64` chars each) for `ResultScreen`.
  */
-export function formatResultScreenSummary(result: ResultSummaryInput): ResultSummaryOutput {
-  const title = result.won ? 'CHAPTER CLEAR' : 'RUN OVER';
+export function formatResultScreenSummary(
+  result: ResultSummaryInput,
+  locale: Locale = getLocale(),
+): ResultSummaryOutput {
+  const title = result.won
+    ? t('result.titleWin', undefined, locale)
+    : t('result.titleLoss', undefined, locale);
 
   let subtitle: string;
   if (result.won) {
     if (result.canContinueEndless === true) {
-      subtitle = 'Chapter cleared — Endless Mode awaits!';
+      subtitle = t('result.subtitleEndless', undefined, locale);
     } else {
-      subtitle = 'The chapter is cleared.';
+      subtitle = t('result.subtitleWin', undefined, locale);
     }
   } else if (result.deathCause !== undefined && result.deathCause.kind !== 'victory') {
-    subtitle = formatDeathCause(result.deathCause);
+    subtitle = formatDeathCause(result.deathCause, locale);
   } else {
-    subtitle = formatDeathCause({ kind: 'unknown' });
+    subtitle = formatDeathCause({ kind: 'unknown' }, locale);
   }
 
   const lines: ResultSummaryLine[] = [];
@@ -1384,7 +1430,9 @@ export function formatResultScreenSummary(result: ResultSummaryInput): ResultSum
   // Line 1: Hero + Chapter/Room depth + Ascension + Endless loop tag.
   const metaParts: string[] = [];
   if (result.characterId !== undefined && isCharacterId(result.characterId)) {
-    metaParts.push(`Hero: ${CHARACTERS[result.characterId].name}`);
+    metaParts.push(
+      t('result.hero', { name: localizeCharacterName(result.characterId, locale) }, locale),
+    );
   }
   const hasRichTags =
     result.characterId !== undefined ||
@@ -1392,38 +1440,54 @@ export function formatResultScreenSummary(result: ResultSummaryInput): ResultSum
     (result.endlessLoop !== undefined && result.endlessLoop > 0);
   metaParts.push(
     hasRichTags
-      ? `Ch${result.chapter} Room ${result.roomReached}/${result.roomsTotal}`
-      : `Chapter ${result.chapter} · Room ${result.roomReached}/${result.roomsTotal}`,
+      ? t(
+          'result.chRoomCompact',
+          { chapter: result.chapter, room: result.roomReached, total: result.roomsTotal },
+          locale,
+        )
+      : t(
+          'result.chRoomFull',
+          { chapter: result.chapter, room: result.roomReached, total: result.roomsTotal },
+          locale,
+        ),
   );
   if (result.ascension !== undefined && result.ascension > 0) {
-    metaParts.push(ascensionLabel(result.ascension));
+    metaParts.push(ascensionLabel(result.ascension, locale));
   }
   if (result.endlessLoop !== undefined && result.endlessLoop > 0) {
-    metaParts.push(`Endless Loop ${Math.trunc(result.endlessLoop)}`);
+    metaParts.push(t('result.endlessLoop', { loop: Math.trunc(result.endlessLoop) }, locale));
   }
   lines.push({ text: metaParts.join(' · '), kind: 'meta' });
 
   // Line 2: Run Seed + Gold + Time + Kills.
   const statsParts: string[] = [];
   if (result.seed !== undefined && Number.isFinite(result.seed)) {
-    statsParts.push(`Seed ${Math.trunc(result.seed) >>> 0}`);
-    statsParts.push(`Gold +${result.goldEarned} (${result.goldTotal}g)`);
+    statsParts.push(t('result.seed', { seed: Math.trunc(result.seed) >>> 0 }, locale));
+    statsParts.push(
+      t('result.goldCompact', { earned: result.goldEarned, total: result.goldTotal }, locale),
+    );
     statsParts.push(`${formatDuration(result.durationMs)}`);
-    statsParts.push(`${result.kills} kills`);
+    statsParts.push(t('result.killsCompact', { kills: result.kills }, locale));
   } else {
-    statsParts.push(`Gold +${result.goldEarned} (total ${result.goldTotal})`);
-    statsParts.push(`Time ${formatDuration(result.durationMs)}`);
-    statsParts.push(`Kills ${result.kills}`);
+    statsParts.push(
+      t('result.goldFull', { earned: result.goldEarned, total: result.goldTotal }, locale),
+    );
+    statsParts.push(t('result.timeFull', { duration: formatDuration(result.durationMs) }, locale));
+    statsParts.push(t('result.killsFull', { kills: result.kills }, locale));
   }
   lines.push({ text: statsParts.join(' · '), kind: 'stats' });
 
   // Lines 3..5: Build + Legendary Evolutions summary (when `ownedSkills` is supplied).
   if (result.ownedSkills !== undefined) {
-    const rawBuild = formatBuildSummary(toOwnedSkillsMap(result.ownedSkills), {
-      maxLineLength: RESULT_LINE_MAX_CHARS,
-      maxSkillLines: 2,
-    });
-    lines.push(...capBuildLines(rawBuild, RESULT_LINE_MAX_CHARS));
+    const rawBuild = formatBuildSummary(
+      toOwnedSkillsMap(result.ownedSkills),
+      {
+        maxLineLength: RESULT_LINE_MAX_CHARS,
+        maxSkillLines: 2,
+      },
+      locale,
+    );
+    lines.push(...capBuildLines(rawBuild, RESULT_LINE_MAX_CHARS, locale));
   }
 
   // Lines 6..7: Unlocks earned (merges `unlocks` with legacy `unlockedChapter`).
@@ -1433,9 +1497,15 @@ export function formatResultScreenSummary(result: ResultSummaryInput): ResultSum
       ? { unlockedChapter: result.unlockedChapter }
       : {}),
   };
-  const unlockTokens = formatRunUnlocks(mergedUnlocks);
+  const unlockTokens = formatRunUnlocks(mergedUnlocks, locale);
   if (unlockTokens.length > 0) {
-    const packedUnlocks = packTokensToLines(unlockTokens, ' · ', RESULT_LINE_MAX_CHARS, 2);
+    const packedUnlocks = packTokensToLines(
+      unlockTokens,
+      ' · ',
+      RESULT_LINE_MAX_CHARS,
+      2,
+      locale,
+    );
     for (const text of packedUnlocks) {
       lines.push({ text, kind: 'unlock' });
     }
@@ -1592,16 +1662,23 @@ export function nextResultScreenFocus(
 // Title & Character Select Text Helpers (M14)
 // ---------------------------------------------------------------------------
 
-export function formatTitleCharacterLabel(character: CharacterDef): string {
-  return `Character: ${character.name}`;
+export function formatTitleCharacterLabel(
+  character: CharacterDef,
+  locale: Locale = getLocale(),
+): string {
+  return t('title.characterLabel', { name: localizeCharacterName(character.id, locale) }, locale);
 }
 
 export function formatTitleCharacterDetail(
   character: CharacterDef,
   availableCount: number,
+  locale: Locale = getLocale(),
 ): string {
-  if (availableCount <= 1) return `${character.subtitle} · View 4 classes`;
-  return `${character.subtitle} (←/→ or Enter)`;
+  const subtitle = localizeCharacterField(character.id, 'subtitle', locale);
+  if (availableCount <= 1) {
+    return t('title.characterDetailSingle', { subtitle }, locale);
+  }
+  return t('title.characterDetailCycle', { subtitle }, locale);
 }
 
 export interface CharacterCardText {
@@ -1631,26 +1708,45 @@ export interface CharacterSummaryLines {
 export function formatCharacterCardText(
   character: CharacterDef,
   save: SaveData,
+  locale: Locale = getLocale(),
 ): CharacterCardText {
   const activeId = resolveSelectedCharacter(save).id;
   const unlocked = isCharacterUnlocked(character.id, save);
+  const name = localizeCharacterName(character.id, locale);
+  const subtitle = localizeCharacterField(character.id, 'subtitle', locale);
   if (unlocked && character.id === activeId) {
     return {
-      label: `${character.name} — SELECTED`,
-      detail: character.subtitle,
+      label: t(
+        'charSelect.cardLabel',
+        { name, status: t('charSelect.statusSelected', undefined, locale) },
+        locale,
+      ),
+      detail: subtitle,
       status: 'selected',
     };
   }
   if (unlocked) {
     return {
-      label: `${character.name} — UNLOCKED`,
-      detail: character.subtitle,
+      label: t(
+        'charSelect.cardLabel',
+        { name, status: t('charSelect.statusUnlocked', undefined, locale) },
+        locale,
+      ),
+      detail: subtitle,
       status: 'unlocked',
     };
   }
   return {
-    label: `${character.name} — LOCKED`,
-    detail: `Clear Ch${character.unlockChapter} or ${character.unlockGoldCost}g`,
+    label: t(
+      'charSelect.cardLabel',
+      { name, status: t('charSelect.statusLocked', undefined, locale) },
+      locale,
+    ),
+    detail: t(
+      'charSelect.cardLockedDetail',
+      { chapter: character.unlockChapter, cost: character.unlockGoldCost },
+      locale,
+    ),
     status: 'locked',
   };
 }
@@ -1659,30 +1755,44 @@ export function formatCharacterCardText(
 export function formatCharacterSummaryLines(
   character: CharacterDef,
   save: SaveData,
+  locale: Locale = getLocale(),
 ): CharacterSummaryLines {
   const activeId = resolveSelectedCharacter(save).id;
   const unlocked = isCharacterUnlocked(character.id, save);
-  const reason = characterUnlockReason(character.id, save);
+  const reason = characterUnlockReason(character.id, save, locale);
   const statusKind: CharacterSummaryLines['statusKind'] = !unlocked
     ? 'locked'
     : character.id === activeId
       ? 'selected'
       : 'unlocked';
-  const tag =
+  const status =
     statusKind === 'selected'
-      ? 'SELECTED'
+      ? t('charSelect.statusSelected', undefined, locale)
       : statusKind === 'unlocked'
-        ? 'UNLOCKED'
-        : 'LOCKED';
+        ? t('charSelect.statusUnlocked', undefined, locale)
+        : t('charSelect.statusLocked', undefined, locale);
 
+  const name = localizeCharacterName(character.id, locale).toUpperCase();
   return {
-    statusLine: `${character.name.toUpperCase()} · ${tag} — ${reason}`,
+    statusLine: t('charSelect.summaryStatus', { name, status, reason }, locale),
     statusKind,
-    weaponLine: `Weapon · ${character.weaponSummary}`,
-    passiveTitle: `Passive · ${character.passiveName}`,
-    passiveBody: character.passiveSummary,
-    signatureTitle: `Signature [E] · ${character.signatureName}`,
-    signatureBody: character.signatureSummary,
+    weaponLine: t(
+      'charSelect.summaryWeapon',
+      { summary: localizeCharacterField(character.id, 'weapon', locale) },
+      locale,
+    ),
+    passiveTitle: t(
+      'charSelect.summaryPassive',
+      { name: localizeCharacterField(character.id, 'passiveName', locale) },
+      locale,
+    ),
+    passiveBody: localizeCharacterField(character.id, 'passiveSummary', locale),
+    signatureTitle: t(
+      'charSelect.summarySignature',
+      { name: localizeCharacterField(character.id, 'signatureName', locale) },
+      locale,
+    ),
+    signatureBody: localizeCharacterField(character.id, 'signatureSummary', locale),
   };
 }
 
@@ -1690,22 +1800,24 @@ export function formatCharacterSummaryLines(
 export function formatCharacterPrimaryAction(
   character: CharacterDef,
   save: SaveData,
+  locale: Locale = getLocale(),
 ): CharacterPrimaryActionSpec {
   const activeId = resolveSelectedCharacter(save).id;
   const unlocked = isCharacterUnlocked(character.id, save);
+  const name = localizeCharacterName(character.id, locale);
 
   if (unlocked && character.id === activeId) {
     return {
-      label: `Selected: ${character.name}`,
-      detail: 'Active for next run (Enter to confirm)',
+      label: t('charSelect.primarySelected', { name }, locale),
+      detail: t('charSelect.primarySelectedDetail', undefined, locale),
       disabled: false,
       kind: 'confirm',
     };
   }
   if (unlocked) {
     return {
-      label: `Select ${character.name}`,
-      detail: 'Equip for your next run',
+      label: t('charSelect.primarySelect', { name }, locale),
+      detail: t('charSelect.primarySelectDetail', undefined, locale),
       disabled: false,
       kind: 'select',
     };
@@ -1715,15 +1827,18 @@ export function formatCharacterPrimaryAction(
   const affordable = canBuyCharacter(save, character.id);
   const short = Math.max(0, cost - save.gold);
   return {
-    label: `Unlock ${character.name} — ${cost}g`,
+    label: t('charSelect.primaryUnlock', { name, cost }, locale),
     detail: affordable
-      ? 'Buy early with Meta gold & equip'
-      : `Need ${short}g more (or clear Ch${character.unlockChapter})`,
+      ? t('charSelect.primaryUnlockDetail', undefined, locale)
+      : t('charSelect.primaryUnlockShort', { short, chapter: character.unlockChapter }, locale),
     disabled: !affordable,
     kind: 'unlock',
   };
 }
 
-export function formatCharacterSelectSubtitle(gold: number): string {
-  return `Gold: ${gold}g · Preview & choose your hero`;
+export function formatCharacterSelectSubtitle(
+  gold: number,
+  locale: Locale = getLocale(),
+): string {
+  return t('charSelect.subtitle', { gold }, locale);
 }

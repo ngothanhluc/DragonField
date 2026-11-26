@@ -69,10 +69,10 @@ function increasingPairs(costs: readonly number[]): Array<[number, number]> {
 }
 
 describe('SaveData — defaults', () => {
-  it('the default v5 save is valid and round-trips through serialize/parse', () => {
+  it('the default v6 save is valid and round-trips through serialize/parse', () => {
     const defaults = createDefaultSave();
 
-    expect(SAVE_VERSION).toBe(5);
+    expect(SAVE_VERSION).toBe(6);
     expect(defaults.version).toBe(SAVE_VERSION);
     expect(defaults.gold).toBe(0);
     expect(defaults.upgrades).toEqual({
@@ -94,6 +94,7 @@ describe('SaveData — defaults', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      locale: 'vi',
     });
     expect(defaults.selectedCharacter).toBe('ninja');
     expect(defaults.unlockedCharacters).toEqual(['ninja']);
@@ -102,7 +103,7 @@ describe('SaveData — defaults', () => {
     expect(parseSaveData(JSON.parse(serializeSave(defaults)))).toEqual(defaults);
   });
 
-  it('serialize follows canonical v5 key order without retired cultivatorEnabled', () => {
+  it('serialize follows canonical v6 key order without retired cultivatorEnabled', () => {
     const parsed = JSON.parse(serializeSave(createDefaultSave())) as Record<string, unknown>;
     expect(parsed).toEqual({
       version: SAVE_VERSION,
@@ -126,6 +127,7 @@ describe('SaveData — defaults', () => {
         screenShake: true,
         damageNumbers: false,
         effects: 'full',
+        locale: 'vi',
       },
       selectedCharacter: 'ninja',
       unlockedCharacters: ['ninja'],
@@ -148,7 +150,7 @@ describe('SaveData — defaults', () => {
   });
 });
 
-describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
+describe('SaveData — migrate (v0/v1/v2/v3/v4/v5 → v6)', () => {
   it('an empty object becomes the default save', () => {
     expect(migrate({})).toEqual(createDefaultSave());
   });
@@ -158,7 +160,7 @@ describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
     expect(migrate({ version: undefined })).toEqual(createDefaultSave());
   });
 
-  it('keeps valid fields of a v5 save and deduplicates unlockedCharacters', () => {
+  it('keeps valid fields of a v6 save and deduplicates unlockedCharacters', () => {
     const migrated = migrate({
       version: SAVE_VERSION,
       gold: 120,
@@ -173,7 +175,7 @@ describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
       chaptersUnlocked: 2,
       ascensionUnlocked: [3, 1, 0, 0],
       best: { chapter: 1, room: 4 },
-      settings: { volume: 0.9, musicVolume: 0.4, sfxVolume: 0.9, fullscreen: true },
+      settings: { volume: 0.9, musicVolume: 0.4, sfxVolume: 0.9, fullscreen: true, locale: 'en' },
       selectedCharacter: 'archer',
       unlockedCharacters: ['archer', 'ninja', 'archer', 'invalid', 99],
     });
@@ -200,13 +202,14 @@ describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
         screenShake: true,
         damageNumbers: false,
         effects: 'full',
+        locale: 'en',
       },
       selectedCharacter: 'archer',
       unlockedCharacters: ['ninja', 'archer'],
     });
   });
 
-  it('migrates v1, v2, v3, and v4 saves forward to v5 preserving progress, splitting legacy volume, and defaulting new M15 fields', () => {
+  it('migrates v1, v2, v3, v4, and v5 saves forward to v6 preserving progress and defaulting settings.locale to "vi"', () => {
     const v1 = {
       version: 1,
       gold: 250,
@@ -243,6 +246,7 @@ describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
         screenShake: false,
         damageNumbers: true,
         effects: 'reduced',
+        locale: 'vi',
       },
       selectedCharacter: 'ninja',
       unlockedCharacters: ['ninja'],
@@ -284,6 +288,7 @@ describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
         screenShake: true,
         damageNumbers: true,
         effects: 'full',
+        locale: 'vi',
       },
       selectedCharacter: 'ninja',
       unlockedCharacters: ['ninja'],
@@ -329,6 +334,7 @@ describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
         screenShake: true,
         damageNumbers: false,
         effects: 'full',
+        locale: 'vi',
       },
       selectedCharacter: 'cultivator',
       unlockedCharacters: ['ninja'],
@@ -374,10 +380,49 @@ describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
         screenShake: false,
         damageNumbers: true,
         effects: 'reduced',
+        locale: 'vi',
       },
       selectedCharacter: 'mage',
       unlockedCharacters: ['ninja', 'archer', 'mage'],
     });
+
+    // M15 v5 save (no settings.locale) migrates cleanly to v6 with default Vietnamese ('vi').
+    const v5 = {
+      version: 5,
+      gold: 880,
+      upgrades: {
+        hearts: 5,
+        damage: 6,
+        fireRate: 5,
+        xpMagnet: 3,
+        goldBonus: 4,
+        freeRerolls: 2,
+      },
+      chaptersUnlocked: 4,
+      ascensionUnlocked: [5, 3, 2, 1],
+      best: { chapter: 4, room: 9 },
+      settings: {
+        volume: 0.8,
+        musicVolume: 0.5,
+        sfxVolume: 0.8,
+        fullscreen: true,
+        screenShake: true,
+        damageNumbers: true,
+        effects: 'full',
+      },
+      selectedCharacter: 'cultivator',
+      unlockedCharacters: ['ninja', 'archer', 'mage', 'cultivator'],
+    };
+    const fromV5 = migrate(v5);
+    expect(fromV5).toEqual({
+      ...v5,
+      version: SAVE_VERSION,
+      settings: {
+        ...v5.settings,
+        locale: 'vi',
+      },
+    });
+    expect(parseSaveData(JSON.parse(serializeSave(fromV5)))).toEqual(fromV5);
   });
 
   it('always keeps ninja in unlockedCharacters even when missing or corrupt during migration', () => {
@@ -440,6 +485,7 @@ describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      locale: 'vi',
     });
     expect(migrated.selectedCharacter).toBe('ninja');
     expect(migrated.unlockedCharacters).toEqual(['ninja']);
@@ -547,10 +593,16 @@ describe('SaveData — validate', () => {
     expect(message).toContain('best.chapter');
   });
 
-  it('parseSaveData demands the exact version, old saves must go through migrate', () => {
+  it('parseSaveData demands the exact version and validates settings.locale', () => {
     expect(() => parseSaveData({ ...createDefaultSave(), version: 0 })).toThrow(/version/);
-    expect(() => parseSaveData({ ...createDefaultSave(), version: 4 })).toThrow(/version/);
+    expect(() => parseSaveData({ ...createDefaultSave(), version: 5 })).toThrow(/version/);
     expect(() => parseSaveData({ ...createDefaultSave(), version: '1' })).toThrow(/version/);
+    expect(() =>
+      parseSaveData({
+        ...createDefaultSave(),
+        settings: { ...createDefaultSave().settings, locale: 'ja' },
+      }),
+    ).toThrow(/settings\.locale/);
   });
 
   it('rejects non-object data', () => {
@@ -1047,6 +1099,7 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      locale: 'vi',
     });
     expect(input.volume).toBe(2);
 
@@ -1058,10 +1111,11 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'reduced',
+      locale: 'vi',
     });
   });
 
-  it('applySettings fills missing fields with defaults (7 canonical keys)', () => {
+  it('applySettings fills missing fields with defaults (8 canonical keys)', () => {
     expect(applySettings()).toEqual({
       volume: DEFAULT_VOLUME,
       musicVolume: DEFAULT_VOLUME,
@@ -1070,6 +1124,7 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      locale: 'vi',
     });
     expect(applySettings({ volume: Number.NaN })).toEqual({
       volume: DEFAULT_VOLUME,
@@ -1079,8 +1134,9 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      locale: 'vi',
     });
-    // Plain object: all 7 own keys, JSON.stringify emits every field.
+    // Plain object: all 8 own keys, JSON.stringify emits every field.
     expect(Object.keys(applySettings())).toEqual([
       'volume',
       'musicVolume',
@@ -1089,6 +1145,7 @@ describe('Settings', () => {
       'screenShake',
       'damageNumbers',
       'effects',
+      'locale',
     ]);
   });
 });

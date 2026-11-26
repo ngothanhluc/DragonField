@@ -135,8 +135,8 @@ describe('HUD backing plates and internal element containment', () => {
 
     expect(combatLayout.topRight.hasEnemies).toBe(true);
     expect(bossLayout.topRight.hasEnemies).toBe(false);
-    expect(combatLayout.topRight.roomText).toBe('Room 3/9');
-    expect(combatLayout.topRight.enemiesText).toBe('Enemies 48');
+    expect(combatLayout.topRight.roomText).toBe('Phòng 3/9');
+    expect(combatLayout.topRight.enemiesText).toBe('Quái 48');
     expect(bossLayout.topRight.plate.height).toBeLessThan(combatLayout.topRight.plate.height);
     expect(bossLayout.topRight.plate.top).toBe(combatLayout.topRight.plate.top);
     expect(bossLayout.topRight.plate.right).toBe(combatLayout.topRight.plate.right);
@@ -361,7 +361,8 @@ describe('M13 Dash & Signature Active ratio clamping and countdown formatting', 
     expect(isHudActionReady(1, 0.2)).toBe(false);
     expect(isHudActionReady(0.6, 0)).toBe(false);
 
-    expect(formatHudActionStatusText(1, 0)).toBe('READY');
+    expect(formatHudActionStatusText(1, 0)).toBe('SẴN');
+    expect(formatHudActionStatusText(1, 0, 'en')).toBe('READY');
     expect(formatHudActionStatusText(0, 1.8)).toBe('1.8s');
     expect(formatHudActionStatusText(0.95, 0.02)).toBe('0.1s');
     expect(formatHudActionStatusText(0, 10)).toBe('10.0s');
@@ -389,12 +390,14 @@ describe('M12 XP fill ratio clamping and badge/progress formatting', () => {
   });
 
   it('formats level badge and compact XP progress text deterministically', () => {
-    expect(formatHudLevelText(1)).toBe('LV 1');
-    expect(formatHudLevelText(16)).toBe('LV 16');
-    expect(formatHudLevelText(14.9)).toBe('LV 14');
-    expect(formatHudLevelText(0)).toBe('LV 1');
-    expect(formatHudLevelText(-3)).toBe('LV 1');
-    expect(formatHudLevelText(Number.NaN)).toBe('LV 1');
+    expect(formatHudLevelText(1)).toBe('Cấp 1');
+    expect(formatHudLevelText(16)).toBe('Cấp 16');
+    expect(formatHudLevelText(14.9)).toBe('Cấp 14');
+    expect(formatHudLevelText(0)).toBe('Cấp 1');
+    expect(formatHudLevelText(-3)).toBe('Cấp 1');
+    expect(formatHudLevelText(Number.NaN)).toBe('Cấp 1');
+    expect(formatHudLevelText(1, 'en')).toBe('LV 1');
+    expect(formatHudLevelText(16, 'en')).toBe('LV 16');
 
     expect(formatHudXpProgressText(0, 20)).toBe('0/20');
     expect(formatHudXpProgressText(14.8, 35.9)).toBe('14/35');
@@ -1001,14 +1004,21 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
     expect(setActions).toHaveBeenCalledTimes(2);
   });
 
-  it('formats HUD text helpers deterministically', () => {
-    expect(formatHudGoldText(0)).toBe('Gold 0');
-    expect(formatHudGoldText(-5)).toBe('Gold 0');
-    expect(formatHudGoldText(42.9)).toBe('Gold 42');
-    expect(formatHudRoomText('1/9')).toBe('Room 1/9');
-    expect(formatHudRoomText('Room 4/9')).toBe('Room 4/9');
-    expect(formatHudRoomText('')).toBe('Room 1/9');
-    expect(formatHudEnemiesText(17.8)).toBe('Enemies 17');
+  it('formats HUD text helpers deterministically in Vietnamese (default) and English', () => {
+    expect(formatHudGoldText(0)).toBe('Vàng 0');
+    expect(formatHudGoldText(-5)).toBe('Vàng 0');
+    expect(formatHudGoldText(42.9)).toBe('Vàng 42');
+    expect(formatHudRoomText('1/9')).toBe('Phòng 1/9');
+    expect(formatHudRoomText('Phòng 4/9')).toBe('Phòng 4/9');
+    expect(formatHudRoomText('')).toBe('Phòng 1/9');
+    expect(formatHudEnemiesText(17.8)).toBe('Quái 17');
+
+    expect(formatHudGoldText(0, 'en')).toBe('Gold 0');
+    expect(formatHudGoldText(42.9, 'en')).toBe('Gold 42');
+    expect(formatHudRoomText('1/9', 'en')).toBe('Room 1/9');
+    expect(formatHudRoomText('Room 4/9', 'en')).toBe('Room 4/9');
+    expect(formatHudRoomText('', 'en')).toBe('Room 1/9');
+    expect(formatHudEnemiesText(17.8, 'en')).toBe('Enemies 17');
     expect(estimateHudLabelWidth(8)).toBeGreaterThan(0);
   });
 });

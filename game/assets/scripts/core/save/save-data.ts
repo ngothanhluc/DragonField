@@ -19,6 +19,7 @@ import {
   isCharacterUnlocked,
 } from '../characters/roster';
 import type { CharacterId } from '../characters/roster';
+import { isLocale, type Locale } from '../i18n/types';
 import { UPGRADE_TRACKS, createDefaultUpgrades, maxLevelFor } from '../meta/upgrades';
 import type { UpgradeTrack } from '../meta/upgrades';
 import { CHAPTERS_PER_RUN } from '../run/run-state';
@@ -33,8 +34,9 @@ import type { Settings } from './settings';
  * v5 (M15): adds 3 Utility meta tracks (`xpMagnet`, `goldBonus`, `freeRerolls`), per-chapter
  * `ascensionUnlocked` tuple (`[0..5, 0..5, 0..5, 0..5]`), and split `settings.musicVolume` /
  * `settings.sfxVolume` migrated from legacy `settings.volume`.
+ * v6 (M16): adds `settings.locale: 'vi' | 'en'` (default `'vi'`, ADR-024).
  */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /** Highest Ascension tier unlockable per chapter (GDD §15.5, M15). */
 export const MAX_ASCENSION_TIER = 5;
@@ -152,6 +154,21 @@ function readEffects(
   if (value === undefined) return undefined;
   if (value === 'full' || value === 'reduced') return value;
   problems.add(`settings.effects`, `must be "full" or "reduced", got ${describeValue(value)}`);
+  return undefined;
+}
+
+/**
+ * Read the optional `settings.locale`: absent → `undefined` (defaults to `'vi'` via
+ * `applySettings`), anything other than `'vi'`/`'en'` → a `settings.locale` error.
+ */
+function readLocale(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): Locale | undefined {
+  const value = source['locale'];
+  if (value === undefined) return undefined;
+  if (isLocale(value)) return value;
+  problems.add(`settings.locale`, `must be "vi" or "en", got ${describeValue(value)}`);
   return undefined;
 }
 
@@ -298,6 +315,7 @@ export function parseSaveData(raw: unknown): SaveData {
     const screenShake = readFlag(rawSettings, 'screenShake', problems);
     const damageNumbers = readFlag(rawSettings, 'damageNumbers', problems);
     const effects = readEffects(rawSettings, problems);
+    const locale = readLocale(rawSettings, problems);
 
     // Only use the read value when the field is valid; otherwise keep the default.
     settings = applySettings({
@@ -308,6 +326,7 @@ export function parseSaveData(raw: unknown): SaveData {
       ...(screenShake !== undefined ? { screenShake } : {}),
       ...(damageNumbers !== undefined ? { damageNumbers } : {}),
       ...(effects !== undefined ? { effects } : {}),
+      ...(locale !== undefined ? { locale } : {}),
     });
   }
 
@@ -399,6 +418,7 @@ export function serializeSave(data: SaveData): string {
       screenShake: valid.settings.screenShake,
       damageNumbers: valid.settings.damageNumbers,
       effects: valid.settings.effects,
+      locale: valid.settings.locale,
     },
     selectedCharacter: valid.selectedCharacter,
     unlockedCharacters: [...valid.unlockedCharacters],
@@ -662,6 +682,7 @@ function migrateSettings(raw: unknown, fallback: Settings): unknown {
     screenShake: pick(raw, 'screenShake', fallback.screenShake),
     damageNumbers: pick(raw, 'damageNumbers', fallback.damageNumbers),
     effects: pick(raw, 'effects', fallback.effects),
+    locale: pick(raw, 'locale', fallback.locale),
   };
 }
 

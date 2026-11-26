@@ -7,6 +7,7 @@
  * so the living chapter backdrop and hero cross-swap cleanly behind it.
  */
 import { Button as CocosButton, Layers, Node as CocosNode } from 'cc';
+import { getLocale, t, type Locale } from '../core/i18n';
 import {
   ascensionLabel,
   ascensionSummaryLines,
@@ -111,16 +112,18 @@ const INK_DETAIL_FOCUS = new CocosColor(78, 30, 8, 255);
 const INK_DISABLED_DETAIL = new CocosColor(202, 190, 176, 255);
 const ASCENSION_ACTIVE_COLOR = new CocosColor(255, 214, 112, 255);
 
-/** Record as text: "Best: chapter 2 · room 4" or "Best: —". */
-export function formatBest(best: BestProgress): string {
-  if (best.chapter <= 0 || best.room <= 0) return 'Best: —';
-  return `Best: chapter ${best.chapter} · room ${best.room}`;
+/** Record as text: "Kỷ lục: Chương 2 · Phòng 4" / "Best: chapter 2 · room 4". */
+export function formatBest(best: BestProgress, locale: Locale = getLocale()): string {
+  if (best.chapter <= 0 || best.room <= 0) return t('title.bestNone', undefined, locale);
+  return t('title.bestFull', { chapter: best.chapter, room: best.room }, locale);
 }
 
 /** Button label. When locked, say why (not unlocked or no data). */
-export function chapterCaption(button: ChapterButton): string {
-  if (button.playable) return `Chapter ${button.chapter}`;
-  return button.hasData ? `Chapter ${button.chapter}\nlocked` : `Chapter ${button.chapter}\nno data`;
+export function chapterCaption(button: ChapterButton, locale: Locale = getLocale()): string {
+  if (button.playable) return t('chapter.name', { chapter: button.chapter }, locale);
+  return button.hasData
+    ? t('chapter.lockedCaption', { chapter: button.chapter }, locale)
+    : t('chapter.noDataCaption', { chapter: button.chapter }, locale);
 }
 
 interface DynamicControl {
@@ -340,15 +343,15 @@ export async function buildChapterSelect(
   );
   panel.setPosition(0, layout.panelY, 0);
 
-  const title = createLabel(root, 'title', 'SELECT CHAPTER');
+  const title = createLabel(root, 'title', t('chapter.title'));
   title.fontSize = layout.titleFontSize;
-  title.lineHeight = layout.titleFontSize + 2;
+  title.lineHeight = layout.titleFontSize + 4;
   title.color = MENU_TITLE_COLOR;
   title.node.setPosition(0, layout.titleY, 0);
 
   const best = createLabel(root, 'best', formatBest(options.best));
   best.fontSize = layout.bestFontSize;
-  best.lineHeight = layout.bestFontSize + 2;
+  best.lineHeight = layout.bestFontSize + 4;
   best.color = MENU_MUTED_COLOR;
   best.node.setPosition(0, layout.bestY, 0);
 
@@ -373,7 +376,7 @@ export async function buildChapterSelect(
       createChapterControl(
         root,
         `chapter-${chapter.chapter}`,
-        `Chapter ${chapter.chapter}`,
+        t('chapter.name', { chapter: chapter.chapter }),
         detail,
         !chapter.playable,
         frames,
@@ -407,14 +410,14 @@ export async function buildChapterSelect(
 
   const ascLabel = createLabel(root, 'chapter-ascension-label', ascensionLabel(selectedAscension));
   ascLabel.fontSize = layout.ascensionLabelFontSize;
-  ascLabel.lineHeight = layout.ascensionLabelFontSize + 2;
+  ascLabel.lineHeight = layout.ascensionLabelFontSize + 4;
   ascLabel.color = selectedAscension > 0 ? ASCENSION_ACTIVE_COLOR : MENU_TEXT_COLOR;
   ascLabel.node.setPosition(layout.ascensionLabelX, layout.ascensionLabelY, 0);
 
   const summaryLabels: Label[] = layout.summaryLineYs.map((lineY, i) => {
     const lbl = createLabel(root, `chapter-ascension-summary-${i}`, '');
     lbl.fontSize = layout.summaryFontSize;
-    lbl.lineHeight = layout.summaryFontSize + 1;
+    lbl.lineHeight = layout.summaryFontSize + 4;
     lbl.color = MENU_MUTED_COLOR;
     lbl.node.setPosition(0, lineY, 0);
     return lbl;
@@ -423,7 +426,7 @@ export async function buildChapterSelect(
   const backControl = createChapterControl(
     root,
     'back',
-    'Back',
+    t('common.back'),
     undefined,
     false,
     frames,
@@ -433,7 +436,7 @@ export async function buildChapterSelect(
 
   const hint = createLabel(root, 'hint', '');
   hint.fontSize = layout.hintFontSize;
-  hint.lineHeight = layout.hintFontSize + 2;
+  hint.lineHeight = layout.hintFontSize + 4;
   hint.color = MENU_MUTED_COLOR;
   hint.node.setPosition(0, layout.hintY, 0);
 
@@ -479,7 +482,7 @@ export async function buildChapterSelect(
         selectedAscension,
         maxUnlockedFor(chapter.chapter),
       );
-      controls[idx]?.update(`Chapter ${chapter.chapter}`, detail, !chapter.playable);
+      controls[idx]?.update(t('chapter.name', { chapter: chapter.chapter }), detail, !chapter.playable);
     });
 
     prevControl.update('<', undefined, !selPlayable || selectedAscension <= 0);
@@ -490,7 +493,7 @@ export async function buildChapterSelect(
 
     const summaryLines = selPlayable
       ? ascensionSummaryLines(selectedAscension, ASCENSION_SUMMARY_MAX_CHARS)
-      : ['Unlock this chapter to select Ascension'];
+      : [t('chapter.unlockToSelectAscension')];
     summaryLabels.forEach((lbl, idx) => {
       const text = summaryLines[idx] ?? '';
       lbl.string = text;

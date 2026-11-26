@@ -23,6 +23,7 @@ import {
   input,
   view,
 } from 'cc';
+import { localizeRarity, localizeSkillName, t } from '../core/i18n';
 import { describeSkill } from '../core/skills/description';
 import { evolutionHintsForSkill } from '../core/skills/evolutions';
 import { getSkill, type Rarity, type SkillDef } from '../core/skills/pool';
@@ -293,19 +294,17 @@ export async function buildSkillPick(
 
   addDim(root);
 
-  const title = createLabel(root, 'skill-pick-title', 'CHOOSE A SKILL');
+  const title = createLabel(root, 'skill-pick-title', t('skillPick.title'));
   title.fontSize = 20;
-  title.lineHeight = 24;
+  title.lineHeight = 25;
   title.color = MENU_TITLE_COLOR;
   title.node.setPosition(0, layout.titleY, 0);
 
   const hintText =
-    rerollOpt !== undefined
-      ? 'Click a card, arrows + Enter, 1 / 2 / 3, or R to reroll'
-      : 'Click a card, ←/→ + Enter, or press 1 / 2 / 3';
+    rerollOpt !== undefined ? t('skillPick.hintWithReroll') : t('skillPick.hintNoReroll');
   const subtitle = createLabel(root, 'skill-pick-hint', hintText);
   subtitle.fontSize = 10;
-  subtitle.lineHeight = 12;
+  subtitle.lineHeight = 14;
   subtitle.color = MENU_MUTED_COLOR;
   subtitle.node.setPosition(0, layout.subtitleY, 0);
 
@@ -346,17 +345,17 @@ export async function buildSkillPick(
 
   if (rerollOpt !== undefined) {
     const label = !rerollOpt.hasAlternatives
-      ? 'Reroll (R)'
+      ? t('skillPick.rerollDisabled')
       : isFreeReroll
-        ? `Free Reroll (R) · ${freeRerollsLeft} left`
-        : `Reroll (R) — ${rerollOpt.cost}g`;
+        ? t('skillPick.rerollFree', { left: freeRerollsLeft })
+        : t('skillPick.rerollPaid', { cost: rerollOpt.cost });
     const detail = !rerollOpt.hasAlternatives
-      ? 'No alternative skills'
+      ? t('skillPick.rerollNoAlt')
       : isFreeReroll
-        ? `0g · Gold: ${rerollOpt.availableGold}g`
+        ? t('skillPick.rerollFreeDetail', { gold: rerollOpt.availableGold })
         : canRerollNow
-          ? `Gold: ${rerollOpt.availableGold}g`
-          : `Gold: ${rerollOpt.availableGold}g — Not enough gold`;
+          ? t('skillPick.rerollGoldDetail', { gold: rerollOpt.availableGold })
+          : t('skillPick.rerollShortDetail', { gold: rerollOpt.availableGold });
 
     const handle = createMenuButton(
       root,
@@ -542,22 +541,24 @@ function makeCard(
     })
     .catch(() => undefined);
 
-  const name = createLabel(node, 'name', skill.name);
+  const name = createLabel(node, 'name', localizeSkillName(skill.id, skill.name));
   name.fontSize = 12;
-  name.lineHeight = 14;
+  name.lineHeight = 16;
   name.color = isLegendary ? LEGENDARY_GOLD_COLOR : MENU_TEXT_COLOR;
   name.node.setPosition(0, layout.nameY, 0);
 
-  const headerText = isLegendary ? 'EVOLUTION' : skill.rarity.toUpperCase();
+  const headerText = isLegendary
+    ? t('skillPick.evolutionHeader')
+    : localizeRarity(skill.rarity);
   const rarity = createLabel(node, 'rarity', headerText);
   rarity.fontSize = 9;
-  rarity.lineHeight = 11;
+  rarity.lineHeight = 13;
   rarity.color = rarityColor;
   rarity.node.setPosition(0, layout.rarityY, 0);
 
   const effect = createLabel(node, 'effect', describeSkill(skill));
   effect.fontSize = layout.effectFontSize;
-  effect.lineHeight = layout.effectLineHeight;
+  effect.lineHeight = Math.max(layout.effectLineHeight, layout.effectFontSize + 4);
   effect.color = MENU_TEXT_COLOR;
   effect.enableWrapText = true;
   effect.overflow = CocosLabel.Overflow.RESIZE_HEIGHT;
@@ -570,10 +571,12 @@ function makeCard(
 
   if (isLegendary && skill.requires !== undefined) {
     const [reqA, reqB] = skill.requires;
-    const recipe = `${getSkill(reqA).name} + ${getSkill(reqB).name}`;
+    const defA = getSkill(reqA);
+    const defB = getSkill(reqB);
+    const recipe = `${localizeSkillName(defA.id, defA.name)} + ${localizeSkillName(defB.id, defB.name)}`;
     const pairHint = createLabel(node, 'pair-hint', recipe);
     pairHint.fontSize = 8;
-    pairHint.lineHeight = 10;
+    pairHint.lineHeight = 12;
     pairHint.color = LEGENDARY_GOLD_COLOR;
     pairHint.node.setPosition(0, layout.pairHintY, 0);
   } else if (!isLegendary) {
@@ -581,20 +584,20 @@ function makeCard(
     if (hint !== undefined) {
       const pairHint = createLabel(node, 'pair-hint', hint.text);
       pairHint.fontSize = 8;
-      pairHint.lineHeight = 10;
+      pairHint.lineHeight = 12;
       pairHint.color = hint.ready ? PAIR_HINT_READY_COLOR : PAIR_HINT_MUTED_COLOR;
       pairHint.node.setPosition(0, layout.pairHintY, 0);
     }
   }
 
   const stackLine = isLegendary
-    ? 'LEGENDARY'
+    ? t('skillPick.legendaryBadge')
     : stacks <= 0
-      ? 'NEW'
-      : `Stack ${stacks} / ${skill.maxStacks}`;
+      ? t('skillPick.newBadge')
+      : t('skillPick.stackBadge', { current: stacks, max: skill.maxStacks });
   const stack = createLabel(node, 'stack', stackLine);
   stack.fontSize = 9;
-  stack.lineHeight = 11;
+  stack.lineHeight = 13;
   stack.color = isLegendary || stacks > 0 ? rarityColor : MENU_MUTED_COLOR;
   stack.node.setPosition(0, layout.stackY, 0);
 

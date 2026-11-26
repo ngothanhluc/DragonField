@@ -6,7 +6,16 @@
  * and unlocked chapters / heroes / Ascension tiers into compact lines for `ResultScreen`.
  */
 import { BOSSES, type BossId } from '../boss/boss-defs';
-import { CHARACTERS, isCharacterId, type CharacterId } from '../characters/roster';
+import { isCharacterId, type CharacterId } from '../characters/roster';
+import {
+  getLocale,
+  localizeBossName,
+  localizeCharacterName,
+  localizeEnemyRole,
+  localizeSkillName,
+  t,
+  type Locale,
+} from '../i18n';
 import type { EnemyRole } from '../level/level-data';
 import { resolveOwnedEvolutions } from '../skills/evolutions';
 import { resolveOwnedSkills, type BaseRarity } from '../skills/pool';
@@ -34,60 +43,53 @@ export interface BuildSummaryOptions {
   readonly maxSkillLines?: number;
 }
 
-const ROLE_DISPLAY_NAMES: Readonly<Record<EnemyRole, string>> = {
-  chaser: 'Chaser',
-  caster: 'Caster',
-  tank: 'Tank',
-  sniper: 'Sniper',
-  splitter: 'Splitter',
-  splitling: 'Splitling',
-  bomber: 'Bomber',
-  buffer: 'Buffer',
-};
-
 const RARITY_RANK: Readonly<Record<BaseRarity, number>> = {
   common: 1,
   rare: 2,
   epic: 3,
 };
 
-function enemyRoleLabel(role: EnemyRole): string {
-  return ROLE_DISPLAY_NAMES[role] ?? 'Enemy';
-}
-
 /** Format a `DeathCause` into a crisp human-readable string for `ResultScreen`. */
-export function formatDeathCause(cause: DeathCause): string {
+export function formatDeathCause(cause: DeathCause, locale: Locale = getLocale()): string {
   switch (cause.kind) {
     case 'enemy': {
-      const name = enemyRoleLabel(cause.role);
-      return cause.elite === true ? `Slain by Elite ${name}` : `Slain by ${name}`;
+      const role = localizeEnemyRole(cause.role, locale);
+      return cause.elite === true
+        ? t('death.enemyElite', { role }, locale)
+        : t('death.enemy', { role }, locale);
     }
     case 'enemy-bullet': {
       if (cause.role !== undefined) {
-        return `Slain by ${enemyRoleLabel(cause.role)} bullet`;
+        return t(
+          'death.enemyBulletRole',
+          { role: localizeEnemyRole(cause.role, locale) },
+          locale,
+        );
       }
-      return 'Slain by enemy bullet';
+      return t('death.enemyBullet', undefined, locale);
     }
-    case 'bomber-blast': {
+    case 'bomber-blast':
       return cause.elite === true
-        ? 'Slain by Elite Bomber blast'
-        : 'Slain by Bomber blast';
-    }
+        ? t('death.bomberBlastElite', undefined, locale)
+        : t('death.bomberBlast', undefined, locale);
     case 'boss': {
-      const bossName = BOSSES[cause.bossId]?.displayName ?? cause.bossId;
+      const boss =
+        BOSSES[cause.bossId] !== undefined
+          ? localizeBossName(cause.bossId, locale)
+          : cause.bossId;
       if (
         cause.phase !== undefined &&
         Number.isFinite(cause.phase) &&
         cause.phase >= 1
       ) {
-        return `Slain by ${bossName} (Phase ${Math.trunc(cause.phase)})`;
+        return t('death.bossPhase', { boss, phase: Math.trunc(cause.phase) }, locale);
       }
-      return `Slain by ${bossName}`;
+      return t('death.boss', { boss }, locale);
     }
     case 'victory':
-      return 'Chapter Cleared!';
+      return t('death.victory', undefined, locale);
     case 'unknown':
-      return 'Defeated in combat';
+      return t('death.unknown', undefined, locale);
   }
 }
 
@@ -96,6 +98,7 @@ function packCommaItems(
   items: readonly string[],
   maxLineLength: number,
   maxLines: number,
+  locale: Locale,
 ): string[] {
   if (items.length === 0 || maxLines <= 0) return [];
 
@@ -109,7 +112,9 @@ function packCommaItems(
     const remainingAfter = items.length - index - 1;
     const isLastLine = lines.length === maxLines - 1;
     const suffixReserve =
-      isLastLine && remainingAfter > 0 ? ` (+${remainingAfter} more)` : '';
+      isLastLine && remainingAfter > 0
+        ? t('result.moreSuffix', { count: remainingAfter }, locale)
+        : '';
     const candidate = `${current}${separator}${item}`;
 
     if (
@@ -123,7 +128,7 @@ function packCommaItems(
 
     if (isLastLine) {
       const remaining = items.length - index;
-      lines.push(`${current} (+${remaining} more)`);
+      lines.push(`${current}${t('result.moreSuffix', { count: remaining }, locale)}`);
       return lines;
     }
 
@@ -145,6 +150,7 @@ function packCommaItems(
 export function formatBuildSummary(
   ownedSkills: ReadonlyMap<string, number>,
   options: BuildSummaryOptions = {},
+  locale: Locale = getLocale(),
 ): string[] {
   const maxLineLength =
     options.maxLineLength !== undefined && Number.isFinite(options.maxLineLength)
@@ -159,15 +165,21 @@ export function formatBuildSummary(
   const skills = resolveOwnedSkills(ownedSkills);
 
   if (evolutions.length === 0 && skills.length === 0) {
-    return ['Build: None'];
+    return [t('result.buildNone', undefined, locale)];
   }
 
   const lines: string[] = [];
 
   if (evolutions.length > 0) {
-    const evoNames = evolutions.map((evo) => evo.def.name);
+    const evoNames = evolutions.map((evo) => localizeSkillName(evo.def.id, evo.def.name, locale));
     lines.push(
-      ...packCommaItems('Evolutions: ', evoNames, maxLineLength, evolutions.length),
+      ...packCommaItems(
+        t('result.evolutionsPrefix', undefined, locale),
+        evoNames,
+        maxLineLength,
+        evolutions.length,
+        locale,
+      ),
     );
   }
 
@@ -177,15 +189,28 @@ export function formatBuildSummary(
       if (b.stacks !== a.stacks) return b.stacks - a.stacks;
       return RARITY_RANK[b.def.rarity] - RARITY_RANK[a.def.rarity];
     });
-    const skillTokens = sorted.map((entry) => `${entry.def.name} x${entry.stacks}`);
-    lines.push(...packCommaItems('Skills: ', skillTokens, maxLineLength, maxSkillLines));
+    const skillTokens = sorted.map(
+      (entry) => `${localizeSkillName(entry.def.id, entry.def.name, locale)} x${entry.stacks}`,
+    );
+    lines.push(
+      ...packCommaItems(
+        t('result.skillsPrefix', undefined, locale),
+        skillTokens,
+        maxLineLength,
+        maxSkillLines,
+        locale,
+      ),
+    );
   }
 
   return lines;
 }
 
 /** Format newly earned chapter, character, Ascension, and Endless unlocks into crisp lines. */
-export function formatRunUnlocks(unlocks: RunUnlocksSummary): string[] {
+export function formatRunUnlocks(
+  unlocks: RunUnlocksSummary,
+  locale: Locale = getLocale(),
+): string[] {
   const lines: string[] = [];
 
   if (
@@ -193,19 +218,19 @@ export function formatRunUnlocks(unlocks: RunUnlocksSummary): string[] {
     Number.isFinite(unlocks.unlockedChapter) &&
     unlocks.unlockedChapter >= 1
   ) {
-    lines.push(`Chapter ${Math.trunc(unlocks.unlockedChapter)} unlocked!`);
+    lines.push(t('result.unlockChapter', { chapter: Math.trunc(unlocks.unlockedChapter) }, locale));
   }
 
   if (unlocks.unlockedCharacters !== undefined && unlocks.unlockedCharacters.length > 0) {
     const names: string[] = [];
     for (const id of unlocks.unlockedCharacters) {
-      const name = isCharacterId(id) ? CHARACTERS[id].name : String(id);
+      const name = isCharacterId(id) ? localizeCharacterName(id, locale) : String(id);
       if (!names.includes(name)) names.push(name);
     }
     if (names.length === 1) {
-      lines.push(`Hero unlocked: ${names[0]}`);
+      lines.push(t('result.unlockHeroOne', { name: names[0]! }, locale));
     } else if (names.length > 1) {
-      lines.push(`Heroes unlocked: ${names.join(', ')}`);
+      lines.push(t('result.unlockHeroMany', { names: names.join(', ') }, locale));
     }
   }
 
@@ -213,12 +238,18 @@ export function formatRunUnlocks(unlocks: RunUnlocksSummary): string[] {
     const { chapter, level } = unlocks.unlockedAscension;
     const clampedLevel = clampAscension(level);
     if (clampedLevel >= 1 && Number.isFinite(chapter) && chapter >= 1) {
-      lines.push(`Unlocked: Ch${Math.trunc(chapter)} ${ascensionLabel(clampedLevel)}`);
+      lines.push(
+        t(
+          'result.unlockAscension',
+          { chapter: Math.trunc(chapter), label: ascensionLabel(clampedLevel, locale) },
+          locale,
+        ),
+      );
     }
   }
 
   if (unlocks.endlessUnlocked === true) {
-    lines.push('Endless Mode unlocked!');
+    lines.push(t('result.unlockEndless', undefined, locale));
   }
 
   return lines;

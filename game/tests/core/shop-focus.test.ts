@@ -58,9 +58,9 @@ describe('shop offer state: edge cases', () => {
     const none = new Map<string, number>();
     expect(shopOfferState({ item: 'heart-refill', price: -5 }, 999, none)).toEqual({
       kind: 'not-enough-gold',
-      reason: 'NOT ENOUGH GOLD',
+      reason: 'KHÔNG ĐỦ VÀNG',
     });
-    expect(shopOfferState({ item: 'heart-refill', price: 2.5 }, 999, none)).toEqual({
+    expect(shopOfferState({ item: 'heart-refill', price: 2.5 }, 999, none, 'en')).toEqual({
       kind: 'not-enough-gold',
       reason: 'NOT ENOUGH GOLD',
     });

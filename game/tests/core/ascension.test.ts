@@ -123,23 +123,41 @@ describe('ascensionModifiers', () => {
 });
 
 describe('ascensionLabel & ascensionSummaryLines', () => {
-  it('formats tier labels cleanly', () => {
-    expect(ascensionLabel(0)).toBe('Normal');
-    expect(ascensionLabel(1)).toBe('Ascension 1');
-    expect(ascensionLabel(5)).toBe('Ascension 5');
-    expect(ascensionLabel(-1)).toBe('Normal');
-    expect(ascensionLabel(10)).toBe('Ascension 5');
+  it('formats tier labels cleanly in Vietnamese (default) and English', () => {
+    expect(ascensionLabel(0)).toBe('Thường');
+    expect(ascensionLabel(1)).toBe('Thăng Hoa 1');
+    expect(ascensionLabel(5)).toBe('Thăng Hoa 5');
+    expect(ascensionLabel(-1)).toBe('Thường');
+    expect(ascensionLabel(10)).toBe('Thăng Hoa 5');
+
+    expect(ascensionLabel(0, 'en')).toBe('Normal');
+    expect(ascensionLabel(1, 'en')).toBe('Ascension 1');
+    expect(ascensionLabel(5, 'en')).toBe('Ascension 5');
+    expect(ascensionLabel(-1, 'en')).toBe('Normal');
+    expect(ascensionLabel(10, 'en')).toBe('Ascension 5');
   });
 
-  it('formats compact Chapter Select summary lines within width bounds', () => {
-    expect(ascensionSummaryLines(0)).toEqual(['Standard difficulty']);
+  it('formats compact Chapter Select summary lines within width bounds in both locales', () => {
+    expect(ascensionSummaryLines(0)).toEqual(['Độ khó tiêu chuẩn']);
+    expect(ascensionSummaryLines(0, 46, 'en')).toEqual(['Standard difficulty']);
 
-    const t1 = ascensionSummaryLines(1);
+    const t1Vi = ascensionSummaryLines(1);
+    expect(t1Vi.join(' ')).toContain('+1 Tinh Anh');
+    expect(t1Vi.join(' ')).toContain('+15% HP quái');
+    expect(t1Vi.join(' ')).toContain('+15% Vàng');
+
+    const t5Vi = ascensionSummaryLines(5, 44, 'vi');
+    expect(t5Vi.length).toBeLessThanOrEqual(3);
+    for (const line of t5Vi) {
+      expect(line.length).toBeLessThanOrEqual(44);
+    }
+
+    const t1 = ascensionSummaryLines(1, 46, 'en');
     expect(t1.join(' ')).toContain('+1 Elite/room');
     expect(t1.join(' ')).toContain('+15% Enemy HP');
     expect(t1.join(' ')).toContain('+15% Gold');
 
-    const t5 = ascensionSummaryLines(5);
+    const t5 = ascensionSummaryLines(5, 46, 'en');
     expect(t5.length).toBeGreaterThanOrEqual(2);
     expect(t5.length).toBeLessThanOrEqual(4);
     for (const line of t5) {

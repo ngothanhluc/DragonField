@@ -63,4 +63,13 @@ describe('stepChannelVolume — independent Music & SFX sliders (M15)', () => {
     expect(split.sfxVolume).toBe(0.9);
     expect(split.volume).toBe(0.9);
   });
+
+  it('defaults locale to Vietnamese ("vi") and preserves valid "en" while sanitizing invalid values', () => {
+    expect(DEFAULT_SETTINGS.locale).toBe('vi');
+    expect(applySettings({}).locale).toBe('vi');
+    expect(applySettings({ locale: 'en' }).locale).toBe('en');
+    expect(applySettings({ locale: 'vi' }).locale).toBe('vi');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately feeding broken locale
+    expect(applySettings({ locale: 'fr' as any }).locale).toBe('vi');
+  });
 });

@@ -69,15 +69,20 @@ describe('Skill & Evolution descriptions', () => {
     }
   });
 
-  it('descriptions take numbers from tags, not hardcoded', () => {
-    expect(describeSkill(getSkill('sharpen'))).toContain('+1 damage');
-    expect(describeSkill(getSkill('rapid-fire'))).toContain('+25% fire rate');
-    expect(describeSkill(getSkill('twin-shot'))).toContain('±12°');
-    expect(describeSkill(getSkill('shield'))).toContain('20s');
-    expect(describeSkill(getSkill('executioner'))).toContain('30%');
-    expect(describeSkill(getSkill('poison'))).toContain('3s');
-    expect(describeSkill(getSkill('ignite'))).toContain('Burn');
-    expect(describeSkill(getSkill('phantom-dash'))).toContain('dash cooldown');
+  it('descriptions take numbers from tags, not hardcoded (in both Vietnamese and English)', () => {
+    expect(describeSkill(getSkill('sharpen'))).toContain('+1 sát thương');
+    expect(describeSkill(getSkill('rapid-fire'))).toContain('+25% tốc độ bắn');
+    expect(describeSkill(getSkill('ignite'))).toContain('Cháy');
+    expect(describeSkill(getSkill('phantom-dash'))).toContain('hồi chiêu lướt');
+
+    expect(describeSkill(getSkill('sharpen'), 'en')).toContain('+1 damage');
+    expect(describeSkill(getSkill('rapid-fire'), 'en')).toContain('+25% fire rate');
+    expect(describeSkill(getSkill('twin-shot'), 'en')).toContain('±12°');
+    expect(describeSkill(getSkill('shield'), 'en')).toContain('20s');
+    expect(describeSkill(getSkill('executioner'), 'en')).toContain('30%');
+    expect(describeSkill(getSkill('poison'), 'en')).toContain('3s');
+    expect(describeSkill(getSkill('ignite'), 'en')).toContain('Burn');
+    expect(describeSkill(getSkill('phantom-dash'), 'en')).toContain('dash cooldown');
   });
 
   it('HUD abbreviations are readable and strictly unique across all skills & Evolutions', () => {

@@ -279,6 +279,7 @@ vi.mock('../../assets/scripts/game/assets/texture-cache', () => ({
 }));
 
 import { CHARACTERS } from '../../assets/scripts/core/characters/roster';
+import { getLocale, setLocale } from '../../assets/scripts/core/i18n';
 import { RUN_SAVE_VERSION, type ActiveRunSave } from '../../assets/scripts/core/save/run-save';
 import {
   createDefaultSave,
@@ -354,6 +355,7 @@ function makeActiveRun(overrides: Partial<ActiveRunSave> = {}): ActiveRunSave {
 
 beforeEach(() => {
   keyListeners.clear();
+  setLocale('vi');
 });
 
 describe('M15 TitleScreen — Continue Run button', () => {
@@ -371,12 +373,12 @@ describe('M15 TitleScreen — Continue Run button', () => {
     });
 
     const texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).not.toContain('Continue Run');
-    expect(texts).toContain('Play');
+    expect(texts).not.toContain('Tiếp tục màn chơi');
+    expect(texts).toContain('Chơi');
     screen.destroy();
   });
 
-  it('renders Continue Run with Hero, Ch/R, and A/E tags when activeRun is present and fires onContinueRun', async () => {
+  it('renders Continue Run with Hero, Ch/P, and A/E tags when activeRun is present and fires onContinueRun', async () => {
     const parent = new MockNode('ui');
     const activeRun = makeActiveRun();
     const onContinueRun = vi.fn();
@@ -398,8 +400,8 @@ describe('M15 TitleScreen — Continue Run button', () => {
     });
 
     const texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).toContain('Continue Run');
-    expect(texts).toContain('Archer · Ch2 R4 · A3 · E1');
+    expect(texts).toContain('Tiếp tục màn chơi');
+    expect(texts).toContain('Cung Thủ · Ch2 P4 · A3 · E1');
 
     // Focus defaults to 0 (Continue Run) -> Enter invokes onContinueRun(activeRun).
     dispatchKey('Enter', 13);
@@ -438,8 +440,8 @@ describe('M15 ChapterSelect — Ascension 0–5 selector & clamping', () => {
 
     expect(screen.getAscension()).toBe(2);
     let texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).toContain('Ascension 2');
-    expect(texts.some((t) => t.includes('+30% Gold'))).toBe(true);
+    expect(texts).toContain('Thăng Hoa 2');
+    expect(texts.some((t) => t.includes('+30% Vàng'))).toBe(true);
 
     // Trying to step right beyond unlocked tier 2 stays clamped at 2.
     dispatchKey('ArrowRight', 39);
@@ -458,7 +460,7 @@ describe('M15 ChapterSelect — Ascension 0–5 selector & clamping', () => {
     dispatchKey('ArrowDown', 40);
     expect(screen.getAscension()).toBe(0);
     texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).toContain('Normal');
+    expect(texts).toContain('Thường');
 
     // Move back up to Chapter 1, step to A2 via `>` button, and press Enter to launch Ch1 at A2.
     dispatchKey('ArrowUp', 38);
@@ -496,9 +498,9 @@ describe('M15 Expanded Meta Shop — 6 upgrade tracks + 3 hero unlocks', () => {
 
     const root = screen.node as unknown as InstanceType<typeof MockNode>;
     const texts = collectLabels(root);
-    expect(texts).toContain('STAT UPGRADES');
-    expect(texts).toContain('UTILITY UPGRADES');
-    expect(texts).toContain('HERO UNLOCKS');
+    expect(texts).toContain('NÂNG CHỈ SỐ');
+    expect(texts).toContain('TIỆN ÍCH');
+    expect(texts).toContain('MỞ KHÓA TƯỚNG');
     expect(texts.some((t) => /revive/i.test(t))).toBe(false);
 
     // Buy `xpMagnet` (index 3, utility column top).
@@ -515,11 +517,12 @@ describe('M15 Expanded Meta Shop — 6 upgrade tracks + 3 hero unlocks', () => {
   });
 });
 
-describe('M15 Settings & Pause — independent Music and SFX sliders', () => {
+describe('M15 Settings & Pause — independent Music and SFX sliders + M16 Language toggle', () => {
   it('steps Music and SFX independently by 10% on Settings and falls back to onVolume when needed', async () => {
     const parent = new MockNode('ui');
     const onMusicVolume = vi.fn();
     const onSfxVolume = vi.fn();
+    const onToggleLocale = vi.fn();
 
     const screen = await buildSettingsScreen({
       parent: parent as unknown as never,
@@ -530,12 +533,14 @@ describe('M15 Settings & Pause — independent Music and SFX sliders', () => {
       onToggleScreenShake: vi.fn(),
       onToggleDamageNumbers: vi.fn(),
       onToggleEffects: vi.fn(),
+      onToggleLocale,
       onBack: vi.fn(),
     });
 
     let texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).toContain('Music   80%');
-    expect(texts).toContain('SFX   50%');
+    expect(texts).toContain('Nhạc nền   80%');
+    expect(texts).toContain('Hiệu ứng âm   50%');
+    expect(texts).toContain('Ngôn ngữ   Tiếng Việt');
 
     // Index 0 = Music: step left (-10%) -> 70%, SFX remains 50%.
     dispatchKey('ArrowLeft', 37);
@@ -547,9 +552,14 @@ describe('M15 Settings & Pause — independent Music and SFX sliders', () => {
     dispatchKey('ArrowRight', 39);
     expect(onSfxVolume).toHaveBeenCalledWith(0.6);
 
+    // Index 6 = Language: Enter or Left/Right fires onToggleLocale.
+    screen.focus(6);
+    dispatchKey('Enter', 13);
+    expect(onToggleLocale).toHaveBeenCalledTimes(1);
+
     texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).toContain('Music   70%');
-    expect(texts).toContain('SFX   60%');
+    expect(texts).toContain('Nhạc nền   70%');
+    expect(texts).toContain('Hiệu ứng âm   60%');
     screen.destroy();
 
     // Fallback to `onVolume` when channel callbacks are omitted.
@@ -601,13 +611,13 @@ describe('M15 Rich Result / Death screen — rich summary & Continue Endless', (
     });
 
     const texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).toContain('RUN OVER');
-    expect(texts).toContain('Slain by Elite Bomber blast');
-    expect(texts.some((t) => t.includes('Hero: Mage') && t.includes('Ascension 2'))).toBe(true);
+    expect(texts).toContain('KẾT THÚC MÀN CHƠI');
+    expect(texts).toContain('Bị hạ bởi Cảm Tử Tinh Anh');
+    expect(texts.some((t) => t.includes('Tướng: Pháp Sư') && t.includes('Thăng Hoa 2'))).toBe(true);
     expect(texts.some((t) => t.includes('Seed 424242'))).toBe(true);
-    expect(texts.some((t) => t.includes('Evolutions: Cataclysm'))).toBe(true);
-    expect(texts.some((t) => t.includes('Explosive x3'))).toBe(true);
-    expect(texts).not.toContain('Continue Endless');
+    expect(texts.some((t) => t.includes('Tiến hóa: Đại Họa Hủy Diệt'))).toBe(true);
+    expect(texts.some((t) => t.includes('Đạn Nổ x3'))).toBe(true);
+    expect(texts).not.toContain('Tiếp tục Vô Tận');
     screen.destroy();
   });
 
@@ -642,10 +652,10 @@ describe('M15 Rich Result / Death screen — rich summary & Continue Endless', (
     });
 
     const texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).toContain('CHAPTER CLEAR');
-    expect(texts).toContain('Continue Endless');
-    expect(texts.some((t) => t.includes('Unlocked: Ch4 Ascension 5'))).toBe(true);
-    expect(texts.some((t) => t.includes('Endless Mode unlocked!'))).toBe(true);
+    expect(texts).toContain('HOÀN THÀNH CHƯƠNG');
+    expect(texts).toContain('Tiếp tục Vô Tận');
+    expect(texts.some((t) => t.includes('Mở khóa: Ch4 Thăng Hoa 5'))).toBe(true);
+    expect(texts.some((t) => t.includes('Đã mở Chế độ Vô Tận!'))).toBe(true);
 
     // Focus 0 = Continue Endless -> Enter fires onContinueEndless.
     dispatchKey('Enter', 13);
@@ -840,7 +850,7 @@ describe('M15 ScreenFlow — Ascension preservation, Pause music ducking & chann
     expect(activeRun).not.toBeNull();
     expect(save.gold).toBe(100);
     let texts = collectLabels(uiRoot);
-    expect(texts).toContain('Continue Run');
+    expect(texts).toContain('Tiếp tục màn chơi');
 
     // Pressing Enter on Title focus 0 invokes `onContinueRun(activeRun)`.
     dispatchKey('Enter', 13);
@@ -848,7 +858,7 @@ describe('M15 ScreenFlow — Ascension preservation, Pause music ducking & chann
     expect(onContinueRun).toHaveBeenCalledWith(activeRun);
 
     // 2. Finish Chapter 4 victory -> clears runSave (`teardownRun(true)`), unlocks Ch4 Ascension 1,
-    //    banks gold once, and renders rich ResultScreen with `Continue Endless` + unlocks!
+    //    banks gold once, and renders rich ResultScreen with `Tiếp tục Vô Tận` + unlocks!
     status = 'playing';
     flow.finishRun(true);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -859,15 +869,45 @@ describe('M15 ScreenFlow — Ascension preservation, Pause music ducking & chann
     expect(unlockedAscensionForChapter(save, 4)).toBe(1);
 
     texts = collectLabels(uiRoot);
-    expect(texts).toContain('CHAPTER CLEAR');
-    expect(texts).toContain('Continue Endless');
+    expect(texts).toContain('HOÀN THÀNH CHƯƠNG');
+    expect(texts).toContain('Tiếp tục Vô Tận');
     expect(texts.some((t) => t.includes('Seed 987654'))).toBe(true);
-    expect(texts.some((t) => t.includes('Ch4 Ascension 1'))).toBe(true);
+    expect(texts.some((t) => t.includes('Ch4 Thăng Hoa 1'))).toBe(true);
 
     // Returning to Title after victory hides `Continue Run` because `activeRun` was cleared.
     await flow.showTitle();
     texts = collectLabels(uiRoot);
-    expect(texts).not.toContain('Continue Run');
+    expect(texts).not.toContain('Tiếp tục màn chơi');
+
+    // 3. M16: Opening Settings from Title (index 3: Play, Character, Meta shop, Settings) and
+    //    toggling Language updates locale live, rebuilds Settings in English, and persists `settings.locale = 'en'`.
+    dispatchKey('ArrowDown', 40);
+    dispatchKey('ArrowDown', 40);
+    dispatchKey('ArrowDown', 40);
+    dispatchKey('Enter', 13);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    texts = collectLabels(uiRoot);
+    expect(texts).toContain('CÀI ĐẶT');
+    expect(texts).toContain('Ngôn ngữ   Tiếng Việt');
+
+    // Move focus to index 6 (Language row) and press Enter -> switches live to English!
+    for (let step = 0; step < 6; step += 1) dispatchKey('ArrowDown', 40);
+    dispatchKey('Enter', 13);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getLocale()).toBe('en');
+    expect(save.settings.locale).toBe('en');
+    expect(repo.load().settings.locale).toBe('en');
+    texts = collectLabels(uiRoot);
+    expect(texts).toContain('SETTINGS');
+    expect(texts).toContain('Language   English');
+
+    // Navigating back to Title renders English Title labels cleanly.
+    dispatchKey('Escape', 27);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    texts = collectLabels(uiRoot);
+    expect(texts).toContain('Play');
+    expect(texts).toContain('Settings');
 
     flow.destroy();
   });

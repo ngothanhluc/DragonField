@@ -13,6 +13,7 @@
  */
 import type { AnimationManifest, Direction } from '../art/manifest';
 import { CHARACTERS_TUNING } from '../enemies/tuning';
+import { getLocale, t, type Locale } from '../i18n';
 import type { SignatureSkillId } from '../input/active-skill';
 
 /** Playable character identifiers in roster display order. */
@@ -239,17 +240,25 @@ export function isCharacterUnlocked(id: string, save: CharacterUnlockSource = {}
 }
 
 /** Human-readable unlock status or requirement for Character Select & Meta Shop UI. */
-export function characterUnlockReason(id: string, save: CharacterUnlockSource = {}): string {
+export function characterUnlockReason(
+  id: string,
+  save: CharacterUnlockSource = {},
+  locale: Locale = getLocale(),
+): string {
   const def = getCharacter(id);
-  if (def === undefined) return 'Unknown character';
-  if (def.unlockChapter <= 0) return 'Unlocked by default';
+  if (def === undefined) return t('charSelect.reasonUnknown', undefined, locale);
+  if (def.unlockChapter <= 0) return t('charSelect.reasonDefault', undefined, locale);
   if (isUnlockedByChapter(def, save)) {
-    return `Unlocked (Chapter ${def.unlockChapter} cleared)`;
+    return t('charSelect.reasonChapter', { chapter: def.unlockChapter }, locale);
   }
   if (isUnlockedByPurchase(def, save)) {
-    return 'Unlocked (Purchased)';
+    return t('charSelect.reasonPurchased', undefined, locale);
   }
-  return `Clear Chapter ${def.unlockChapter} or buy for ${def.unlockGoldCost} gold`;
+  return t(
+    'charSelect.reasonLocked',
+    { chapter: def.unlockChapter, cost: def.unlockGoldCost },
+    locale,
+  );
 }
 
 /** Return the ordered list of playable characters unlocked under `save`. */

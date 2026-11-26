@@ -590,6 +590,11 @@ describe('M15 Wave 2 — Ascension 1–5 & Endless Modifier Wiring and Unlock Pr
     expect(ch1Win.unlockedCharacters).toEqual(['archer']);
     expect(ch1Win.endlessUnlocked).toBe(false);
     expect(formatRunUnlocks(ch1Win.unlocks)).toEqual([
+      'Mở khóa Chương 2!',
+      'Mở khóa tướng: Cung Thủ',
+      'Mở khóa: Ch1 Thăng Hoa 1',
+    ]);
+    expect(formatRunUnlocks(ch1Win.unlocks, 'en')).toEqual([
       'Chapter 2 unlocked!',
       'Hero unlocked: Archer',
       'Unlocked: Ch1 Ascension 1',
@@ -763,7 +768,8 @@ describe('M15 Wave 2 — Exact DeathCause Attribution & Debug Kill', () => {
     const res1 = loop1.update(16);
     expect(res1.playerDied).toBe(true);
     expect(loop1.deathCause).toEqual({ kind: 'enemy-bullet', role: 'sniper' });
-    expect(formatDeathCause(loop1.deathCause!)).toBe('Slain by Sniper bullet');
+    expect(formatDeathCause(loop1.deathCause!)).toBe('Trúng đạn của Xạ Thủ');
+    expect(formatDeathCause(loop1.deathCause!, 'en')).toBe('Slain by Sniper bullet');
     loop1.destroy();
 
     // 2. Boss bullet kills player -> { kind: 'boss', bossId: 'samurai', phase: 2 }
@@ -789,7 +795,8 @@ describe('M15 Wave 2 — Exact DeathCause Attribution & Debug Kill', () => {
     const res2 = loop2.update(16);
     expect(res2.playerDied).toBe(true);
     expect(loop2.deathCause).toEqual({ kind: 'boss', bossId: 'samurai', phase: 2 });
-    expect(formatDeathCause(loop2.deathCause!)).toBe('Slain by Samurai (Phase 2)');
+    expect(formatDeathCause(loop2.deathCause!)).toBe('Bị hạ bởi Võ Sĩ Lam (Giai đoạn 2)');
+    expect(formatDeathCause(loop2.deathCause!, 'en')).toBe('Slain by Samurai (Phase 2)');
     loop2.destroy();
 
     // 3. Debug triggerDeath bypasses godMode and records explicit cause
@@ -808,7 +815,8 @@ describe('M15 Wave 2 — Exact DeathCause Attribution & Debug Kill', () => {
     expect(loop3.triggerDebugDeath(cause)).toBe(true);
     expect(fake3.state.isDead).toBe(true);
     expect(loop3.deathCause).toEqual(cause);
-    expect(formatDeathCause(loop3.deathCause!)).toBe('Slain by Elite Bomber blast');
+    expect(formatDeathCause(loop3.deathCause!)).toBe('Bị hạ bởi Cảm Tử Tinh Anh');
+    expect(formatDeathCause(loop3.deathCause!, 'en')).toBe('Slain by Elite Bomber blast');
     loop3.destroy();
   });
 });

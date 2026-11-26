@@ -23,6 +23,7 @@ import {
   UITransform as CocosUITransform,
   view,
 } from 'cc';
+import { t } from '../../core/i18n';
 import {
   FOCUS_RING_EXPAND_PX,
   MENU_COLUMN_WIDTH,
@@ -399,7 +400,7 @@ export async function buildMenuScreen(options: MenuScreenOptions): Promise<MenuS
   if (options.subtitle !== undefined && layout.subtitleY !== null) {
     const subtitle = createLabel(root, `${options.name}-subtitle`, options.subtitle);
     subtitle.fontSize = layout.subtitleFontSize;
-    subtitle.lineHeight = layout.subtitleFontSize + 2;
+    subtitle.lineHeight = layout.subtitleFontSize + 4;
     subtitle.color = MENU_TEXT_COLOR;
     subtitle.node.setPosition(0, layout.subtitleY, 0);
   }
@@ -407,7 +408,7 @@ export async function buildMenuScreen(options: MenuScreenOptions): Promise<MenuS
   infoLines.forEach((line, index) => {
     const info = createLabel(root, `${options.name}-info-${index}`, line);
     info.fontSize = layout.infoFontSize;
-    info.lineHeight = layout.infoFontSize + 2;
+    info.lineHeight = layout.infoFontSize + 4;
     info.color = MENU_MUTED_COLOR;
     info.node.setPosition(0, layout.infoYs[index] ?? 0, 0);
   });
@@ -424,10 +425,10 @@ export async function buildMenuScreen(options: MenuScreenOptions): Promise<MenuS
     handles.push(handle);
   });
 
-  const hintText = options.hint ?? '↑/↓ select · Enter confirm · Esc back';
+  const hintText = options.hint ?? t('common.menuHintDefault');
   const hint = createLabel(root, `${options.name}-hint`, hintText);
   hint.fontSize = layout.hintFontSize;
-  hint.lineHeight = layout.hintFontSize + 2;
+  hint.lineHeight = layout.hintFontSize + 4;
   hint.color = MENU_MUTED_COLOR;
   hint.node.setPosition(0, layout.hintY, 0);
 

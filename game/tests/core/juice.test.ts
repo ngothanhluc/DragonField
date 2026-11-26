@@ -217,6 +217,7 @@ describe('Settings — screenShake / damageNumbers', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
+      locale: 'vi',
     });
   });
 

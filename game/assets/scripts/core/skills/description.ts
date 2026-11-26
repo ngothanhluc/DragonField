@@ -4,6 +4,7 @@
  * Content derives from the pool's `tags`, not hand-written per skill: adding a skill or Evolution
  * = adding tags, and the description follows automatically.
  */
+import { getLocale, t, type Locale } from '../i18n';
 import type { SkillDef, SkillTag } from './pool';
 
 /** Twin Shot spread angle, degrees — matches `shot-effects.ts`. */
@@ -13,8 +14,8 @@ export const TWIN_SPREAD_DEGREES = 12;
  * One description line for **each stack** of a skill or Evolution. Multiple tags join with " · ".
  * Does not include the current stack count — the UI appends "×N" or stack lines separately.
  */
-export function describeSkill(def: SkillDef): string {
-  return def.tags.map(describeTag).join(' · ');
+export function describeSkill(def: SkillDef, locale: Locale = getLocale()): string {
+  return def.tags.map((tag) => describeTag(tag, locale)).join(' · ');
 }
 
 /**
@@ -26,73 +27,116 @@ export function skillAbbreviation(def: SkillDef): string {
 }
 
 /** Description text for one tag, computed for one stack. */
-export function describeTag(tag: SkillTag): string {
+export function describeTag(tag: SkillTag, locale: Locale = getLocale()): string {
   switch (tag.kind) {
     case 'damage-add':
-      return `+${formatNumber(tag.amount)} damage`;
+      return t('tag.damageAdd', { amount: formatNumber(tag.amount) }, locale);
     case 'fire-rate-mult':
-      return `+${formatPercent(tag.amount)} fire rate`;
-    case 'projectile-add': {
-      const noun = tag.amount === 1 ? 'projectile' : 'projectiles';
-      return `+${formatNumber(tag.amount)} ${noun} (±${TWIN_SPREAD_DEGREES}°)`;
-    }
+      return t('tag.fireRateMult', { pct: formatPercent(tag.amount) }, locale);
+    case 'projectile-add':
+      return t(
+        tag.amount === 1 ? 'tag.projectileAddOne' : 'tag.projectileAddMany',
+        { amount: formatNumber(tag.amount), spread: TWIN_SPREAD_DEGREES },
+        locale,
+      );
     case 'pierce-add': {
       const amount = tag.amount ?? 1;
-      const noun = amount === 1 ? 'enemy' : 'enemies';
-      return `Bullets pierce +${formatNumber(amount)} ${noun}`;
+      return t(
+        amount === 1 ? 'tag.pierceAddOne' : 'tag.pierceAddMany',
+        { amount: formatNumber(amount) },
+        locale,
+      );
     }
     case 'crit-chance':
-      return `+${formatPercent(tag.chance)} crit (×${formatNumber(tag.multiplier)})`;
+      return t(
+        'tag.critChance',
+        { pct: formatPercent(tag.chance), mult: formatNumber(tag.multiplier) },
+        locale,
+      );
     case 'max-hearts':
-      return `+${formatNumber(tag.amount)} max heart (heals 1)`;
+      return t('tag.maxHearts', { amount: formatNumber(tag.amount) }, locale);
     case 'heal-per-room':
-      return `Heal ${formatNumber(tag.amount)} hearts on room clear`;
+      return t('tag.healPerRoom', { amount: formatNumber(tag.amount) }, locale);
     case 'shield':
-      return `Block 1 hit (${formatSeconds(tag.cooldownMs)} cd)`;
+      return t('tag.shield', { sec: formatSeconds(tag.cooldownMs) }, locale);
     case 'thorns':
-      return `Contact deals ${formatNumber(tag.damage)} dmg`;
+      return t('tag.thorns', { damage: formatNumber(tag.damage) }, locale);
     case 'move-speed-mult':
-      return `+${formatPercent(tag.amount)} move speed`;
+      return t('tag.moveSpeedMult', { pct: formatPercent(tag.amount) }, locale);
     case 'iframe-mult':
-      return `+${formatPercent(tag.amount - 1)} i-frame time`;
+      return t('tag.iframeMult', { pct: formatPercent(tag.amount - 1) }, locale);
     case 'slow-on-hit':
-      return `Hits slow ${formatPercent(1 - tag.factor)} for ${formatSeconds(tag.durationMs)}`;
+      return t(
+        'tag.slowOnHit',
+        { pct: formatPercent(1 - tag.factor), sec: formatSeconds(tag.durationMs) },
+        locale,
+      );
     case 'poison':
-      return `Poison ${formatNumber(tag.dps)}/s for ${formatSeconds(tag.durationMs)}`;
+      return t(
+        'tag.poison',
+        { dps: formatNumber(tag.dps), sec: formatSeconds(tag.durationMs) },
+        locale,
+      );
     case 'burn':
-      return `Burn ${formatNumber(tag.dps)}/s for ${formatSeconds(tag.durationMs)}`;
+      return t(
+        'tag.burn',
+        { dps: formatNumber(tag.dps), sec: formatSeconds(tag.durationMs) },
+        locale,
+      );
     case 'shock-arc':
-      return `Chain lightning ${formatNumber(tag.arcs)} foes (${formatPercent(tag.damageRatio)})`;
+      return t(
+        'tag.shockArc',
+        { arcs: formatNumber(tag.arcs), pct: formatPercent(tag.damageRatio) },
+        locale,
+      );
     case 'status-amp':
-      return `+${formatPercent(tag.bonusRatio)} dmg vs afflicted foes`;
+      return t('tag.statusAmp', { pct: formatPercent(tag.bonusRatio) }, locale);
     case 'lifesteal':
-      return `Heal ${formatPercent(tag.percent)} of damage`;
+      return t('tag.lifesteal', { pct: formatPercent(tag.percent) }, locale);
     case 'execute':
-      return `+${formatPercent(tag.bonus)} damage below ${formatPercent(tag.threshold)} HP`;
-    case 'ricochet-add': {
-      const noun = tag.bounces === 1 ? 'enemy' : 'enemies';
-      return `Bullets bounce to ${formatNumber(tag.bounces)} more ${noun}`;
-    }
+      return t(
+        'tag.execute',
+        { pct: formatPercent(tag.bonus), threshold: formatPercent(tag.threshold) },
+        locale,
+      );
+    case 'ricochet-add':
+      return t(
+        tag.bounces === 1 ? 'tag.ricochetOne' : 'tag.ricochetMany',
+        { bounces: formatNumber(tag.bounces) },
+        locale,
+      );
     case 'homing-add':
-      return 'Bullets home in on enemies';
+      return t('tag.homing', undefined, locale);
     case 'explosive':
-      return `Explode ${formatNumber(tag.radiusTiles)}t (+${formatPercent(tag.damageRatio)} dmg)`;
+      return t(
+        'tag.explosive',
+        { radius: formatNumber(tag.radiusTiles), pct: formatPercent(tag.damageRatio) },
+        locale,
+      );
     case 'damage-reduction':
-      return `${formatPercent(tag.chance)} ward chance`;
+      return t('tag.damageReduction', { pct: formatPercent(tag.chance) }, locale);
     case 'shield-recharge-mult':
-      return `-${formatPercent(1 - tag.factor)} shield cooldown`;
+      return t('tag.shieldRechargeMult', { pct: formatPercent(1 - tag.factor) }, locale);
     case 'dash-cooldown-mult':
-      return `-${formatPercent(1 - tag.factor)} dash cooldown`;
+      return t('tag.dashCooldownMult', { pct: formatPercent(1 - tag.factor) }, locale);
     case 'dash-speed-mult':
-      return `+${formatPercent(tag.amount)} dash speed`;
+      return t('tag.dashSpeedMult', { pct: formatPercent(tag.amount) }, locale);
     case 'dash-nova':
-      return `Dash burst ${formatNumber(tag.damage)} dmg (${formatNumber(tag.radiusTiles)}t)`;
+      return t(
+        'tag.dashNova',
+        { damage: formatNumber(tag.damage), radius: formatNumber(tag.radiusTiles) },
+        locale,
+      );
     case 'post-dash-fire-rate':
-      return `+${formatPercent(tag.bonus)} post-dash fire (${formatSeconds(tag.durationMs)})`;
+      return t(
+        'tag.postDashFireRate',
+        { pct: formatPercent(tag.bonus), sec: formatSeconds(tag.durationMs) },
+        locale,
+      );
     case 'active-cooldown-mult':
-      return `-${formatPercent(1 - tag.factor)} active cooldown`;
+      return t('tag.activeCooldownMult', { pct: formatPercent(1 - tag.factor) }, locale);
     case 'active-power-mult':
-      return `+${formatPercent(tag.amount)} active power`;
+      return t('tag.activePowerMult', { pct: formatPercent(tag.amount) }, locale);
   }
 }
 

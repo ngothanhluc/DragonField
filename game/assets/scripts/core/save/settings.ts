@@ -9,6 +9,7 @@
  * through the save. Legacy `cultivatorEnabled` (M10 migration flag) was retired in M14 save v4
  * once the 4-class chapter/gold unlock system landed.
  */
+import { DEFAULT_LOCALE, isLocale, type Locale } from '../i18n/types';
 import type { EffectsMode } from '../vfx/weapon-vfx';
 
 export type AudioChannel = 'music' | 'sfx';
@@ -27,6 +28,8 @@ export interface Settings {
   readonly damageNumbers: boolean;
   /** VFX level: `full` (default) or `reduced`. */
   readonly effects: EffectsMode;
+  /** UI language: `'vi'` (Vietnamese, default in M16/ADR-024) or `'en'` (English). */
+  readonly locale: Locale;
 }
 
 /** GDD §10 uses 0.8 as the default. */
@@ -43,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   screenShake: true,
   damageNumbers: false,
   effects: 'full',
+  locale: DEFAULT_LOCALE,
 };
 
 /**
@@ -144,5 +148,6 @@ export function applySettings(settings: Partial<Settings> = {}): Settings {
         ? settings.damageNumbers
         : DEFAULT_SETTINGS.damageNumbers,
     effects: settings.effects === 'reduced' ? 'reduced' : DEFAULT_SETTINGS.effects,
+    locale: isLocale(settings.locale) ? settings.locale : DEFAULT_SETTINGS.locale,
   };
 }

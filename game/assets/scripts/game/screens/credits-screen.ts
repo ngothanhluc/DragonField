@@ -3,6 +3,7 @@
  * the Pixel-boy and AAA pack, CC0 1.0 (attribution is not required, but crediting
  * the source still honours the pack).
  */
+import { t } from '../../core/i18n';
 import { buildMenuScreen, type MenuScreen } from './menu';
 import type { TitleScreenOptions } from './title-screen';
 
@@ -15,22 +16,21 @@ export function buildCreditsScreen(options: CreditsScreenOptions): Promise<MenuS
   return buildMenuScreen({
     parent: options.parent,
     name: 'credits',
-    title: 'CREDITS',
-    subtitle: 'Yokai Field',
+    title: t('credits.title'),
+    subtitle: t('credits.subtitle'),
     info: [
-      'Ninja Adventure Asset Pack',
-      'Assets created by Pixel-boy and AAA',
-      'CC0 1.0 Universal — attribution not required',
-      'pixel-boy.itch.io  ·  instagram.com/challenger.aaa',
-      'Engine: Cocos Creator 3.8.8',
-      'Remake of Dragon Field (2023 HCMUS coursework)',
+      t('credits.line1'),
+      t('credits.line2'),
+      t('credits.line3'),
+      t('credits.line4'),
+      t('credits.line5'),
     ],
     items: [
       { label: 'lukeinc.tech', activate: openPortfolio },
-      { label: 'Back', activate: options.onBack },
+      { label: t('common.back'), activate: options.onBack },
     ],
     onBack: options.onBack,
-    panelWidth: 412,
+    panelWidth: 444,
     buttonWidth: 280,
     buttonHeight: 30,
     buttonGap: 6,

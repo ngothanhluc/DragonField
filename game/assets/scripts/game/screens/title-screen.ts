@@ -12,6 +12,7 @@ import {
   type CharacterDef,
   type CharacterId,
 } from '../../core/characters/roster';
+import { t } from '../../core/i18n';
 import type { ActiveRunSave } from '../../core/save/run-save';
 import type { BestProgress } from '../../core/save/save-data';
 import {
@@ -94,7 +95,7 @@ export function buildTitleScreen(options: TitleScreenOptions): Promise<TitleScre
   const items: MenuItem[] = [];
   if (activeRun !== null) {
     items.push({
-      label: 'Continue Run',
+      label: t('title.continueRun'),
       detail: formatContinueRunDetail(activeRun),
       disabled: options.onContinueRun === undefined,
       activate: () => options.onContinueRun?.(activeRun),
@@ -102,7 +103,7 @@ export function buildTitleScreen(options: TitleScreenOptions): Promise<TitleScre
   }
 
   items.push(
-    { label: 'Play', detail: 'Choose a chapter', activate: options.onPlay },
+    { label: t('title.play'), detail: t('title.playDetail'), activate: options.onPlay },
     {
       label: formatCharacterLabel(current),
       detail: formatCharacterDetail(current, available.length),
@@ -115,20 +116,20 @@ export function buildTitleScreen(options: TitleScreenOptions): Promise<TitleScre
       },
     },
     {
-      label: 'Meta shop',
-      detail: 'Stats, utilities & heroes',
+      label: t('title.metaShop'),
+      detail: t('title.metaShopDetail'),
       activate: options.onShop,
     },
-    { label: 'Settings', detail: 'Music, SFX, display, effects', activate: options.onSettings },
-    { label: 'Credits', detail: 'Art, audio, engine', activate: options.onCredits },
+    { label: t('title.settings'), detail: t('title.settingsDetail'), activate: options.onSettings },
+    { label: t('title.credits'), detail: t('title.creditsDetail'), activate: options.onCredits },
   );
 
   const task = buildMenuScreen({
     parent: options.parent,
     name: 'title',
-    title: 'YOKAI FIELD',
+    title: t('title.gameTitle'),
     ...(hasContinueRun ? { titleFontSize: 20 } : {}),
-    subtitle: 'Dodge. Auto-fire. Clear.',
+    subtitle: t('title.subtitle'),
     info: formatTitleInfoLines(
       options.gold,
       options.best,
@@ -140,7 +141,7 @@ export function buildTitleScreen(options: TitleScreenOptions): Promise<TitleScre
       if (index === characterItemIndex) cycleCharacter(delta);
     },
     ...(options.initialFocus !== undefined ? { initialFocus: options.initialFocus } : {}),
-    hint: '↑/↓ select · ←/→ hero · Enter open',
+    hint: t('title.hint'),
     buttonWidth: TITLE_BUTTON_WIDTH,
     buttonHeight: hasContinueRun ? 29 : 31,
     buttonGap: hasContinueRun ? 3 : 5,

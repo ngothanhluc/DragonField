@@ -7,6 +7,7 @@
  */
 import { Button as CocosButton, Layers, Node as CocosNode } from 'cc';
 import type { CharacterId } from '../../core/characters/roster';
+import { t } from '../../core/i18n';
 import type { DeathCause, RunUnlocksSummary } from '../../core/run/run-summary';
 import {
   computeResultScreenLayout,
@@ -192,14 +193,14 @@ export async function buildResultScreen(options: ResultScreenOptions): Promise<M
 
   const subtitle = createLabel(root, 'result-subtitle', summary.subtitle);
   subtitle.fontSize = layout.subtitleFontSize;
-  subtitle.lineHeight = layout.subtitleFontSize + 2;
+  subtitle.lineHeight = layout.subtitleFontSize + 4;
   subtitle.color = result.won ? MENU_TEXT_COLOR : MENU_DANGER;
   subtitle.node.setPosition(0, layout.subtitleY, 0);
 
   summary.lines.forEach((line, index) => {
     const lbl = createLabel(root, `result-info-${index}`, line.text);
     lbl.fontSize = layout.lineFontSize;
-    lbl.lineHeight = layout.lineFontSize + 2;
+    lbl.lineHeight = layout.lineFontSize + 4;
     lbl.color =
       line.kind === 'evolution'
         ? MENU_TITLE_COLOR
@@ -217,8 +218,8 @@ export async function buildResultScreen(options: ResultScreenOptions): Promise<M
       root,
       'result-continue-endless',
       {
-        label: 'Continue Endless',
-        detail: 'Loop Ch1–4 with build & scaling',
+        label: t('result.continueEndless'),
+        detail: t('result.continueEndlessDetail'),
         disabled: options.onContinueEndless === undefined,
         activate: () => options.onContinueEndless?.(),
       },
@@ -232,20 +233,20 @@ export async function buildResultScreen(options: ResultScreenOptions): Promise<M
   const footerItems = [
     {
       name: 'result-shop',
-      label: 'Meta shop',
-      detail: 'Spend gold earned',
+      label: t('result.shopBtn'),
+      detail: t('result.shopDetail'),
       activate: options.onShop,
     },
     {
       name: 'result-chapter-select',
-      label: 'Chapter select',
-      detail: 'Try another chapter',
+      label: t('result.chapterBtn'),
+      detail: t('result.chapterDetail'),
       activate: options.onChapterSelect,
     },
     {
       name: 'result-title-btn',
-      label: 'Title',
-      detail: 'Back to main menu',
+      label: t('result.titleBtn'),
+      detail: t('result.titleDetail'),
       activate: options.onTitle,
     },
   ] as const;
@@ -288,13 +289,9 @@ export async function buildResultScreen(options: ResultScreenOptions): Promise<M
 
   setFocus(focused, false);
 
-  const hint = createLabel(
-    root,
-    'result-hint',
-    'Arrows select · Enter confirm · Esc chapter select',
-  );
+  const hint = createLabel(root, 'result-hint', t('result.hint'));
   hint.fontSize = layout.hintFontSize;
-  hint.lineHeight = layout.hintFontSize + 2;
+  hint.lineHeight = layout.hintFontSize + 4;
   hint.color = MENU_MUTED_COLOR;
   hint.node.setPosition(0, layout.hintY, 0);
 

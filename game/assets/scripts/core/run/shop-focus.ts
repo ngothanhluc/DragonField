@@ -6,6 +6,7 @@
  * the buy highlight, or a dimmed card with the reason — from the shop's *current* gold, so a
  * refused purchase dims the card on the same frame.
  */
+import { getLocale, t, type Locale } from '../i18n';
 import { getSkill } from '../skills/pool';
 import type { ShopOffer } from './special-rooms';
 
@@ -29,10 +30,6 @@ export interface ShopOfferState {
   readonly kind: ShopOfferKind;
   readonly reason: string | null;
 }
-
-/** Same strings `buyShopOffer` refuses with, so the card and the message never disagree. */
-const MAXED_REASON = 'ALREADY MAXED';
-const GOLD_REASON = 'NOT ENOUGH GOLD';
 
 export function nextShopFocus(
   current: number | null,
@@ -67,13 +64,14 @@ export function shopOfferState(
   offer: ShopOffer,
   gold: number,
   owned: ReadonlyMap<string, number>,
+  locale: Locale = getLocale(),
 ): ShopOfferState {
   // Maxed wins over gold, like the purchase check in bootstrap.
   if (offer.item !== 'heart-refill' && skillMaxed(offer.item, owned)) {
-    return { kind: 'maxed', reason: MAXED_REASON };
+    return { kind: 'maxed', reason: t('runShop.alreadyMaxed', undefined, locale) };
   }
   if (!validPrice(offer.price) || gold < offer.price) {
-    return { kind: 'not-enough-gold', reason: GOLD_REASON };
+    return { kind: 'not-enough-gold', reason: t('runShop.notEnoughGold', undefined, locale) };
   }
   return { kind: 'buy', reason: null };
 }
