@@ -1,9 +1,11 @@
 /**
- * Settings (GDD §9): volume, fullscreen, accessibility (shake, damage numbers), Effects
- * Full/Reduced, and read-only keybinds.
+ * Settings (GDD §9, §13.1, M14): volume, fullscreen, accessibility (shake, damage numbers),
+ * Effects Full/Reduced, and read-only keybinds.
  *
  * Volume steps by 10% and is written to the save immediately (`onVolume`), so reopening after
  * a reload shows the right value. Accessibility and effects toggles apply immediately.
+ * Legacy `cultivatorEnabled` (M10 preview toggle) was retired in M14 in favour of the 4-class
+ * Character Select & chapter/gold unlock system.
  */
 import { stepVolume, type Settings } from '../../core/save/settings';
 import { buildMenuScreen, type MenuItem, type MenuScreen } from './menu';
@@ -96,7 +98,7 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     title: 'SETTINGS',
     titleFontSize: 20,
     subtitle: 'Saved to this browser',
-    info: ['Keybinds fixed: WASD/arrows move · Esc/P pause · Enter/Space menus'],
+    info: ['Controls: WASD move · Space dash · E/R-Click skill · Esc/P pause'],
     items,
     onBack: options.onBack,
     onAdjust: (index, delta) => {
@@ -105,9 +107,9 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     hint: '↑/↓ select · ←/→ adjust volume · Esc back',
     panelWidth: 452,
     buttonWidth: 316,
-    buttonHeight: 22,
+    buttonHeight: 24,
     buttonGap: 4,
-    buttonFontSize: 10,
+    buttonFontSize: 11,
   });
 
   return task.then((built) => {

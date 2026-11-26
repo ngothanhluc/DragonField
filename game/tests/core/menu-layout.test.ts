@@ -5,6 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { CHARACTER_ROSTER } from '../../assets/scripts/core/characters/roster';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../../assets/scripts/core/level/level-data';
 import { parseWaterLayout, waterAreasFor } from '../../assets/scripts/core/level/water-layout';
+import { UPGRADE_TRACKS, maxLevelFor } from '../../assets/scripts/core/meta/upgrades';
+import {
+  buyCharacter,
+  createDefaultSave,
+  unlockNextChapter,
+  withSelectedCharacter,
+} from '../../assets/scripts/core/save/save-data';
 import { describeSkill } from '../../assets/scripts/core/skills/description';
 import { EVOLUTIONS, evolutionHintsForSkill } from '../../assets/scripts/core/skills/evolutions';
 import { SKILLS, getSkill } from '../../assets/scripts/core/skills/pool';
@@ -19,11 +26,24 @@ import {
   FOCUS_RING_EXPAND_PX,
   MENU_COLUMN_WIDTH,
   PANEL_SHADOW_EXPAND_PX,
+  SHOP_UNLOCK_CHARACTER_IDS,
   THEME_WOOD_BORDERS,
+  characterShopRow,
+  computeCharacterSelectLayout,
   computeMenuButtonTextLayout,
   computeMenuScreenLayout,
+  computeShopScreenLayout,
   computeSkillCardLayout,
+  formatCharacterCardText,
+  formatCharacterPrimaryAction,
+  formatCharacterSelectSubtitle,
+  formatCharacterSummaryLines,
+  formatTitleCharacterDetail,
+  formatTitleCharacterLabel,
+  nextCharacterSelectFocus,
+  nextShopScreenFocus,
   resolveMenuButtonVisualState,
+  upgradeRow,
 } from '../../assets/scripts/core/view/menu-layout';
 import { readPng } from '../../scripts/lib/png';
 import { LEVELS_ROOT, loadTmxLevels } from '../helpers/tmx-levels';
@@ -204,13 +224,13 @@ describe('computeMenuButtonTextLayout — internal padding and subtitle fit', ()
       width: MENU_COLUMN_WIDTH - 28,
       height: 31,
       fontSize: 11,
-      labels: ['Play', 'Character: Cultivator', 'Meta shop', 'Settings', 'Credits'],
+      labels: ['Play', ...CHARACTER_ROSTER.map((c) => formatTitleCharacterLabel(c)), 'Meta shop', 'Settings', 'Credits'],
       details: [
         'Choose a chapter',
-        'Clear chapters or Shop to unlock',
-        ...CHARACTER_ROSTER.map((c) => `${c.subtitle} (←/→)`),
-        'Spend gold on upgrades',
-        'Volume, fullscreen, keys',
+        ...CHARACTER_ROSTER.map((c) => formatTitleCharacterDetail(c, 1)),
+        ...CHARACTER_ROSTER.map((c) => formatTitleCharacterDetail(c, 4)),
+        'Upgrades & character unlocks',
+        'Volume, fullscreen, effects',
       ],
     },
     {
@@ -222,12 +242,19 @@ describe('computeMenuButtonTextLayout — internal padding and subtitle fit', ()
       details: ['Enter chapter', 'Locked — clear previous', 'No data'],
     },
     {
-      screen: 'Meta Shop',
-      width: 344,
-      height: 37,
-      fontSize: 12,
-      labels: ['Fire rate   Lv 10/10'],
-      details: ['Next level: 999 gold — need 999 more', 'Maxed out'],
+      screen: 'Meta Shop (two-column rows)',
+      width: 216,
+      height: 35,
+      fontSize: 11,
+      labels: ['Fire rate   Lv 10/10', 'Cultivator — UNLOCKED', 'Cultivator — 350g'],
+      details: [
+        'Next: 999g — need 999g more',
+        'Next: 999 gold',
+        'Maxed out',
+        'Buy early (or clear Ch3)',
+        'Need 350g more (or clear Ch3)',
+        'Unlocked (Chapter 3 cleared)',
+      ],
     },
     {
       screen: 'Pause',
@@ -283,9 +310,10 @@ describe('computeMenuButtonTextLayout — internal padding and subtitle fit', ()
     }
   });
 
-  it('centres single-line buttons cleanly (Settings 22px, Back 28px, Credits 30px)', () => {
+  it('centres single-line buttons cleanly (Settings 22/24px, Back 28px, Credits 30px)', () => {
     for (const [height, fontSize] of [
       [22, 10],
+      [24, 11],
       [28, 11],
       [30, 11],
     ] as const) {
@@ -323,20 +351,11 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
       panelFullHeight: true,
     },
     {
-      name: 'Meta Shop',
-      hasSubtitle: true,
-      infoCount: 1,
-      buttonHeights: [37, 37, 37, 28],
-      buttonGap: 5,
-      panelWidth: 396,
-      panelFullHeight: false,
-    },
-    {
       name: 'Settings',
       titleFontSize: 20,
       hasSubtitle: true,
       infoCount: 1,
-      buttonHeights: [22, 22, 22, 22, 22, 22, 22],
+      buttonHeights: [24, 24, 24, 24, 24, 24],
       buttonGap: 4,
       panelWidth: 452,
       panelFullHeight: false,
@@ -595,5 +614,333 @@ describe('menuBackdropFrame & menuFramedPlayerSpot — living scene framing acro
         }
       }
     }
+  });
+});
+
+describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock buttons & live stage', () => {
+  const waterLayout = parseWaterLayout(
+    JSON.parse(readFileSync(join(ASSETS, 'resources', 'data', 'water-layout.json'), 'utf8')) as unknown,
+  );
+
+  it('fits plaque, 2×2 cards, 3-layer summary, and action buttons inside 512×288 while keeping the left backdrop preview hero uncovered across all 4 viewports', () => {
+    const ch1Room1 = loadTmxLevels(join(LEVELS_ROOT, 'chapter-1')).find(
+      (entry) => entry.room === MENU_BACKDROP_ROOM,
+    )!;
+    const ch1Water = waterAreasFor(waterLayout, 1, MENU_BACKDROP_ROOM);
+
+    for (const vp of TARGET_VIEWPORTS) {
+      const band = letterboxRect(vp.width, vp.height, DESIGN_WIDTH, DESIGN_HEIGHT);
+      expect(band.width).toBeGreaterThan(0);
+      expect(band.height).toBeGreaterThan(0);
+
+      const layout = computeCharacterSelectLayout({
+        visibleWidth: DESIGN_WIDTH,
+        visibleHeight: DESIGN_HEIGHT,
+      });
+
+      const halfW = DESIGN_WIDTH / 2;
+      const halfH = DESIGN_HEIGHT / 2;
+      const shadowLeft = layout.panelX - (layout.panelWidth + PANEL_SHADOW_EXPAND_PX) / 2;
+      const shadowRight = layout.panelX + (layout.panelWidth + PANEL_SHADOW_EXPAND_PX) / 2;
+      const shadowTop = layout.panelY + (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
+      const shadowBottom = layout.panelY - (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
+
+      expect(shadowLeft, `${vp.label} shadowLeft`).toBeGreaterThanOrEqual(-halfW);
+      expect(shadowRight, `${vp.label} shadowRight`).toBeLessThanOrEqual(halfW);
+      expect(shadowTop, `${vp.label} shadowTop`).toBeLessThanOrEqual(halfH);
+      expect(shadowBottom, `${vp.label} shadowBottom`).toBeGreaterThanOrEqual(-halfH);
+      expect(layout.stageRightX).toBe(shadowLeft);
+
+      // Living backdrop hero (16px sprite) on the left stage must stay uncovered by the plaque.
+      const worldScale = worldToUiScale(vp.width, vp.height, DESIGN_WIDTH, DESIGN_HEIGHT);
+      const localKeepOut = localKeepOutForScale(worldScale);
+      const frame = menuBackdropFrame(ch1Room1, {
+        waterAreas: ch1Water,
+        columnWidthTiles: Math.max(20, localKeepOut.width),
+      });
+      const spot = menuFramedPlayerSpot(ch1Room1, frame, localKeepOut, ch1Water);
+      const actorUiX = (spot.x - frame.x - ROOM_COLS / 2) * TILE_SIZE_PX * worldScale;
+      const halfSpriteUiW = (TILE_SIZE_PX * worldScale) / 2;
+      expect(
+        actorUiX + halfSpriteUiW,
+        `${vp.label} backdrop hero right edge clear of Character Select plaque`,
+      ).toBeLessThanOrEqual(layout.stageRightX - 6);
+
+      // Header -> divider -> Row 0 -> Row 1 -> Summary well -> Action buttons -> Hint ordering.
+      const panelTop = layout.panelY + layout.panelHeight / 2;
+      const panelBottom = layout.panelY - layout.panelHeight / 2;
+      expect(layout.titleY + (layout.titleFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThanOrEqual(
+        panelTop - 3,
+      );
+      expect(layout.subtitleY).toBeLessThan(layout.titleY - 10);
+      expect(layout.dividerY).toBeLessThan(layout.subtitleY - 6);
+
+      expect(layout.cards).toHaveLength(4);
+      const row0TopRing = layout.cards[0]!.y + (layout.cardHeight + FOCUS_RING_EXPAND_PX) / 2;
+      const row0Bottom = layout.cards[0]!.y - layout.cardHeight / 2;
+      const row1Top = layout.cards[2]!.y + layout.cardHeight / 2;
+      const row1BottomRing = layout.cards[2]!.y - (layout.cardHeight + FOCUS_RING_EXPAND_PX) / 2;
+
+      expect(row0TopRing).toBeLessThan(layout.dividerY - 2);
+      expect(row0Bottom - row1Top).toBeGreaterThanOrEqual(layout.cardRowGap);
+      expect(layout.cards[1]!.x - layout.cards[0]!.x - layout.cardWidth).toBe(layout.cardColGap);
+
+      const summaryTop = layout.summaryY + layout.summaryHeight / 2;
+      const summaryBottom = layout.summaryY - layout.summaryHeight / 2;
+      expect(summaryTop).toBeLessThan(row1BottomRing - 2);
+
+      const primaryTopRing =
+        layout.primaryButton.y + (layout.primaryButton.height + FOCUS_RING_EXPAND_PX) / 2;
+      const primaryBottomRing =
+        layout.primaryButton.y - (layout.primaryButton.height + FOCUS_RING_EXPAND_PX) / 2;
+      expect(primaryTopRing).toBeLessThan(summaryBottom - 2);
+      expect(
+        layout.backButton.x -
+          layout.backButton.width / 2 -
+          (layout.primaryButton.x + layout.primaryButton.width / 2),
+      ).toBeGreaterThanOrEqual(6);
+
+      expect(layout.hintY + (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThan(
+        primaryBottomRing - 2,
+      );
+      expect(
+        layout.hintY - (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2,
+      ).toBeGreaterThanOrEqual(panelBottom + 3);
+    }
+  });
+
+  it('fits every class card badge, 3-layer summary line, and early-unlock/equip label with zero clipping or line overlap across all save states', () => {
+    const layout = computeCharacterSelectLayout({
+      visibleWidth: DESIGN_WIDTH,
+      visibleHeight: DESIGN_HEIGHT,
+    });
+
+    const cardTextLayout = computeMenuButtonTextLayout({
+      width: layout.cardWidth,
+      height: layout.cardHeight,
+      fontSize: layout.cardFontSize,
+      hasDetail: true,
+    });
+    const primaryTextLayout = computeMenuButtonTextLayout({
+      width: layout.primaryButton.width,
+      height: layout.primaryButton.height,
+      fontSize: layout.primaryButton.fontSize,
+      hasDetail: true,
+    });
+
+    const freshSave = createDefaultSave();
+    const richSave = { ...freshSave, gold: 9999 };
+    const chClearedSave = withSelectedCharacter(
+      unlockNextChapter(unlockNextChapter(unlockNextChapter(freshSave, 1), 2), 3),
+      'cultivator',
+    );
+    const purchasedSave = withSelectedCharacter(
+      buyCharacter(buyCharacter(buyCharacter(richSave, 'archer'), 'mage'), 'cultivator'),
+      'mage',
+    );
+
+    for (const save of [freshSave, richSave, chClearedSave, purchasedSave]) {
+      const sub = formatCharacterSelectSubtitle(save.gold);
+      expect(sub.length * layout.subtitleFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+        layout.dividerWidth,
+      );
+
+      for (const character of CHARACTER_ROSTER) {
+        const card = formatCharacterCardText(character, save);
+        expect(
+          card.label.length * cardTextLayout.labelFontSize * GLYPH_WIDTH_RATIO,
+          `card label "${card.label}"`,
+        ).toBeLessThanOrEqual(cardTextLayout.safeTextWidth);
+        expect(
+          card.detail.length * cardTextLayout.detailFontSize * GLYPH_WIDTH_RATIO,
+          `card detail "${card.detail}"`,
+        ).toBeLessThanOrEqual(cardTextLayout.safeTextWidth);
+
+        const summary = formatCharacterSummaryLines(character, save);
+        const lineSpecs = [
+          { name: 'status', text: summary.statusLine, fs: layout.statusFontSize, y: layout.statusLocalY },
+          { name: 'weapon', text: summary.weaponLine, fs: layout.weaponFontSize, y: layout.weaponLocalY },
+          {
+            name: 'passiveTitle',
+            text: summary.passiveTitle,
+            fs: layout.passiveTitleFontSize,
+            y: layout.passiveTitleLocalY,
+          },
+          {
+            name: 'passiveBody',
+            text: summary.passiveBody,
+            fs: layout.passiveBodyFontSize,
+            y: layout.passiveBodyLocalY,
+          },
+          {
+            name: 'signatureTitle',
+            text: summary.signatureTitle,
+            fs: layout.signatureTitleFontSize,
+            y: layout.signatureTitleLocalY,
+          },
+          {
+            name: 'signatureBody',
+            text: summary.signatureBody,
+            fs: layout.signatureBodyFontSize,
+            y: layout.signatureBodyLocalY,
+          },
+        ] as const;
+
+        for (let i = 0; i < lineSpecs.length; i += 1) {
+          const cur = lineSpecs[i]!;
+          const widthPx = cur.text.length * cur.fs * GLYPH_WIDTH_RATIO;
+          expect(widthPx, `${character.id} ${cur.name} "${cur.text}"`).toBeLessThanOrEqual(
+            layout.summarySafeTextWidth,
+          );
+
+          const halfBoxH = (cur.fs * FONT_BOX_HEIGHT_RATIO) / 2;
+          expect(cur.y + halfBoxH, `${character.id} ${cur.name} top`).toBeLessThanOrEqual(
+            layout.summaryHeight / 2 - 2,
+          );
+          expect(cur.y - halfBoxH, `${character.id} ${cur.name} bottom`).toBeGreaterThanOrEqual(
+            -layout.summaryHeight / 2 + 2,
+          );
+
+          if (i > 0) {
+            const prev = lineSpecs[i - 1]!;
+            const prevBottom = prev.y - (prev.fs * FONT_BOX_HEIGHT_RATIO) / 2;
+            const curTop = cur.y + halfBoxH;
+            expect(curTop, `${character.id} ${prev.name} -> ${cur.name} non-overlap`).toBeLessThan(
+              prevBottom,
+            );
+          }
+        }
+
+        const primary = formatCharacterPrimaryAction(character, save);
+        expect(
+          primary.label.length * primaryTextLayout.labelFontSize * GLYPH_WIDTH_RATIO,
+          `primary label "${primary.label}"`,
+        ).toBeLessThanOrEqual(primaryTextLayout.safeTextWidth);
+        expect(
+          primary.detail.length * primaryTextLayout.detailFontSize * GLYPH_WIDTH_RATIO,
+          `primary detail "${primary.detail}"`,
+        ).toBeLessThanOrEqual(primaryTextLayout.safeTextWidth);
+      }
+    }
+  });
+
+  it('navigates all 6 Character Select controls via 2D arrows and restores the highlighted card from the action bar', () => {
+    // Left/Right cycles all 4 class cards in roster order.
+    expect(nextCharacterSelectFocus(0, 'right', 0)).toBe(1);
+    expect(nextCharacterSelectFocus(1, 'right', 1)).toBe(2);
+    expect(nextCharacterSelectFocus(2, 'right', 2)).toBe(3);
+    expect(nextCharacterSelectFocus(3, 'right', 3)).toBe(0);
+    expect(nextCharacterSelectFocus(0, 'left', 0)).toBe(3);
+
+    // Left/Right toggles Primary <-> Back on the bottom row.
+    expect(nextCharacterSelectFocus(4, 'right', 1)).toBe(5);
+    expect(nextCharacterSelectFocus(5, 'left', 1)).toBe(4);
+
+    // Down steps row 0 -> row 1 -> primary action, and Up from primary/back returns to highlightedCard.
+    expect(nextCharacterSelectFocus(0, 'down', 0)).toBe(2);
+    expect(nextCharacterSelectFocus(1, 'down', 1)).toBe(3);
+    expect(nextCharacterSelectFocus(2, 'down', 2)).toBe(4);
+    expect(nextCharacterSelectFocus(3, 'down', 3)).toBe(4);
+    expect(nextCharacterSelectFocus(4, 'up', 1)).toBe(1);
+    expect(nextCharacterSelectFocus(5, 'up', 3)).toBe(3);
+  });
+});
+
+describe('M14 Meta Shop two-column layout — stat tracks & early character unlocks', () => {
+  it('fits stat tracks, character unlock buttons, section headers, and bottom buttons inside 512×288 across all 4 viewports', () => {
+    for (const hasCharacterSelect of [true, false]) {
+      const layout = computeShopScreenLayout({
+        visibleWidth: DESIGN_WIDTH,
+        visibleHeight: DESIGN_HEIGHT,
+        hasCharacterSelect,
+      });
+
+      const halfW = DESIGN_WIDTH / 2;
+      const halfH = DESIGN_HEIGHT / 2;
+      const shadowHalfW = (layout.panelWidth + PANEL_SHADOW_EXPAND_PX) / 2;
+      const shadowTop = layout.panelY + (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
+      const shadowBottom = layout.panelY - (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
+
+      expect(shadowHalfW).toBeLessThanOrEqual(halfW);
+      expect(shadowTop).toBeLessThanOrEqual(halfH);
+      expect(shadowBottom).toBeGreaterThanOrEqual(-halfH);
+
+      expect(layout.upgradeSlots).toHaveLength(3);
+      expect(layout.characterSlots).toHaveLength(3);
+      expect(layout.characterSlots[0]!.x - layout.upgradeSlots[0]!.x - layout.colWidth).toBeGreaterThanOrEqual(10);
+
+      const topRowRing = layout.upgradeSlots[0]!.y + (layout.rowHeight + FOCUS_RING_EXPAND_PX) / 2;
+      const headerBottom =
+        layout.sectionHeaderY - (layout.sectionHeaderFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+      expect(topRowRing).toBeLessThan(headerBottom);
+
+      const bottomRowTopRing =
+        layout.backButton.y + (layout.backButton.height + FOCUS_RING_EXPAND_PX) / 2;
+      const lastTrackBottom = layout.upgradeSlots[2]!.y - layout.rowHeight / 2;
+      expect(bottomRowTopRing).toBeLessThan(lastTrackBottom - 2);
+      expect(layout.hintY + (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThan(
+        layout.backButton.y - (layout.backButton.height + FOCUS_RING_EXPAND_PX) / 2 - 4,
+      );
+    }
+  });
+
+  it('formats every upgradeRow and characterShopRow cleanly with disabled reasons and non-overflowing text', () => {
+    const layout = computeShopScreenLayout({ hasCharacterSelect: true });
+    const rowTextLayout = computeMenuButtonTextLayout({
+      width: layout.colWidth,
+      height: layout.rowHeight,
+      fontSize: layout.rowFontSize,
+      hasDetail: true,
+    });
+
+    const brokeSave = createDefaultSave();
+    const richSave = { ...brokeSave, gold: 5000 };
+    const maxedSave = {
+      ...richSave,
+      chaptersUnlocked: 4,
+      upgrades: {
+        hearts: maxLevelFor('hearts'),
+        damage: maxLevelFor('damage'),
+        fireRate: maxLevelFor('fireRate'),
+      },
+    };
+    const boughtArcherSave = buyCharacter(richSave, 'archer');
+
+    expect(characterShopRow(brokeSave, 'archer').disabled).toBe(true);
+    expect(characterShopRow(brokeSave, 'archer').detail).toContain('Need');
+    expect(characterShopRow(richSave, 'archer').disabled).toBe(false);
+    expect(characterShopRow(boughtArcherSave, 'archer').disabled).toBe(true);
+    expect(characterShopRow(boughtArcherSave, 'archer').detail).toBe('Unlocked (Purchased)');
+    expect(characterShopRow(maxedSave, 'cultivator').disabled).toBe(true);
+    expect(characterShopRow(maxedSave, 'cultivator').detail).toBe('Unlocked (Chapter 3 cleared)');
+
+    for (const save of [brokeSave, richSave, maxedSave, boughtArcherSave]) {
+      for (const track of UPGRADE_TRACKS) {
+        const row = upgradeRow(save, track);
+        expect(row.label.length * rowTextLayout.labelFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+          rowTextLayout.safeTextWidth,
+        );
+        expect(row.detail.length * rowTextLayout.detailFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+          rowTextLayout.safeTextWidth,
+        );
+      }
+      for (const characterId of SHOP_UNLOCK_CHARACTER_IDS) {
+        const row = characterShopRow(save, characterId);
+        expect(row.label.length * rowTextLayout.labelFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+          rowTextLayout.safeTextWidth,
+        );
+        expect(row.detail.length * rowTextLayout.detailFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+          rowTextLayout.safeTextWidth,
+        );
+      }
+    }
+
+    // 2D focus transitions across columns and rows.
+    expect(nextShopScreenFocus(0, 'right', true)).toBe(3);
+    expect(nextShopScreenFocus(3, 'left', true)).toBe(0);
+    expect(nextShopScreenFocus(2, 'down', true)).toBe(6);
+    expect(nextShopScreenFocus(5, 'down', true)).toBe(7);
+    expect(nextShopScreenFocus(6, 'right', true)).toBe(7);
+    expect(nextShopScreenFocus(5, 'down', false)).toBe(6);
   });
 });

@@ -1,12 +1,12 @@
 /**
- * Title screen (GDD §9): Play, Character, Meta shop, Settings, Credits.
+ * Title screen (GDD §9, §14, §15.4): Play, Character Select, Meta shop, Settings, Credits.
  *
  * Built in code, no `.scene` edits. All `Theme Wood` 9-slice framing, padding, and navigation live
  * in `screens/menu.ts`; this file decides the content and action order.
  *
- * Since #8 (refined in M11 T5) the title draws a cleanly framed 32×18 window of chapter 1 behind
- * a centred `Theme Wood` column with a gentle dim, leaving the living room and 1:1 weather visible
- * on both flanks.
+ * Since #8 (refined in M11 T5 & M14 T3) the title draws a cleanly framed 32×18 window of chapter 1
+ * behind a centred `Theme Wood` column with a gentle dim, leaving the living room, 1:1 weather, and
+ * the active rigged playable character visible on the flank.
  */
 import {
   CHARACTERS,
@@ -14,9 +14,15 @@ import {
   type CharacterDef,
   type CharacterId,
 } from '../../core/characters/roster';
-import { formatBest } from '../chapter-select';
 import type { BestProgress } from '../../core/save/save-data';
+import {
+  formatTitleCharacterDetail as formatCharacterDetail,
+  formatTitleCharacterLabel as formatCharacterLabel,
+} from '../../core/view/menu-layout';
+import { formatBest } from '../chapter-select';
 import { buildMenuScreen, MENU_COLUMN_WIDTH, type MenuScreen } from './menu';
+
+export { formatCharacterDetail, formatCharacterLabel };
 
 export interface TitleScreenOptions {
   readonly parent: Parameters<typeof buildMenuScreen>[0]['parent'];
@@ -26,11 +32,13 @@ export interface TitleScreenOptions {
   readonly onShop: () => void;
   readonly onSettings: () => void;
   readonly onCredits: () => void;
+  /** Open the full 4-class Character Select & Early Unlock screen (M14). */
+  readonly onOpenCharacterSelect?: () => void;
   /** Currently selected character; defaults to Ninja when omitted. */
   readonly selectedCharacter?: CharacterDef;
-  /** Characters unlocked under the current settings; defaults to `[selectedCharacter]`. */
+  /** Characters unlocked under the current save; defaults to `[selectedCharacter]`. */
   readonly availableCharacters?: readonly CharacterDef[];
-  /** Called immediately when the player cycles the character row on the Title screen. */
+  /** Called immediately when the player cycles unlocked characters with ←/→ on the Title row. */
   readonly onSelectCharacter?: (characterId: CharacterId) => void;
   /** Optional initial focused button index. */
   readonly initialFocus?: number;
@@ -45,15 +53,6 @@ export interface TitleScreen extends MenuScreen {
 const TITLE_BACKDROP_ALPHA = 84;
 const TITLE_BUTTON_WIDTH = MENU_COLUMN_WIDTH - 28;
 const CHARACTER_ITEM_INDEX = 1;
-
-export function formatCharacterLabel(character: CharacterDef): string {
-  return `Character: ${character.name}`;
-}
-
-export function formatCharacterDetail(character: CharacterDef, availableCount: number): string {
-  if (availableCount <= 1) return 'Clear chapters or Shop to unlock';
-  return `${character.subtitle} (←/→)`;
-}
 
 export function buildTitleScreen(options: TitleScreenOptions): Promise<TitleScreen> {
   const fallback = CHARACTERS[DEFAULT_CHARACTER_ID];
@@ -95,18 +94,27 @@ export function buildTitleScreen(options: TitleScreenOptions): Promise<TitleScre
       {
         label: formatCharacterLabel(current),
         detail: formatCharacterDetail(current, available.length),
-        disabled: available.length <= 1,
-        activate: () => cycleCharacter(1),
+        activate: () => {
+          if (options.onOpenCharacterSelect !== undefined) {
+            options.onOpenCharacterSelect();
+          } else {
+            cycleCharacter(1);
+          }
+        },
       },
-      { label: 'Meta shop', detail: 'Spend gold on upgrades', activate: options.onShop },
-      { label: 'Settings', detail: 'Volume, fullscreen, keys', activate: options.onSettings },
+      {
+        label: 'Meta shop',
+        detail: 'Upgrades & character unlocks',
+        activate: options.onShop,
+      },
+      { label: 'Settings', detail: 'Volume, fullscreen, effects', activate: options.onSettings },
       { label: 'Credits', detail: 'Art, audio, engine', activate: options.onCredits },
     ],
     onAdjust: (index, delta) => {
       if (index === CHARACTER_ITEM_INDEX) cycleCharacter(delta);
     },
     ...(options.initialFocus !== undefined ? { initialFocus: options.initialFocus } : {}),
-    hint: '↑/↓ select · ←/→ switch · Enter confirm',
+    hint: '↑/↓ select · ←/→ hero · Enter open',
     buttonWidth: TITLE_BUTTON_WIDTH,
     buttonHeight: 31,
     buttonGap: 5,

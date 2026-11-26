@@ -1,5 +1,5 @@
 /**
- * M5 screen routing: title, chapter select, shop, settings, credits,
+ * M5/M14 screen routing: title, character select, chapter select, shop, settings, credits,
  * pause, result. Split from `bootstrap.ts` so run-flow does not grow with UI.
  *
  * This file owns neither run nor combat. It takes a narrow `ScreenFlowHost`:
@@ -18,34 +18,44 @@ import {
   isCharacterUnlocked,
   resolveSelectedCharacter,
   type CharacterDef,
+  type CharacterId,
 } from '../core/characters/roster';
-import { chapterGate } from '../core/save/chapter-gate';
-import { CHAPTERS_PER_RUN, ROOMS_PER_CHAPTER } from '../core/run/run-state';
+import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
+import type { UpgradeTrack } from '../core/meta/upgrades';
 import { applyGold, MAX_GOLD, summariseRun } from '../core/run/rewards';
-import { applySettings } from '../core/save/settings';
-import type { Settings } from '../core/save/settings';
+import { CHAPTERS_PER_RUN, ROOMS_PER_CHAPTER } from '../core/run/run-state';
+import { chapterGate } from '../core/save/chapter-gate';
 import {
+  buyCharacter,
+  canBuyCharacter,
   unlockNextChapter,
   withBest,
   withSelectedCharacter,
   type SaveData,
 } from '../core/save/save-data';
+import { applySettings, type Settings } from '../core/save/settings';
 import type { SaveRepository } from '../core/save/storage';
-import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
-import type { UpgradeTrack } from '../core/meta/upgrades';
 import { menuBackdropChapter, type MenuBackdropScreen } from '../core/view/menu-backdrop';
-import type { DebugCharacterSnapshot, DebugScreenId, DebugStatus } from './debug-api';
 import type { MusicId } from './audio/audio-manager';
-import { commitRunEnd } from './run-end';
+import { playSfx } from './audio/sfx';
 import { buildChapterSelect, type ChapterButton } from './chapter-select';
+import type { DebugCharacterSnapshot, DebugScreenId, DebugStatus } from './debug-api';
+import { commitRunEnd } from './run-end';
+import {
+  buildCharacterSelectScreen,
+  type CharacterSelectScreen,
+} from './screens/character-select-screen';
 import { buildCreditsScreen } from './screens/credits-screen';
 import { buildPauseScreen } from './screens/pause-screen';
 import { buildResultScreen, type RunResultData } from './screens/result-screen';
 import { buildSettingsScreen } from './screens/settings-screen';
-import { buildShopScreen } from './screens/shop-screen';
+import { SHOP_UNLOCK_CHARACTER_IDS, buildShopScreen } from './screens/shop-screen';
 import { buildTitleScreen, type TitleScreen } from './screens/title-screen';
 
 type Node = InstanceType<typeof CocosNode>;
+
+/** Extended screen union including M14's `'character-select'`. */
+export type ScreenFlowScreenId = DebugScreenId | 'character-select';
 
 /** One run snapshot taken before teardown; enough to build the result and credit gold. */
 export interface RunSnapshot {
@@ -83,7 +93,7 @@ export interface ScreenFlowHost {
   setVolume(volume: number): void;
   /** Accessibility flags (shake, damage numbers) applied immediately to the running game. */
   applyFeelSettings(settings: Settings): void;
-  /** Optional M10 callback when character selection or cultivator availability changes. */
+  /** Optional M10/M14 callback when character selection or preview changes. */
   readonly onCharacterChanged?: (character: CharacterDef) => void;
   fail(error: unknown): void;
 }
@@ -95,11 +105,12 @@ function errorMessage(error: unknown): string {
 export class ScreenFlow {
   private menu: { readonly node: Node; destroy(): void } | null = null;
   private titleScreen: TitleScreen | null = null;
+  private characterSelectScreen: CharacterSelectScreen | null = null;
   private token = 0;
-  private currentScreen: DebugScreenId = 'title';
+  private currentScreen: ScreenFlowScreenId = 'title';
   private settingsBack: (() => void) | null = null;
   private shopBack: (() => void) | null = null;
-  /** Chapter currently drawn behind title/chapter select; `null` when no backdrop is shown. */
+  /** Chapter currently drawn behind title/character-select/chapter-select; `null` when cleared. */
   private backdropChapter: number | null = null;
 
   constructor(private readonly host: ScreenFlowHost) {
@@ -124,18 +135,23 @@ export class ScreenFlow {
     this.clearBackdrop();
   }
 
+  /**
+   * Current open screen id. Cast keeps `bootstrap.ts` compiling untouched before `debug-api.ts`
+   * widens `DebugScreenId` with `'character-select'`, while returning `'character-select'` live.
+   */
   get screenId(): DebugScreenId {
-    return this.currentScreen;
+    return this.currentScreen as DebugScreenId;
   }
 
   /** Bootstrap reports the running screen (playing/skill-pick) — status is unchanged. */
-  setScreen(id: DebugScreenId): void {
+  setScreen(id: ScreenFlowScreenId): void {
     this.currentScreen = id;
   }
 
   /** Tear down the open screen (used before entering a run or when the component is destroyed). */
   clearMenu(): void {
     this.titleScreen = null;
+    this.characterSelectScreen = null;
     this.menu?.destroy();
     this.menu = null;
   }
@@ -148,7 +164,8 @@ export class ScreenFlow {
 
   /**
    * Pick the room behind the menu (pure rule in `core/view/menu-backdrop.ts`) and show it.
-   * The adapter no-ops when the chapter is already drawn, so title ↔ chapter select keeps it.
+   * The adapter no-ops when the chapter is already drawn, so Title ↔ Character Select ↔ Chapter
+   * Select keeps Chapter 1 Room 1 seamless without rebuilding.
    */
   private applyBackdrop(screen: MenuBackdropScreen, focusedChapter: number | null): void {
     const chapter = menuBackdropChapter({
@@ -183,22 +200,27 @@ export class ScreenFlow {
       onSelectCharacter: (characterId) => {
         this.selectCharacter(characterId);
       },
+      onOpenCharacterSelect: () => {
+        void this.showCharacterSelect(() => {
+          void this.showTitle(1).catch((error: unknown) => this.host.fail(error));
+        }).catch((error: unknown) => this.host.fail(error));
+      },
       onPlay: () => {
         void this.showChapterSelect().catch((error: unknown) => this.host.fail(error));
       },
       onShop: () => {
         void this.showShop(() => {
-          void this.showTitle().catch((error: unknown) => this.host.fail(error));
+          void this.showTitle(2).catch((error: unknown) => this.host.fail(error));
         }).catch((error: unknown) => this.host.fail(error));
       },
       onSettings: () => {
         void this.showSettings(() => {
-          void this.showTitle().catch((error: unknown) => this.host.fail(error));
+          void this.showTitle(3).catch((error: unknown) => this.host.fail(error));
         }).catch((error: unknown) => this.host.fail(error));
       },
       onCredits: () => {
         void this.showCredits(() => {
-          void this.showTitle().catch((error: unknown) => this.host.fail(error));
+          void this.showTitle(4).catch((error: unknown) => this.host.fail(error));
         }).catch((error: unknown) => this.host.fail(error));
       },
     });
@@ -220,6 +242,71 @@ export class ScreenFlow {
     );
   }
 
+  /**
+   * Open the 4-class Character Select screen. Previews whichever class is highlighted in the
+   * living room backdrop and restores the active saved character on `Back`.
+   */
+  async showCharacterSelect(
+    backTo?: () => void,
+    initialCharacterId?: CharacterId,
+  ): Promise<void> {
+    const save = this.host.save();
+    if (save === null) throw new Error('ScreenFlow: save not loaded');
+
+    const back =
+      backTo ??
+      ((): void => {
+        void this.showTitle(1).catch((error: unknown) => this.host.fail(error));
+      });
+    const selected = resolveSelectedCharacter(save);
+    const startId = initialCharacterId ?? selected.id;
+
+    // Ensure the living room backdrop is visible so the highlighted class previews on the left stage.
+    this.applyBackdrop('title', null);
+    this.host.onCharacterChanged?.(CHARACTERS[startId]);
+
+    const token = this.nextMenuToken();
+    const built = await buildCharacterSelectScreen({
+      parent: this.host.uiRoot(),
+      save,
+      initialCharacterId: startId,
+      onHighlightCharacter: (character) => {
+        if (token !== this.token) return;
+        this.host.onCharacterChanged?.(character);
+      },
+      onSelectCharacter: (characterId) => {
+        if (!this.selectCharacter(characterId)) return;
+        const latest = this.host.save();
+        if (latest !== null) this.characterSelectScreen?.setSave(latest);
+      },
+      onUnlockCharacter: (characterId) => {
+        const next = this.tryBuyCharacter(characterId, true);
+        if (next === null) return;
+        playSfx('skill-acquired');
+        this.characterSelectScreen?.setSave(next);
+      },
+      onBack: () => {
+        // Restore backdrop actor to the saved selection if the player only previewed a locked hero.
+        this.host.onCharacterChanged?.(this.selectedCharacter());
+        back();
+      },
+    });
+
+    if (token !== this.token) {
+      built.destroy();
+      return;
+    }
+    this.menu = built;
+    this.characterSelectScreen = built;
+    this.currentScreen = 'character-select';
+    this.host.setStatus('menu');
+    this.host.setMusic('title');
+    console.log(
+      `[YokaiField] Character select: gold ${save.gold}, selected ${selected.id}, ` +
+        `unlocked [${getUnlockedCharacters(save).map((c) => c.id).join(', ')}].`,
+    );
+  }
+
   async showChapterSelect(): Promise<void> {
     const save = this.host.save();
     if (save === null) throw new Error('ScreenFlow: save not loaded');
@@ -235,12 +322,15 @@ export class ScreenFlow {
       });
     }
 
+    // Make sure backdrop displays the equipped character (never a transient preview).
+    this.host.onCharacterChanged?.(resolveSelectedCharacter(save));
+
     const built = await buildChapterSelect(this.host.uiRoot(), {
       chapters,
       best: save.best,
       onSelect: (chapter) => this.host.startChapter(chapter),
       onBack: () => {
-        void this.showTitle().catch((error: unknown) => this.host.fail(error));
+        void this.showTitle(0).catch((error: unknown) => this.host.fail(error));
       },
       onFocusChapter: (chapter) => {
         if (token !== this.token) return;
@@ -378,6 +468,20 @@ export class ScreenFlow {
           this.host.fail(error),
         );
       },
+      onBuyCharacter: (characterId) => {
+        if (this.tryBuyCharacter(characterId, false) === null) return;
+        playSfx('skill-acquired');
+        const charIdx = SHOP_UNLOCK_CHARACTER_IDS.indexOf(
+          characterId as (typeof SHOP_UNLOCK_CHARACTER_IDS)[number],
+        );
+        const focusIdx = charIdx >= 0 ? 3 + charIdx : 3;
+        void this.showShop(backTo, focusIdx).catch((error: unknown) => this.host.fail(error));
+      },
+      onOpenCharacterSelect: () => {
+        void this.showCharacterSelect(() => {
+          void this.showShop(backTo, 6).catch((error: unknown) => this.host.fail(error));
+        }).catch((error: unknown) => this.host.fail(error));
+      },
     });
 
     if (token !== this.token) {
@@ -390,7 +494,7 @@ export class ScreenFlow {
     this.host.setMusic('title');
   }
 
-  /** Buy one level; `null` when gold is short / the track is maxed / saving fails. Rules live in core. */
+  /** Buy one stat upgrade level; `null` when gold is short / maxed / saving fails. */
   private tryBuy(track: UpgradeTrack): SaveData | null {
     const save = this.host.save();
     const repo = this.host.repository();
@@ -406,10 +510,49 @@ export class ScreenFlow {
       const next: SaveData = { ...save, gold: result.gold, upgrades: result.state.upgrades };
       repo.save(next);
       this.host.setSave(next);
-      console.log(`[YokaiField] Bought '${track}' up to level ${next.upgrades[track]}, ${next.gold} gold left.`);
+      console.log(
+        `[YokaiField] Bought '${track}' up to level ${next.upgrades[track]}, ${next.gold} gold left.`,
+      );
       return next;
     } catch (error: unknown) {
       console.warn(`[YokaiField] Upgrade purchase failed: ${errorMessage(error)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Buy an early character unlock with Meta gold (`buyCharacter` in `core/save/save-data.ts`).
+   * When `autoSelect` is true (Character Select screen), also equips `characterId` immediately.
+   */
+  private tryBuyCharacter(characterId: CharacterId, autoSelect: boolean): SaveData | null {
+    const save = this.host.save();
+    const repo = this.host.repository();
+    if (save === null || repo === null) return null;
+
+    if (!canBuyCharacter(save, characterId)) {
+      console.warn(
+        `[YokaiField] Cannot buy character '${characterId}': already unlocked or not enough gold.`,
+      );
+      return null;
+    }
+
+    try {
+      let next = buyCharacter(save, characterId);
+      if (autoSelect) {
+        next = withSelectedCharacter(next, characterId);
+      }
+      repo.save(next);
+      this.host.setSave(next);
+      if (autoSelect) {
+        this.host.onCharacterChanged?.(CHARACTERS[characterId]);
+      }
+      console.log(
+        `[YokaiField] Unlocked character '${characterId}' for ${CHARACTERS[characterId].unlockGoldCost} gold ` +
+          `(${next.gold} gold left${autoSelect ? ', equipped' : ''}).`,
+      );
+      return next;
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] Character unlock purchase failed: ${errorMessage(error)}`);
       return null;
     }
   }
@@ -653,6 +796,9 @@ export class ScreenFlow {
       if (this.currentScreen === 'title' && this.titleScreen !== null) {
         this.titleScreen.setCharacter(character, available);
       }
+      if (this.currentScreen === 'character-select' && this.characterSelectScreen !== null) {
+        this.characterSelectScreen.setSave(next);
+      }
       this.host.onCharacterChanged?.(character);
       console.log(`[YokaiField] Selected character: ${character.id}.`);
       return true;
@@ -692,17 +838,18 @@ export class ScreenFlow {
     }
 
     if (this.currentScreen === 'settings') {
-      const back = this.settingsBack ?? (() => {
-        void this.showTitle().catch((error: unknown) => this.host.fail(error));
-      });
+      const back =
+        this.settingsBack ??
+        ((): void => {
+          void this.showTitle(3).catch((error: unknown) => this.host.fail(error));
+        });
       void this.showSettings(back).catch((error: unknown) => this.host.fail(error));
     }
   }
 
   /**
    * Debug-only: credit a chapter clear exactly like finishing its boss (unlock the next chapter
-   * + best record) and persist it. Lets the #45 browser proof take a migrated v1 save through
-   * "clear chapter 3 → chapter 4 opens" without playing nine rooms first.
+   * + best record) and persist it. Also refreshes open Title / Character Select / Shop views.
    */
   markChapterCleared(chapter: number): boolean {
     if (!Number.isInteger(chapter) || chapter < 1 || chapter > CHAPTERS_PER_RUN) {
@@ -717,18 +864,21 @@ export class ScreenFlow {
       const next = withBest(unlockNextChapter(save, chapter), chapter, ROOMS_PER_CHAPTER);
       repo.save(next);
       this.host.setSave(next);
+      this.refreshOpenSaveViews(next);
       console.log(
         `[YokaiField] debug markChapterCleared ${chapter} → unlocked ${next.chaptersUnlocked}` +
           ` (best ${next.best.chapter}/${next.best.room}).`,
       );
       return true;
     } catch (error: unknown) {
-      console.warn(`[YokaiField] debug markChapterCleared could not write the save: ${errorMessage(error)}`);
+      console.warn(
+        `[YokaiField] debug markChapterCleared could not write the save: ${errorMessage(error)}`,
+      );
       return false;
     }
   }
 
-  /** Debug-only: set gold (shop testing). */
+  /** Debug-only: set gold (shop & character-select early-unlock testing). */
   setGold(gold: number): boolean {
     if (!Number.isInteger(gold) || gold < 0) {
       console.warn(`[YokaiField] debug setGold skipped: needs an integer >= 0, got ${gold}`);
@@ -743,17 +893,26 @@ export class ScreenFlow {
       repo.save(next);
       this.host.setSave(next);
       console.log(`[YokaiField] debug setGold → ${next.gold}.`);
-      // If the shop is open, redraw so prices/disabled buttons match the new gold.
-      if (this.currentScreen === 'shop') {
-        const back = this.shopBack ?? (() => {
-          void this.showTitle().catch((error: unknown) => this.host.fail(error));
-        });
-        void this.showShop(back).catch((error: unknown) => this.host.fail(error));
-      }
+      this.refreshOpenSaveViews(next);
       return true;
     } catch (error: unknown) {
       console.warn(`[YokaiField] debug setGold could not write the save: ${errorMessage(error)}`);
       return false;
+    }
+  }
+
+  private refreshOpenSaveViews(next: SaveData): void {
+    if (this.currentScreen === 'title' && this.titleScreen !== null) {
+      this.titleScreen.setCharacter(resolveSelectedCharacter(next), getUnlockedCharacters(next));
+    } else if (this.currentScreen === 'character-select' && this.characterSelectScreen !== null) {
+      this.characterSelectScreen.setSave(next);
+    } else if (this.currentScreen === 'shop') {
+      const back =
+        this.shopBack ??
+        ((): void => {
+          void this.showTitle(2).catch((error: unknown) => this.host.fail(error));
+        });
+      void this.showShop(back).catch((error: unknown) => this.host.fail(error));
     }
   }
 }

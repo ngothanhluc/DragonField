@@ -1,27 +1,28 @@
 /**
- * Living menu backdrop (#8, refined in M11 T5), engine side: Title and Chapter Select draw a
- * cleanly framed 32×18 window of the chapter's room 1 behind the `Theme Wood` column — tiles,
- * water, 1:1 weather particles, wandering critters, and the idle playable character — dimmed
- * lightly so the menu stays readable without hiding the living world.
+ * Living menu backdrop (#8, refined in M11 T5 & M14 T3), engine side: Title, Character Select,
+ * and Chapter Select draw a cleanly framed 32×18 window of the chapter's room 1 behind the
+ * `Theme Wood` plaque — tiles, water, 1:1 weather particles, wandering critters, and the idle
+ * playable character (`ninja`, `archer`, `mage`, `cultivator`) with its live weapon attachment
+ * (`bow-hand`, `staff-hand`, `sword-back`) via `PlayerAttachmentView`.
  *
  * Nothing here duplicates the run renderer: the room is `buildRoom`, water is `attachRoomWater`,
- * atmosphere + decor come from the shared `attachRoomAtmosphere`, and the character is a plain
- * `Sprite` + `SpriteAnimator` (`idle.down`), not a `PlayerController` (no input, no firing).
- * Framing and character placement live in the pure `core/view/menu-backdrop.ts`.
+ * atmosphere + decor come from the shared `attachRoomAtmosphere`, and the character is a sprite-free
+ * container holding `menu-actor-body` (`SpriteAnimator` playing `<prefix>.idle.down`) plus optional
+ * sibling `player-attachment` managed by `PlayerAttachmentView` and synced to `animator.frameIndex`
+ * every frame so breathing bob (`attachments.json`) works live in menus.
  */
 import {
+  _decorator,
+  Component,
   JsonAsset as CocosJsonAsset,
   Node as CocosNode,
   Sprite as CocosSprite,
-  UITransform as CocosUITransform,
   resources,
 } from 'cc';
 import type { TiledMapAsset as CocosTiledMapAsset } from 'cc';
 import { chapterAtmosphere, type AtmosphereConfig } from '../core/atmosphere/atmosphere';
-import { AttachmentNodeController } from '../core/art/attachment-node';
 import { validateAttachments, type AttachmentsData } from '../core/art/attachments';
 import { resolve, type AnimationManifest } from '../core/art/manifest';
-import { entryAnchorY } from '../core/art/runtime';
 import {
   CHARACTERS,
   DEFAULT_CHARACTER_ID,
@@ -41,7 +42,6 @@ import {
 import type { EffectsMode } from '../core/vfx/weapon-vfx';
 import type { DebugMenuBackdropSnapshot } from './debug-api';
 import { SpriteAnimator } from './anim/sprite-animator';
-import { getFrame } from './assets/sprite-frame-cache';
 import { preloadSheets } from './assets/texture-cache';
 import { attachRoomAtmosphere, type RoomAtmosphereParts } from './atmosphere-view';
 import {
@@ -50,18 +50,55 @@ import {
   buildRoom,
   obstacleSheets,
 } from './level-view';
+import { PlayerAttachmentView } from './player-attachment-view';
 import { attachRoomWater } from './room-water';
 import { MENU_COLUMN_WIDTH } from './screens/menu';
 import { cullWorld } from './world-culler';
+
+const { ccclass } = _decorator;
 
 /** `cc` is an any module: types must be derived from the import value. */
 type JsonAsset = InstanceType<typeof CocosJsonAsset>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type TiledMapAsset = InstanceType<typeof CocosTiledMapAsset>;
-type UITransform = InstanceType<typeof CocosUITransform>;
 
 const ATTACHMENTS_PATH = 'data/attachments';
+
+/**
+ * Tiny component keeping the menu preview actor's `PlayerAttachmentView` pose synced to
+ * `SpriteAnimator.frameIndex` each engine tick so `bow-hand`, `staff-hand`, and `sword-back`
+ * follow per-frame idle breathing bob from `attachments.json`.
+ */
+@ccclass('MenuBackdropActorRig')
+export class MenuBackdropActorRig extends Component {
+  private animator: SpriteAnimator | null = null;
+  private attachment: PlayerAttachmentView | null = null;
+  private lastFrame = -1;
+
+  bind(animator: SpriteAnimator, attachment: PlayerAttachmentView | null): void {
+    this.animator = animator;
+    this.attachment = attachment;
+    this.lastFrame = animator.frameIndex;
+    attachment?.updatePose({ animation: 'idle', direction: 'down', frame: this.lastFrame });
+  }
+
+  update(): void {
+    const animator = this.animator;
+    const attachment = this.attachment;
+    if (animator === null || attachment === null) return;
+    const frame = animator.frameIndex;
+    if (frame === this.lastFrame) return;
+    this.lastFrame = frame;
+    attachment.updatePose({ animation: 'idle', direction: 'down', frame });
+  }
+
+  protected onDestroy(): void {
+    this.attachment?.destroy();
+    this.attachment = null;
+    this.animator = null;
+  }
+}
 
 /** One loaded chapter: parsed rooms + the `TiledMapAsset` of each room, as `bootstrap.loadChapter`. */
 export interface MenuChapterData {
@@ -113,13 +150,17 @@ export function menuBackdropSeed(chapter: number): number {
   return (0x9e3779b1 ^ (chapter * 0x85ebca6b)) >>> 0;
 }
 
-/** Owns the room drawn behind the title / chapter select: `show(chapter)` and `clear()`. */
+/** Owns the room drawn behind Title / Character Select / Chapter Select: `show(chapter)` and `clear()`. */
 export class MenuBackdrop {
   private token = 0;
+  private actorSwapToken = 0;
   private shownChapter: number | null = null;
   private requestedChapter: number | null = null;
   private container: Node | null = null;
   private actor: Node | null = null;
+  private actorAttachment: PlayerAttachmentView | null = null;
+  private actorWorldPos: Vec2 | null = null;
+  private renderedCharacterId: string | null = null;
   private atmosphere: RoomAtmosphereParts | null = null;
   private playerSpot: Vec2 | null = null;
   private characterOverride: CharacterDef | null = null;
@@ -147,29 +188,41 @@ export class MenuBackdrop {
   }
 
   /**
-   * Switch the idle character shown in the living menu room (e.g. Ninja ↔ Cultivator).
-   * Rebuilds the currently displayed backdrop in place when the character or attachment data changes.
+   * Switch the idle character shown in the living menu room (`ninja`, `archer`, `mage`, `cultivator`).
+   * When a room is already displayed, swaps ONLY the actor + `PlayerAttachmentView` in place so
+   * the room tiles, water, and 1:1 weather particles never flicker during Character Select browsing.
    */
   setCharacter(character: CharacterDef, attachments?: AttachmentsData | null): void {
-    const prevId = this.resolvedCharacter().id;
     const prevHasAttachments = this.resolvedAttachments() !== null;
     this.characterOverride = character;
     if (attachments !== undefined) this.attachmentsOverride = attachments;
     const nextHasAttachments = this.resolvedAttachments() !== null;
 
-    const chapter = this.shownChapter ?? this.requestedChapter;
-    if (chapter === null) return;
-    if (prevId === character.id && prevHasAttachments === nextHasAttachments && this.actor !== null) {
+    if (this.disposed) return;
+
+    if (this.shownChapter !== null && this.container !== null && this.actorWorldPos !== null) {
+      if (
+        this.renderedCharacterId === character.id &&
+        prevHasAttachments === nextHasAttachments &&
+        this.actor !== null
+      ) {
+        return;
+      }
+      void this.swapActorInPlace(character);
       return;
     }
-    this.clear();
-    void this.show(chapter);
+
+    if (this.requestedChapter !== null) {
+      const pending = this.requestedChapter;
+      this.clear();
+      void this.show(pending);
+    }
   }
 
   /**
-   * Draw `chapter`'s room 1. No-op when that chapter is already drawn (or loading): title ↔ chapter
-   * select does not rebuild. Otherwise the new room is built first, then the old one is destroyed.
-   * A newer `show`/`clear` bumps a token so a slow load never attaches a stale room.
+   * Draw `chapter`'s room 1. No-op when that chapter is already drawn (or loading): Title ↔
+   * Character Select ↔ Chapter Select does not rebuild. Otherwise the new room is built first,
+   * then the old one is destroyed.
    */
   async show(chapter: number): Promise<void> {
     if (this.disposed) return;
@@ -188,20 +241,13 @@ export class MenuBackdrop {
       }
 
       const character = this.resolvedCharacter();
-      let attachments = this.resolvedAttachments();
-      if (
-        attachments === null &&
-        character.defaultLoadout.weaponForm === 'attachment' &&
-        character.defaultLoadout.attachmentItemId !== null
-      ) {
-        attachments = await this.loadAttachments();
-        if (token !== this.token) return;
-      }
+      const attachments = await this.ensureAttachmentsFor(character);
+      if (token !== this.token) return;
 
       await preloadSheets(this.sheetsFor(data.chapter, character, attachments));
       if (token !== this.token) return;
 
-      this.build(chapter, level, asset, character, attachments, token);
+      this.build(chapter, level, asset, character, attachments);
       this.requestedChapter = null;
     } catch (error: unknown) {
       if (token !== this.token) return;
@@ -212,9 +258,10 @@ export class MenuBackdrop {
     }
   }
 
-  /** Destroy every backdrop node; idempotent, and cancels an in-flight `show`. */
+  /** Destroy every backdrop node; idempotent, and cancels an in-flight `show` or actor swap. */
   clear(): void {
     this.token += 1;
+    this.actorSwapToken += 1;
     this.requestedChapter = null;
     this.destroyNodes();
   }
@@ -244,6 +291,54 @@ export class MenuBackdrop {
   private resolvedAttachments(): AttachmentsData | null {
     if (this.attachmentsOverride !== undefined) return this.attachmentsOverride;
     return this.host.attachments?.() ?? this.cachedAttachments;
+  }
+
+  private async ensureAttachmentsFor(character: CharacterDef): Promise<AttachmentsData | null> {
+    const current = this.resolvedAttachments();
+    if (
+      current === null &&
+      character.defaultLoadout.weaponForm === 'attachment' &&
+      character.defaultLoadout.attachmentItemId !== null
+    ) {
+      return this.loadAttachments();
+    }
+    return current;
+  }
+
+  private async swapActorInPlace(character: CharacterDef): Promise<void> {
+    const swapToken = ++this.actorSwapToken;
+    const roomToken = this.token;
+    try {
+      const attachments = await this.ensureAttachmentsFor(character);
+      if (this.disposed || swapToken !== this.actorSwapToken || roomToken !== this.token) return;
+
+      await preloadSheets(this.actorSheetsFor(character, attachments));
+      if (this.disposed || swapToken !== this.actorSwapToken || roomToken !== this.token) return;
+
+      const actorLayer = this.host.actorLayer();
+      const manifest = this.host.manifest();
+      const worldPos = this.actorWorldPos;
+      if (
+        actorLayer === null ||
+        !actorLayer.isValid ||
+        manifest === null ||
+        worldPos === null ||
+        this.container === null
+      ) {
+        return;
+      }
+
+      const built = this.createActor(actorLayer, worldPos, manifest, character, attachments);
+      this.destroyActor();
+      this.actor = built.node;
+      this.actorAttachment = built.attachment;
+      this.renderedCharacterId = character.id;
+    } catch (error: unknown) {
+      if (swapToken !== this.actorSwapToken) return;
+      console.warn(
+        `[YokaiField] Menu backdrop character preview (${character.id}) failed: ${errorMessage(error)}`,
+      );
+    }
   }
 
   private loadAttachments(): Promise<AttachmentsData | null> {
@@ -294,12 +389,7 @@ export class MenuBackdrop {
     });
   }
 
-  /** Sheets the menu room needs: obstacles, atmosphere layers, decor, idle character + attachment. */
-  private sheetsFor(
-    chapter: ChapterData,
-    character: CharacterDef,
-    attachments: AttachmentsData | null,
-  ): string[] {
+  private actorSheetsFor(character: CharacterDef, attachments: AttachmentsData | null): string[] {
     const manifest = this.host.manifest();
     if (manifest === null) return [];
 
@@ -321,6 +411,20 @@ export class MenuBackdrop {
         sheets.add(itemEntry.sheet);
       }
     }
+
+    return Array.from(sheets);
+  }
+
+  /** Sheets the menu room needs: obstacles, atmosphere layers, decor, idle character + attachment. */
+  private sheetsFor(
+    chapter: ChapterData,
+    character: CharacterDef,
+    attachments: AttachmentsData | null,
+  ): string[] {
+    const manifest = this.host.manifest();
+    if (manifest === null) return [];
+
+    const sheets = new Set<string>(this.actorSheetsFor(character, attachments));
 
     for (const sheet of obstacleSheets(chapter.chapter)) sheets.add(sheet);
 
@@ -344,7 +448,6 @@ export class MenuBackdrop {
     asset: TiledMapAsset,
     character: CharacterDef,
     attachments: AttachmentsData | null,
-    token: number,
   ): void {
     const roomLayer = this.host.roomLayer();
     const actorLayer = this.host.actorLayer();
@@ -387,7 +490,7 @@ export class MenuBackdrop {
       x: spot.x - frame.x,
       y: frame.y + frame.height - spot.y,
     };
-    const actor = this.createActor(actorLayer, actorWorld, manifest, character, attachments, token);
+    const builtActor = this.createActor(actorLayer, actorWorld, manifest, character, attachments);
 
     const atmosphere = attachRoomAtmosphere({
       roomRoot,
@@ -404,15 +507,19 @@ export class MenuBackdrop {
     // The new room exists: only now drop the previous one, so a focus change never flashes empty.
     this.destroyNodes();
     this.container = container;
-    this.actor = actor;
+    this.actor = builtActor.node;
+    this.actorAttachment = builtActor.attachment;
+    this.actorWorldPos = actorWorld;
+    this.renderedCharacterId = character.id;
     this.atmosphere = atmosphere;
     this.playerSpot = spot;
     this.shownChapter = chapter;
   }
 
   /**
-   * Idle character container (`body` + optional `attachment` sibling child), frame-anchored at the
-   * feet like the run's player (no controller). Projectile characters never create an attachment node.
+   * Idle character container (`menu-actor-body` + optional `player-attachment` sibling child via
+   * `PlayerAttachmentView`), frame-anchored at the feet like the run's player. Projectile classes
+   * (`ninja`) never create an attachment node (`PlayerAttachmentView` enforces `state.active === false`).
    */
   private createActor(
     actorLayer: Node,
@@ -420,8 +527,7 @@ export class MenuBackdrop {
     manifest: AnimationManifest,
     character: CharacterDef,
     attachments: AttachmentsData | null,
-    token: number,
-  ): Node {
+  ): { readonly node: Node; readonly attachment: PlayerAttachmentView | null } {
     const container = new CocosNode('menu-actor');
     container.parent = actorLayer;
     container.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
@@ -437,67 +543,29 @@ export class MenuBackdrop {
     const animator: SpriteAnimator = body.addComponent(SpriteAnimator);
     animator.play(idleKey, 'down');
 
-    if (
-      character.defaultLoadout.weaponForm === 'attachment' &&
-      character.rigId !== null &&
-      character.defaultLoadout.attachmentItemId !== null &&
-      attachments !== null &&
-      attachments.characters[character.rigId] !== undefined &&
-      attachments.items[character.defaultLoadout.attachmentItemId] !== undefined
-    ) {
-      const bodyEntry = resolve(manifest, idleKey);
-      const itemDef = attachments.items[character.defaultLoadout.attachmentItemId]!;
-      const itemKey = `${itemDef.sprite}.down`;
-      const itemEntry = manifest.sprites[itemKey];
-      const controller = new AttachmentNodeController(
-        attachments,
-        {
-          character: character.rigId,
-          item: character.defaultLoadout.attachmentItemId,
-          weaponForm: character.defaultLoadout.weaponForm,
-          bodyAnchorY: entryAnchorY(bodyEntry),
-          itemAnchorY: itemEntry === undefined ? 0.5 : entryAnchorY(itemEntry),
-        },
-        { animation: 'idle', direction: 'down', frame: 0 },
-      );
+    // `PlayerAttachmentView` mounts `bow-hand`, `staff-hand`, or `sword-back` (and never creates a
+    // node for projectile-only `ninja`). `MenuBackdropActorRig` syncs `animator.frameIndex` each tick.
+    const attachmentView = new PlayerAttachmentView({
+      parent: container,
+      bodyNode: body,
+      manifest,
+      attachments,
+      character,
+      initialPose: { animation: 'idle', direction: 'down', frame: animator.frameIndex },
+    });
 
-      const state = controller.state;
-      if (
-        state.active &&
-        state.spriteKey !== null &&
-        manifest.sprites[state.spriteKey] !== undefined
-      ) {
-        const attachmentNode = new CocosNode('menu-actor-attachment');
-        attachmentNode.parent = container;
-        // Keep inactive until the SpriteFrame is assigned so `placeholders()` never sees null-frame.
-        attachmentNode.active = false;
-        const attachSprite: Sprite = attachmentNode.addComponent(CocosSprite);
-        attachSprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
-        attachSprite.trim = false;
+    const rigSync: MenuBackdropActorRig = container.addComponent(MenuBackdropActorRig);
+    rigSync.bind(animator, attachmentView);
 
-        const spriteEntry = resolve(manifest, state.spriteKey);
-        void getFrame(spriteEntry, 'down', 0)
-          .then((frame) => {
-            if (token !== this.token || !attachmentNode.isValid || !container.isValid) return;
-            attachSprite.spriteFrame = frame;
-            const transform: UITransform | null = attachmentNode.getComponent(CocosUITransform);
-            if (transform !== null) {
-              transform.setAnchorPoint(0.5, entryAnchorY(spriteEntry));
-              transform.setContentSize(state.frameWidth, state.frameHeight);
-            }
-            attachmentNode.setPosition(state.localOffsetPx.x, state.localOffsetPx.y, 0);
-            attachmentNode.setSiblingIndex(state.behind ? 0 : 1);
-            attachmentNode.active = state.visible;
-          })
-          .catch((error: unknown) => {
-            console.warn(
-              `[YokaiField] Menu backdrop attachment frame failed: ${errorMessage(error)}`,
-            );
-          });
-      }
-    }
+    return { node: container, attachment: attachmentView };
+  }
 
-    return container;
+  private destroyActor(): void {
+    this.actorAttachment?.destroy();
+    this.actorAttachment = null;
+    if (this.actor !== null && this.actor.isValid) this.actor.destroy();
+    this.actor = null;
+    this.renderedCharacterId = null;
   }
 
   private destroyNodes(): void {
@@ -505,8 +573,8 @@ export class MenuBackdrop {
     // handles explicitly or chapter 1 leaves/blossoms stay drawn over the next chapter and menus.
     this.atmosphere?.destroy();
     this.atmosphere = null;
-    if (this.actor !== null && this.actor.isValid) this.actor.destroy();
-    this.actor = null;
+    this.destroyActor();
+    this.actorWorldPos = null;
     if (this.container !== null && this.container.isValid) this.container.destroy();
     this.container = null;
     this.playerSpot = null;

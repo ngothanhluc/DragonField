@@ -1,5 +1,6 @@
 /**
- * Pure layout, padding, and button visual-state helpers for the `Theme Wood` menu UI (M11 T5).
+ * Pure layout, padding, text-formatting, and button visual-state helpers for the `Theme Wood`
+ * menu UI (M11 T5, extended in M14 T3 for 4-class Character Select & Meta Shop early unlocks).
  *
  * Zero `cc` imports (`no-restricted-imports` enforced), so vitest verifies:
  * - distinct button states (`normal`, `focused`, `hovered`, `pressed`, `disabled`, `disabled-focused`),
@@ -7,6 +8,21 @@
  * - vertical centering, header-to-button divider placement, and non-clipping bounds across
  *   16:9 (1920×1080, 1280×720), 16:10 (1280×800), and 4:3 (1024×768).
  */
+import {
+  CHARACTERS,
+  characterUnlockReason,
+  isCharacterUnlocked,
+  resolveSelectedCharacter,
+  type CharacterDef,
+  type CharacterId,
+} from '../characters/roster';
+import {
+  canBuy,
+  costFor,
+  maxLevelFor,
+  type UpgradeTrack,
+} from '../meta/upgrades';
+import { canBuyCharacter, type SaveData } from '../save/save-data';
 
 /**
  * Width of the centred column on Title and Chapter Select (design px).
@@ -418,4 +434,559 @@ export function computeSkillCardLayout(choiceCount: number): SkillCardLayout {
     rerollWidth: 236,
     rerollHeight: 32,
   };
+}
+
+export interface MenuButtonBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly fontSize: number;
+}
+
+export interface CharacterCardSlot extends MenuButtonBox {
+  readonly index: number;
+  readonly row: number;
+  readonly col: number;
+}
+
+export interface CharacterSelectLayoutInput {
+  readonly visibleWidth?: number;
+  readonly visibleHeight?: number;
+}
+
+export interface CharacterSelectLayout {
+  /** Right X boundary of the open living-backdrop preview stage on the left (`[-visibleWidth/2, stageRightX]`). */
+  readonly stageRightX: number;
+  readonly panelX: number;
+  readonly panelY: number;
+  readonly panelWidth: number;
+  readonly panelHeight: number;
+  readonly titleFontSize: number;
+  readonly titleY: number;
+  readonly subtitleFontSize: number;
+  readonly subtitleY: number;
+  readonly dividerY: number;
+  readonly dividerWidth: number;
+  readonly cardWidth: number;
+  readonly cardHeight: number;
+  readonly cardColGap: number;
+  readonly cardRowGap: number;
+  readonly cardFontSize: number;
+  readonly cards: readonly CharacterCardSlot[];
+  readonly summaryX: number;
+  readonly summaryY: number;
+  readonly summaryWidth: number;
+  readonly summaryHeight: number;
+  readonly summarySafeTextWidth: number;
+  readonly statusFontSize: number;
+  readonly statusLocalY: number;
+  readonly summaryDividerLocalY: number;
+  readonly summaryDividerWidth: number;
+  readonly weaponFontSize: number;
+  readonly weaponLocalY: number;
+  readonly passiveTitleFontSize: number;
+  readonly passiveTitleLocalY: number;
+  readonly passiveBodyFontSize: number;
+  readonly passiveBodyLocalY: number;
+  readonly signatureTitleFontSize: number;
+  readonly signatureTitleLocalY: number;
+  readonly signatureBodyFontSize: number;
+  readonly signatureBodyLocalY: number;
+  readonly primaryButton: MenuButtonBox;
+  readonly backButton: MenuButtonBox;
+  readonly hintFontSize: number;
+  readonly hintY: number;
+}
+
+/**
+ * Pure 512×288 layout for the 4-class Character Select screen (M14-T3):
+ * - Leaves `x ∈ [-256, -126]` completely open on the left so the living-room hero + weapon
+ *   attachment (`uiX ≈ -144..-140.8`) stands clearly visible in Chapter 1's sunlit forest.
+ * - Docks a `372 × 280` `Theme Wood` plaque on the right (`center x = +62`, `[-124, +248]`)
+ *   housing a 2×2 class card grid, a recessed 3-layer class summary well, an early-unlock /
+ *   equip action button, and a Back button.
+ */
+export function computeCharacterSelectLayout(
+  input: CharacterSelectLayoutInput = {},
+): CharacterSelectLayout {
+  const visibleWidth = input.visibleWidth ?? 512;
+  const visibleHeight = input.visibleHeight ?? 288;
+  const panelWidth = Math.min(372, Math.max(280, Math.round(visibleWidth - 140)));
+  const panelHeight = Math.min(280, Math.max(240, Math.round(visibleHeight - 8)));
+  const panelX = Math.round(visibleWidth / 2 - 8 - panelWidth / 2);
+  const panelY = 0;
+  const stageRightX = panelX - panelWidth / 2 - PANEL_SHADOW_EXPAND_PX / 2;
+
+  const innerWidth = panelWidth - 24;
+  const cardColGap = 8;
+  const cardRowGap = 6;
+  const cardWidth = Math.floor((innerWidth - cardColGap) / 2);
+  const cardHeight = 32;
+  const cardFontSize = 10;
+  const rowYs = [78, 78 - cardHeight - cardRowGap] as const;
+  const colOffset = (cardWidth + cardColGap) / 2;
+
+  const cards: CharacterCardSlot[] = [
+    { index: 0, row: 0, col: 0, x: panelX - colOffset, y: rowYs[0], width: cardWidth, height: cardHeight, fontSize: cardFontSize },
+    { index: 1, row: 0, col: 1, x: panelX + colOffset, y: rowYs[0], width: cardWidth, height: cardHeight, fontSize: cardFontSize },
+    { index: 2, row: 1, col: 0, x: panelX - colOffset, y: rowYs[1], width: cardWidth, height: cardHeight, fontSize: cardFontSize },
+    { index: 3, row: 1, col: 1, x: panelX + colOffset, y: rowYs[1], width: cardWidth, height: cardHeight, fontSize: cardFontSize },
+  ];
+
+  const summaryWidth = cardWidth * 2 + cardColGap;
+  const summaryHeight = 98;
+  const summaryX = panelX;
+  const summaryY = -32;
+  const summarySafeTextWidth = summaryWidth - 16;
+
+  const actionY = -103;
+  const actionHeight = 30;
+  const actionGap = 8;
+  const backWidth = 108;
+  const primaryWidth = summaryWidth - backWidth - actionGap;
+
+  return {
+    stageRightX,
+    panelX,
+    panelY,
+    panelWidth,
+    panelHeight,
+    titleFontSize: 16,
+    titleY: 124,
+    subtitleFontSize: 9,
+    subtitleY: 109,
+    dividerY: 101,
+    dividerWidth: summaryWidth,
+    cardWidth,
+    cardHeight,
+    cardColGap,
+    cardRowGap,
+    cardFontSize,
+    cards,
+    summaryX,
+    summaryY,
+    summaryWidth,
+    summaryHeight,
+    summarySafeTextWidth,
+    statusFontSize: 9,
+    statusLocalY: 39,
+    summaryDividerLocalY: 30,
+    summaryDividerWidth: summaryWidth - 20,
+    weaponFontSize: 9,
+    weaponLocalY: 21,
+    passiveTitleFontSize: 9,
+    passiveTitleLocalY: 6,
+    passiveBodyFontSize: 8,
+    passiveBodyLocalY: -7,
+    signatureTitleFontSize: 9,
+    signatureTitleLocalY: -22,
+    signatureBodyFontSize: 8,
+    signatureBodyLocalY: -35,
+    primaryButton: {
+      x: panelX - summaryWidth / 2 + primaryWidth / 2,
+      y: actionY,
+      width: primaryWidth,
+      height: actionHeight,
+      fontSize: 10,
+    },
+    backButton: {
+      x: panelX + summaryWidth / 2 - backWidth / 2,
+      y: actionY,
+      width: backWidth,
+      height: actionHeight,
+      fontSize: 11,
+    },
+    hintFontSize: 8,
+    hintY: -130,
+  };
+}
+
+export type MenuGridDirection = 'up' | 'down' | 'left' | 'right';
+
+/**
+ * 2D focus navigation across Character Select's 6 controls:
+ * - `0..3`: 2×2 character cards (`Ninja`, `Archer`, `Mage`, `Cultivator`)
+ * - `4`: Primary Select / Unlock Early button
+ * - `5`: Back button
+ *
+ * `left`/`right` on `0..3` cycles cleanly through all 4 classes (`0 ↔ 1 ↔ 2 ↔ 3`); moving `up`
+ * from the action bar (`4` or `5`) returns directly to `highlightedCard` so inspecting and
+ * unlocking `Archer` (`1`) never strands or swaps your highlighted class.
+ */
+export function nextCharacterSelectFocus(
+  current: number,
+  direction: MenuGridDirection,
+  highlightedCard = 0,
+): number {
+  const clampedCard = Math.min(3, Math.max(0, Math.trunc(highlightedCard)));
+  const index = Math.min(5, Math.max(0, Math.trunc(current)));
+
+  if (direction === 'left' || direction === 'right') {
+    const delta = direction === 'left' ? -1 : 1;
+    if (index <= 3) return (index + delta + 4) % 4;
+    return index === 4 ? 5 : 4;
+  }
+
+  if (direction === 'down') {
+    if (index === 0) return 2;
+    if (index === 1) return 3;
+    if (index === 2) return 4;
+    if (index === 3) return 4;
+    return clampedCard;
+  }
+
+  // direction === 'up'
+  if (index === 0) return 4;
+  if (index === 1) return 5;
+  if (index === 2) return 0;
+  if (index === 3) return 1;
+  return clampedCard;
+}
+
+export interface ShopScreenLayoutInput {
+  readonly visibleWidth?: number;
+  readonly visibleHeight?: number;
+  readonly hasCharacterSelect?: boolean;
+}
+
+export interface ShopScreenLayout {
+  readonly panelX: number;
+  readonly panelY: number;
+  readonly panelWidth: number;
+  readonly panelHeight: number;
+  readonly titleFontSize: number;
+  readonly titleY: number;
+  readonly subtitleFontSize: number;
+  readonly subtitleY: number;
+  readonly infoFontSize: number;
+  readonly infoY: number;
+  readonly dividerY: number;
+  readonly dividerWidth: number;
+  readonly leftHeaderX: number;
+  readonly rightHeaderX: number;
+  readonly sectionHeaderY: number;
+  readonly sectionHeaderFontSize: number;
+  readonly colWidth: number;
+  readonly rowHeight: number;
+  readonly rowFontSize: number;
+  /** Stat upgrade track slots (`0..2`: Hearts, Damage, Fire rate) on the left column. */
+  readonly upgradeSlots: readonly MenuButtonBox[];
+  /** Early character unlock slots (`3..5`: Archer, Mage, Cultivator) on the right column. */
+  readonly characterSlots: readonly MenuButtonBox[];
+  /** Optional `Character Select` navigation button (`index 6`) on the bottom-left. */
+  readonly characterSelectButton: MenuButtonBox | null;
+  /** `Back` button (`index 7` when `characterSelectButton` exists, otherwise `index 6`). */
+  readonly backButton: MenuButtonBox;
+  readonly hintFontSize: number;
+  readonly hintY: number;
+}
+
+/**
+ * Pure 512×288 two-column layout for the Meta Shop (M14-T3):
+ * - Left column: 3 permanent stat tracks (`Hearts`, `Damage`, `Fire rate`).
+ * - Right column: 3 early character unlocks (`Archer`, `Mage`, `Cultivator`).
+ * - Footer row: optional `Character Select` shortcut + `Back` button.
+ */
+export function computeShopScreenLayout(input: ShopScreenLayoutInput = {}): ShopScreenLayout {
+  const visibleWidth = input.visibleWidth ?? 512;
+  const visibleHeight = input.visibleHeight ?? 288;
+  const hasCharacterSelect = input.hasCharacterSelect === true;
+
+  const panelWidth = Math.min(476, Math.max(360, Math.round(visibleWidth - 36)));
+  const panelHeight = Math.min(272, Math.max(240, Math.round(visibleHeight - 16)));
+  const colGap = 12;
+  const colWidth = Math.floor((panelWidth - 32 - colGap) / 2);
+  const colOffset = (colWidth + colGap) / 2;
+  const rowHeight = 35;
+  const rowGap = 5;
+  const rowFontSize = 11;
+  const rowYs = [40, 40 - (rowHeight + rowGap), 40 - 2 * (rowHeight + rowGap)] as const;
+
+  const upgradeSlots: MenuButtonBox[] = rowYs.map((y) => ({
+    x: -colOffset,
+    y,
+    width: colWidth,
+    height: rowHeight,
+    fontSize: rowFontSize,
+  }));
+
+  const characterSlots: MenuButtonBox[] = rowYs.map((y) => ({
+    x: colOffset,
+    y,
+    width: colWidth,
+    height: rowHeight,
+    fontSize: rowFontSize,
+  }));
+
+  const bottomY = -83;
+  const bottomHeight = 28;
+  const bottomFontSize = 11;
+
+  return {
+    panelX: 0,
+    panelY: 0,
+    panelWidth,
+    panelHeight,
+    titleFontSize: 18,
+    titleY: 117,
+    subtitleFontSize: 9,
+    subtitleY: 99,
+    infoFontSize: 8,
+    infoY: 86,
+    dividerY: 78,
+    dividerWidth: colWidth * 2 + colGap,
+    leftHeaderX: -colOffset,
+    rightHeaderX: colOffset,
+    sectionHeaderY: 68,
+    sectionHeaderFontSize: 9,
+    colWidth,
+    rowHeight,
+    rowFontSize,
+    upgradeSlots,
+    characterSlots,
+    characterSelectButton: hasCharacterSelect
+      ? {
+          x: -colOffset,
+          y: bottomY,
+          width: colWidth,
+          height: bottomHeight,
+          fontSize: bottomFontSize,
+        }
+      : null,
+    backButton: {
+      x: hasCharacterSelect ? colOffset : 0,
+      y: bottomY,
+      width: colWidth,
+      height: bottomHeight,
+      fontSize: bottomFontSize,
+    },
+    hintFontSize: 8,
+    hintY: -117,
+  };
+}
+
+/**
+ * 2D focus navigation for the two-column Meta Shop:
+ * - `0..2`: left column stat tracks (`Hearts`, `Damage`, `Fire rate`)
+ * - `3..5`: right column character early unlocks (`Archer`, `Mage`, `Cultivator`)
+ * - `6` (and `7` when `hasCharacterSelect`): bottom row (`Character Select`, `Back`).
+ */
+export function nextShopScreenFocus(
+  current: number,
+  direction: MenuGridDirection,
+  hasCharacterSelect: boolean,
+): number {
+  const maxIndex = hasCharacterSelect ? 7 : 6;
+  const index = Math.min(maxIndex, Math.max(0, Math.trunc(current)));
+
+  if (direction === 'left' || direction === 'right') {
+    if (index <= 2) return index + 3;
+    if (index <= 5) return index - 3;
+    if (hasCharacterSelect) return index === 6 ? 7 : 6;
+    return 6;
+  }
+
+  const leftCol = hasCharacterSelect ? [0, 1, 2, 6] : [0, 1, 2, 6];
+  const rightCol = hasCharacterSelect ? [3, 4, 5, 7] : [3, 4, 5, 6];
+  const inRight = (index >= 3 && index <= 5) || index === 7;
+  const col = inRight ? rightCol : leftCol;
+  const pos = col.indexOf(index);
+  const step = direction === 'down' ? 1 : -1;
+  return col[(pos + step + col.length) % col.length] ?? 0;
+}
+
+/** Unlockable classes shown in the Meta Shop's `HERO UNLOCKS` column, in progression order. */
+export const SHOP_UNLOCK_CHARACTER_IDS = ['archer', 'mage', 'cultivator'] as const;
+
+export interface ShopRowText {
+  readonly label: string;
+  readonly detail: string;
+  readonly disabled: boolean;
+}
+
+const SHOP_TRACK_NAMES: Readonly<Record<UpgradeTrack, string>> = {
+  hearts: 'Hearts',
+  damage: 'Damage',
+  fireRate: 'Fire rate',
+};
+
+/** Label + detail for one permanent stat track (`216 × 35` button). */
+export function upgradeRow(save: SaveData, track: UpgradeTrack): ShopRowText {
+  const level = save.upgrades[track];
+  const max = maxLevelFor(track);
+  const name = SHOP_TRACK_NAMES[track];
+  const label = `${name}   Lv ${level}/${max}`;
+
+  if (level >= max) {
+    return { label, detail: 'Maxed out', disabled: true };
+  }
+
+  const price = costFor(track, level + 1);
+  const affordable = canBuy(save, track, save.gold);
+  const short = Math.max(0, price - save.gold);
+  return {
+    label,
+    detail: affordable ? `Next: ${price} gold` : `Next: ${price}g — need ${short}g more`,
+    disabled: !affordable,
+  };
+}
+
+/** Label + detail for one early character unlock row in Meta Shop (`216 × 35` button). */
+export function characterShopRow(save: SaveData, characterId: CharacterId): ShopRowText {
+  const def = CHARACTERS[characterId];
+  if (isCharacterUnlocked(characterId, save)) {
+    return {
+      label: `${def.name} — UNLOCKED`,
+      detail: characterUnlockReason(characterId, save),
+      disabled: true,
+    };
+  }
+
+  const cost = def.unlockGoldCost;
+  const affordable = canBuyCharacter(save, characterId);
+  const short = Math.max(0, cost - save.gold);
+  return {
+    label: `${def.name} — ${cost}g`,
+    detail: affordable
+      ? `Buy early (or clear Ch${def.unlockChapter})`
+      : `Need ${short}g more (or clear Ch${def.unlockChapter})`,
+    disabled: !affordable,
+  };
+}
+
+export function formatTitleCharacterLabel(character: CharacterDef): string {
+  return `Character: ${character.name}`;
+}
+
+export function formatTitleCharacterDetail(
+  character: CharacterDef,
+  availableCount: number,
+): string {
+  if (availableCount <= 1) return `${character.subtitle} · View 4 classes`;
+  return `${character.subtitle} (←/→ or Enter)`;
+}
+
+export interface CharacterCardText {
+  readonly label: string;
+  readonly detail: string;
+  readonly status: 'selected' | 'unlocked' | 'locked';
+}
+
+export interface CharacterPrimaryActionSpec {
+  readonly label: string;
+  readonly detail: string;
+  readonly disabled: boolean;
+  readonly kind: 'confirm' | 'select' | 'unlock';
+}
+
+export interface CharacterSummaryLines {
+  readonly statusLine: string;
+  readonly statusKind: 'selected' | 'unlocked' | 'locked';
+  readonly weaponLine: string;
+  readonly passiveTitle: string;
+  readonly passiveBody: string;
+  readonly signatureTitle: string;
+  readonly signatureBody: string;
+}
+
+/** Format label + detail for one of the 4 character cards (`170 × 32`). */
+export function formatCharacterCardText(
+  character: CharacterDef,
+  save: SaveData,
+): CharacterCardText {
+  const activeId = resolveSelectedCharacter(save).id;
+  const unlocked = isCharacterUnlocked(character.id, save);
+  if (unlocked && character.id === activeId) {
+    return {
+      label: `${character.name} — SELECTED`,
+      detail: character.subtitle,
+      status: 'selected',
+    };
+  }
+  if (unlocked) {
+    return {
+      label: `${character.name} — UNLOCKED`,
+      detail: character.subtitle,
+      status: 'unlocked',
+    };
+  }
+  return {
+    label: `${character.name} — LOCKED`,
+    detail: `Clear Ch${character.unlockChapter} or ${character.unlockGoldCost}g`,
+    status: 'locked',
+  };
+}
+
+/** Format all 3 class-identity layers + unlock status line for the recessed summary well. */
+export function formatCharacterSummaryLines(
+  character: CharacterDef,
+  save: SaveData,
+): CharacterSummaryLines {
+  const activeId = resolveSelectedCharacter(save).id;
+  const unlocked = isCharacterUnlocked(character.id, save);
+  const reason = characterUnlockReason(character.id, save);
+  const statusKind: CharacterSummaryLines['statusKind'] = !unlocked
+    ? 'locked'
+    : character.id === activeId
+      ? 'selected'
+      : 'unlocked';
+  const tag =
+    statusKind === 'selected'
+      ? 'SELECTED'
+      : statusKind === 'unlocked'
+        ? 'UNLOCKED'
+        : 'LOCKED';
+
+  return {
+    statusLine: `${character.name.toUpperCase()} · ${tag} — ${reason}`,
+    statusKind,
+    weaponLine: `Weapon · ${character.weaponSummary}`,
+    passiveTitle: `Passive · ${character.passiveName}`,
+    passiveBody: character.passiveSummary,
+    signatureTitle: `Signature [E] · ${character.signatureName}`,
+    signatureBody: character.signatureSummary,
+  };
+}
+
+/** Format the dynamic Primary Select / Early Gold Unlock button below the summary well. */
+export function formatCharacterPrimaryAction(
+  character: CharacterDef,
+  save: SaveData,
+): CharacterPrimaryActionSpec {
+  const activeId = resolveSelectedCharacter(save).id;
+  const unlocked = isCharacterUnlocked(character.id, save);
+
+  if (unlocked && character.id === activeId) {
+    return {
+      label: `Selected: ${character.name}`,
+      detail: 'Active for next run (Enter to confirm)',
+      disabled: false,
+      kind: 'confirm',
+    };
+  }
+  if (unlocked) {
+    return {
+      label: `Select ${character.name}`,
+      detail: 'Equip for your next run',
+      disabled: false,
+      kind: 'select',
+    };
+  }
+
+  const cost = character.unlockGoldCost;
+  const affordable = canBuyCharacter(save, character.id);
+  const short = Math.max(0, cost - save.gold);
+  return {
+    label: `Unlock ${character.name} — ${cost}g`,
+    detail: affordable
+      ? 'Buy early with Meta gold & equip'
+      : `Need ${short}g more (or clear Ch${character.unlockChapter})`,
+    disabled: !affordable,
+    kind: 'unlock',
+  };
+}
+
+export function formatCharacterSelectSubtitle(gold: number): string {
+  return `Gold: ${gold}g · Preview & choose your hero`;
 }
