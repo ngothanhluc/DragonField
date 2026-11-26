@@ -162,6 +162,25 @@ describe('required animation set per role', () => {
     }
     expect(manifest.sprites['player.dead']).toBeDefined();
 
+    for (const playable of ['archer', 'mage', 'cultivator'] as const) {
+      for (const anim of ['idle', 'walk', 'attack', 'hit', 'dash'] as const) {
+        for (const direction of ['down', 'up', 'left', 'right'] as const) {
+          expect(manifest.sprites[`${playable}.${anim}.${direction}`]).toBeDefined();
+        }
+      }
+      expect(manifest.sprites[`${playable}.dead`]).toBeDefined();
+    }
+
+    for (const item of ['bow-hand', 'staff-hand', 'sword-back'] as const) {
+      for (const direction of ['down', 'up', 'left', 'right'] as const) {
+        expect(manifest.sprites[`attachment.${item}.${direction}`]).toBeDefined();
+      }
+    }
+
+    for (const proj of ['fx.arrow', 'fx.arcane-bolt', 'fx.spirit-sword'] as const) {
+      expect(manifest.sprites[proj]).toBeDefined();
+    }
+
     for (const actor of ['bluebat', 'spiderred', 'snake3', 'eye', 'greenoctopus', 'lanternred', 'bear', 'trex', 'cyclope']) {
       for (const direction of ['down', 'up', 'left', 'right'] as const) {
         expect(manifest.sprites[`${actor}.idle.${direction}`]).toBeDefined();

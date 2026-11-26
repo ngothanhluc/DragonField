@@ -8412,6 +8412,1166 @@
       "loop": true,
       "anchor": "feet",
       "footPx": 1
+    },
+    "archer.idle.down": {
+      "sheet": "resources/art/characters/archer/Idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.idle.up": {
+      "sheet": "resources/art/characters/archer/Idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.idle.left": {
+      "sheet": "resources/art/characters/archer/Idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.idle.right": {
+      "sheet": "resources/art/characters/archer/Idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.walk.down": {
+      "sheet": "resources/art/characters/archer/Walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.walk.up": {
+      "sheet": "resources/art/characters/archer/Walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.walk.left": {
+      "sheet": "resources/art/characters/archer/Walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.walk.right": {
+      "sheet": "resources/art/characters/archer/Walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.attack.down": {
+      "sheet": "resources/art/characters/archer/Attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.attack.up": {
+      "sheet": "resources/art/characters/archer/Attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.attack.left": {
+      "sheet": "resources/art/characters/archer/Attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.attack.right": {
+      "sheet": "resources/art/characters/archer/Attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.hit.down": {
+      "sheet": "resources/art/characters/archer/Hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.hit.up": {
+      "sheet": "resources/art/characters/archer/Hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.hit.left": {
+      "sheet": "resources/art/characters/archer/Hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.hit.right": {
+      "sheet": "resources/art/characters/archer/Hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.dash.down": {
+      "sheet": "resources/art/characters/archer/Dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 16,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.dash.up": {
+      "sheet": "resources/art/characters/archer/Dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 16,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.dash.left": {
+      "sheet": "resources/art/characters/archer/Dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 16,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.dash.right": {
+      "sheet": "resources/art/characters/archer/Dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 16,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "archer.dead": {
+      "sheet": "resources/art/characters/archer/Dead.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 1,
+      "fps": 4,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.idle.down": {
+      "sheet": "resources/art/characters/mage/Idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.idle.up": {
+      "sheet": "resources/art/characters/mage/Idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.idle.left": {
+      "sheet": "resources/art/characters/mage/Idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.idle.right": {
+      "sheet": "resources/art/characters/mage/Idle.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.walk.down": {
+      "sheet": "resources/art/characters/mage/Walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.walk.up": {
+      "sheet": "resources/art/characters/mage/Walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.walk.left": {
+      "sheet": "resources/art/characters/mage/Walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.walk.right": {
+      "sheet": "resources/art/characters/mage/Walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.attack.down": {
+      "sheet": "resources/art/characters/mage/Attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.attack.up": {
+      "sheet": "resources/art/characters/mage/Attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.attack.left": {
+      "sheet": "resources/art/characters/mage/Attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.attack.right": {
+      "sheet": "resources/art/characters/mage/Attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.hit.down": {
+      "sheet": "resources/art/characters/mage/Hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.hit.up": {
+      "sheet": "resources/art/characters/mage/Hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.hit.left": {
+      "sheet": "resources/art/characters/mage/Hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.hit.right": {
+      "sheet": "resources/art/characters/mage/Hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.dash.down": {
+      "sheet": "resources/art/characters/mage/Dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 16,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.dash.up": {
+      "sheet": "resources/art/characters/mage/Dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 16,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.dash.left": {
+      "sheet": "resources/art/characters/mage/Dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 16,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.dash.right": {
+      "sheet": "resources/art/characters/mage/Dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 16,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "mage.dead": {
+      "sheet": "resources/art/characters/mage/Dead.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 1,
+      "fps": 4,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.walk.down": {
+      "sheet": "resources/art/generated/cultivator/walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.walk.up": {
+      "sheet": "resources/art/generated/cultivator/walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.walk.left": {
+      "sheet": "resources/art/generated/cultivator/walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.walk.right": {
+      "sheet": "resources/art/generated/cultivator/walk.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 4,
+      "fps": 10,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.attack.down": {
+      "sheet": "resources/art/generated/cultivator/attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.attack.up": {
+      "sheet": "resources/art/generated/cultivator/attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.attack.left": {
+      "sheet": "resources/art/generated/cultivator/attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.attack.right": {
+      "sheet": "resources/art/generated/cultivator/attack.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 3,
+      "fps": 15,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.hit.down": {
+      "sheet": "resources/art/generated/cultivator/hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.hit.up": {
+      "sheet": "resources/art/generated/cultivator/hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.hit.left": {
+      "sheet": "resources/art/generated/cultivator/hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.hit.right": {
+      "sheet": "resources/art/generated/cultivator/hit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 12,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.dash.down": {
+      "sheet": "resources/art/generated/cultivator/dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 14,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.dash.up": {
+      "sheet": "resources/art/generated/cultivator/dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 14,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.dash.left": {
+      "sheet": "resources/art/generated/cultivator/dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 14,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.dash.right": {
+      "sheet": "resources/art/generated/cultivator/dash.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 2,
+      "fps": 14,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "cultivator.dead": {
+      "sheet": "resources/art/generated/cultivator/dead.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [],
+      "frames": 1,
+      "fps": 4,
+      "loop": false,
+      "anchor": "feet",
+      "footPx": 0
+    },
+    "attachment.bow-hand.down": {
+      "sheet": "resources/art/generated/attachment/bow-hand.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.bow-hand.up": {
+      "sheet": "resources/art/generated/attachment/bow-hand.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.bow-hand.left": {
+      "sheet": "resources/art/generated/attachment/bow-hand.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.bow-hand.right": {
+      "sheet": "resources/art/generated/attachment/bow-hand.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.staff-hand.down": {
+      "sheet": "resources/art/generated/attachment/staff-hand.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.staff-hand.up": {
+      "sheet": "resources/art/generated/attachment/staff-hand.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.staff-hand.left": {
+      "sheet": "resources/art/generated/attachment/staff-hand.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "attachment.staff-hand.right": {
+      "sheet": "resources/art/generated/attachment/staff-hand.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "grid",
+      "directions": [
+        "down",
+        "up",
+        "left",
+        "right"
+      ],
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "fx.arrow": {
+      "sheet": "resources/art/fx/arrow/Arrow.png",
+      "frameWidth": 13,
+      "frameHeight": 5,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 10,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 2
+    },
+    "fx.arcane-bolt": {
+      "sheet": "resources/art/fx/arcane-bolt/ArcaneBolt.png",
+      "frameWidth": 16,
+      "frameHeight": 7,
+      "layout": "strip",
+      "directions": [],
+      "frames": 4,
+      "fps": 12,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 3
+    },
+    "fx.spirit-sword": {
+      "sheet": "resources/art/fx/spirit-sword/SpiritSword.png",
+      "frameWidth": 16,
+      "frameHeight": 7,
+      "layout": "strip",
+      "directions": [],
+      "frames": 2,
+      "fps": 12,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 3
     }
   }
 }

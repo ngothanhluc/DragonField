@@ -365,14 +365,55 @@ describe('AttachmentNodeController & resolveAttachmentNode (M10)', () => {
       expect(state.behind).toBe(direction !== 'up');
     }
 
-    // Missing walk bob in attachments.json must still resolve cleanly
-    const walkState = ctrl.update({ animation: 'walk', direction: 'down', frame: 2 });
+    // Recorded walk bob in attachments.json applies cleanly; unrecorded clips fall back to 0.
+    const walkState = ctrl.update({ animation: 'walk', direction: 'down', frame: 1 });
     expect(walkState.active).toBe(true);
-    expect(walkState.bobPx).toBe(0);
+    expect(walkState.bobPx).toBe(attachments.characters['cultivator']!.bob['walk']!['down']![1]);
+
+    const unrecordedState = ctrl.update({ animation: 'roll', direction: 'down', frame: 2 });
+    expect(unrecordedState.active).toBe(true);
+    expect(unrecordedState.bobPx).toBe(0);
 
     // Baked ninja ('player') has no rig in real attachments.json -> inactive
     ctrl.setEquipment({ character: 'player', item: null, weaponForm: 'projectile' });
     expect(ctrl.isActive()).toBe(false);
     expect(ctrl.isVisible()).toBe(false);
+  });
+
+  it('integrates cleanly with real attachments.json and animations.json for archer + bow-hand and mage + staff-hand', () => {
+    const attachments = validateAttachments(
+      JSON.parse(
+        readFileSync(join(HERE, '..', '..', 'assets', 'resources', 'data', 'attachments.json'), 'utf8'),
+      ) as unknown,
+    );
+    const manifest = validateManifest(
+      JSON.parse(
+        readFileSync(join(HERE, '..', '..', 'assets', 'resources', 'data', 'animations.json'), 'utf8'),
+      ) as unknown,
+    );
+
+    for (const [charId, itemId] of [
+      ['archer', 'bow-hand'],
+      ['mage', 'staff-hand'],
+    ] as const) {
+      const bodyEntry = manifest.sprites[`${charId}.idle.down`]!;
+      const itemEntry = manifest.sprites[`attachment.${itemId}.down`]!;
+      const ctrl = new AttachmentNodeController(attachments, {
+        character: charId,
+        item: itemId,
+        weaponForm: 'attachment',
+        bodyAnchorY: entryAnchorY(bodyEntry),
+        itemAnchorY: entryAnchorY(itemEntry),
+      });
+
+      for (const direction of DIRECTIONS) {
+        const state = ctrl.update({ animation: 'walk', direction, frame: 1 });
+        expect(state.active, `${charId} ${direction}`).toBe(true);
+        expect(state.visible, `${charId} ${direction}`).toBe(true);
+        expect(state.spriteKey).toBe(`attachment.${itemId}.${direction}`);
+        expect(manifest.sprites[state.spriteKey!]).toBeDefined();
+        expect(state.behind, `${charId} hand ${direction}`).toBe(direction === 'up');
+      }
+    }
   });
 });

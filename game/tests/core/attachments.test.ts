@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   placeAttachment,
@@ -5,6 +8,7 @@ import {
   type AttachmentsData,
 } from '../../assets/scripts/core/art/attachments';
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 const DIRECTIONS = ['down', 'up', 'left', 'right'] as const;
 
 function valid(): AttachmentsData {
@@ -193,5 +197,26 @@ describe('placeAttachment', () => {
     expect(() =>
       placeAttachment(backOnly, { character: 'hero', item: 'staff', animation: 'idle', direction: 'down', frame: 0 }),
     ).toThrow(/hand point/);
+  });
+
+  it('validates real attachments.json rigs for archer, mage, cultivator and items bow-hand, staff-hand, sword-back', () => {
+    const real = validateAttachments(
+      JSON.parse(
+        readFileSync(join(HERE, '../../assets/resources/data/attachments.json'), 'utf8'),
+      ) as unknown,
+    );
+    for (const charId of ['archer', 'mage', 'cultivator'] as const) {
+      const rig = real.characters[charId];
+      expect(rig, `missing character ${charId}`).toBeDefined();
+      for (const anim of ['idle', 'walk', 'attack', 'hit', 'dash'] as const) {
+        expect(rig?.bob[anim], `${charId}.bob.${anim}`).toBeDefined();
+        for (const dir of DIRECTIONS) {
+          expect(rig?.bob[anim]?.[dir]?.length, `${charId}.bob.${anim}.${dir}`).toBeGreaterThan(0);
+        }
+      }
+    }
+    expect(DIRECTIONS.map((d) => placeAttachment(real, { character: 'archer', item: 'bow-hand', animation: 'walk', direction: d, frame: 1 }).behind)).toEqual([false, true, false, false]);
+    expect(DIRECTIONS.map((d) => placeAttachment(real, { character: 'mage', item: 'staff-hand', animation: 'walk', direction: d, frame: 1 }).behind)).toEqual([false, true, false, false]);
+    expect(DIRECTIONS.map((d) => placeAttachment(real, { character: 'cultivator', item: 'sword-back', animation: 'walk', direction: d, frame: 1 }).behind)).toEqual([true, false, true, true]);
   });
 });

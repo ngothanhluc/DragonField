@@ -1,6 +1,8 @@
 {
   "actors": [
-    "cultivator"
+    "cultivator",
+    "archer",
+    "mage"
   ],
   "monsters": [
     "sniper"

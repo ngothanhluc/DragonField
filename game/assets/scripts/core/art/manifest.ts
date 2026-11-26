@@ -88,6 +88,14 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
     ...DIRECTIONS.map((dir) => `player.dash.${dir}`),
     'player.dead',
   ],
+  archer: playableCharacterAnimations('archer'),
+  mage: playableCharacterAnimations('mage'),
+  cultivator: playableCharacterAnimations('cultivator'),
+  attachment: [
+    ...DIRECTIONS.map((dir) => `attachment.bow-hand.${dir}`),
+    ...DIRECTIONS.map((dir) => `attachment.staff-hand.${dir}`),
+    ...DIRECTIONS.map((dir) => `attachment.sword-back.${dir}`),
+  ],
   bluebat: monsterAnimations('bluebat'),
   spiderred: monsterAnimations('spiderred'),
   snake3: monsterAnimations('snake3'),
@@ -172,6 +180,10 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
     'fx.xp-orb-small',
     'fx.xp-orb-medium',
     'fx.xp-orb-large',
+    // M14 — pointed class projectiles (ADR-016).
+    'fx.arrow',
+    'fx.arcane-bolt',
+    'fx.spirit-sword',
   ],
   // Ticket #6 / M11 — living decor: wandering animals and animated flags/flowers/plants/campfires.
   animal: ['animal.frog', 'animal.chicken', 'animal.cat', 'animal.racoon', 'animal.dog'],
@@ -190,6 +202,17 @@ function monsterAnimations(actor: string): readonly string[] {
   return [
     ...DIRECTIONS.map((dir) => `${actor}.idle.${dir}`),
     ...DIRECTIONS.map((dir) => `${actor}.walk.${dir}`),
+  ];
+}
+
+function playableCharacterAnimations(actor: string): readonly string[] {
+  return [
+    ...DIRECTIONS.map((dir) => `${actor}.idle.${dir}`),
+    ...DIRECTIONS.map((dir) => `${actor}.walk.${dir}`),
+    ...DIRECTIONS.map((dir) => `${actor}.attack.${dir}`),
+    ...DIRECTIONS.map((dir) => `${actor}.hit.${dir}`),
+    ...DIRECTIONS.map((dir) => `${actor}.dash.${dir}`),
+    `${actor}.dead`,
   ];
 }
 

@@ -210,12 +210,12 @@ describe('Character roster — animation key resolution', () => {
       expect(resolveCharacterAnimKey(manifest, CHARACTERS.cultivator, 'idle', dir)).toBe(
         `cultivator.idle.${dir}`,
       );
-      // Until cultivator walk/attack/hit/dash sheets are staged, fall back to cultivator's own directional idle.
+      // Cultivator clips are now staged; walk/dash resolve directly to cultivator.*.
       const walkKey = resolveCharacterAnimKey(manifest, CHARACTERS.cultivator, 'walk', dir);
       expect(manifest.sprites[walkKey]).toBeDefined();
-      expect(walkKey.startsWith('cultivator.')).toBe(true);
+      expect(walkKey).toBe(`cultivator.walk.${dir}`);
       expect(resolveCharacterAnimKey(manifest, CHARACTERS.cultivator, 'dash', dir)).toBe(
-        `cultivator.idle.${dir}`,
+        `cultivator.dash.${dir}`,
       );
     }
     const deadKey = resolveCharacterAnimKey(manifest, CHARACTERS.cultivator, 'dead');
