@@ -16,7 +16,7 @@ describe('HealthState', () => {
 
     const result = health.tryDamage(1, 0);
 
-    expect(result).toEqual({ applied: true, hearts: 5, dead: false });
+    expect(result).toEqual({ applied: true, hp: 5, hearts: 5, dead: false });
     expect(health.isInvulnerable(500)).toBe(true);
   });
 
@@ -47,7 +47,7 @@ describe('HealthState', () => {
 
     const second = health.tryDamage(4, 1000);
 
-    expect(second).toEqual({ applied: true, hearts: 0, dead: true });
+    expect(second).toEqual({ applied: true, hp: 0, hearts: 0, dead: true });
     expect(health.tryDamage(1, 2000).applied).toBe(false);
   });
 

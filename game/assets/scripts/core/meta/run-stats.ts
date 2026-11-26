@@ -59,21 +59,27 @@ function roundTo(value: number, digits: number): number {
   return Math.round(value * factor) / factor;
 }
 
+function baselineMaxHp(base: StatsBaseline): number {
+  return base.playerBaseMaxHp ?? base.playerMaxHearts ?? DEFAULT_COMBAT.playerBaseMaxHp;
+}
+
 /** Apply precomputed meta bonuses to the baseline. Never mutates `base`. */
 export function applyUpgradesToBaseline(
   base: StatsBaseline,
   bonuses: UpgradeBonuses,
 ): StatsBaseline {
+  const nextMaxHp = Math.max(
+    1,
+    Math.floor(sanitize(baselineMaxHp(base) + (bonuses.maxHpBonus ?? bonuses.maxHeartsBonus))),
+  );
   return {
     ...base,
     damage: sanitize(roundTo(base.damage * bonuses.damageMultiplier, 4)),
     fireRatePerSecond: sanitize(
       roundTo(base.fireRatePerSecond * bonuses.fireRateMultiplier, 4),
     ),
-    playerMaxHearts: Math.max(
-      1,
-      Math.floor(sanitize(base.playerMaxHearts + bonuses.maxHeartsBonus)),
-    ),
+    playerBaseMaxHp: nextMaxHp,
+    playerMaxHearts: nextMaxHp,
   };
 }
 
@@ -84,7 +90,7 @@ export function metaBaseline(base: StatsBaseline, state: UpgradeState): StatsBas
 
 /**
  * Apply Layer 1 per-class base stat deltas & multipliers from `CHARACTERS_TUNING`.
- * Ninja uses neutral multipliers (`1` / `maxHeartsDelta: 0`) so its Layer 1 baseline matches
+ * Ninja uses neutral multipliers (`1` / `maxHpDelta: 0`) so its Layer 1 baseline matches
  * `DEFAULT_COMBAT` identically. Never mutates `base`.
  */
 export function applyCharacterBaseStats(
@@ -96,13 +102,12 @@ export function applyCharacterBaseStats(
   const baseProjectileSpeed =
     base.projectileSpeedTilesPerSecond ?? DEFAULT_COMBAT.projectileSpeedTilesPerSecond;
   const baseRange = base.targetingRangeTiles ?? DEFAULT_COMBAT.targetingRangeTiles;
+  const nextMaxHp = Math.max(1, Math.floor(sanitize(baselineMaxHp(base) + stats.maxHpDelta)));
 
   return {
     ...base,
-    playerMaxHearts: Math.max(
-      1,
-      Math.floor(sanitize(base.playerMaxHearts + stats.maxHeartsDelta)),
-    ),
+    playerBaseMaxHp: nextMaxHp,
+    playerMaxHearts: nextMaxHp,
     damage: sanitize(roundTo(base.damage * stats.damageMult, 4)),
     fireRatePerSecond: sanitize(roundTo(base.fireRatePerSecond * stats.fireRateMult, 4)),
     moveSpeedTilesPerSecond: sanitize(

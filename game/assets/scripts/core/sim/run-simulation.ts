@@ -88,6 +88,7 @@ import {
   DOORS_TUNING,
   ENEMY_TUNING,
   NAVIGATION_TUNING,
+  PICKUPS_TUNING,
   SPECIAL_ROOMS_TUNING,
 } from '../enemies/tuning';
 import { ActionBuffer } from '../input/action-buffer';
@@ -135,7 +136,7 @@ import {
 import { goldForKill, goldForRoomClear } from '../run/rewards';
 import {
   chestReward,
-  healHearts,
+  healByFraction,
   isSpecialDoor,
   type SpecialKind,
 } from '../run/special-rooms';
@@ -147,6 +148,7 @@ import { computeLevelUpKnockback, levelUpResumeIframeMs } from '../xp/level-up-w
 import { canReroll, deductRerollCost, rerollCost } from '../xp/reroll';
 import { XpTracker, xpDoorClearBonus, xpForKill } from '../xp/xp-curve';
 import { XpOrbPool } from '../xp/xp-orbs';
+import { WorldPickupPool, shouldDropHealthPotion } from '../xp/pickups';
 import {
   BOSS_TARGET_ID,
   simulateBossRun,
@@ -346,8 +348,10 @@ export type SimulationEvent =
   | (SimEventBase & {
       readonly kind: 'special';
       readonly reward: SpecialKind;
-      /** Hearts after the room's effect (lets a test prove a heal's exact amount). */
+      /** Hearts / HP after the room's effect (lets a test prove a heal's exact amount). */
       readonly hearts: number;
+      /** Gold earned from clearing/opening the mid-chapter Special Room (M17). */
+      readonly gold?: number;
     })
   | { readonly kind: 'run-won' | 'run-lost'; readonly nowMs: number };
 
@@ -434,6 +438,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const bullets = new BulletPool();
   const xpTracker = new XpTracker(options.level.chapter);
   const xpOrbs = new XpOrbPool();
+  const pickups = new WorldPickupPool(PICKUPS_TUNING);
   /** Status of each enemy, key = id (not stuffed into `EnemyState` to keep the shared schema). */
   const statuses = new Map<string, StatusEffects>();
   /** Active Burn DoT per enemy id (M13 `ignite` / `cataclysm`). */
@@ -517,6 +522,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     spawnSeq = 0;
     enemyKnockbacks.clear();
     xpOrbs.clear();
+    pickups.clear();
     currentRoomIsXpChallenge = isXpChallenge && usesWaveScheduler(level);
     extraElitesToPromote = currentRoomIsXpChallenge
       ? Math.max(0, Math.floor(DOORS_TUNING.xpRoomExtraElites))
@@ -557,6 +563,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   let roomsCleared = 0;
   let kills = 0;
   let goldEarned = 0;
+  let roomPotionGoldBonus = 0;
   let status: SimulationStatus | null = null;
 
   const healPlayer = (amount: number): void => {
@@ -863,6 +870,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     const dropXp = xpForKill(enemy.role, enemy.elite, undefined, roomMultiplier);
     if (dropXp > 0) {
       xpOrbs.spawn({ position: enemy.position, value: dropXp });
+    }
+
+    // M17 (ADR-025): rare Health Potion drop (`3.5%` normal / `14%` Elite).
+    if (shouldDropHealthPotion(enemy.elite, rng.next(), PICKUPS_TUNING.healthPotion)) {
+      pickups.spawnHealthPotion(enemy.position);
     }
 
     // #42: a splitter leaves 2–3 splitlings. They are appended after this frame's damage
@@ -1565,6 +1577,17 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       grantAndResolveXp(collectedXp);
     }
 
+    // M17 (ADR-025): step Health Potions (magnet-pulled & healed only when hp < maxHp).
+    const pickedNow = pickups.step(SIM_STEP_MS / 1000, player, {
+      roomCleared: false,
+      playerHp: health.current,
+      playerMaxHp: health.max,
+    });
+    if (pickedNow.hpHealed > 0) healPlayer(pickedNow.hpHealed);
+    if (pickedNow.potionGoldBonus > 0) {
+      roomPotionGoldBonus += pickedNow.potionGoldBonus;
+    }
+
     if (health.isDead) {
       status = 'lost';
       events.push({ kind: 'run-lost', nowMs: durationMs });
@@ -1576,13 +1599,27 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (!cleared) continue;
 
     {
-      // M12 (ADR-021): full-room auto-vacuum collects every remaining XP orb on room clear.
+      // M12 + M17: full-room auto-vacuum collects every remaining XP orb & Health Potion on clear.
       const vacuumStepSec = SIM_STEP_MS / 1000;
-      for (let step = 0; step < 1000 && xpOrbs.size > 0; step += 1) {
-        const vacuumedXp = xpOrbs.step(vacuumStepSec, player, true);
-        if (vacuumedXp > 0) grantAndResolveXp(vacuumedXp);
+      for (let step = 0; step < 1000 && (xpOrbs.size > 0 || pickups.size > 0); step += 1) {
+        if (xpOrbs.size > 0) {
+          const vacuumedXp = xpOrbs.step(vacuumStepSec, player, true);
+          if (vacuumedXp > 0) grantAndResolveXp(vacuumedXp);
+        }
+        if (pickups.size > 0) {
+          const vacuumedPickups = pickups.step(vacuumStepSec, player, {
+            roomCleared: true,
+            playerHp: health.current,
+            playerMaxHp: health.max,
+          });
+          if (vacuumedPickups.hpHealed > 0) healPlayer(vacuumedPickups.hpHealed);
+          if (vacuumedPickups.potionGoldBonus > 0) {
+            roomPotionGoldBonus += vacuumedPickups.potionGoldBonus;
+          }
+        }
       }
       xpOrbs.clear();
+      pickups.clear();
 
       // The room's clear reward comes from the door taken after the previous room (#39).
       const roomPosition = roomIndex + 1;
@@ -1594,7 +1631,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         grantAndResolveXp(xpBonus);
       }
       const roomGold =
-        Math.round(goldForRoomClear(room.isBossRoom) * stats.goldMultiplier) + goldBonus;
+        Math.round(goldForRoomClear(room.isBossRoom) * stats.goldMultiplier) +
+        goldBonus +
+        roomPotionGoldBonus;
+      roomPotionGoldBonus = 0;
       goldEarned += roomGold;
       roomsCleared += 1;
       events.push({ kind: 'room-cleared', nowMs: durationMs, room: room.room, gold: roomGold });
@@ -1622,66 +1662,64 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       doorReward = chosen;
 
       if (isSpecialDoor(chosen)) {
-        // The special room takes slot `roomPosition + 1`: the drawn normal room there is not
-        // played, and after the room the run continues to the next slot (the slot count and the
-        // HUD's x/9 never change). The special slot still pays a room clear, like every slot.
-        const specialSlot = roomPosition + 1;
+        // M17 cadence (ADR-025): the mid-chapter Special Room after Room 4 is a dedicated stop
+        // between Room 4 and Room 5 — it does NOT skip combat Room 5, preserving all 8 combat
+        // rooms + Room 9 Boss (`roomsCleared === 9`).
         let bonusGold = 0;
         if (chosen === 'heal') {
-          // `healHearts` returns the new TOTAL; `HealthState.heal` ADDS. Pass the difference
-          // (same rule as the game's heal NPC) or the player would gain the total again.
-          const healed = healHearts(
+          const healed = healByFraction(
             health.current,
             stats.maxHearts,
-            SPECIAL_ROOMS_TUNING.healHearts,
+            SPECIAL_ROOMS_TUNING.healFraction,
           );
           health.heal(healed - health.current);
         }
         if (chosen === 'chest') {
-          const chest = chestReward(options.seed, specialSlot);
-          if (chest.kind === 'gold') bonusGold = chest.amount;
+          const chest = chestReward(options.seed, roomPosition);
+          if (chest.kind === 'gold') {
+            bonusGold = chest.amount;
+          } else if (options.chooseSkill !== undefined) {
+            const chestOffers = rollChoices({ rng: skillRollRng, owned: ownedSkills });
+            if (chestOffers.length > 0) {
+              const pickedIndex = pickSkillIndex(
+                options.chooseSkill,
+                chestOffers,
+                ownedSkills,
+                xpTracker.level,
+                { hearts: health.current, maxHearts: health.max },
+              );
+              const chestSkill = chestOffers[pickedIndex] ?? chestOffers[0];
+              if (chestSkill !== undefined) acquireSkill(chestSkill);
+            }
+          }
         }
         const slotGold =
           Math.round(goldForRoomClear(false) * stats.goldMultiplier) + bonusGold;
         goldEarned += slotGold;
-        roomsCleared += 1;
-        events.push({
-          kind: 'room-cleared',
-          nowMs: durationMs,
-          room: nextRoom.room,
-          gold: slotGold,
-        });
         events.push({
           kind: 'special',
           nowMs: durationMs,
-          room: specialSlot,
+          room: roomPosition,
           reward: chosen,
           hearts: health.current,
+          gold: slotGold,
         });
 
-        // One door out: the boss door when the special is the last normal slot, otherwise a
-        // plain exit (its room keeps the default `xp` clear reward — there is no choice).
+        // Single North Portal out of the mid-chapter Special Room leads directly into Room 5.
         const exitOffers: readonly DoorReward[] =
-          specialSlot >= normalRoomCount ? ['boss'] : ['xp'];
+          roomPosition >= normalRoomCount ? ['boss'] : ['xp'];
         const exitChosen = exitOffers[0] ?? 'xp';
         events.push({
           kind: 'door',
           nowMs: durationMs,
-          room: specialSlot,
+          room: roomPosition,
           offers: exitOffers,
           chosen: exitChosen,
         });
         doorReward = exitChosen;
 
-        // Skip the drawn room the special replaced; the next slot is the one after it.
-        roomIndex += 2;
-        const afterSpecial = runRooms[roomIndex];
-        if (afterSpecial === undefined) {
-          status = 'won';
-          events.push({ kind: 'run-won', nowMs: durationMs });
-          break;
-        }
-        room = afterSpecial;
+        roomIndex += 1;
+        room = nextRoom;
         navigation = createRoomNavigation(room);
         stuckGuard.clear();
 

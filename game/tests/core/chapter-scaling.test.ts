@@ -46,10 +46,15 @@ describe('chapter scaling', () => {
     }
   });
 
-  it('enemy damage does not scale per chapter (difficulty comes from count/elites)', () => {
-    for (const chapter of [1, 2, 3, 4]) {
-      expect(contactDamageFor('tank', false, undefined, chapter)).toBe(2);
-      expect(contactDamageFor('chaser', false, undefined, chapter)).toBe(1);
+  it('enemy damage scales per chapter by CHAPTER_TUNING.enemyDamageMultipliers (M17 100-HP scale)', () => {
+    const damageMults = CHAPTER_TUNING.enemyDamageMultipliers;
+    for (const role of ['chaser', 'caster', 'tank'] as const) {
+      const base = contactDamageFor(role, false, undefined, 1);
+      for (const chapter of [1, 2, 3, 4]) {
+        expect(contactDamageFor(role, false, undefined, chapter)).toBe(
+          Math.max(1, Math.round(base * (damageMults[chapter - 1] ?? 1))),
+        );
+      }
     }
   });
 

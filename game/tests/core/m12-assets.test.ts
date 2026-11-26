@@ -67,7 +67,9 @@ const ccMocks = vi.hoisted(() => {
   class MockGraphics {
     lineWidth = 1;
     strokeColor = new MockColor();
+    fillColor = new MockColor();
     strokes = 0;
+    fills = 0;
     segments = 0;
     cleared = 0;
     clear(): void {
@@ -77,6 +79,11 @@ const ccMocks = vi.hoisted(() => {
     moveTo(): void {}
     lineTo(): void {
       this.segments += 1;
+    }
+    circle(): void {}
+    rect(): void {}
+    fill(): void {
+      this.fills += 1;
     }
     stroke(): void {
       this.strokes += 1;
@@ -408,9 +415,12 @@ describe('XpOrbView pooled renderer & level-up radial burst FX', () => {
     const idleMedium = xpOrbTransform({ x: 4, y: 5, tier: 'medium', vacuuming: false }, 0, 0.25);
     const idleLarge = xpOrbTransform({ x: 4, y: 5, tier: 'large', vacuuming: false }, 0, 0.25);
 
+    expect(XP_ORB_TIER_PIXEL_RATIO.small * 16).toBe(6);
+    expect(XP_ORB_TIER_PIXEL_RATIO.medium * 16).toBe(7.5);
+    expect(XP_ORB_TIER_PIXEL_RATIO.large * 16).toBe(9);
     expect(idleSmall.scaleX).toBeCloseTo(ACTOR_SCALE * XP_ORB_TIER_PIXEL_RATIO.small, 6);
     expect(idleMedium.scaleX).toBeCloseTo(ACTOR_SCALE * XP_ORB_TIER_PIXEL_RATIO.medium, 6);
-    expect(idleLarge.scaleX).toBeCloseTo(ACTOR_SCALE, 6); // exact 1:1 ACTOR_SCALE on large tier
+    expect(idleLarge.scaleX).toBeCloseTo(ACTOR_SCALE * XP_ORB_TIER_PIXEL_RATIO.large, 6);
     expect(idleSmall.scaleX).toBeLessThan(idleMedium.scaleX);
     expect(idleMedium.scaleX).toBeLessThan(idleLarge.scaleX);
     expect(Math.abs(idleSmall.bobOffsetTiles)).toBeGreaterThan(0);
@@ -419,7 +429,8 @@ describe('XpOrbView pooled renderer & level-up radial burst FX', () => {
     const vacLarge = xpOrbTransform({ x: 4, y: 5, tier: 'large', vacuuming: true }, 0, 0.25);
     expect(vacLarge.bobOffsetTiles).toBe(0);
     expect(vacLarge.scaleY).toBeGreaterThan(vacLarge.scaleX);
-    const areaRatio = (vacLarge.scaleX * vacLarge.scaleY) / (ACTOR_SCALE * ACTOR_SCALE);
+    const largeBaseScale = ACTOR_SCALE * XP_ORB_TIER_PIXEL_RATIO.large;
+    const areaRatio = (vacLarge.scaleX * vacLarge.scaleY) / (largeBaseScale * largeBaseScale);
     expect(areaRatio).toBeGreaterThan(0.95);
     expect(areaRatio).toBeLessThan(1.05);
   });

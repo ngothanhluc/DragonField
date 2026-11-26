@@ -52,7 +52,7 @@ import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
 import { setLocale, t } from '../core/i18n';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
-import { DOORS_TUNING, SPECIAL_ROOMS_TUNING, XP_TUNING } from '../core/enemies/tuning';
+import { DOORS_TUNING, PICKUPS_TUNING, SPECIAL_ROOMS_TUNING, XP_TUNING } from '../core/enemies/tuning';
 import { edgeArrowTargets, roomEnemyTotal } from '../core/enemies/wave-scheduler';
 import {
   XpTracker,
@@ -60,6 +60,7 @@ import {
   xpForKill,
 } from '../core/xp/xp-curve';
 import { XpOrbPool } from '../core/xp/xp-orbs';
+import { WorldPickupPool, shouldDropHealthPotion } from '../core/xp/pickups';
 import { rerollCost, spendSharedGoldForReroll } from '../core/xp/reroll';
 import { hasAlternativeSkills } from '../core/skills/roll';
 import { chapterFromLevels } from '../core/level/chapter';
@@ -95,15 +96,16 @@ import {
   DOOR_REWARDS,
   clearRewardFor,
   doorOffers,
+  northDoorPosition,
   type DoorReward,
 } from '../core/run/doors';
 import {
   buyFromShop,
   chestReward,
-  healHearts,
   isSpecialDoor,
   shopGold,
   shopOffers,
+  specialHealAmount,
   specialRoomLevel,
   type ShopOffer,
   type SpecialKind,
@@ -135,7 +137,7 @@ import { CombatLoop, PLAYER_RADIUS_TILES, STRESS_ENEMY_BULLETS, STRESS_ENEMY_COU
 import { CoverView } from './cover-view';
 import type { CoverBody } from './cover-view';
 import { DepthView } from './depth-view';
-import { DoorView } from './door-view';
+import { DoorView, PORTAL_GATE_SHEET } from './door-view';
 import type { DoorSpot } from './door-view';
 import {
   isDebugEnabled,
@@ -163,6 +165,11 @@ import {
   type XpOrbView,
   type XpOrbVisual,
 } from './xp-orb-view';
+import {
+  WORLD_PICKUP_SHEETS,
+  createWorldPickupView,
+  type WorldPickupView,
+} from './pickup-view';
 import { enemyProjectileKey } from '../core/vfx/weapon-vfx';
 import { FeelView } from './feel-view';
 import { FpsMeter } from './fps-meter';
@@ -184,7 +191,7 @@ import { cullWorld } from './world-culler';
 import type { CameraFocus } from './world-camera';
 import { AudioManager, bossMusicId } from './audio/audio-manager';
 import type { MusicId } from './audio/audio-manager';
-import { playEvolutionPickSfx, playSfx } from './audio/sfx';
+import { playEvolutionPickSfx, playPotionHealSfx, playSfx } from './audio/sfx';
 import { installDebugWiring } from './debug-wiring';
 import { MenuBackdrop } from './menu-backdrop';
 import {
@@ -420,6 +427,8 @@ export class Bootstrap extends Component {
    * (destroy + rebuild) does not paint the new floor over the player/enemies.
    */
   private roomLayer: Node | null = null;
+  /** M17 pooled pickup layer: sits strictly above `ground` and below `actors`/`bullets`/`telegraphs`. */
+  private pickupLayer: Node | null = null;
   private actorLayer: Node | null = null;
   private overlayLayer: Node | null = null;
   private bulletLayer: Node | null = null;
@@ -468,6 +477,10 @@ export class Bootstrap extends Component {
   /** Pooled XP orbs + level-up progression for the active run (M12, ADR-021). */
   private readonly xpPool = new XpOrbPool();
   private xpOrbView: XpOrbView | null = null;
+  /** Pooled physical world Gold Coins & Health Potions (M17, ADR-025). */
+  private readonly pickupPool = new WorldPickupPool(PICKUPS_TUNING, XP_TUNING.orbs);
+  private pickupView: WorldPickupView | null = null;
+  private lastGoldPickupSfxMs = Number.NEGATIVE_INFINITY;
   private xpTracker: XpTracker | null = null;
   private readonly xpVisuals: Array<{
     x: number;
@@ -638,6 +651,7 @@ export class Bootstrap extends Component {
     if (result.frozen) return;
 
     const leveledUp = this.stepXpOrbs(deltaMs, false);
+    this.stepWorldPickups(deltaMs, false);
     this.syncHud();
     this.updateHudArrows();
 
@@ -1003,8 +1017,10 @@ export class Bootstrap extends Component {
     this.roomClearElapsedMs = 0;
     this.clearClockMs = 0;
     this.xpPool.clear();
+    this.pickupPool.clear();
     this.xpOrbElapsedSec = 0;
     this.lastXpPickupSfxMs = Number.NEGATIVE_INFINITY;
+    this.lastGoldPickupSfxMs = Number.NEGATIVE_INFINITY;
     this.doorPhase = false;
     this.doorOfferList = [];
     this.doorView?.destroy();
@@ -1048,8 +1064,11 @@ export class Bootstrap extends Component {
     // The room build sets the tile → world flip for this room's height (a room may be > one screen).
     player.teleport(firstRoom.playerStart);
 
-    const bulletLayer = this.bulletLayer ?? this.node;
-    this.xpOrbView = await createXpOrbView(bulletLayer, XP_TUNING.orbs.poolCapacity);
+    const pickupParent = this.pickupLayer ?? this.roomLayer ?? this.node;
+    this.xpOrbView = await createXpOrbView(pickupParent, XP_TUNING.orbs.poolCapacity);
+    this.xpOrbView.setEffectsMode(save.settings.effects);
+    this.pickupView = await createWorldPickupView(pickupParent, this.pickupPool.capacity);
+    this.pickupView.setEffectsMode(save.settings.effects);
     await this.createBullets(player);
     await this.createHud();
     const actorLayer = this.actorLayer;
@@ -1196,8 +1215,11 @@ export class Bootstrap extends Component {
     player.setLoadout(this.skills.snapshot());
     player.restoreHearts(saved.hearts);
 
-    const bulletLayer = this.bulletLayer ?? this.node;
-    this.xpOrbView = await createXpOrbView(bulletLayer, XP_TUNING.orbs.poolCapacity);
+    const pickupParent = this.pickupLayer ?? this.roomLayer ?? this.node;
+    this.xpOrbView = await createXpOrbView(pickupParent, XP_TUNING.orbs.poolCapacity);
+    this.xpOrbView.setEffectsMode(save.settings.effects);
+    this.pickupView = await createWorldPickupView(pickupParent, this.pickupPool.capacity);
+    this.pickupView.setEffectsMode(save.settings.effects);
     await this.createBullets(player);
     await this.createHud();
 
@@ -1340,8 +1362,11 @@ export class Bootstrap extends Component {
     this.createRoom(firstRoom);
     player.teleport(firstRoom.playerStart);
 
-    const bulletLayer = this.bulletLayer ?? this.node;
-    this.xpOrbView = await createXpOrbView(bulletLayer, XP_TUNING.orbs.poolCapacity);
+    const pickupParent = this.pickupLayer ?? this.roomLayer ?? this.node;
+    this.xpOrbView = await createXpOrbView(pickupParent, XP_TUNING.orbs.poolCapacity);
+    this.xpOrbView.setEffectsMode(save.settings.effects);
+    this.pickupView = await createWorldPickupView(pickupParent, this.pickupPool.capacity);
+    this.pickupView.setEffectsMode(save.settings.effects);
     await this.createBullets(player);
     await this.createHud();
 
@@ -1654,6 +1679,9 @@ export class Bootstrap extends Component {
       this.screens.setScreen('playing');
       this.xpPool.clear();
       this.xpOrbView?.clear();
+      this.pickupPool.clear();
+      this.pickupView?.clear();
+      this.player?.setRoomClearSpeedBoost(false);
       this.isXpDoorRoom = false;
       this.roomClearPending = false;
       this.roomClearElapsedMs = 0;
@@ -1768,7 +1796,9 @@ export class Bootstrap extends Component {
     // Bullet sheets are loaded by `BulletView.init` from the manifest (one per loadout/chapter).
     sheets.add(TELEGRAPH_RING_SHEET);
     sheets.add(HEART_SHEET);
+    sheets.add(PORTAL_GATE_SHEET);
     for (const sheet of XP_ORB_SHEETS) sheets.add(sheet);
+    for (const sheet of WORLD_PICKUP_SHEETS) sheets.add(sheet);
     // Special rooms (#40): the NPC/chest sheets, so the first frame of the room has no pop.
     for (const key of SPECIAL_ACTOR_KEYS) sheets.add(resolve(manifest, key).sheet);
     for (const sheet of obstacleSheets(chapter.chapter)) sheets.add(sheet);
@@ -1823,6 +1853,9 @@ export class Bootstrap extends Component {
     for (const name of WORLD_DRAW_LAYERS) this.addLayer(name, worldRoot);
 
     this.roomLayer = worldRoot.getChildByName('ground');
+    // M17 pickup layer sits strictly between `ground` and `actors`/`bullets`/`telegraphs`.
+    this.pickupLayer = this.addLayer('pickups', worldRoot);
+    this.pickupLayer.setSiblingIndex(1);
     this.actorLayer = worldRoot.getChildByName('actors');
     this.overlayLayer = worldRoot.getChildByName('overlays');
     this.bulletLayer = worldRoot.getChildByName('bullets');
@@ -2046,7 +2079,7 @@ export class Bootstrap extends Component {
     node.parent = canvas;
 
     const hud: Hud = node.addComponent(Hud);
-    await hud.init(this.player?.maxHearts ?? DEFAULT_COMBAT.playerMaxHearts, this.hudRoomText());
+    await hud.init(this.player?.maxHearts ?? DEFAULT_COMBAT.playerBaseMaxHp, this.hudRoomText());
     // World draws at integer multiples so it can be smaller than the UI band; shrink the HUD to hug the room edges.
     const hudScale = this.camera?.hudScale ?? 1;
     node.setScale(hudScale, hudScale, 1);
@@ -2153,8 +2186,11 @@ export class Bootstrap extends Component {
     this.roomClearBanner?.destroy();
     this.roomClearBanner = this.showBanner('room-clear', t('banner.roomClear'), END_WIN_COLOR, 20);
     // Celebrate the clear — except on the chapter's last room, where `chapter-clear` plays
-    // ~1 s later from `finishWin()`.
-    if (!finalRoom) playSfx('room-clear');
+    // ~1 s later from `finishWin()`. Activate +45% room-clear speed boost until next room entry.
+    if (!finalRoom) {
+      playSfx('room-clear');
+      this.player?.setRoomClearSpeedBoost(true);
+    }
 
     if (!finalRoom && (pendingLevelUp || (this.xpTracker?.pendingLevelUps ?? 0) > 0)) {
       this.openLevelUpSkillPick();
@@ -2176,6 +2212,7 @@ export class Bootstrap extends Component {
     this.updateDepthAndCover(deltaMs);
 
     const leveledUp = this.stepXpOrbs(deltaMs, true);
+    this.stepWorldPickups(deltaMs, true);
     this.syncHud();
 
     const finalRoom = run.room >= run.roomsTotal;
@@ -2184,11 +2221,43 @@ export class Bootstrap extends Component {
       return;
     }
 
-    const orbsDone = this.xpPool.size === 0;
+    const orbsDone = this.xpPool.size === 0 && this.pickupPool.size === 0;
     const picksDone = finalRoom || (this.xpTracker?.pendingLevelUps ?? 0) === 0;
     const bannerDone = this.roomClearElapsedMs >= ROOM_CLEAR_BANNER_SECONDS * 1000;
     if (orbsDone && picksDone && bannerDone) {
       this.finishRoomClear();
+    }
+  }
+
+  /** Step pooled Gold Coins & Health Potions (magnet pull during combat, full-room vacuum on clear). */
+  private stepWorldPickups(deltaMs: number, roomCleared: boolean): void {
+    const player = this.player;
+    if (player === null) return;
+
+    const dtSec = Math.max(0, deltaMs) / 1000;
+    const result = this.pickupPool.step(dtSec, player.position, {
+      roomCleared,
+      playerHp: player.hearts,
+      playerMaxHp: player.maxHearts,
+      magnetRadiusMultiplier: this.runUtility.xpMagnetMult,
+    });
+    this.pickupView?.sync(this.pickupPool.activePickups, this.xpOrbElapsedSec);
+
+    const totalGold = result.goldCollected + result.potionGoldBonus;
+    if (totalGold > 0) {
+      this.rewards.awardBonus(totalGold, 1);
+      this.flyGold(totalGold, player.position);
+      const nowWallMs = performance.now();
+      if (nowWallMs - this.lastGoldPickupSfxMs >= XP_PICKUP_SFX_COOLDOWN_MS) {
+        this.lastGoldPickupSfxMs = nowWallMs;
+        playSfx('gold');
+      }
+    }
+
+    if (result.hpHealed > 0) {
+      player.heal(result.hpHealed);
+      this.fx?.spawn('fx.boost', player.position, { drawUnits: 1.5, lifetimeMs: 420 });
+      playPotionHealSfx();
     }
   }
 
@@ -2525,13 +2594,15 @@ export class Bootstrap extends Component {
       this.drawnNormalRooms(),
       this.enabledDoorRewards(),
     );
-    const spots: DoorSpot[] = offers.map((reward, index) => ({
+    const spots: DoorSpot[] = offers.map((reward) => ({
       reward,
-      at: this.doorPosition(level, index),
+      at: this.doorPosition(level),
     }));
 
+    const effectsMode = this.save?.settings.effects ?? 'full';
     this.doorView?.destroy();
-    this.doorView = new DoorView(parent, spots);
+    this.doorView = new DoorView(parent, spots, effectsMode);
+    this.doorView.spawnActivationBurst(this.fx, effectsMode);
     this.doorOfferList = offers;
     this.doorClockMs = this.combat?.clockMs ?? 0;
     // #63: fresh hint window; the arrows for these doors are drawn by `updateDoorPhase`.
@@ -2553,26 +2624,12 @@ export class Bootstrap extends Component {
     );
   }
 
-  /**
-   * Where door `index` stands, in tile space. `#38` draws 2 door points per room; the fallbacks
-   * keep a hand-built/degenerate room playable instead of dropping the choice.
-   */
-  private doorPosition(level: LevelData, index: number): Vec2 {
-    const door = level.doors[index];
-    if (door !== undefined) return { x: door.at.x, y: door.at.y };
-
-    const first = level.doors[0];
-    const base = first?.at ?? { x: level.size.cols / 2, y: level.size.rows - 1 };
-    if (index === 0) return { x: base.x, y: base.y };
-
-    const inset = 2.5 * index;
-    return {
-      x: Math.min(level.size.cols - 1, Math.max(1, base.x + inset)),
-      y: Math.min(level.size.rows - 1, Math.max(1, base.y - inset)),
-    };
+  /** Single North Portal position at top-centre of `level` (M17 ADR-025). */
+  private doorPosition(level: LevelData): Vec2 {
+    return northDoorPosition(level);
   }
 
-  /** Door phase: the player walks to a door; enemies are already gone and the sim is idle. */
+  /** Door phase: the player walks to the North Portal; enemies are gone and the sim is idle. */
   private updateDoorPhase(deltaMs: number): void {
     const player = this.player;
     const level = this.currentLevel;
@@ -2583,10 +2640,11 @@ export class Bootstrap extends Component {
     this.doorHintElapsedMs += deltaMs;
     this.combat?.stepAttachmentHideTimer(deltaMs);
     player.step(this.doorClockMs, deltaMs, [], level);
+    view.update(deltaMs);
     this.fx?.update(deltaMs);
     this.updateDepthAndCover(deltaMs);
-    // The player walks while the doors are open, so the edge arrows must follow the camera and the
-    // hint must expire (#63) — neither is updated by the cleared combat loop any more.
+    // The player walks while the portal is open, so the edge arrow follows the camera and the
+    // hint expires (#63).
     this.hud?.setDoorHint(doorHintVisible(this.doorHintElapsedMs));
     this.updateHudArrows();
 
@@ -2601,7 +2659,11 @@ export class Bootstrap extends Component {
     }
   }
 
-  /** Walk through door `index`: the other door closes and the run advances to the next room. */
+  /**
+   * Walk through the North Portal.
+   * M17 cadence: when taking the mid-chapter Special Portal after Room 4, enter the Special Room
+   * as an intermission stop without skipping Room 5; exiting the Special Room advances into Room 5.
+   */
   private takeDoor(index: number): boolean {
     if (!this.doorPhase) return false;
     const chosen = this.doorOfferList[index];
@@ -2612,20 +2674,22 @@ export class Bootstrap extends Component {
     this.doorView = null;
     this.doorOfferList = [];
     this.hud?.setDoorHint(false);
-    // `boss` carries no clear reward; the next room is the boss arena. A special door replaces
-    // the next slot with a heal/shop/chest room (`enterRoom` reads `pendingSpecial`).
     this.currentChosenDoor = chosen;
     this.roomReward = chosen === 'boss' ? null : chosen;
+    playSfx('ui-confirm');
+    console.log(`[YokaiField] Took the ${chosen} North Portal.`);
+
     if (isSpecialDoor(chosen)) {
-      this.pendingSpecial = chosen;
       this.roomReward = null;
+      const roomSlot = this.run?.room ?? 4;
+      this.autosaveRunState(roomSlot, chosen);
+      this.enterSpecialRoom(roomSlot, chosen);
+      return true;
     }
-    // Safe-boundary autosave immediately after door choice (ADR-023): reloading now starts
-    // cleanly at the next room with the chosen door applied.
+
+    // Safe-boundary autosave immediately after portal choice (ADR-023).
     const nextRoomIndex = (this.run?.room ?? 1) + 1;
     this.autosaveRunState(nextRoomIndex, chosen);
-    playSfx('ui-confirm');
-    console.log(`[YokaiField] Took the ${chosen} door.`);
     this.advanceRoom();
     return true;
   }
@@ -2668,6 +2732,9 @@ export class Bootstrap extends Component {
     this.clearSpecialRoom();
     this.xpPool.clear();
     this.xpOrbView?.clear();
+    this.pickupPool.clear();
+    this.pickupView?.clear();
+    this.player?.setRoomClearSpeedBoost(false);
     this.roomClearPending = false;
     this.roomClearElapsedMs = 0;
 
@@ -2815,27 +2882,25 @@ export class Bootstrap extends Component {
     return true;
   }
 
-  /** Heal NPC: restore the tuned hearts once, then open the exit door. */
+  /** Heal NPC: restore tuned 50% max HP once, then open the North Portal exit. */
   private useHealNpc(): void {
     this.specialUsed = true;
     const player = this.player;
+    let healed = 0;
     if (player !== null) {
-      const hearts = healHearts(
-        player.hearts,
-        player.maxHearts,
-        SPECIAL_ROOMS_TUNING.healHearts,
-      );
-      player.heal(hearts - player.hearts);
+      const amount = specialHealAmount(player.maxHearts, SPECIAL_ROOMS_TUNING.healFraction);
+      const before = player.hearts;
+      player.heal(amount);
+      healed = player.hearts - before;
       this.hud?.setHearts(player.hearts);
     }
     const position = this.specialView?.position;
     if (position !== undefined) {
       this.fx?.spawn('fx.boost', position, { drawUnits: 2, lifetimeMs: 600 });
     }
-    playSfx('skill-acquired');
+    playPotionHealSfx();
     console.log(
-      `[YokaiField] Heal room: +${SPECIAL_ROOMS_TUNING.healHearts} hearts ` +
-        `(now ${player?.hearts ?? 0}/${player?.maxHearts ?? 0}).`,
+      `[YokaiField] Heal room: +${healed} HP (now ${player?.hearts ?? 0}/${player?.maxHearts ?? 0}).`,
     );
     this.finishSpecialRoom();
   }
@@ -2967,7 +3032,8 @@ export class Bootstrap extends Component {
     if (offer.item === 'heart-refill') {
       const player = this.player;
       if (player !== null) {
-        player.heal(player.maxHearts);
+        const refillAmount = specialHealAmount(player.maxHearts, SPECIAL_ROOMS_TUNING.healFraction);
+        player.heal(refillAmount);
         this.hud?.setHearts(player.hearts);
       }
     } else {
@@ -2992,7 +3058,7 @@ export class Bootstrap extends Component {
     this.finishSpecialRoom();
   }
 
-  /** The special room is used: pay the slot's clear gold, mark it cleared and open one door out. */
+  /** The special room is used: mark cleared if needed and open the single North Portal out. */
   private finishSpecialRoom(): void {
     if (this.specialFinished || this.specialRoom === null) return;
     this.specialFinished = true;
@@ -3001,7 +3067,9 @@ export class Bootstrap extends Component {
     if (run === null) return;
 
     this.specialView?.markUsed();
-    run.onRoomCleared();
+    if (run.status === 'playing') {
+      run.onRoomCleared();
+    }
     this.persistBest(run.room);
 
     const gold = this.rewards.awardRoomClear(
@@ -3009,6 +3077,7 @@ export class Bootstrap extends Component {
       this.runGoldMultiplier(),
     );
     this.flyGold(gold, this.specialView?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
+    this.player?.setRoomClearSpeedBoost(true);
     this.syncHud();
     this.hud?.setSkills(this.skills.entries);
     this.openSpecialExit();
@@ -3023,13 +3092,15 @@ export class Bootstrap extends Component {
 
     const offers: readonly DoorReward[] =
       run.room >= run.roomsTotal - 1 ? ['boss'] : ['xp'];
-    const spots: DoorSpot[] = offers.map((reward, index) => ({
+    const spots: DoorSpot[] = offers.map((reward) => ({
       reward,
-      at: this.doorPosition(level, index),
+      at: this.doorPosition(level),
     }));
 
+    const effectsMode = this.save?.settings.effects ?? 'full';
     this.doorView?.destroy();
-    this.doorView = new DoorView(parent, spots);
+    this.doorView = new DoorView(parent, spots, effectsMode);
+    this.doorView.spawnActivationBurst(this.fx, effectsMode);
     this.doorOfferList = offers;
     this.doorClockMs = this.specialClockMs;
     // A special room has one exit, not a choice: no "choose a door" hint (#63).
@@ -3168,11 +3239,19 @@ export class Bootstrap extends Component {
     this.screens.finishRun(true, rich);
   }
 
-  /** Credit gold and drop a pooled XP orb at the kill spot (`splitling` yields 0 XP → no orb). */
+  /** Drop pooled XP crystal, physical Gold Coin, and rare Health Potion at the kill spot. */
   private awardKill(role: EnemyRole, elite: boolean, position: Vec2): void {
+    this.rewards.recordKill();
     const multiplier = this.runGoldMultiplier();
-    const amount = this.rewards.awardKill(role, elite, multiplier);
-    this.flyGold(amount, position);
+    const goldValue = RunRewards.killValue(role, elite, multiplier);
+    if (goldValue > 0) {
+      this.pickupPool.spawnGold(position, goldValue);
+    }
+
+    if (shouldDropHealthPotion(elite, this.combatRng.next(), PICKUPS_TUNING.healthPotion)) {
+      this.pickupPool.spawnHealthPotion(position);
+    }
+    this.pickupView?.sync(this.pickupPool.activePickups, this.xpOrbElapsedSec);
 
     const roomMultiplier = this.isXpDoorRoom ? DOORS_TUNING.xpRoomXpMultiplier : 1;
     const xpValue = xpForKill(role, elite, XP_TUNING, roomMultiplier);
@@ -3224,6 +3303,9 @@ export class Bootstrap extends Component {
     this.player?.setEffectsMode(settings.effects);
     this.combat?.setEffectsMode(settings.effects);
     this.bulletView?.setEffectsMode(settings.effects);
+    this.xpOrbView?.setEffectsMode(settings.effects);
+    this.pickupView?.setEffectsMode(settings.effects);
+    this.doorView?.setEffectsMode(settings.effects);
     // Effects Reduced also turns off the secondary atmosphere layers, animals and animated props.
     const level = this.currentLevel;
     if (level !== null && this.roomRoot !== null) this.rebuildRoomAtmosphere(level);
@@ -3274,6 +3356,10 @@ export class Bootstrap extends Component {
     this.xpPool.clear();
     this.xpOrbView?.destroy();
     this.xpOrbView = null;
+    this.pickupPool.clear();
+    this.pickupView?.destroy();
+    this.pickupView = null;
+    this.lastGoldPickupSfxMs = Number.NEGATIVE_INFINITY;
     this.xpTracker = null;
     this.xpVisuals.length = 0;
     this.xpOrbElapsedSec = 0;

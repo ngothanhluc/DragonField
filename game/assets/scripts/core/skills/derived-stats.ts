@@ -16,6 +16,9 @@ export interface DerivedStats {
   readonly pierce: number;
   readonly critChance: number;
   readonly critMultiplier: number;
+  /** Maximum player HP (M17 100 HP RPG scale). */
+  readonly maxHp: number;
+  /** Legacy alias equal to `maxHp`. */
   readonly maxHearts: number;
   readonly moveSpeedTilesPerSecond: number;
   readonly invulnerabilityMs: number;
@@ -127,7 +130,10 @@ export interface StatsBaseline {
   readonly fireRatePerSecond: number;
   readonly damage: number;
   readonly projectiles: number;
-  readonly playerMaxHearts: number;
+  /** Base max HP (M17 100 HP scale; falls back to `playerMaxHearts` for legacy test baselines). */
+  readonly playerBaseMaxHp?: number;
+  /** Legacy alias accepted by older test fixtures. */
+  readonly playerMaxHearts?: number;
   readonly invulnerabilityMs: number;
   readonly moveSpeedTilesPerSecond: number;
   /** Optional class Layer 1 projectile speed override (defaults to `DEFAULT_COMBAT`). */
@@ -324,6 +330,8 @@ export function computeDerivedStats(
   }
 
   const safeShieldMult = clampMin(sanitize(shieldCooldownMult), 0.25);
+  const baseMaxHp = base.playerBaseMaxHp ?? base.playerMaxHearts ?? DEFAULT_COMBAT.playerBaseMaxHp;
+  const maxHp = Math.max(1, Math.floor(sanitize(baseMaxHp + heartsAdd)));
 
   return {
     damage: sanitize(base.damage + damageAdd),
@@ -332,7 +340,8 @@ export function computeDerivedStats(
     pierce: Math.floor(sanitize(pierce)),
     critChance: clamp01(sanitize(critChance)),
     critMultiplier: Math.max(1, sanitize(critMultiplier)),
-    maxHearts: Math.max(1, Math.floor(sanitize(base.playerMaxHearts + heartsAdd))),
+    maxHp,
+    maxHearts: maxHp,
     moveSpeedTilesPerSecond: sanitize(base.moveSpeedTilesPerSecond * (1 + moveSpeedAdd)),
     invulnerabilityMs: sanitize(base.invulnerabilityMs * iframeMultiplier),
     lifestealPercent: clamp01(sanitize(lifestealPercent)),

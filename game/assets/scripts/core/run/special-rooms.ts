@@ -47,12 +47,31 @@ export function isSpecialDoor(reward: DoorReward): reward is SpecialKind {
 const SHOP_SEED_SALT = 0x27d4eb2f;
 const CHEST_SEED_SALT = 0x165667b1;
 
-/** Hearts after the heal NPC: `current + amount`, capped at `max`. */
+/** HP after flat heal: `current + amount`, capped at `max`. */
 export function healHearts(current: number, max: number, amount: number): number {
   const cap = Number.isFinite(max) ? Math.max(0, Math.trunc(max)) : 0;
   const base = Number.isFinite(current) ? Math.max(0, Math.trunc(current)) : 0;
   const add = Number.isFinite(amount) ? Math.max(0, Math.trunc(amount)) : 0;
   return Math.min(cap, base + add);
+}
+
+/** Flat HP amount corresponding to `fraction` of `maxHp` (default `specialRooms.healFraction` = 50%). */
+export function specialHealAmount(
+  maxHp: number,
+  fraction: number = SPECIAL_ROOMS_TUNING.healFraction,
+): number {
+  if (!Number.isFinite(maxHp) || maxHp <= 0) return 0;
+  if (!Number.isFinite(fraction) || fraction <= 0) return 0;
+  return Math.max(1, Math.round(maxHp * Math.min(1, fraction)));
+}
+
+/** New total HP after a percentage-based special-room heal (NPC or mid-run shop refill). */
+export function healByFraction(
+  current: number,
+  maxHp: number,
+  fraction: number = SPECIAL_ROOMS_TUNING.healFraction,
+): number {
+  return healHearts(current, maxHp, specialHealAmount(maxHp, fraction));
 }
 
 /** Price of one skill in meta gold, by rarity. */
@@ -173,6 +192,7 @@ export function specialRoomLevel(chapter: number, kind: SpecialKind, room: numbe
       { kind: 'pillar', x: 25, y: 11, width: 1, height: 1 },
     ],
     props: [],
-    doors: [{ at: { x: ROOM_COLS / 2, y: ROOM_ROWS - 1 }, toRoom: null }],
+    // M17: single North Portal at top-centre edge.
+    doors: [{ at: { x: ROOM_COLS / 2, y: 1 }, toRoom: null }],
   };
 }

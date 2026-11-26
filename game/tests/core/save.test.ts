@@ -856,16 +856,18 @@ describe('Upgrades — purchase', () => {
 describe('Upgrades — applyUpgrades', () => {
   it('level 0 changes nothing', () => {
     expect(applyUpgrades(stateWith({}))).toEqual({
+      maxHpBonus: 0,
       maxHeartsBonus: 0,
       damageMultiplier: 1,
       fireRateMultiplier: 1,
     });
   });
 
-  it('maps levels to 3 bonuses: +1 heart, +5% damage, +3% fire rate per level', () => {
+  it('maps levels to 3 bonuses: +20 max HP, +5% damage, +3% fire rate per level', () => {
     const bonuses = applyUpgrades(stateWith({ hearts: 3, damage: 4, fireRate: 5 }));
 
-    expect(bonuses.maxHeartsBonus).toBe(3);
+    expect(bonuses.maxHpBonus).toBe(60);
+    expect(bonuses.maxHeartsBonus).toBe(60);
     expect(bonuses.damageMultiplier).toBeCloseTo(1.2, 10);
     expect(bonuses.fireRateMultiplier).toBeCloseTo(1.15, 10);
   });
@@ -875,7 +877,8 @@ describe('Upgrades — applyUpgrades', () => {
       stateWith({ hearts: MAX_HEARTS_TRACK, damage: MAX_LEVEL, fireRate: MAX_LEVEL }),
     );
 
-    expect(bonuses.maxHeartsBonus).toBe(MAX_HEARTS_TRACK);
+    expect(bonuses.maxHpBonus).toBe(MAX_HEARTS_TRACK * 20);
+    expect(bonuses.maxHeartsBonus).toBe(MAX_HEARTS_TRACK * 20);
     expect(bonuses.damageMultiplier).toBeCloseTo(1.5, 10);
     expect(bonuses.fireRateMultiplier).toBeCloseTo(1.3, 10);
   });
@@ -883,7 +886,8 @@ describe('Upgrades — applyUpgrades', () => {
   it('a broken save (negative/out-of-table level) is clamped into the valid range', () => {
     const bonuses = applyUpgrades(stateWith({ hearts: 99, damage: -3, fireRate: 99 }));
 
-    expect(bonuses.maxHeartsBonus).toBe(MAX_HEARTS_TRACK);
+    expect(bonuses.maxHpBonus).toBe(MAX_HEARTS_TRACK * 20);
+    expect(bonuses.maxHeartsBonus).toBe(MAX_HEARTS_TRACK * 20);
     expect(bonuses.damageMultiplier).toBe(1);
     expect(bonuses.fireRateMultiplier).toBeCloseTo(1 + MAX_LEVEL * 0.03, 10);
   });

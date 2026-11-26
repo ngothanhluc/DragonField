@@ -18,7 +18,18 @@ import { clampSkillStacks } from '../skills/pool';
 import { MAX_ASCENSION_TIER } from './save-data';
 import type { SaveStorage } from './storage';
 
-export const RUN_SAVE_VERSION = 1;
+/**
+ * v1 (M15): initial ADR-023 run save with legacy 6-heart health scale (`hearts`/`maxHearts`).
+ * v2 (M17): RPG 100 HP scale (`ADR-025`). Legacy v1 heart values (`maxHearts <= 20`) migrate
+ * automatically via `×20` (`hearts * 20`, `maxHearts * 20`); field keys `hearts` and `maxHearts`
+ * remain on the schema for clean compatibility across runtime/debug callers while storing HP.
+ */
+export const RUN_SAVE_VERSION = 2;
+
+/** Conversion factor from legacy heart units to M17 RPG HP units (1 heart = 20 HP). */
+export const LEGACY_HEART_TO_HP_SCALE = 20;
+/** Legacy v1 saves with `maxHearts <= 20` are treated as heart-scale and multiplied by 20. */
+export const LEGACY_HEART_MAX_THRESHOLD = 20;
 
 const VALID_DOORS: ReadonlySet<string> = new Set<DoorReward>([
   'xp',
@@ -51,9 +62,9 @@ export interface ActiveRunSave {
   readonly bossId: BossId;
   /** Playable character locked for this run. */
   readonly characterId: CharacterId;
-  /** Current player hearts (`1..maxHearts`; a 0-heart dead run cannot be resumed). */
+  /** Current player HP (`1..maxHearts`; a 0-HP dead run cannot be resumed). */
   readonly hearts: number;
-  /** Current max hearts (`>= 1`). */
+  /** Current max HP (`>= 1`). */
   readonly maxHearts: number;
   /** Current XP level (`>= 1`). */
   readonly xpLevel: number;
@@ -151,12 +162,21 @@ export function migrateRunSave(raw: unknown): ActiveRunSave | null {
   if (!isCharacterId(raw.characterId)) return null;
   const characterId = raw.characterId;
 
-  if (!isFiniteNumber(raw.maxHearts) || raw.maxHearts < 1) return null;
-  const maxHearts = clampInt(raw.maxHearts, 1, Number.MAX_SAFE_INTEGER);
+  const rawMax = raw.maxHp ?? raw.maxHearts;
+  const rawCurrent = raw.hp ?? raw.hearts;
 
-  // Strict permadeath (ADR-023): a dead run (hearts <= 0) must never be resumed.
-  if (!isFiniteNumber(raw.hearts) || raw.hearts <= 0) return null;
-  const hearts = clampInt(raw.hearts, 1, maxHearts);
+  if (!isFiniteNumber(rawMax) || rawMax < 1) return null;
+  let maxHearts = clampInt(rawMax, 1, Number.MAX_SAFE_INTEGER);
+
+  // Strict permadeath (ADR-023): a dead run (hp <= 0) must never be resumed.
+  if (!isFiniteNumber(rawCurrent) || rawCurrent <= 0) return null;
+  let hearts = clampInt(rawCurrent, 1, maxHearts);
+
+  // M17 migration (v1 → v2): convert legacy 6-heart saves (`maxHearts <= 20`) to 100 HP scale.
+  if (version === 1 && maxHearts <= LEGACY_HEART_MAX_THRESHOLD) {
+    maxHearts *= LEGACY_HEART_TO_HP_SCALE;
+    hearts = Math.min(maxHearts, hearts * LEGACY_HEART_TO_HP_SCALE);
+  }
 
   if (!isFiniteNumber(raw.xpLevel) || raw.xpLevel < 1) return null;
   const xpLevel = clampInt(raw.xpLevel, 1, Number.MAX_SAFE_INTEGER);

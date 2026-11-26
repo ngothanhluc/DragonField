@@ -44,6 +44,7 @@ import {
   type EnemyAiTuning,
   type FeelTuning,
   type NavigationTuning,
+  type PickupsTuning,
   type SpecialRoomsTuning,
   type TuningConfig,
   type WavesTuning,
@@ -90,6 +91,9 @@ export const DOORS_TUNING: DoorsTuning = TUNING.doors;
 
 /** Heal / mid-run shop / chest numbers (#40) — `core/run/special-rooms.ts` reads them. */
 export const SPECIAL_ROOMS_TUNING: SpecialRoomsTuning = TUNING.specialRooms;
+
+/** Pooled world pickups (Gold Coins + Health Potions, M17) — `core/xp/pickups.ts` reads them. */
+export const PICKUPS_TUNING: PickupsTuning = TUNING.pickups;
 
 /** Boss entrance grace and chapter HP scaling (M11 T6) — `core/boss/` reads them. */
 export const BOSS_TUNING: BossTuning = TUNING.boss;

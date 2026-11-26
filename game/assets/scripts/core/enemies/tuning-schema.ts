@@ -27,8 +27,10 @@ export interface CombatTuning {
   readonly projectileSpeedTilesPerSecond: number;
   /** Base movement speed, tiles/second. */
   readonly moveSpeedTilesPerSecond: number;
-  /** Maximum hearts. */
-  readonly playerMaxHearts: number;
+  /** Out-of-combat room-clear movement speed multiplier (M17: 1.45 = +45%). */
+  readonly roomClearSpeedMultiplier: number;
+  /** Base player maximum HP (M17 RPG 100 HP scale, ADR-025). */
+  readonly playerBaseMaxHp: number;
   /** Invulnerability after taking a hit, ms. */
   readonly invulnerabilityMs: number;
   /** Base damage when an enemy touches the player. */
@@ -288,6 +290,8 @@ export interface TuningConfig {
   readonly doors: DoorsTuning;
   /** Heal / mid-run shop / chest rooms (#40). */
   readonly specialRooms: SpecialRoomsTuning;
+  /** Pooled physical world pickups: Gold Coins & Health Potions (M17, ADR-025). */
+  readonly pickups: PickupsTuning;
   /** Room composition art (#67): how many walkable details a generated room scatters. */
   readonly roomArt: RoomArtTuning;
   /** Boss entrance grace window and per-chapter max health (M11 T6). */
@@ -307,10 +311,10 @@ export const TUNING_CHARACTER_IDS = ['ninja', 'archer', 'mage', 'cultivator'] as
 
 export type TuningCharacterId = (typeof TUNING_CHARACTER_IDS)[number];
 
-/** Layer 1 per-class base stat deltas & multipliers relative to `combat` baseline (M14). */
+/** Layer 1 per-class base stat deltas & multipliers relative to `combat` baseline (M14/M17). */
 export interface CharacterBaseStatsTuning {
-  /** Signed integer heart delta added to `combat.playerMaxHearts` (e.g. -1, 0, +1). */
-  readonly maxHeartsDelta: number;
+  /** Signed integer HP delta added to `combat.playerBaseMaxHp` (e.g. 0, -15, -15, +20). */
+  readonly maxHpDelta: number;
   readonly damageMult: number;
   readonly fireRateMult: number;
   readonly moveSpeedMult: number;
@@ -549,15 +553,36 @@ export interface ShopTuning {
 }
 
 /**
- * Special-room numbers (#40). Prices are in meta gold: the shop spends the same gold the save
+ * Special-room numbers (#40, M17). Prices are in meta gold: the shop spends the same gold the save
  * keeps, so a purchase during a run means coming home with less (GDD §13.2).
  */
 export interface SpecialRoomsTuning {
-  /** Hearts restored by the heal NPC, capped at the player's max. */
-  readonly healHearts: number;
+  /** Fraction of max HP restored by the heal NPC and mid-run shop refill (0..1, M17: 0.5). */
+  readonly healFraction: number;
   /** Gold a chest gives when its seeded reward is `gold`. */
   readonly chestGold: number;
   readonly shop: ShopTuning;
+}
+
+/** Health Potion drop & healing parameters (M17, ADR-025). */
+export interface HealthPotionTuning {
+  /** Hard pre-allocated pool capacity (zero `new` per drop). */
+  readonly poolCapacity: number;
+  /** Drop chance per normal enemy kill in `0..1` (M17: 0.035 = 3.5%). */
+  readonly dropChanceNormal: number;
+  /** Drop chance per elite enemy kill in `0..1` (M17: 0.14 = 14%). */
+  readonly dropChanceElite: number;
+  /** Fraction of max HP restored on pickup in `0..1` (M17: 0.25 = 25%). */
+  readonly healFraction: number;
+  /** Bonus gold granted if vacuumed at room clear while player is already at full HP (M17: 5). */
+  readonly fullHpGoldBonus: number;
+}
+
+/** Pooled world pickups tuning (Gold Coins + Health Potions, M17). */
+export interface PickupsTuning {
+  /** Hard pre-allocated pool capacity for physical world Gold Coins. */
+  readonly goldCoinPoolCapacity: number;
+  readonly healthPotion: HealthPotionTuning;
 }
 
 /**
@@ -719,7 +744,8 @@ const COMBAT_FIELDS = [
   'projectiles',
   'projectileSpeedTilesPerSecond',
   'moveSpeedTilesPerSecond',
-  'playerMaxHearts',
+  'roomClearSpeedMultiplier',
+  'playerBaseMaxHp',
   'invulnerabilityMs',
   'contactDamage',
   'targetingRangeTiles',
@@ -807,7 +833,7 @@ const CHARACTER_FIELDS = [
 ] as const;
 
 const CHARACTER_BASE_STATS_FIELDS = [
-  'maxHeartsDelta',
+  'maxHpDelta',
   'damageMult',
   'fireRateMult',
   'moveSpeedMult',
@@ -906,9 +932,19 @@ const DOORS_FIELDS = [
 
 const DOOR_WEIGHT_FIELDS = ['xp', 'gold', 'heal', 'shop', 'chest'] as const;
 
-const SPECIAL_ROOMS_FIELDS = ['healHearts', 'chestGold', 'shop'] as const;
+const SPECIAL_ROOMS_FIELDS = ['healFraction', 'chestGold', 'shop'] as const;
 
 const SHOP_FIELDS = ['heartRefill', 'skillPrices'] as const;
+
+const PICKUPS_FIELDS = ['goldCoinPoolCapacity', 'healthPotion'] as const;
+
+const HEALTH_POTION_FIELDS = [
+  'poolCapacity',
+  'dropChanceNormal',
+  'dropChanceElite',
+  'healFraction',
+  'fullHpGoldBonus',
+] as const;
 
 const ROOM_ART_FIELDS = ['detailDensity', 'pathStoneDensity'] as const;
 
@@ -1167,7 +1203,8 @@ function zeroCombat(): CombatTuning {
     projectiles: 1,
     projectileSpeedTilesPerSecond: 0,
     moveSpeedTilesPerSecond: 0,
-    playerMaxHearts: 1,
+    roomClearSpeedMultiplier: 1,
+    playerBaseMaxHp: 100,
     invulnerabilityMs: 0,
     contactDamage: 0,
     targetingRangeTiles: 0,
@@ -1304,8 +1341,18 @@ function parseCombat(
       readNumber(source, 'moveSpeedTilesPerSecond', path, problems, {
         positive: true,
       }) ?? 0,
-    playerMaxHearts:
-      readNumber(source, 'playerMaxHearts', path, problems, {
+    roomClearSpeedMultiplier: (() => {
+      const value =
+        readNumber(source, 'roomClearSpeedMultiplier', path, problems, {
+          positive: true,
+        }) ?? 1;
+      if (value < 1) {
+        problems.add(`${path}.roomClearSpeedMultiplier`, `must be >= 1, got ${value}`);
+      }
+      return value;
+    })(),
+    playerBaseMaxHp:
+      readNumber(source, 'playerBaseMaxHp', path, problems, {
         integer: true,
         positive: true,
       }) ?? 1,
@@ -2019,7 +2066,7 @@ function parseDoors(raw: Record<string, unknown>, problems: ProblemList): DoorsT
 
 function zeroSpecialRooms(): SpecialRoomsTuning {
   return {
-    healHearts: 1,
+    healFraction: 0.5,
     chestGold: 1,
     shop: { heartRefill: 1, skillPrices: { common: 1, rare: 1, epic: 1 } },
   };
@@ -2037,9 +2084,13 @@ function parseSpecialRooms(
   const priceSource =
     readObject(shopSource, 'skillPrices', `${path}.shop`, problems, SHOP_PRICE_FIELDS) ?? {};
 
+  const healFraction = readRatio(source, 'healFraction', path, problems);
+  if (healFraction <= 0) {
+    problems.add(`${path}.healFraction`, `must be > 0, got ${healFraction}`);
+  }
+
   return {
-    healHearts:
-      readNumber(source, 'healHearts', path, problems, { integer: true, positive: true }) ?? 1,
+    healFraction,
     chestGold:
       readNumber(source, 'chestGold', path, problems, { integer: true, positive: true }) ?? 1,
     shop: {
@@ -2065,6 +2116,53 @@ function parseSpecialRooms(
             positive: true,
           }) ?? 1,
       },
+    },
+  };
+}
+
+function zeroPickups(): PickupsTuning {
+  return {
+    goldCoinPoolCapacity: 128,
+    healthPotion: {
+      poolCapacity: 32,
+      dropChanceNormal: 0.035,
+      dropChanceElite: 0.14,
+      healFraction: 0.25,
+      fullHpGoldBonus: 5,
+    },
+  };
+}
+
+function parsePickups(raw: Record<string, unknown>, problems: ProblemList): PickupsTuning {
+  const source = readObject(raw, 'pickups', '', problems, PICKUPS_FIELDS);
+  if (source === undefined) return zeroPickups();
+
+  const path = 'pickups';
+  const potionSource =
+    readObject(source, 'healthPotion', path, problems, HEALTH_POTION_FIELDS) ?? {};
+  const potionPath = `${path}.healthPotion`;
+  const healFraction = readRatio(potionSource, 'healFraction', potionPath, problems);
+  if (healFraction <= 0) {
+    problems.add(`${potionPath}.healFraction`, `must be > 0, got ${healFraction}`);
+  }
+
+  return {
+    goldCoinPoolCapacity:
+      readNumber(source, 'goldCoinPoolCapacity', path, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    healthPotion: {
+      poolCapacity:
+        readNumber(potionSource, 'poolCapacity', potionPath, problems, {
+          integer: true,
+          positive: true,
+        }) ?? 1,
+      dropChanceNormal: readRatio(potionSource, 'dropChanceNormal', potionPath, problems),
+      dropChanceElite: readRatio(potionSource, 'dropChanceElite', potionPath, problems),
+      healFraction,
+      fullHpGoldBonus:
+        readNumber(potionSource, 'fullHpGoldBonus', potionPath, problems, { integer: true }) ?? 0,
     },
   };
 }
@@ -2335,7 +2433,7 @@ function zeroCharacter(): CharacterTuning {
     unlockChapter: 0,
     unlockGoldCost: 0,
     baseStats: {
-      maxHeartsDelta: 0,
+      maxHpDelta: 0,
       damageMult: 1,
       fireRateMult: 1,
       moveSpeedMult: 1,
@@ -2407,7 +2505,7 @@ function parseCharacterEntry(
   const baseSource = readObject(entry, 'baseStats', path, problems, CHARACTER_BASE_STATS_FIELDS) ?? {};
   const basePath = `${path}.baseStats`;
   const baseStats: CharacterBaseStatsTuning = {
-    maxHeartsDelta: readSignedInteger(baseSource, 'maxHeartsDelta', basePath, problems, -5, 10, 0),
+    maxHpDelta: readSignedInteger(baseSource, 'maxHpDelta', basePath, problems, -80, 200, 0),
     damageMult: readNumber(baseSource, 'damageMult', basePath, problems, { positive: true }) ?? 1,
     fireRateMult:
       readNumber(baseSource, 'fireRateMult', basePath, problems, { positive: true }) ?? 1,
@@ -2582,6 +2680,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     cover: parseCover(raw, problems),
     doors: parseDoors(raw, problems),
     specialRooms: parseSpecialRooms(raw, problems),
+    pickups: parsePickups(raw, problems),
     roomArt: parseRoomArt(raw, problems),
     boss: parseBoss(raw, problems),
     xp: parseXp(raw, problems),

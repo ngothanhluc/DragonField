@@ -22,7 +22,6 @@ import {
   HUD_ICON_TEXT_GAP_PX,
   HUD_LABEL_FONT_SIZE,
   HUD_LABEL_LINE_HEIGHT,
-  HUD_MAX_HEARTS_PER_ROW,
   HUD_MIN_SEPARATION_PX,
   HUD_PLATE_PAD_X_PX,
   HUD_PLATE_PAD_Y_PX,
@@ -79,25 +78,29 @@ const SUPPORTED_VIEWPORTS: ReadonlyArray<{
 ];
 
 describe('HUD backing plates and internal element containment', () => {
-  it('wraps top-left Hearts + GoldCoin + Gold label inside the top-left plate with padding', () => {
-    for (const maxHearts of [3, 6, 7, 10, 14]) {
+  it('wraps top-left Portrait slot + 100-HP bar + XP bar + GoldCoin + Gold label inside the top-left plate with padding', () => {
+    for (const [hp, maxHp] of [
+      [85, 100],
+      [25, 100],
+      [120, 120],
+      [245, 245],
+    ] as const) {
       for (const gold of [0, 95, 9999, 125000]) {
-        const layout = computeHudLayout({ maxHearts, gold });
-        const { plate, hearts, goldIcon, goldLabel, goldText, heartRows } = layout.topLeft;
+        const layout = computeHudLayout({ hp, maxHp, gold, xpLevel: 12, xpCurrent: 14, xpRequired: 35 });
+        const { plate, portraitSlot, hpBar, xpBar, goldIcon, goldLabel, goldText } = layout.topLeft;
 
-        expect(hearts).toHaveLength(maxHearts);
-        expect(heartRows).toBe(Math.ceil(maxHearts / HUD_MAX_HEARTS_PER_ROW));
         expect(hudRectInside(plate, layout.safeArea)).toBe(true);
-
-        for (const heart of hearts) {
-          const heartRect = makeHudRect(
-            heart.x - HUD_HEART_SIZE_PX / 2,
-            heart.y - HUD_HEART_SIZE_PX / 2,
-            HUD_HEART_SIZE_PX,
-            HUD_HEART_SIZE_PX,
-          );
-          expect(hudRectInside(heartRect, plate)).toBe(true);
-        }
+        expect(hudRectInside(portraitSlot, plate)).toBe(true);
+        expect(portraitSlot.width).toBe(28);
+        expect(portraitSlot.height).toBe(28);
+        expect(hudRectInside(hpBar.barTrack, plate)).toBe(true);
+        expect(hudRectInside(hpBar.barFillMax, hpBar.barTrack)).toBe(true);
+        expect(hpBar.hpText).toBe(`${hp}/${maxHp}`);
+        expect(hudRectInside(xpBar.plate, plate)).toBe(true);
+        // XP bar sits directly underneath the HP bar inside the unified top-left plate.
+        expect(xpBar.plate.top).toBeLessThan(hpBar.barTrack.bottom);
+        expect(hudRectsOverlap(portraitSlot, hpBar.barTrack)).toBe(false);
+        expect(hudRectsOverlap(portraitSlot, xpBar.plate)).toBe(false);
 
         const coinRect = makeHudRect(
           goldIcon.x - HUD_GOLD_ICON_SIZE_PX / 2,
@@ -410,11 +413,12 @@ describe('M12 XP fill ratio clamping and badge/progress formatting', () => {
 });
 
 describe('non-overlap across active HUD plates, 16–20 skill grid, M12 XP bar, and M13 reserve', () => {
-  it('never overlaps top-left, boss bar / door hint, top-right, 0..20 skill strip, M12 XP bar, or M13 Dash/Active', () => {
-    for (const maxHearts of [3, 6, 8, 12, 14]) {
+  it('never overlaps unified top-left (HP+XP), boss bar / door hint, top-right, 0..20 skill strip, or M13 Dash/Active', () => {
+    for (const maxHp of [85, 100, 120, 200, 325]) {
       for (const skillCount of [0, 1, 4, 8, 10, 12, 16, 20]) {
         const combat = computeHudLayout({
-          maxHearts,
+          hp: Math.floor(maxHp * 0.75),
+          maxHp,
           gold: 9999,
           roomLabel: '8/9',
           enemiesLeft: 64,
@@ -424,13 +428,15 @@ describe('non-overlap across active HUD plates, 16–20 skill grid, M12 XP bar, 
           xpRequired: 120,
         });
 
-        // Combat mode regions (doorHint + top-left + top-right + skillStrip + M12 + M13)
+        // M17: XP bar is embedded inside the unified top-left plate directly below HP bar.
+        expect(hudRectInside(combat.m12XpBar, combat.topLeft.plate)).toBe(true);
+
+        // Combat mode regions (doorHint + top-left + top-right + skillStrip + M13)
         const combatRegions: Array<readonly [string, HudRect]> = [
           ['topLeft', combat.topLeft.plate],
           ['doorHint', combat.doorHint],
           ['topRight', combat.topRight.plate],
           ['skillStrip', combat.skillStrip.maxPlate],
-          ['m12XpBar', combat.m12XpBar],
           ['m13DashActive', combat.m13DashActive],
         ];
         assertPairwiseSeparated(combatRegions, HUD_MIN_SEPARATION_PX);
@@ -442,16 +448,16 @@ describe('non-overlap across active HUD plates, 16–20 skill grid, M12 XP bar, 
               ['doorHint', combat.doorHint],
               ['topRight', combat.topRight.plate],
               ['activeSkillStrip', combat.skillStrip.activePlate],
-              ['m12XpBar', combat.m12XpBar],
               ['m13DashActive', combat.m13DashActive],
             ],
             HUD_MIN_SEPARATION_PX,
           );
         }
 
-        // Boss mode regions (bossBar + top-left + top-right + skillStrip + M12 + M13)
+        // Boss mode regions (bossBar + top-left + top-right + skillStrip + M13)
         const boss = computeHudLayout({
-          maxHearts,
+          hp: Math.floor(maxHp * 0.5),
+          maxHp,
           gold: 9999,
           roomLabel: '9/9',
           enemiesLeft: null,
@@ -465,7 +471,6 @@ describe('non-overlap across active HUD plates, 16–20 skill grid, M12 XP bar, 
           ['bossBar', boss.bossBar.plate],
           ['topRight', boss.topRight.plate],
           ['skillStrip', boss.skillStrip.maxPlate],
-          ['m12XpBar', boss.m12XpBar],
           ['m13DashActive', boss.m13DashActive],
         ];
         assertPairwiseSeparated(bossRegions, HUD_MIN_SEPARATION_PX);
@@ -478,12 +483,14 @@ describe('non-overlap across active HUD plates, 16–20 skill grid, M12 XP bar, 
     }
   });
 
-  it('positions M12 XP bar at bottom-centre and M13 Dash/Active at bottom-left inside safeArea', () => {
-    const singleRowLayout = computeHudLayout({ skillCount: 10 });
-    expect(singleRowLayout.m12XpBar.centerX).toBe(0);
-    expect(singleRowLayout.m12XpBar.bottom).toBe(singleRowLayout.safeArea.bottom);
-    expect(hudRectInside(singleRowLayout.m12XpBar, singleRowLayout.safeArea)).toBe(true);
+  it('positions unified XP bar at top-left below HP bar, frees bottom-centre, and anchors Dash/Active bottom-left', () => {
+    const singleRowLayout = computeHudLayout({ hp: 85, maxHp: 100, skillCount: 10 });
+    expect(hudRectInside(singleRowLayout.m12XpBar, singleRowLayout.topLeft.plate)).toBe(true);
+    expect(singleRowLayout.m12XpBar.top).toBeLessThan(singleRowLayout.topLeft.hpBar.barTrack.bottom);
+    expect(singleRowLayout.m12XpBar.left).toBe(singleRowLayout.topLeft.hpBar.barTrack.left);
 
+    // Bottom-centre playfield is completely freed; skillStrip sits at safeArea.bottom on the right.
+    expect(singleRowLayout.skillStrip.activePlate!.bottom).toBe(singleRowLayout.safeArea.bottom);
     expect(singleRowLayout.m13DashActive.left).toBe(singleRowLayout.safeArea.left);
     expect(singleRowLayout.m13DashActive.bottom).toBe(singleRowLayout.safeArea.bottom);
     expect(hudRectInside(singleRowLayout.m13DashActive, singleRowLayout.safeArea)).toBe(true);
@@ -498,12 +505,12 @@ describe('non-overlap across active HUD plates, 16–20 skill grid, M12 XP bar, 
     expect(fullGridWindow).toBeGreaterThanOrEqual(150);
   });
 
-  it('clamps off-screen edge arrows below top HUD plates and above the M12 XP bar', () => {
-    const layout = computeHudLayout({ maxHearts: 6, enemiesLeft: 24 });
+  it('clamps off-screen edge arrows below top HUD plates and inside the safe bottom margin', () => {
+    const layout = computeHudLayout({ hp: 100, maxHp: 100, enemiesLeft: 24 });
     // Arrow triangle tip reaches 7 px from its node centre.
     expect(layout.arrowLimits.top + 7).toBeLessThanOrEqual(layout.topLeft.plate.bottom);
     expect(layout.arrowLimits.top + 7).toBeLessThanOrEqual(layout.topRight.plate.bottom);
-    expect(-layout.arrowLimits.bottom - 7).toBeGreaterThanOrEqual(layout.m12XpBar.top);
+    expect(-layout.arrowLimits.bottom - 7).toBeGreaterThanOrEqual(layout.safeArea.bottom);
   });
 });
 
@@ -586,13 +593,13 @@ describe('viewport scaling across 16:9, 16:10, 4:3, and 21:9 ultrawide', () => {
           expect(hudRectInside(slotCanvas, canvasPx, 0.5)).toBe(true);
         }
 
-        // Projected top-left, bossBar, top-right, active skillStrip, M12, M13 remain separated in canvas px.
+        // Projected top-left (enclosing XP bar), bossBar, top-right, active skillStrip, and M13 remain separated in canvas px.
+        expect(hudRectInside(projected[6]!, projected[0]!, 0.5)).toBe(true);
         const nonOverlappingCanvas: ReadonlyArray<readonly [string, HudRect]> = [
           ['topLeft', projected[0]!],
           ['bossBar', projected[1]!],
           ['topRight', projected[3]!],
           ['skillStrip', projected[5]!],
-          ['m12XpBar', projected[6]!],
           ['m13DashActive', projected[7]!],
         ];
         assertPairwiseSeparated(nonOverlappingCanvas, 2);

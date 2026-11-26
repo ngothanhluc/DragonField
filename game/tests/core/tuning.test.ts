@@ -150,7 +150,7 @@ describe('tuning — config/tuning.json is the single source', () => {
       expect(speedFor(role, false)).toBe(numberAt(raw, 'speedTilesPerSecond'));
       expect(contactDamageFor(role, false)).toBe(numberAt(raw, 'contactDamage'));
       expect(contactDamageFor(role, true)).toBe(
-        numberAt(raw, 'contactDamage') * ENEMY_TUNING.eliteDamageMultiplier,
+        Math.round(numberAt(raw, 'contactDamage') * ENEMY_TUNING.eliteDamageMultiplier),
       );
       expect(ATTACK_COOLDOWN_MS[role]).toBe(numberAt(raw, 'attackCooldownMs'));
     }
@@ -398,8 +398,8 @@ describe('tuning — M14: 4-class characters block', () => {
         string,
         unknown
       >
-    ).maxHeartsDelta = 1.5;
-    expect(() => parseTuning(badDelta)).toThrowError(/characters\.mage\.baseStats\.maxHeartsDelta/);
+    ).maxHpDelta = 1.5;
+    expect(() => parseTuning(badDelta)).toThrowError(/characters\.mage\.baseStats\.maxHpDelta/);
 
     const invertedProjectiles = cloneSource();
     (

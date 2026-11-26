@@ -113,9 +113,10 @@ describe('simulateRun — god mode clears chapter 1', () => {
     expect(result.durationMs).toBeLessThanOrEqual(CHAPTER_CLEAR_MAX_MS);
   });
 
-  it('gold is added exactly from kill and room-clear events', () => {
+  it('gold is added exactly from kill, room-clear, and mid-chapter special events', () => {
     const fromEvents = result.events.reduce((sum, event) => {
       if (event.kind === 'kill' || event.kind === 'room-cleared') return sum + event.gold;
+      if (event.kind === 'special') return sum + (event.gold ?? 0);
       return sum;
     }, 0);
     const expectedRoomGold =
@@ -1136,7 +1137,7 @@ describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', 
 
 describe('simulateRun — M14 4 playable classes (GDD §15.4)', () => {
   it('applies Layer 1 base stats and Layer 2 passives distinctly across Ninja, Archer, Mage, and Cultivator', () => {
-    // 1. Max hearts differ by class (Archer/Mage 5, Ninja 6, Cultivator 7) on identical melee loss.
+    // 1. Max HP differs by class (Archer/Mage 85 HP = 6 hits at 15 dmg, Ninja 100 HP = 7 hits, Cultivator 120 HP = 8 hits).
     const hitsByClass = new Map<CharacterId, number>();
     for (const characterId of CHARACTER_IDS) {
       const res = simulateRun({
@@ -1151,10 +1152,10 @@ describe('simulateRun — M14 4 playable classes (GDD §15.4)', () => {
         res.events.filter((event) => event.kind === 'player-hit').length,
       );
     }
-    expect(hitsByClass.get('archer')).toBe(5);
-    expect(hitsByClass.get('mage')).toBe(5);
-    expect(hitsByClass.get('ninja')).toBe(6);
-    expect(hitsByClass.get('cultivator')).toBe(7);
+    expect(hitsByClass.get('archer')).toBe(6);
+    expect(hitsByClass.get('mage')).toBe(6);
+    expect(hitsByClass.get('ninja')).toBe(7);
+    expect(hitsByClass.get('cultivator')).toBe(8);
 
     // 2. Archer's extended range (10 tiles) hits a sniper parked at 9.6 tiles before it can walk into Ninja's 8-tile range.
     const longRangeRoom: LevelData = parseLevelData({

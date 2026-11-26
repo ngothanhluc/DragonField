@@ -18,21 +18,24 @@ describe('applyUpgradesToBaseline', () => {
   it('level 0 keeps the baseline', () => {
     expect(
       applyUpgradesToBaseline(DEFAULT_COMBAT, {
+        maxHpBonus: 0,
         maxHeartsBonus: 0,
         damageMultiplier: 1,
         fireRateMultiplier: 1,
       }),
-    ).toEqual(DEFAULT_COMBAT);
+    ).toEqual({ ...DEFAULT_COMBAT, playerMaxHearts: DEFAULT_COMBAT.playerBaseMaxHp });
   });
 
-  it('adds hearts, multiplies damage and fire rate on the base stats', () => {
+  it('adds max HP, multiplies damage and fire rate on the base stats', () => {
     const base = applyUpgradesToBaseline(DEFAULT_COMBAT, {
-      maxHeartsBonus: 3,
+      maxHpBonus: 60,
+      maxHeartsBonus: 60,
       damageMultiplier: 1.2,
       fireRateMultiplier: 1.15,
     });
 
-    expect(base.playerMaxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts + 3);
+    expect(base.playerBaseMaxHp).toBe(DEFAULT_COMBAT.playerBaseMaxHp + 60);
+    expect(base.playerMaxHearts).toBe(DEFAULT_COMBAT.playerBaseMaxHp + 60);
     expect(base.damage).toBeCloseTo(DEFAULT_COMBAT.damage * 1.2, 10);
     expect(base.fireRatePerSecond).toBeCloseTo(DEFAULT_COMBAT.fireRatePerSecond * 1.15, 10);
   });
@@ -40,20 +43,22 @@ describe('applyUpgradesToBaseline', () => {
   it('does not modify the passed baseline', () => {
     const before = { ...DEFAULT_COMBAT };
     applyUpgradesToBaseline(DEFAULT_COMBAT, {
-      maxHeartsBonus: 2,
+      maxHpBonus: 40,
+      maxHeartsBonus: 40,
       damageMultiplier: 1.5,
       fireRateMultiplier: 1.3,
     });
     expect(DEFAULT_COMBAT).toEqual(before);
   });
 
-  it('a maxed save gives max bonus: +5 hearts, +50% damage, +30% fire rate', () => {
+  it('a maxed save gives max bonus: +100 HP, +50% damage, +30% fire rate', () => {
     const state = {
       upgrades: { ...createDefaultUpgrades(), hearts: 5, damage: 10, fireRate: 10 },
     };
     const base = metaBaseline(DEFAULT_COMBAT, state);
 
-    expect(base.playerMaxHearts).toBe(11);
+    expect(base.playerBaseMaxHp).toBe(200);
+    expect(base.playerMaxHearts).toBe(200);
     expect(base.damage).toBeCloseTo(1.5, 10);
     expect(base.fireRatePerSecond).toBeCloseTo(2.6, 10);
   });
@@ -64,13 +69,15 @@ describe('applyUpgradesToBaseline', () => {
     });
     const stats = computeDerivedStats(new Map<string, number>(), base);
 
-    expect(stats.maxHearts).toBe(7);
+    expect(stats.maxHp).toBe(120);
+    expect(stats.maxHearts).toBe(120);
     expect(stats.damage).toBeCloseTo(1.1, 10);
     expect(stats.fireRatePerSecond).toBeCloseTo(2, 10);
   });
 
   it('broken data does not produce negative/NaN stats', () => {
     const base = applyUpgradesToBaseline(DEFAULT_COMBAT, {
+      maxHpBonus: Number.NaN,
       maxHeartsBonus: Number.NaN,
       damageMultiplier: Number.NaN,
       fireRateMultiplier: -4,
@@ -85,14 +92,15 @@ describe('applyUpgradesToBaseline', () => {
     const base = metaBaseline(DEFAULT_COMBAT, { upgrades: createDefaultUpgrades() });
     expect(base.damage).toBe(DEFAULT_COMBAT.damage);
     expect(base.fireRatePerSecond).toBe(DEFAULT_COMBAT.fireRatePerSecond);
-    expect(base.playerMaxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts);
+    expect(base.playerBaseMaxHp).toBe(DEFAULT_COMBAT.playerBaseMaxHp);
+    expect(base.playerMaxHearts).toBe(DEFAULT_COMBAT.playerBaseMaxHp);
   });
 });
 
 describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
   it('Ninja Layer 1 matches DEFAULT_COMBAT identically and Layer 2 Shadow Agility grants +10% speed & -15% Dash cooldown', () => {
     const ninjaBase = applyCharacterBaseStats(DEFAULT_COMBAT, 'ninja');
-    expect(ninjaBase.playerMaxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts);
+    expect(ninjaBase.playerBaseMaxHp).toBe(DEFAULT_COMBAT.playerBaseMaxHp);
     expect(ninjaBase.damage).toBe(DEFAULT_COMBAT.damage);
     expect(ninjaBase.fireRatePerSecond).toBe(DEFAULT_COMBAT.fireRatePerSecond);
     expect(ninjaBase.moveSpeedTilesPerSecond).toBe(DEFAULT_COMBAT.moveSpeedTilesPerSecond);
@@ -103,7 +111,7 @@ describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
 
     const save = createDefaultSave();
     const derived = derivedStatsForRun(save, new Map(), 'ninja');
-    expect(derived.maxHearts).toBe(6);
+    expect(derived.maxHp).toBe(100);
     expect(derived.damage).toBe(1);
     expect(derived.fireRatePerSecond).toBe(2);
     expect(derived.moveSpeedTilesPerSecond).toBeCloseTo(DEFAULT_COMBAT.moveSpeedTilesPerSecond * 1.1, 6);
@@ -117,7 +125,8 @@ describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
     const derived = derivedStatsForRun(save, new Map(), 'archer');
     const tuning = CHARACTERS_TUNING.archer;
 
-    expect(derived.maxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts + tuning.baseStats.maxHeartsDelta);
+    expect(derived.maxHp).toBe(DEFAULT_COMBAT.playerBaseMaxHp + tuning.baseStats.maxHpDelta);
+    expect(derived.maxHp).toBe(85);
     expect(derived.damage).toBeCloseTo(DEFAULT_COMBAT.damage * tuning.baseStats.damageMult, 4);
     expect(derived.fireRatePerSecond).toBeCloseTo(
       DEFAULT_COMBAT.fireRatePerSecond * tuning.baseStats.fireRateMult,
@@ -149,7 +158,8 @@ describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
     const derived = derivedStatsForRun(save, new Map(), 'mage');
     const tuning = CHARACTERS_TUNING.mage;
 
-    expect(derived.maxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts + tuning.baseStats.maxHeartsDelta);
+    expect(derived.maxHp).toBe(DEFAULT_COMBAT.playerBaseMaxHp + tuning.baseStats.maxHpDelta);
+    expect(derived.maxHp).toBe(85);
     expect(derived.damage).toBeCloseTo(DEFAULT_COMBAT.damage * tuning.baseStats.damageMult, 4);
     expect(derived.activeCooldownMult).toBeCloseTo(0.8, 6);
     expect(derived.activePowerMult).toBeCloseTo(1.25, 6);
@@ -168,12 +178,12 @@ describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
     expect(stacked.activePowerMult).toBeCloseTo(1.25 + 0.35, 6);
   });
 
-  it('Cultivator has sturdy 7 hearts and Sword Heart (+15% damage, +10% execute bonus <30% HP)', () => {
+  it('Cultivator has sturdy 120 HP and Sword Heart (+15% damage, +10% execute bonus <30% HP)', () => {
     const save = createDefaultSave();
     const derived = derivedStatsForRun(save, new Map(), 'cultivator');
     const tuning = CHARACTERS_TUNING.cultivator;
 
-    expect(derived.maxHearts).toBe(7);
+    expect(derived.maxHp).toBe(120);
     expect(derived.damage).toBeCloseTo(
       DEFAULT_COMBAT.damage * tuning.baseStats.damageMult * (1 + tuning.passive.damageBonus),
       4,
@@ -197,8 +207,9 @@ describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
     const snapshot = structuredClone(DEFAULT_COMBAT);
     const runBase = statsForRun(save);
 
-    // Cultivator: 6 + 1 (class) + 2 (meta) = 9 hearts.
-    expect(runBase.playerMaxHearts).toBe(9);
+    // Cultivator: 100 + 20 (class) + 40 (2 meta levels × 20 HP) = 160 HP.
+    expect(runBase.playerBaseMaxHp).toBe(160);
+    expect(runBase.playerMaxHearts).toBe(160);
     // Damage: 1 * 1.1 (class) * 1.2 (meta) * 1.15 (Sword Heart passive) = 1.518.
     expect(runBase.damage).toBeCloseTo(1.1 * 1.2 * 1.15, 4);
     expect(DEFAULT_COMBAT).toEqual(snapshot);

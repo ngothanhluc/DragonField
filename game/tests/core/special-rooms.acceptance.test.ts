@@ -5,22 +5,30 @@
 import { describe, expect, it } from 'vitest';
 import { TUNING } from '../../assets/scripts/core/enemies/tuning';
 import { doorOffers, type DoorReward } from '../../assets/scripts/core/run/doors';
-import { buyFromShop, chestReward, healHearts, shopOffers } from '../../assets/scripts/core/run/special-rooms';
+import {
+  buyFromShop,
+  chestReward,
+  healByFraction,
+  healHearts,
+  shopOffers,
+  specialHealAmount,
+} from '../../assets/scripts/core/run/special-rooms';
 import { createDefaultSave } from '../../assets/scripts/core/save/save-data';
 import { MemorySaveStorage, SaveRepository } from '../../assets/scripts/core/save/storage';
 
 const tuning = TUNING as unknown as {
   doors: { specialRoomsEnabled: boolean };
-  specialRooms?: { healHearts: number };
+  specialRooms?: { healFraction: number };
 };
 
 describe('heal', () => {
-  it('restores the tuned hearts, capped at max', () => {
-    const amount = tuning.specialRooms?.healHearts ?? 0;
-    expect(amount).toBeGreaterThan(0);
-    expect(healHearts(2, 6, amount)).toBe(Math.min(6, 2 + amount));
-    expect(healHearts(5, 6, 99)).toBe(6);
-    expect(healHearts(6, 6, amount)).toBe(6);
+  it('restores the tuned fraction of max HP (50%), capped at max', () => {
+    const fraction = tuning.specialRooms?.healFraction ?? 0;
+    expect(fraction).toBeCloseTo(0.5, 6);
+    expect(specialHealAmount(100, fraction)).toBe(50);
+    expect(healByFraction(20, 100, fraction)).toBe(70);
+    expect(healByFraction(80, 100, fraction)).toBe(100);
+    expect(healHearts(20, 100, 50)).toBe(70);
   });
 });
 
@@ -71,12 +79,14 @@ describe('chest', () => {
   });
 });
 
-describe('doors offer the special rooms now', () => {
-  it('the flag is on and heal/shop/chest doors come up', () => {
+describe('doors offer the mid-chapter special room now', () => {
+  it('the flag is on and mid-chapter Room 4 opens seeded shop/chest portals', () => {
     expect(tuning.doors.specialRoomsEnabled).toBe(true);
     const enabled: DoorReward[] = ['xp', 'gold', 'heal', 'shop', 'chest'];
     const seen = new Set<DoorReward>();
-    for (let seed = 1; seed <= 100; seed += 1) for (let room = 1; room <= 7; room += 1) for (const r of doorOffers(seed, room, 8, enabled)) seen.add(r);
-    for (const special of ['heal', 'shop', 'chest'] as const) expect(seen.has(special)).toBe(true);
+    for (let seed = 1; seed <= 100; seed += 1) {
+      for (const r of doorOffers(seed, 4, 8, enabled)) seen.add(r);
+    }
+    for (const special of ['shop', 'chest'] as const) expect(seen.has(special)).toBe(true);
   });
 });

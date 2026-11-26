@@ -82,11 +82,11 @@ export interface UpgradeTrackMeta {
 export const UPGRADE_TRACK_META: Readonly<Record<UpgradeTrack, UpgradeTrackMeta>> = Object.freeze({
   hearts: {
     id: 'hearts',
-    name: 'Hearts',
+    name: 'Health',
     category: 'stat',
     maxLevel: MAX_HEARTS_TRACK,
     costs: HEARTS_COSTS,
-    effectSummary: '+1 max heart / lv',
+    effectSummary: '+20 max HP / lv',
   },
   damage: {
     id: 'damage',
@@ -130,6 +130,8 @@ export const UPGRADE_TRACK_META: Readonly<Record<UpgradeTrack, UpgradeTrackMeta>
   },
 });
 
+/** +20 max HP per `hearts` meta level (M17 RPG 100 HP scale; max 5 levels → +100 HP). */
+export const HP_PER_HEART_LEVEL = 20;
 /** +5% damage per level. */
 export const DAMAGE_PER_LEVEL = 0.05;
 /** +3% fire rate per level. */
@@ -151,7 +153,9 @@ export interface UpgradeState {
  * `DerivedStats` is not redeclared here — no second source of truth.
  */
 export interface UpgradeBonuses {
-  /** Hearts added to max health (+1/level). */
+  /** Max HP added from permanent `hearts` track (+20 HP/level, M17). */
+  readonly maxHpBonus: number;
+  /** Legacy alias equal to `maxHpBonus` (+20 HP/level). */
   readonly maxHeartsBonus: number;
   /** Multiplier on base damage, 1 = unchanged. */
   readonly damageMultiplier: number;
@@ -302,9 +306,11 @@ export function applyUpgrades(state: UpgradeState): UpgradeBonuses {
   const hearts = safeLevel(state, 'hearts');
   const damage = safeLevel(state, 'damage');
   const fireRate = safeLevel(state, 'fireRate');
+  const hpBonus = hearts * HP_PER_HEART_LEVEL;
 
   return {
-    maxHeartsBonus: hearts,
+    maxHpBonus: hpBonus,
+    maxHeartsBonus: hpBonus,
     damageMultiplier: roundTo(1 + damage * DAMAGE_PER_LEVEL, 4),
     fireRateMultiplier: roundTo(1 + fireRate * FIRE_RATE_PER_LEVEL, 4),
   };

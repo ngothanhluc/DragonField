@@ -1,8 +1,9 @@
 /**
- * In-game HUD (M11 T4 + M12 T2 + M13 T1): high-contrast pixel backing plates + crisp pack icons,
- * anchored to the visible room band via `WorldCamera.hudScale`, with an event-driven bottom-centre
- * XP bar + `LV X` badge (`m12XpBar`), a 20-slot (10×2) bottom-right skill grid, and event-driven
- * bottom-left Dash (`SPACE`) + Signature Active (`E`) cooldown widgets (`m13DashActive`).
+ * In-game HUD (M11 T4 + M12 T2 + M13 T1 + M17): unified top-left RPG plate (reserved 28×28
+ * portrait frame + 100-scale pixel HP bar with delayed white damage-drain trail + XP bar &
+ * `Cấp X`/`LV X` badge directly underneath + Gold counter), top-right Room/Enemies plate,
+ * bottom-right 20-slot (10×2) skill grid, and bottom-left Dash (`SPACE`) + Signature Active (`E`)
+ * cooldown widgets.
  *
  * Real UI (`Canvas` + `UI_2D` camera), laid out in 512×288 design pixels via pure geometry in
  * `core/view/hud-layout.ts`.
@@ -40,7 +41,9 @@ import {
   HUD_ENEMY_ICON_SIZE_PX,
   HUD_GOLD_ICON_SIZE_PX,
   HUD_GOLD_ICON_SOURCE_PX,
-  HUD_HEART_SIZE_PX,
+  HUD_HP_FONT_SIZE,
+  HUD_HP_LINE_HEIGHT,
+  HUD_HP_TRAIL_DURATION_MS,
   HUD_LABEL_FONT_SIZE,
   HUD_LABEL_LINE_HEIGHT,
   HUD_PLATE_SLICE_INSETS,
@@ -48,19 +51,28 @@ import {
   HUD_SKILL_SLOTS,
   HUD_XP_LEVEL_FONT_SIZE,
   HUD_XP_LEVEL_LINE_HEIGHT,
+  HUD_XP_LEVEL_UP_FLASH_MS,
   HUD_XP_PROGRESS_FONT_SIZE,
   HUD_XP_PROGRESS_LINE_HEIGHT,
+  advanceHudHpTrail,
   computeHudActionReadyRatio,
+  computeHudHpFillRatio,
   computeHudLayout,
   computeHudXpFillRatio,
+  createHudHpTrail,
   formatHudActionStatusText,
   formatHudEnemiesText,
   formatHudGoldText,
+  formatHudHpText,
   formatHudLevelText,
   formatHudXpProgressText,
+  hudHpColorTier,
   isHudActionReady,
+  triggerHudHpTrail,
   type HudActionSlotLayout,
   type HudArrowLimits,
+  type HudHpColorTier,
+  type HudHpTrailState,
   type HudLayout,
   type HudRect,
 } from '../core/view/hud-layout';
@@ -114,9 +126,19 @@ const ENEMY_ICON_RECT: TileRect = {
   height: HUD_ENEMY_ICON_SIZE_PX,
 };
 
-/** State 0 = empty heart (grey); state 4 = full heart (red). */
-const HEART_EMPTY_INDEX = 0;
-const HEART_FULL_INDEX = 4;
+/** M17 unified top-left portrait placeholder + 100-HP bar colours (strictly ONE Graphics per colour). */
+const PORTRAIT_BG_COLOR = new CocosColor(18, 16, 24, 244);
+const PORTRAIT_BORDER_COLOR = new CocosColor(216, 174, 108, 235);
+const PORTRAIT_INNER_COLOR = new CocosColor(44, 38, 56, 210);
+const HP_TRACK_BG_COLOR = new CocosColor(24, 14, 18, 245);
+const HP_TRACK_BORDER_COLOR = new CocosColor(138, 76, 82, 230);
+const HP_TRAIL_WHITE_COLOR = new CocosColor(255, 248, 242, 235);
+const HP_FILL_HIGH_COLOR = new CocosColor(72, 214, 122, 255);
+const HP_FILL_HIGH_SHINE_COLOR = new CocosColor(172, 248, 194, 225);
+const HP_FILL_MID_COLOR = new CocosColor(242, 182, 62, 255);
+const HP_FILL_MID_SHINE_COLOR = new CocosColor(255, 228, 152, 225);
+const HP_FILL_LOW_COLOR = new CocosColor(226, 60, 68, 255);
+const HP_FILL_LOW_SHINE_COLOR = new CocosColor(255, 162, 166, 225);
 
 const TEXT_COLOR = new CocosColor(255, 255, 255, 255);
 const GOLD_TEXT_COLOR = new CocosColor(255, 234, 142, 255);
@@ -267,28 +289,24 @@ export function formatRunRoomLabel(
   return tags.length === 0 ? roomLabel : `${roomLabel} ${tags.join(' ')}`;
 }
 
-function heartRect(index: number): TileRect {
-  return {
-    x: index * HUD_HEART_SIZE_PX,
-    y: 0,
-    width: HUD_HEART_SIZE_PX,
-    height: HUD_HEART_SIZE_PX,
-  };
-}
-
 @ccclass('Hud')
 export class Hud extends Component {
-  private readonly heartNodes: Node[] = [];
-  private maxHeartNodes = 0;
-  private lastHearts = 0;
-  private frames: {
-    readonly full: SpriteFrame;
-    readonly empty: SpriteFrame;
-    readonly plate: SpriteFrame;
-  } | null = null;
+  private maxHpValue = 100;
+  private lastHpValue = 100;
+  private ready = false;
 
   private topLeftRoot: Node | null = null;
   private topLeftPlate: HudPlateHandle | null = null;
+  private hpTrailRoot: Node | null = null;
+  private hpFillRoot: Node | null = null;
+  private hpFillHighNode: Node | null = null;
+  private hpFillMidNode: Node | null = null;
+  private hpFillLowNode: Node | null = null;
+  private hpLabel: Label | null = null;
+  private hpTrailState: HudHpTrailState = createHudHpTrail(1);
+  private shownHpRatio = -1;
+  private shownHpTier: HudHpColorTier | null = null;
+  private shownHpText = '';
   private goldIconNode: Node | null = null;
   private goldLabel: Label | null = null;
   private goldIconPos: Vec2 = { x: 0, y: 0 };
@@ -306,11 +324,11 @@ export class Hud extends Component {
   private shownEnemiesLeft: number | null | undefined = undefined;
   private cachedArrowLimits: HudArrowLimits = {
     halfWidth: HUD_DESIGN_WIDTH / 2 - 14,
-    top: HUD_DESIGN_HEIGHT / 2 - 59,
-    bottom: HUD_DESIGN_HEIGHT / 2 - 32,
+    top: HUD_DESIGN_HEIGHT / 2 - 69,
+    bottom: HUD_DESIGN_HEIGHT / 2 - 20,
   };
 
-  /** M12 bottom-centre XP bar + `LV X` badge: event-driven, zero per-frame geometry rebuilds. */
+  /** Unified top-left XP bar + `LV X` badge directly below HP bar: event-driven, zero polling. */
   private xpRoot: Node | null = null;
   private xpFillRoot: Node | null = null;
   private xpFillCyanNode: Node | null = null;
@@ -323,6 +341,7 @@ export class Hud extends Component {
   private shownXpLevelText = '';
   private shownXpProgressText = '';
   private shownXpRatio = -1;
+  private xpLevelUpFlashMs = 0;
 
   /** M13 bottom-left Dash (`SPACE`) + Signature Active (`E`) cooldown widgets. */
   private actionsRoot: Node | null = null;
@@ -360,42 +379,34 @@ export class Hud extends Component {
    * Build the HUD. This `node` must be a child of a `Canvas` (created by bootstrap), or
    * nothing will be drawn.
    */
-  async init(maxHearts: number, roomText: string): Promise<void> {
-    const [
-      heartTexture,
-      barTexture,
-      plateTexture,
-      goldCoinTexture,
-      roomIconTexture,
-      enemyIconTexture,
-    ] = await Promise.all([
-      loadPixelTexture(HEART_SHEET),
-      loadPixelTexture(BAR_SHEET),
-      loadPixelTexture(HUD_PLATE_SHEET),
-      loadPixelTexture(GOLD_COIN_SHEET),
-      loadPixelTexture(ROOM_ICON_SHEET),
-      loadPixelTexture(ENEMY_ICON_SHEET),
-    ]);
+  async init(maxHp: number, roomText: string): Promise<void> {
+    const [barTexture, plateTexture, goldCoinTexture, roomIconTexture, enemyIconTexture] =
+      await Promise.all([
+        loadPixelTexture(BAR_SHEET),
+        loadPixelTexture(HUD_PLATE_SHEET),
+        loadPixelTexture(GOLD_COIN_SHEET),
+        loadPixelTexture(ROOM_ICON_SHEET),
+        loadPixelTexture(ENEMY_ICON_SHEET),
+      ]);
 
     const plateFrame = sliceSlicedFrame(plateTexture, PLATE_RECT, HUD_PLATE_SLICE_INSETS);
-    this.frames = {
-      full: sliceFrame(heartTexture, heartRect(HEART_FULL_INDEX)),
-      empty: sliceFrame(heartTexture, heartRect(HEART_EMPTY_INDEX)),
-      plate: plateFrame,
-    };
-
     const barFrame = sliceFrame(barTexture, BAR_RECT);
     const goldCoinFrame = sliceFrame(goldCoinTexture, GOLD_COIN_RECT);
     const roomIconFrame = sliceFrame(roomIconTexture, ROOM_ICON_RECT);
     const enemyIconFrame = sliceFrame(enemyIconTexture, ENEMY_ICON_RECT);
 
-    const layout = this.computeLayout(maxHearts, 0, roomText, null, 0);
+    const safeMaxHp = Math.max(1, Math.round(maxHp));
+    this.maxHpValue = safeMaxHp;
+    this.lastHpValue = safeMaxHp;
+    this.hpTrailState = createHudHpTrail(1);
+    this.ready = true;
+
+    const layout = this.computeLayout(safeMaxHp, safeMaxHp, 0, roomText, null, 0);
     this.cachedArrowLimits = layout.arrowLimits;
 
-    this.createTopLeftGroup(goldCoinFrame, plateFrame, maxHearts, layout);
+    this.createTopLeftGroup(goldCoinFrame, plateFrame, layout);
     this.createTopRightGroup(roomIconFrame, enemyIconFrame, plateFrame, layout);
     this.createDashActiveGroup(plateFrame, layout);
-    this.createXpBar(plateFrame, layout);
     this.createSkillRow(plateFrame, layout);
     this.createBossBar(barFrame, plateFrame, layout);
     this.createArrows();
@@ -403,7 +414,7 @@ export class Hud extends Component {
     this.createDoorHint(plateFrame, layout);
 
     this.setRoomLabel(roomText);
-    this.setHearts(maxHearts);
+    this.setHp(safeMaxHp, safeMaxHp);
     this.setGold(0);
     this.setEnemiesLeft(null);
     this.setXp(1, 0, 0);
@@ -411,38 +422,96 @@ export class Hud extends Component {
     this.setSkills([]);
   }
 
-  /** Update the heart row; spriteFrame only changes when the heart count really changes. */
-  setHearts(hearts: number): void {
-    const frames = this.frames;
-    if (frames === null || hearts === this.shownHearts) return;
-    this.shownHearts = hearts;
-    this.lastHearts = hearts;
+  /**
+   * Lightweight transition stepper: only runs while the delayed white HP damage-drain trail
+   * (`~350 ms` ease-out) or the XP level-up gold flash is active; exits on line 1 at rest.
+   */
+  protected update(dt: number): void {
+    if (!this.hpTrailState.active && this.xpLevelUpFlashMs <= 0) return;
+    const dtMs = dt * 1000;
 
-    for (let index = 0; index < this.heartNodes.length; index += 1) {
-      const node = this.heartNodes[index];
-      if (node === undefined) continue;
-      const sprite: Sprite | null = node.getComponent(CocosSprite);
-      if (sprite === null) continue;
-      const visible = index < this.maxHeartNodes;
-      if (node.active !== visible) node.active = visible;
-      if (visible) {
-        sprite.spriteFrame = index < hearts ? frames.full : frames.empty;
+    if (this.hpTrailState.active) {
+      this.hpTrailState = advanceHudHpTrail(this.hpTrailState, dtMs, HUD_HP_TRAIL_DURATION_MS);
+      this.syncHpTrailVisual();
+    }
+
+    if (this.xpLevelUpFlashMs > 0) {
+      this.xpLevelUpFlashMs = Math.max(0, this.xpLevelUpFlashMs - dtMs);
+      if (this.xpLevelUpFlashMs <= 0) {
+        this.syncXpFillColor();
       }
     }
   }
 
-  /** Vitality can raise the cap mid-run: add heart slots and resize the top-left plate cleanly. */
-  setMaxHearts(maxHearts: number): void {
-    const frames = this.frames;
-    const clamped = Math.max(0, Math.floor(maxHearts));
-    if (frames === null || clamped === this.maxHeartNodes) return;
+  /** Update current & max HP on the unified top-left pixel HP bar. */
+  setHp(hp: number, maxHp = this.maxHpValue): void {
+    if (!this.ready) return;
+    const safeMax = Math.max(1, Math.round(maxHp));
+    const safeHp = Math.min(safeMax, Math.max(0, Math.round(hp)));
+    const maxChanged = safeMax !== this.maxHpValue;
+    const hpChanged = safeHp !== this.shownHearts;
+    if (!maxChanged && !hpChanged) return;
 
-    this.maxHeartNodes = clamped;
-    this.ensureHeartNodes(clamped);
-    this.applyTopLeftLayout();
-    // Force a redraw: the slot count changed even if current hearts stayed the same.
+    this.maxHpValue = safeMax;
+    this.lastHpValue = safeHp;
+    this.shownHearts = safeHp;
+
+    const ratio = computeHudHpFillRatio(safeHp, safeMax);
+    this.hpTrailState = triggerHudHpTrail(this.hpTrailState, ratio);
+    this.syncHpTrailVisual();
+
+    if (ratio !== this.shownHpRatio) {
+      this.shownHpRatio = ratio;
+      const fill = this.hpFillRoot;
+      if (fill !== null) {
+        if (ratio <= 0) {
+          if (fill.active) fill.active = false;
+        } else {
+          if (!fill.active) fill.active = true;
+          fill.setScale(ratio, 1, 1);
+        }
+      }
+    }
+
+    const tier = hudHpColorTier(ratio);
+    if (tier !== this.shownHpTier) {
+      this.shownHpTier = tier;
+      if (this.hpFillHighNode !== null) this.hpFillHighNode.active = tier === 'high';
+      if (this.hpFillMidNode !== null) this.hpFillMidNode.active = tier === 'mid';
+      if (this.hpFillLowNode !== null) this.hpFillLowNode.active = tier === 'low';
+    }
+
+    const hpText = formatHudHpText(safeHp, safeMax);
+    if (hpText !== this.shownHpText) {
+      this.shownHpText = hpText;
+      if (this.hpLabel !== null) this.hpLabel.string = hpText;
+    }
+  }
+
+  /** Legacy-named HP setter (accepts 100-scale integer HP from `hud-sync`). */
+  setHearts(hp: number): void {
+    this.setHp(hp, this.maxHpValue);
+  }
+
+  /** Legacy-named max HP setter (Vitality raises max HP mid-run). */
+  setMaxHearts(maxHp: number): void {
+    const safeMax = Math.max(1, Math.round(maxHp));
+    if (!this.ready || safeMax === this.maxHpValue) return;
+    this.maxHpValue = safeMax;
+    // Force a clean bar & label redraw with the updated denominator.
     this.shownHearts = -1;
-    this.setHearts(this.lastHearts);
+    this.setHp(this.lastHpValue, safeMax);
+  }
+
+  private syncHpTrailVisual(): void {
+    const trail = this.hpTrailRoot;
+    if (trail === null) return;
+    const trailRatio = this.hpTrailState.current;
+    const visible = trailRatio > this.shownHpRatio + 1e-4 && trailRatio > 0;
+    if (trail.active !== visible) trail.active = visible;
+    if (visible) {
+      trail.setScale(trailRatio, 1, 1);
+    }
   }
 
   /** The `3/9` label from `RunState.roomLabel`, shown with a crisp room pointer icon. */
@@ -491,10 +560,10 @@ export class Hud extends Component {
   }
 
   /**
-   * Event-driven XP bar + `LV X` badge setter (M12 T2).
+   * Event-driven XP bar + `Cấp X` / `LV X` badge setter (M12 T2 + M17 top-left relocation).
    *
-   * Skips label/scale updates whenever `(level, currentXp, requiredXp)` is unchanged; when XP
-   * advances within a level, only the fill bar scale and compact progress string update.
+   * Skips label/scale updates whenever `(level, currentXp, requiredXp)` is unchanged; triggers a
+   * brief gold highlight flash on level-up.
    */
   setXp(level: number, currentXp: number, requiredXp: number): void {
     if (this.xpRoot === null) return;
@@ -506,9 +575,14 @@ export class Hud extends Component {
       return;
     }
 
+    const leveledUp = this.shownXpLevel >= 1 && level > this.shownXpLevel;
     this.shownXpLevel = level;
     this.shownXpCurrent = currentXp;
     this.shownXpRequired = requiredXp;
+
+    if (leveledUp) {
+      this.xpLevelUpFlashMs = HUD_XP_LEVEL_UP_FLASH_MS;
+    }
 
     const levelText = formatHudLevelText(level);
     if (levelText !== this.shownXpLevelText) {
@@ -519,22 +593,17 @@ export class Hud extends Component {
     }
 
     const ratio = computeHudXpFillRatio(currentXp, requiredXp);
-    if (ratio !== this.shownXpRatio) {
+    if (ratio !== this.shownXpRatio || leveledUp) {
       this.shownXpRatio = ratio;
       const fill = this.xpFillRoot;
       if (fill !== null) {
-        if (ratio <= 0) {
+        const displayRatio = this.xpLevelUpFlashMs > 0 ? Math.max(ratio, 1) : ratio;
+        if (displayRatio <= 0) {
           if (fill.active) fill.active = false;
         } else {
           if (!fill.active) fill.active = true;
-          fill.setScale(ratio, 1, 1);
-          const isFull = ratio >= 1;
-          if (this.xpFillCyanNode !== null && this.xpFillCyanNode.active !== !isFull) {
-            this.xpFillCyanNode.active = !isFull;
-          }
-          if (this.xpFillGoldNode !== null && this.xpFillGoldNode.active !== isFull) {
-            this.xpFillGoldNode.active = isFull;
-          }
+          fill.setScale(displayRatio, 1, 1);
+          this.syncXpFillColor();
         }
       }
     }
@@ -548,6 +617,24 @@ export class Hud extends Component {
         if (this.xpProgressLabel.node.active !== visible) {
           this.xpProgressLabel.node.active = visible;
         }
+      }
+    }
+  }
+
+  private syncXpFillColor(): void {
+    const isGold = this.shownXpRatio >= 1 || this.xpLevelUpFlashMs > 0;
+    if (this.xpFillCyanNode !== null && this.xpFillCyanNode.active !== !isGold) {
+      this.xpFillCyanNode.active = !isGold;
+    }
+    if (this.xpFillGoldNode !== null && this.xpFillGoldNode.active !== isGold) {
+      this.xpFillGoldNode.active = isGold;
+    }
+    if (this.xpFillRoot !== null && this.xpLevelUpFlashMs <= 0) {
+      if (this.shownXpRatio <= 0) {
+        if (this.xpFillRoot.active) this.xpFillRoot.active = false;
+      } else {
+        if (!this.xpFillRoot.active) this.xpFillRoot.active = true;
+        this.xpFillRoot.setScale(this.shownXpRatio, 1, 1);
       }
     }
   }
@@ -625,7 +712,8 @@ export class Hud extends Component {
 
     if (countChanged) {
       const layout = this.computeLayout(
-        this.maxHeartNodes,
+        this.lastHpValue,
+        this.maxHpValue,
         Math.max(0, this.shownGold),
         this.shownRoomRaw || '1/9',
         this.shownEnemiesLeft ?? null,
@@ -889,7 +977,8 @@ export class Hud extends Component {
   }
 
   private computeLayout(
-    maxHearts: number,
+    hp: number,
+    maxHp: number,
     gold: number,
     roomLabel: string,
     enemiesLeft: number | null,
@@ -899,7 +988,8 @@ export class Hud extends Component {
     return computeHudLayout({
       designWidth: visible.width > 0 ? visible.width : HUD_DESIGN_WIDTH,
       designHeight: visible.height > 0 ? visible.height : HUD_DESIGN_HEIGHT,
-      maxHearts,
+      hp,
+      maxHp,
       gold,
       roomLabel,
       enemiesLeft,
@@ -910,7 +1000,6 @@ export class Hud extends Component {
   private createTopLeftGroup(
     goldCoinFrame: SpriteFrame,
     plateFrame: SpriteFrame,
-    maxHearts: number,
     layout: HudLayout,
   ): void {
     const group = new CocosNode('hud-top-left');
@@ -920,8 +1009,91 @@ export class Hud extends Component {
 
     this.topLeftPlate = createHudPlate(group, 'top-left-plate', plateFrame, layout.topLeft.plate);
 
-    this.maxHeartNodes = Math.max(0, Math.floor(maxHearts));
-    this.ensureHeartNodes(this.maxHeartNodes);
+    // Reserved 28×28 character portrait frame slot (ready for M19 character avatars).
+    const { portraitSlot, hpBar, xpBar } = layout.topLeft;
+    createFilledRectNode(group, 'portrait-slot-bg', portraitSlot, PORTRAIT_BG_COLOR);
+    createStrokedRectNode(group, 'portrait-slot-border', portraitSlot, PORTRAIT_BORDER_COLOR);
+    createStrokedRectNode(
+      group,
+      'portrait-slot-inner',
+      {
+        left: portraitSlot.left + 2,
+        right: portraitSlot.right - 2,
+        bottom: portraitSlot.bottom + 2,
+        top: portraitSlot.top - 2,
+        width: portraitSlot.width - 4,
+        height: portraitSlot.height - 4,
+        centerX: portraitSlot.centerX,
+        centerY: portraitSlot.centerY,
+      },
+      PORTRAIT_INNER_COLOR,
+    );
+
+    // 100-HP pixel bar: trough + border + white delayed damage-drain trail + colour-tiered fill + numeric label.
+    createFilledRectNode(group, 'hp-track-bg', hpBar.barTrack, HP_TRACK_BG_COLOR);
+    createStrokedRectNode(group, 'hp-track-border', hpBar.barTrack, HP_TRACK_BORDER_COLOR);
+
+    const hpTrailRoot = new CocosNode('hp-trail-fill');
+    hpTrailRoot.layer = Layers.Enum.UI_2D;
+    hpTrailRoot.parent = group;
+    hpTrailRoot.setPosition(hpBar.barFillMax.left, hpBar.barFillMax.centerY, 0);
+    createLeftAnchoredFillNode(
+      hpTrailRoot,
+      'hp-trail-white',
+      hpBar.barFillMax.width,
+      hpBar.barFillMax.height,
+      0,
+      HP_TRAIL_WHITE_COLOR,
+    );
+    hpTrailRoot.active = false;
+    this.hpTrailRoot = hpTrailRoot;
+
+    const hpFillRoot = new CocosNode('hp-fill');
+    hpFillRoot.layer = Layers.Enum.UI_2D;
+    hpFillRoot.parent = group;
+    hpFillRoot.setPosition(hpBar.barFillMax.left, hpBar.barFillMax.centerY, 0);
+    this.hpFillRoot = hpFillRoot;
+
+    this.hpFillHighNode = createShinedFillGroup(
+      hpFillRoot,
+      'hp-fill-high',
+      hpBar.barFillMax.width,
+      hpBar.barFillMax.height,
+      HP_FILL_HIGH_COLOR,
+      HP_FILL_HIGH_SHINE_COLOR,
+    );
+    this.hpFillMidNode = createShinedFillGroup(
+      hpFillRoot,
+      'hp-fill-mid',
+      hpBar.barFillMax.width,
+      hpBar.barFillMax.height,
+      HP_FILL_MID_COLOR,
+      HP_FILL_MID_SHINE_COLOR,
+    );
+    this.hpFillMidNode.active = false;
+    this.hpFillLowNode = createShinedFillGroup(
+      hpFillRoot,
+      'hp-fill-low',
+      hpBar.barFillMax.width,
+      hpBar.barFillMax.height,
+      HP_FILL_LOW_COLOR,
+      HP_FILL_LOW_SHINE_COLOR,
+    );
+    this.hpFillLowNode.active = false;
+
+    const hpLabel = createStyledLabel(
+      group,
+      'hp-label',
+      hpBar.hpText,
+      HUD_HP_FONT_SIZE,
+      HUD_HP_LINE_HEIGHT,
+      TEXT_COLOR,
+    );
+    hpLabel.node.setPosition(hpBar.hpLabel.x, hpBar.hpLabel.y, 0);
+    this.hpLabel = hpLabel;
+
+    // Unified XP bar + `Cấp X`/`LV X` badge directly underneath the HP bar.
+    this.createXpBar(group, xpBar);
 
     const goldIcon = makePixelSprite(
       group,
@@ -949,7 +1121,8 @@ export class Hud extends Component {
 
   private applyTopLeftLayout(): void {
     const layout = this.computeLayout(
-      this.maxHeartNodes,
+      this.lastHpValue,
+      this.maxHpValue,
       Math.max(0, this.shownGold),
       this.shownRoomRaw || '1/9',
       this.shownEnemiesLeft ?? null,
@@ -961,13 +1134,6 @@ export class Hud extends Component {
 
   private positionTopLeftChildren(layout: HudLayout): void {
     this.topLeftPlate?.setRect(layout.topLeft.plate);
-    for (let index = 0; index < layout.topLeft.hearts.length; index += 1) {
-      const node = this.heartNodes[index];
-      const pos = layout.topLeft.hearts[index];
-      if (node !== undefined && pos !== undefined) {
-        node.setPosition(pos.x, pos.y, 0);
-      }
-    }
     this.goldIconPos = layout.topLeft.goldIcon;
     this.goldIconNode?.setPosition(layout.topLeft.goldIcon.x, layout.topLeft.goldIcon.y, 0);
     this.goldLabel?.node.setPosition(layout.topLeft.goldLabel.x, layout.topLeft.goldLabel.y, 0);
@@ -1037,7 +1203,8 @@ export class Hud extends Component {
 
   private applyTopRightLayout(): void {
     const layout = this.computeLayout(
-      this.maxHeartNodes,
+      this.lastHpValue,
+      this.maxHpValue,
       Math.max(0, this.shownGold),
       this.shownRoomRaw || '1/9',
       this.shownEnemiesLeft ?? null,
@@ -1203,19 +1370,16 @@ export class Hud extends Component {
   }
 
   /**
-   * M12 bottom-centre XP bar + `LV X` badge inside `m12XpBar`.
-   *
-   * Built with sibling dark 9-slice plate + single-colour `Graphics` nodes (strictly one colour per
-   * `Graphics` node per AGENTS.md) so `setXp` only updates `setScale` and label strings on XP events.
+   * M17 top-left XP bar + `Cấp X` / `LV X` badge mounted directly underneath the HP bar inside
+   * the unified top-left plate (strictly one colour per `Graphics` node per AGENTS.md).
    */
-  private createXpBar(plateFrame: SpriteFrame, layout: HudLayout): void {
+  private createXpBar(parent: Node, xpLayout: HudLayout['xpBar']): void {
     const group = new CocosNode('hud-xp-bar');
     group.layer = Layers.Enum.UI_2D;
-    group.parent = this.node;
+    group.parent = parent;
     this.xpRoot = group;
 
-    const { plate, badge, barTrack, barFillMax, levelLabel, progressLabel } = layout.xpBar;
-    createHudPlate(group, 'xp-plate', plateFrame, plate);
+    const { badge, barTrack, barFillMax, levelLabel, progressLabel } = xpLayout;
 
     // `LV X` badge pill: dedicated fill node + dedicated 1px gold border node.
     createFilledRectNode(group, 'xp-badge-bg', badge, XP_BADGE_BG_COLOR);
@@ -1233,27 +1397,14 @@ export class Hud extends Component {
     fillRoot.active = false;
     this.xpFillRoot = fillRoot;
 
-    const cyanGroup = new CocosNode('xp-fill-cyan');
-    cyanGroup.layer = Layers.Enum.UI_2D;
-    cyanGroup.parent = fillRoot;
-    createLeftAnchoredFillNode(
-      cyanGroup,
-      'xp-fill-cyan-main',
+    this.xpFillCyanNode = createShinedFillGroup(
+      fillRoot,
+      'xp-fill-cyan',
       barFillMax.width,
       barFillMax.height,
-      0,
       XP_FILL_CYAN_COLOR,
-    );
-    const highlightHeight = Math.min(2, barFillMax.height);
-    createLeftAnchoredFillNode(
-      cyanGroup,
-      'xp-fill-cyan-shine',
-      barFillMax.width,
-      highlightHeight,
-      (barFillMax.height - highlightHeight) / 2,
       XP_FILL_HIGHLIGHT_COLOR,
     );
-    this.xpFillCyanNode = cyanGroup;
 
     const goldNode = createLeftAnchoredFillNode(
       fillRoot,
@@ -1269,7 +1420,7 @@ export class Hud extends Component {
     const lvLabel = createStyledLabel(
       group,
       'xp-level',
-      layout.xpBar.levelText,
+      xpLayout.levelText,
       HUD_XP_LEVEL_FONT_SIZE,
       HUD_XP_LEVEL_LINE_HEIGHT,
       GOLD_TEXT_COLOR,
@@ -1408,25 +1559,31 @@ export class Hud extends Component {
     node.setPosition(-HUD_BOSS_BAR_WIDTH_PX / 2, offsetY, 0);
     return node;
   }
+}
 
-  /** Add heart slots as the cap grows; surplus slots are hidden rather than destroyed. */
-  private ensureHeartNodes(maxHearts: number): void {
-    const frames = this.frames;
-    const parent = this.topLeftRoot;
-    if (frames === null || parent === null) return;
-
-    for (let index = 0; index < maxHearts; index += 1) {
-      if (this.heartNodes[index] !== undefined) continue;
-      const node = makePixelSprite(
-        parent,
-        `heart-${index}`,
-        frames.full,
-        HUD_HEART_SIZE_PX,
-        HUD_HEART_SIZE_PX,
-      );
-      this.heartNodes.push(node);
-    }
-  }
+/** Two-node left-anchored bar fill + top specular highlight (strictly 1 colour per Graphics node). */
+function createShinedFillGroup(
+  parent: Node,
+  name: string,
+  width: number,
+  height: number,
+  mainColor: Color,
+  shineColor: Color,
+): Node {
+  const group = new CocosNode(name);
+  group.layer = Layers.Enum.UI_2D;
+  group.parent = parent;
+  createLeftAnchoredFillNode(group, `${name}-main`, width, height, 0, mainColor);
+  const shineHeight = Math.min(2, height);
+  createLeftAnchoredFillNode(
+    group,
+    `${name}-shine`,
+    width,
+    shineHeight,
+    (height - shineHeight) / 2,
+    shineColor,
+  );
+  return group;
 }
 
 /** Build one M13 cooldown row (`Dash` or `Signature Active`) with 1-colour-per-node `Graphics`. */

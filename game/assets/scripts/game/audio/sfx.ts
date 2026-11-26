@@ -85,3 +85,19 @@ export function playBomberBlastSfx(): void {
 export function playBufferPulseSfx(): void {
   playSfx('xp-pickup');
 }
+
+/** M17 North Portal activation burst SFX (deeper warning cue for crimson Boss portals). */
+export function playPortalOpenSfx(isBoss = false): void {
+  if (isBoss) {
+    playSfx('explosion');
+    playSfx('shield');
+    return;
+  }
+  playSfx('shield');
+  playSfx('ui-confirm');
+}
+
+/** M17 Health Potion (*Bình Hồi Máu*) collection heal chime. */
+export function playPotionHealSfx(): void {
+  playSfx('skill-acquired');
+}

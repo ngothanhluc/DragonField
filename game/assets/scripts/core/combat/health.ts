@@ -3,50 +3,63 @@ import type { CombatConfig } from '../config';
 export interface DamageResult {
   /** false when the hit is ignored (i-frame active or already dead). */
   readonly applied: boolean;
+  /** Remaining HP after the hit (M17 100 HP scale). */
+  readonly hp: number;
+  /** Legacy alias for `hp` (preserved for existing callers/tests). */
   readonly hearts: number;
   readonly dead: boolean;
 }
 
+/** Config accepted by `HealthState`: M17 `playerBaseMaxHp` or legacy `playerMaxHearts`. */
+export type HealthStateConfig = Pick<CombatConfig, 'invulnerabilityMs'> &
+  (
+    | { readonly playerBaseMaxHp: number; readonly playerMaxHearts?: number }
+    | { readonly playerBaseMaxHp?: number; readonly playerMaxHearts: number }
+  );
+
+function resolveInitialMaxHp(config: HealthStateConfig): number {
+  const raw = config.playerBaseMaxHp ?? config.playerMaxHearts ?? 100;
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1;
+}
+
 /** Player health + i-frame. Knows nothing about the engine; time is passed in from outside. */
 export class HealthState {
-  private hearts: number;
-  private maxHearts: number;
+  private hp: number;
+  private maxHp: number;
   private invulnerabilityMs: number;
   private invulnerableUntilMs = Number.NEGATIVE_INFINITY;
 
-  constructor(
-    private readonly config: Pick<CombatConfig, 'playerMaxHearts' | 'invulnerabilityMs'>,
-    hearts: number = config.playerMaxHearts,
-  ) {
-    this.maxHearts = config.playerMaxHearts;
+  constructor(config: HealthStateConfig, hp?: number) {
+    this.maxHp = resolveInitialMaxHp(config);
     this.invulnerabilityMs = config.invulnerabilityMs;
-    this.hearts = Math.min(hearts, this.maxHearts);
+    const initial = hp ?? this.maxHp;
+    this.hp = Math.max(0, Math.min(Math.floor(initial), this.maxHp));
   }
 
   get current(): number {
-    return this.hearts;
+    return this.hp;
   }
 
   get max(): number {
-    return this.maxHearts;
+    return this.maxHp;
   }
 
   get isDead(): boolean {
-    return this.hearts <= 0;
+    return this.hp <= 0;
   }
 
   /**
    * Change the health cap and i-frame duration mid-run (Vitality / Long i-frame).
    *
    * Lowering the cap (broken save, debug) also clamps current health; never heals on its own —
-   * Vitality's "heal 1 heart now" is the run's job (`heal`).
+   * Vitality's immediate heal is the run's job (`heal`).
    */
-  configure(maxHearts: number, invulnerabilityMs: number): void {
-    if (!Number.isFinite(maxHearts) || maxHearts < 1) return;
+  configure(maxHp: number, invulnerabilityMs: number): void {
+    if (!Number.isFinite(maxHp) || maxHp < 1) return;
     if (!Number.isFinite(invulnerabilityMs) || invulnerabilityMs < 0) return;
-    this.maxHearts = Math.floor(maxHearts);
+    this.maxHp = Math.floor(maxHp);
     this.invulnerabilityMs = invulnerabilityMs;
-    this.hearts = Math.min(this.hearts, this.maxHearts);
+    this.hp = Math.min(this.hp, this.maxHp);
   }
 
   isInvulnerable(nowMs: number): boolean {
@@ -77,29 +90,36 @@ export class HealthState {
 
   tryDamage(amount: number, nowMs: number): DamageResult {
     if (this.isDead || this.isInvulnerable(nowMs)) {
-      return { applied: false, hearts: this.hearts, dead: this.isDead };
+      return { applied: false, hp: this.hp, hearts: this.hp, dead: this.isDead };
     }
 
-    this.hearts = Math.max(0, this.hearts - amount);
+    const damage = Number.isFinite(amount) ? Math.max(0, Math.round(amount)) : 0;
+    this.hp = Math.max(0, this.hp - damage);
     this.invulnerableUntilMs = nowMs + this.invulnerabilityMs;
 
-    return { applied: true, hearts: this.hearts, dead: this.isDead };
+    return { applied: true, hp: this.hp, hearts: this.hp, dead: this.isDead };
   }
 
   heal(amount: number): number {
-    if (this.isDead) return this.hearts;
+    if (this.isDead) return this.hp;
 
-    this.hearts = Math.min(this.maxHearts, this.hearts + Math.max(0, amount));
-    return this.hearts;
+    const add = Number.isFinite(amount) ? Math.max(0, Math.round(amount)) : 0;
+    this.hp = Math.min(this.maxHp, this.hp + add);
+    return this.hp;
   }
 
   /**
-   * Directly set current hearts clamped into `[0, max]` (used by M15 run resume and debug
+   * Directly set current HP clamped into `[0, max]` (used by M15 run resume and debug
    * death trigger without triggering hit SFX or i-frames).
    */
+  setHp(hp: number): number {
+    if (!Number.isFinite(hp)) return this.hp;
+    this.hp = Math.min(this.maxHp, Math.max(0, Math.floor(hp)));
+    return this.hp;
+  }
+
+  /** Legacy alias for `setHp`. */
   setHearts(hearts: number): number {
-    if (!Number.isFinite(hearts)) return this.hearts;
-    this.hearts = Math.min(this.maxHearts, Math.max(0, Math.floor(hearts)));
-    return this.hearts;
+    return this.setHp(hearts);
   }
 }

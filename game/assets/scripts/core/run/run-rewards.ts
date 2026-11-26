@@ -41,6 +41,11 @@ export class RunRewards {
     return this.kills;
   }
 
+  /** Record one enemy kill without immediately crediting gold (used when gold drops as a physical coin). */
+  recordKill(): void {
+    this.kills += 1;
+  }
+
   /** Kill one enemy; returns the gold just added. Elites are already included in `goldForKill`. */
   awardKill(role: EnemyRole, elite: boolean, goldMultiplier = 1): number {
     this.kills += 1;

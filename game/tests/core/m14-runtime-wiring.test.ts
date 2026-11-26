@@ -289,13 +289,13 @@ describe('M14-T4 SkillRun 3-layer class stats', () => {
 
     run.resetForRun(42, save, 'ninja');
     const ninja = run.stats();
-    expect(ninja.maxHearts).toBe(7); // 6 + 1 meta
+    expect(ninja.maxHp).toBe(120); // 100 + 20 meta
     expect(ninja.moveSpeedTilesPerSecond).toBeGreaterThan(DEFAULT_COMBAT.moveSpeedTilesPerSecond);
     expect(ninja.dashCooldownMult).toBeCloseTo(0.85, 6);
 
     run.resetForRun(42, save, 'archer');
     const archer = run.stats();
-    expect(archer.maxHearts).toBe(6); // 6 - 1 + 1 meta
+    expect(archer.maxHp).toBe(105); // 100 - 15 + 20 meta
     expect(archer.pierce).toBe(1);
     expect(archer.critChance).toBeCloseTo(0.12, 6);
     expect(archer.projectileSpeedTilesPerSecond).toBeGreaterThan(ninja.projectileSpeedTilesPerSecond);
@@ -303,14 +303,14 @@ describe('M14-T4 SkillRun 3-layer class stats', () => {
 
     run.resetForRun(42, save, 'mage');
     const mage = run.stats();
-    expect(mage.maxHearts).toBe(6);
+    expect(mage.maxHp).toBe(105);
     expect(mage.activeCooldownMult).toBeCloseTo(0.8, 6);
     expect(mage.activePowerMult).toBeCloseTo(1.25, 6);
     expect(mage.aoePowerMult).toBeCloseTo(1.25, 6);
 
     run.resetForRun(42, save, 'cultivator');
     const cultivator = run.stats();
-    expect(cultivator.maxHearts).toBe(8); // 6 + 1 + 1 meta
+    expect(cultivator.maxHp).toBe(140); // 100 + 20 + 20 meta
     expect(cultivator.damage).toBeGreaterThan(ninja.damage);
     expect(cultivator.executeThreshold).toBeCloseTo(0.3, 6);
     expect(cultivator.executeBonus).toBeCloseTo(0.1, 6);

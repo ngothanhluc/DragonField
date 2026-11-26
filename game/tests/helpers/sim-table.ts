@@ -142,7 +142,7 @@ export const typicalSkillChoice: SkillPickPolicy = (
 ): number => {
   const sharpenStacks = owned.get('sharpen') ?? 0;
   const rapidFireStacks = owned.get('rapid-fire') ?? 0;
-  const lowHearts = context.hearts <= 4;
+  const lowHearts = context.hearts <= context.maxHearts * 0.6;
   let bestIndex = 0;
   let bestRank = Number.POSITIVE_INFINITY;
   for (let index = 0; index < offers.length; index += 1) {

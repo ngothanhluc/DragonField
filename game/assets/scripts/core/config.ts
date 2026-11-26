@@ -20,8 +20,10 @@ export interface CombatConfig {
   readonly projectiles: number;
   /** Base movement speed, tiles/second. */
   readonly moveSpeedTilesPerSecond: number;
-  /** Player's maximum hearts. */
-  readonly playerMaxHearts: number;
+  /** Out-of-combat room-clear movement speed multiplier (M17: 1.45 = +45%). */
+  readonly roomClearSpeedMultiplier: number;
+  /** Player's base maximum HP (M17 RPG 100 HP scale, ADR-025). */
+  readonly playerBaseMaxHp: number;
   /** Invulnerability time after taking a hit, ms. */
   readonly invulnerabilityMs: number;
   /** Damage when an enemy touches the player. */

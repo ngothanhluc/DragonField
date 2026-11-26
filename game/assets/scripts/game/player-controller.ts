@@ -43,7 +43,11 @@ import type { LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { dashVelocity, isDashing, type DashState } from '../core/input/dash';
 import { moveWithCollision } from '../core/movement/collision';
-import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-intent';
+import {
+  RoomClearSpeedBoost,
+  normalizeMoveInput,
+  velocityFromInput,
+} from '../core/movement/move-intent';
 import { SeededRng } from '../core/rng';
 import { computeDerivedStats, type DerivedStats } from '../core/skills/derived-stats';
 import {
@@ -210,6 +214,9 @@ export class PlayerController extends Component {
   private squashAmount = 0;
   /** Knockback running after a hit; `null` = not being pushed. */
   private knockback: KnockbackState | null = null;
+  /** M17 room-clear +45% movement speed boost (resets immediately on next room entry). */
+  private readonly roomClearBoost = new RoomClearSpeedBoost(DEFAULT_COMBAT.roomClearSpeedMultiplier);
+  private footDustCooldownMs = 0;
 
   /** Active playable character id for this run. */
   get characterId(): CharacterId {
@@ -303,6 +310,29 @@ export class PlayerController extends Component {
 
   get maxHearts(): number {
     return this.health.max;
+  }
+
+  /** 100-scale HP aliases (identical to `hearts` / `maxHearts`). */
+  get hp(): number {
+    return this.health.current;
+  }
+
+  get maxHp(): number {
+    return this.health.max;
+  }
+
+  /** Toggle M17 room-clear +45% speed boost (always reset on room entry). */
+  setRoomClearSpeedBoost(active: boolean): void {
+    if (active) {
+      this.roomClearBoost.onCombatRoomCleared();
+    } else {
+      this.roomClearBoost.onEnterRoom();
+      this.footDustCooldownMs = 0;
+    }
+  }
+
+  get isRoomClearSpeedBoostActive(): boolean {
+    return this.roomClearBoost.active;
   }
 
   get isDead(): boolean {
@@ -495,9 +525,11 @@ export class PlayerController extends Component {
   /** Reset the position when entering a new room; health is untouched (it lasts the whole run). */
   teleport(at: Vec2): void {
     this.tilePosition = { x: at.x, y: at.y };
-    // On a room change, the old room's knockback, post-dash buff, and skill-hidden attachment must reset.
+    // On a room change, the old room's knockback, post-dash buff, speed boost, and skill-hidden attachment must reset.
     this.knockback = null;
     this.postDashFireUntilMs = Number.NEGATIVE_INFINITY;
+    this.roomClearBoost.onEnterRoom();
+    this.footDustCooldownMs = 0;
     this.currentVelocity.x = 0;
     this.currentVelocity.y = 0;
     this.attachmentView?.clearHidden();
@@ -586,7 +618,8 @@ export class PlayerController extends Component {
           FEEL_TUNING.squash.playerTurnAmount,
         );
       }
-      const velocity = velocityFromInput(moveIntent, this.stats.moveSpeedTilesPerSecond);
+      const effectiveSpeed = this.roomClearBoost.apply(this.stats.moveSpeedTilesPerSecond);
+      const velocity = velocityFromInput(moveIntent, effectiveSpeed);
       this.currentVelocity.x = velocity.x;
       this.currentVelocity.y = velocity.y;
       // Obstacles and the room edge are solid: same rule as the enemies and the balance sim.
@@ -598,6 +631,19 @@ export class PlayerController extends Component {
         ROOM_EDGE_MARGIN_TILES,
       );
       this.syncNodePosition();
+
+      // Subtle foot-wind/dust streak VFX while room-clear +45% speed boost is active.
+      if (this.roomClearBoost.active && effectsLayers(this.effectsMode).secondaryParticles) {
+        this.footDustCooldownMs -= deltaMs;
+        if (this.footDustCooldownMs <= 0) {
+          this.footDustCooldownMs = 120;
+          this.fx?.spawn(
+            'fx.smoke',
+            { x: this.tilePosition.x, y: this.tilePosition.y + 0.35 },
+            { drawUnits: 0.7, lifetimeMs: 210 },
+          );
+        }
+      }
     } else {
       this.currentVelocity.x = 0;
       this.currentVelocity.y = 0;

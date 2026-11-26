@@ -35,7 +35,7 @@ describe('boss run — god mode beats Tengu', () => {
   it('wins within the allowed time, boss down to 0 health, player loses no hearts', () => {
     expect(result.outcome).toBe('won');
     expect(result.bossHealth).toBe(0);
-    expect(result.playerHearts).toBe(DEFAULT_COMBAT.playerMaxHearts);
+    expect(result.playerHearts).toBe(DEFAULT_COMBAT.playerBaseMaxHp);
     expect(result.durationMs).toBeGreaterThan(0);
     expect(result.durationMs).toBeLessThan(maxDurationMs);
   });
@@ -99,7 +99,7 @@ describe('boss run — player zero DPS', () => {
 
     expect(eventsOf(result, 'boss-shoot').length).toBeGreaterThan(0);
     expect(hits.length).toBeGreaterThanOrEqual(1);
-    expect(result.playerHearts).toBeLessThan(DEFAULT_COMBAT.playerMaxHearts);
+    expect(result.playerHearts).toBeLessThan(DEFAULT_COMBAT.playerBaseMaxHp);
 
     for (const hit of hits) {
       expect(hit.source).toBe('projectile');

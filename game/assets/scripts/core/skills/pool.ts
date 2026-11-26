@@ -266,7 +266,7 @@ export const SKILLS: readonly BaseSkillDef[] = [
     pillar: 'defense',
     rarity: 'common',
     maxStacks: 5,
-    tags: [{ kind: 'max-hearts', amount: 1 }],
+    tags: [{ kind: 'max-hearts', amount: 25 }],
   },
   {
     id: 'second-wind',
@@ -275,7 +275,7 @@ export const SKILLS: readonly BaseSkillDef[] = [
     pillar: 'defense',
     rarity: 'epic',
     maxStacks: 2,
-    tags: [{ kind: 'heal-per-room', amount: 2 }],
+    tags: [{ kind: 'heal-per-room', amount: 30 }],
   },
   {
     id: 'shield',

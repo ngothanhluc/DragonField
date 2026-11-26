@@ -162,6 +162,7 @@ describe('Meta Shop Upgrades — 6 tracks (3 stat + 3 utility, ZERO Revive)', ()
 
     // Stat bonuses remain unaffected by utility track levels.
     expect(applyUpgrades(stateWith({ xpMagnet: 5, goldBonus: 5, freeRerolls: 3 }))).toEqual({
+      maxHpBonus: 0,
       maxHeartsBonus: 0,
       damageMultiplier: 1,
       fireRateMultiplier: 1,

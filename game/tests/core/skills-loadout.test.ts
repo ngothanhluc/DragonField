@@ -28,12 +28,12 @@ describe('SkillLoadout', () => {
     expect(loadout.size).toBe(0);
   });
 
-  it('Vitality heals 1 heart per stack at pickup time, not as a persistent stat', () => {
+  it('Vitality heals 25 HP per stack at pickup time, not as a persistent stat', () => {
     const loadout = new SkillLoadout();
-    expect(loadout.acquire('vitality').healNow).toBe(1);
-    expect(loadout.acquire('vitality', 2).healNow).toBe(2);
+    expect(loadout.acquire('vitality').healNow).toBe(25);
+    expect(loadout.acquire('vitality', 2).healNow).toBe(50);
     expect(loadout.acquire('rapid-fire').healNow).toBe(0);
-    expect(pickupHeal(getSkill('vitality'))).toBe(1);
+    expect(pickupHeal(getSkill('vitality'))).toBe(25);
   });
 
   it('stats = computeDerivedStats of exactly the owned map', () => {

@@ -254,7 +254,8 @@ describe('Derived stats', () => {
     expect(stats.pierce).toBe(0);
     expect(stats.critChance).toBe(0);
     expect(stats.critMultiplier).toBe(1);
-    expect(stats.maxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts);
+    expect(stats.maxHp).toBe(DEFAULT_COMBAT.playerBaseMaxHp);
+    expect(stats.maxHearts).toBe(DEFAULT_COMBAT.playerBaseMaxHp);
     expect(stats.invulnerabilityMs).toBe(DEFAULT_COMBAT.invulnerabilityMs);
     expect(stats.moveSpeedTilesPerSecond).toBeGreaterThan(0);
     expect(stats.lifestealPercent).toBe(0);
@@ -342,7 +343,8 @@ describe('Derived stats', () => {
       owned(['vitality', 2], ['swift', 2], ['lifesteal', 1]),
     );
 
-    expect(stats.maxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts + 2);
+    expect(stats.maxHp).toBe(DEFAULT_COMBAT.playerBaseMaxHp + 50);
+    expect(stats.maxHearts).toBe(DEFAULT_COMBAT.playerBaseMaxHp + 50);
     expect(stats.moveSpeedTilesPerSecond).toBeCloseTo(
       computeDerivedStats(owned()).moveSpeedTilesPerSecond * 1.2,
       10,
@@ -362,7 +364,7 @@ describe('Derived stats', () => {
 
     expect(stats.shield).toEqual({ charges: 2, cooldownMs: 20_000 });
     expect(stats.thorns).toEqual({ damage: 2 });
-    expect(stats.healPerRoom).toBe(2);
+    expect(stats.healPerRoom).toBe(30);
     expect(stats.slowOnHit).toEqual({ factor: 0.4, durationMs: 1000 });
     expect(stats.poisonOnHit).toEqual({ dps: 2, durationMs: 3000 });
   });

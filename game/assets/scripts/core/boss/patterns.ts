@@ -315,7 +315,7 @@ const TENGU_FAN: BossAction = {
     spreadRadians: 60 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 6,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -329,7 +329,7 @@ const TENGU_RING: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -342,7 +342,7 @@ const SQUID_SPREAD: BossAction = {
     spreadRadians: 110 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 4.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -355,7 +355,7 @@ const SAMURAI_SLASH: BossAction = {
     spreadRadians: 0,
     baseAngleRadians: 0,
     speedTilesPerSecond: 7,
-    damage: 2,
+    damage: 35,
     radiusTiles: 0.3,
   },
 };
@@ -365,7 +365,7 @@ const SAMURAI_FIRE_TRAIL: BossAction = {
   trail: {
     spacingTiles: 1.5,
     driftSpeedTilesPerSecond: 1.2,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.35,
   },
 };
@@ -377,7 +377,7 @@ const SQUID_SPIRAL_SLOW: BossAction = {
     intervalMs: 140,
     angleStepRadians: 24 * DEG,
     speedTilesPerSecond: 4,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -389,7 +389,7 @@ const SQUID_SPIRAL_FAST: BossAction = {
     intervalMs: 110,
     angleStepRadians: 30 * DEG,
     speedTilesPerSecond: 4.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -471,7 +471,7 @@ const FROG_FAN: BossAction = {
     spreadRadians: 60 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 6,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -486,7 +486,7 @@ const FROG_RING: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -500,7 +500,7 @@ const SLIME_SPREAD: BossAction = {
     spreadRadians: 110 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 4.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -515,7 +515,7 @@ const SLIME_RING: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -552,7 +552,7 @@ const BAMBOO_SPREAD: BossAction = {
     spreadRadians: 100 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.28,
   },
 };
@@ -567,7 +567,7 @@ const BAMBOO_RING: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.28,
   },
 };
@@ -579,7 +579,7 @@ const BAMBOO_SPIRAL: BossAction = {
     intervalMs: 130,
     angleStepRadians: 27 * DEG,
     speedTilesPerSecond: 4.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -590,7 +590,7 @@ const BAMBOO_FIRE_TRAIL: BossAction = {
   trail: {
     spacingTiles: 1.5,
     driftSpeedTilesPerSecond: 1.2,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.35,
   },
 };
@@ -616,7 +616,7 @@ const RACOON_FAN_7: BossAction = {
     spreadRadians: 70 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 6,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -630,7 +630,7 @@ const RACOON_FAN_5: BossAction = {
     spreadRadians: 60 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 6,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -645,7 +645,7 @@ const RACOON_RING: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.28,
   },
 };
@@ -657,7 +657,7 @@ const RACOON_SPIRAL: BossAction = {
     intervalMs: 110,
     angleStepRadians: 30 * DEG,
     speedTilesPerSecond: 5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -677,7 +677,7 @@ const RED_FAN_7: BossAction = {
     spreadRadians: 70 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 6.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -691,7 +691,7 @@ const RED_FAN_5: BossAction = {
     spreadRadians: 60 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 6.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -706,7 +706,7 @@ const RED_RING_12: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -721,7 +721,7 @@ const RED_RING_10: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 6,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.25,
   },
 };
@@ -736,7 +736,7 @@ const TENGU_SWEEP: BossAction = {
     spreadRadians: 135 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 5.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.28,
   },
 };
@@ -749,7 +749,7 @@ const SQUID_SWEEP: BossAction = {
     spreadRadians: 140 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -762,7 +762,7 @@ const SQUID_SWEEP_ENRAGED: BossAction = {
     spreadRadians: 150 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 5.2,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -775,7 +775,7 @@ const SAMURAI_SWEEP: BossAction = {
     spreadRadians: 130 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 6.2,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -789,7 +789,7 @@ const FROG_ZONE: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5.2,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.32,
   },
 };
@@ -802,7 +802,7 @@ const FROG_SWEEP: BossAction = {
     spreadRadians: 135 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 5.8,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.28,
   },
 };
@@ -816,7 +816,7 @@ const SLIME_ZONE: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 4.8,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.34,
   },
 };
@@ -829,7 +829,7 @@ const SLIME_SWEEP: BossAction = {
     spreadRadians: 140 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -842,7 +842,7 @@ const BAMBOO_SWEEP: BossAction = {
     spreadRadians: 135 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 5.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.3,
   },
 };
@@ -856,7 +856,7 @@ const BAMBOO_ZONE: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5.2,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.32,
   },
 };
@@ -869,7 +869,7 @@ const RACOON_SWEEP: BossAction = {
     spreadRadians: 140 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 5.8,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.28,
   },
 };
@@ -883,7 +883,7 @@ const RACOON_ZONE: BossAction = {
     baseAngleRadians: -HALF_PI,
     ringAimsAtPlayer: true,
     speedTilesPerSecond: 5.5,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.32,
   },
 };
@@ -896,7 +896,7 @@ const RED_SWEEP: BossAction = {
     spreadRadians: 145 * DEG,
     baseAngleRadians: 0,
     speedTilesPerSecond: 6,
-    damage: 1,
+    damage: 25,
     radiusTiles: 0.28,
   },
 };

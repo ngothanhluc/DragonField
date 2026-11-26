@@ -60,8 +60,8 @@ const CARD_Y = -12;
 const CARD_ICON_SCALE = 2;
 const CARD_ICON_SIZE = SKILL_ICON_SIZE_PX * CARD_ICON_SCALE;
 
-/** One heart from the pack's 5-frame Heart.png. */
-const HEART_SHEET = 'resources/art/ui/Heart.png';
+/** Staged M17 Health Potion icon (16×16) for the mid-run shop HP refill card. */
+const HEART_SHEET = 'resources/art/generated/fx/health-potion.png';
 const HEART_RECT: TileRect = { x: 0, y: 0, width: 16, height: 16 };
 
 const TITLE_COLOR = new CocosColor(255, 230, 120, 255);

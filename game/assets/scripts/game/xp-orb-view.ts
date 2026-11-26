@@ -14,11 +14,13 @@
  */
 import {
   Color as CocosColor,
+  Graphics as CocosGraphics,
   Node as CocosNode,
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
 } from 'cc';
 import { frameRect, resolve } from '../core/art/manifest';
+import type { EffectsMode } from '../core/vfx/weapon-vfx';
 import { loadAnimationManifest } from './anim/sprite-animator';
 import { loadPixelTexture } from './assets/texture-cache';
 import { ACTOR_SCALE, sliceFrame, tileToWorld } from './level-view';
@@ -32,6 +34,7 @@ export {
 } from './fx/effect-pool';
 
 type Color = InstanceType<typeof CocosColor>;
+type Graphics = InstanceType<typeof CocosGraphics>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type UITransform = InstanceType<typeof CocosUITransform>;
@@ -65,14 +68,23 @@ export const XP_ORB_SHEETS: readonly string[] = [
 ];
 
 /**
- * Tier scale factors relative to `ACTOR_SCALE` (`1/16` world unit per texture pixel).
- * `large` renders at exact 1:1 `ACTOR_SCALE` (16 px = 1.0 tile); `medium` = 13 px; `small` = 10 px.
+ * M17 compact crystal scale factors relative to `ACTOR_SCALE` (`1/16` world unit per texture pixel).
+ * `small` = 6 px, `medium` = 7.5 px, `large` = 9 px — crisp tiny crystals with pulsing pixel halos
+ * that never compete visually with 16 px bullets or telegraphs.
  */
 export const XP_ORB_TIER_PIXEL_RATIO: Readonly<Record<XpOrbTier, number>> = {
-  small: 10 / 16,
-  medium: 13 / 16,
-  large: 1,
+  small: 6 / 16,
+  medium: 7.5 / 16,
+  large: 9 / 16,
 };
+
+const HALO_COLORS: Readonly<Record<XpOrbTier, Color>> = {
+  small: new CocosColor(72, 224, 255, 110),
+  medium: new CocosColor(196, 128, 255, 120),
+  large: new CocosColor(255, 218, 96, 130),
+};
+const HALO_RADIUS_PX = 10.5;
+const HALO_PULSE_SPEED = 4.6;
 
 const BOB_AMPLITUDE_TILES = 0.05;
 const BOB_SPEED_RAD_PER_SEC = 3.8;
@@ -138,6 +150,8 @@ interface TierFrameData {
 
 interface OrbSlot {
   readonly node: Node;
+  readonly haloNode: Node;
+  readonly haloGraphics: Graphics;
   readonly sprite: Sprite;
   readonly transform: UITransform | null;
   lastTier: XpOrbTier | null;
@@ -150,6 +164,7 @@ export class XpOrbView {
   private readonly tierFrames = new Map<XpOrbTier, TierFrameData>();
   private container: Node | null = null;
   private activeSlots = 0;
+  private effectsMode: EffectsMode = 'full';
   /** Reused mutable tile point passed to `tileToWorld` so `sync` creates no input object per orb. */
   private readonly scratchTile = { x: 0, y: 0 };
 
@@ -163,6 +178,10 @@ export class XpOrbView {
 
   get activeCount(): number {
     return this.activeSlots;
+  }
+
+  setEffectsMode(mode: EffectsMode): void {
+    this.effectsMode = mode;
   }
 
   /** Slice nearest-filtered tier frames and pre-allocate every pooled orb node under `parent`. */
@@ -217,19 +236,25 @@ export class XpOrbView {
           if (slot.transform !== null) {
             slot.transform.setContentSize(data.width, data.height);
           }
+          drawOrbHalo(slot.haloGraphics, HALO_COLORS[orb.tier]);
           slot.lastTier = orb.tier;
         }
         slot.sprite.color = orb.vacuuming ? VACUUM_TINTS[orb.tier] : IDLE_TINTS[orb.tier];
         slot.lastVacuuming = orb.vacuuming;
       }
 
-      const motion = xpOrbTransform(orb, index, elapsedSec);
+      const reduced = this.effectsMode === 'reduced';
+      const motion = xpOrbTransform(orb, index, reduced ? 0 : elapsedSec);
       this.scratchTile.x = orb.x;
       this.scratchTile.y = orb.y;
       const world = tileToWorld(this.scratchTile);
 
-      slot.node.setPosition(world.x, world.y + motion.bobOffsetTiles, 0);
+      slot.node.setPosition(world.x, world.y + (reduced ? 0 : motion.bobOffsetTiles), 0);
       slot.node.setScale(motion.scaleX, motion.scaleY, 1);
+      const haloScale = reduced
+        ? 0.92
+        : 0.85 + 0.28 * (0.5 + 0.5 * Math.sin(elapsedSec * HALO_PULSE_SPEED + index * 1.1));
+      slot.haloNode.setScale(haloScale, haloScale, 1);
       if (!slot.node.active) slot.node.active = true;
     }
 
@@ -271,12 +296,20 @@ export class XpOrbView {
     const node = new CocosNode(`xp-orb-${index}`);
     node.parent = parent;
 
-    const sprite: Sprite = node.addComponent(CocosSprite);
+    // Halo child sits before sprite child so the soft pixel glow renders cleanly behind the crystal.
+    const haloNode = new CocosNode('halo');
+    haloNode.parent = node;
+    const haloGraphics: Graphics = haloNode.addComponent(CocosGraphics);
+    drawOrbHalo(haloGraphics, HALO_COLORS.small);
+
+    const spriteNode = new CocosNode('sprite');
+    spriteNode.parent = node;
+    const sprite: Sprite = spriteNode.addComponent(CocosSprite);
     sprite.type = CocosSprite.Type.SIMPLE;
     sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     sprite.trim = false;
 
-    const transform: UITransform | null = node.getComponent(CocosUITransform);
+    const transform: UITransform | null = spriteNode.getComponent(CocosUITransform);
     if (transform !== null) {
       transform.setContentSize(width, height);
     }
@@ -285,12 +318,21 @@ export class XpOrbView {
     node.active = false;
     return {
       node,
+      haloNode,
+      haloGraphics,
       sprite,
       transform,
       lastTier: null,
       lastVacuuming: null,
     };
   }
+}
+
+function drawOrbHalo(graphics: Graphics, color: Color): void {
+  graphics.clear();
+  graphics.fillColor = color;
+  graphics.circle(0, 0, HALO_RADIUS_PX);
+  graphics.fill();
 }
 
 /** Convenience factory matching `createFxPool(parent)`. */

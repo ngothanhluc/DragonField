@@ -14,41 +14,45 @@ const XP_GOLD: readonly DoorReward[] = ['xp', 'gold'];
 const ALL: readonly DoorReward[] = ['xp', 'gold', 'heal', 'shop', 'chest'];
 const doorsTuning = (TUNING as unknown as { doors?: { goldBonus: number; xpBonus: number } }).doors;
 
-describe('door offers', () => {
-  it('rooms 1–7: two doors, at least one a fight, only enabled rewards, deterministic', () => {
+describe('door offers (M17 single North Portal cadence)', () => {
+  it('always opens exactly 1 North Portal per room, deterministic per seed', () => {
     for (let seed = 1; seed <= 50; seed += 1) {
       for (let room = 1; room <= 7; room += 1) {
         const offers = doorOffers(seed, room, 8, XP_GOLD);
-        expect(offers, `seed ${seed} room ${room}`).toHaveLength(2);
-        expect(offers.some((reward) => COMBAT_REWARDS.includes(reward))).toBe(true);
+        expect(offers, `seed ${seed} room ${room}`).toHaveLength(1);
         expect(offers.every((reward) => XP_GOLD.includes(reward))).toBe(true);
         expect(doorOffers(seed, room, 8, XP_GOLD)).toEqual(offers);
       }
     }
   });
 
-  it('after the last normal room there is one door, to the boss', () => {
+  it('after the last normal room there is one Boss Portal', () => {
     for (let seed = 1; seed <= 10; seed += 1) expect(doorOffers(seed, 8, 8, ALL)).toEqual(['boss']);
   });
 
-  it('with every reward enabled: never two non-fight doors, and specials do come up', () => {
-    const seen = new Set<DoorReward>();
+  it('after Room 4 opens a seeded mid-chapter Special Room (Shop or Chest) and normal portals elsewhere', () => {
+    const midSeen = new Set<DoorReward>();
     for (let seed = 1; seed <= 200; seed += 1) {
       for (let room = 1; room <= 7; room += 1) {
         const offers = doorOffers(seed, room, 8, ALL);
-        expect(offers.filter((reward) => !COMBAT_REWARDS.includes(reward)).length).toBeLessThanOrEqual(1);
-        for (const reward of offers) seen.add(reward);
+        expect(offers).toHaveLength(1);
+        if (room === 4) {
+          expect(['shop', 'chest']).toContain(offers[0]);
+          midSeen.add(offers[0]!);
+        } else {
+          expect(COMBAT_REWARDS).toContain(offers[0]!);
+        }
       }
     }
-    expect([...seen].sort()).toEqual(['chest', 'gold', 'heal', 'shop', 'xp']);
+    expect([...midSeen].sort()).toEqual(['chest', 'shop']);
   });
 
-  it('seeds change the offers', () => {
-    const runs = new Set<string>();
+  it('seeds vary the mid-chapter Special Room offer across runs', () => {
+    const specialPicks = new Set<DoorReward>();
     for (let seed = 1; seed <= 30; seed += 1) {
-      runs.add(Array.from({ length: 7 }, (_, i) => doorOffers(seed, i + 1, 8, XP_GOLD).join('+')).join('|'));
+      specialPicks.add(doorOffers(seed, 4, 8, ALL)[0]!);
     }
-    expect(runs.size).toBeGreaterThan(20);
+    expect(specialPicks.size).toBe(2);
   });
 });
 
@@ -65,30 +69,27 @@ describe('clear rewards', () => {
   });
 });
 
-describe('balance sim models the door choice', () => {
-  it('always taking the gold door turns later xp rooms into gold bonuses', () => {
+describe('balance sim models the single North Portal + mid-chapter Special Room cadence', () => {
+  it('plays Rooms 1–4, enters 1 mid-chapter Special Room after Room 4, then Rooms 5–8 and Room 9 Boss', () => {
     const chapter = chapterFromLevels(loadTmxLevels());
     type DoorEvent = { kind: 'door'; room: number; offers: DoorReward[]; chosen: DoorReward };
-    type RewardEvent = { kind: 'reward'; room: number; reward: DoorReward; gold: number };
-    const options = {
+    type SpecialEvent = { kind: 'special'; room: number; reward: DoorReward };
+    const result = simulateRun({
       seed: 39,
       level: chapter,
       policy: () => ({ up: false, down: false, left: false, right: false }),
       godMode: true,
-      chooseDoor: (offers: readonly DoorReward[]) => Math.max(0, offers.indexOf('gold')),
-    };
-    const result = simulateRun(options as Parameters<typeof simulateRun>[0]);
+    });
     const events = result.events as unknown as readonly { kind: string }[];
     const doors = events.filter((event) => event.kind === 'door') as unknown as DoorEvent[];
-    const rewards = events.filter((event) => event.kind === 'reward') as unknown as RewardEvent[];
-    expect(doors.length).toBeGreaterThanOrEqual(7);
-    expect(rewards.find((event) => event.room === 1)?.reward).toBe('xp');
-    for (const door of doors) {
-      const next = rewards.find((event) => event.room === door.room + 1);
-      if (door.chosen === 'boss' || next === undefined) continue;
-      expect(next.reward, `room ${door.room + 1}`).toBe(door.chosen);
-      if (door.chosen === 'gold') expect(next.gold).toBeGreaterThanOrEqual(doorsTuning?.goldBonus ?? 1);
-    }
-    expect(doors.some((door) => door.chosen === 'gold')).toBe(true);
+    const specials = events.filter((event) => event.kind === 'special') as unknown as SpecialEvent[];
+
+    expect(result.status).toBe('won');
+    expect(result.roomsCleared).toBe(9);
+    for (const door of doors) expect(door.offers).toHaveLength(1);
+    expect(specials).toHaveLength(1);
+    expect(specials[0]?.room).toBe(4);
+    expect(['shop', 'chest']).toContain(specials[0]?.reward);
+    expect(doors[doors.length - 1]?.chosen).toBe('boss');
   });
 });

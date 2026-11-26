@@ -10,6 +10,7 @@ import { createDefaultSave } from '../../assets/scripts/core/save/save-data';
 import {
   buyFromShop,
   chestReward,
+  healByFraction,
   healHearts,
   isSpecialDoor,
   shopOffers,
@@ -147,31 +148,17 @@ describe('simulateRun models special rooms', () => {
 
     const fromEvents = result.events.reduce((sum, event) => {
       if (event.kind === 'kill' || event.kind === 'room-cleared') return sum + event.gold;
+      if (event.kind === 'special') return sum + (event.gold ?? 0);
       return sum;
     }, 0);
     expect(result.goldEarned).toBe(fromEvents);
   });
 
-  it('a heal room from 1/6 hearts ends at 4/6 (adds the difference, not the total)', () => {
-    const healAmount = (TUNING as unknown as { specialRooms: { healHearts: number } })
-      .specialRooms.healHearts;
-    let healed: number | null = null;
-
-    for (let seed = 1; seed <= 200 && healed === null; seed += 1) {
-      const result = simulateRun({
-        seed,
-        level: chapterOne,
-        policy: () => ({ up: false, down: false, left: false, right: false }),
-        godMode: true,
-        playerHearts: 1,
-        chooseDoor: (offers) => offers.indexOf('heal'),
-      });
-      const event = result.events.find(
-        (candidate) => candidate.kind === 'special' && candidate.reward === 'heal',
-      );
-      if (event !== undefined && event.kind === 'special') healed = event.hearts;
-    }
-
-    expect(healed).toBe(Math.min(6, 1 + healAmount));
+  it('healByFraction restores 50% of max HP and clamps cleanly to max HP', () => {
+    const fraction = (TUNING as unknown as { specialRooms: { healFraction: number } })
+      .specialRooms.healFraction;
+    expect(healByFraction(20, 100, fraction)).toBe(70);
+    expect(healByFraction(80, 100, fraction)).toBe(100);
+    expect(healByFraction(10, 120, fraction)).toBe(70);
   });
 });
