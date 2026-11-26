@@ -6,9 +6,11 @@ import {
   HOMING_TURN_RATE_RADIANS_PER_SECOND,
   TWIN_SPREAD_RADIANS,
   damageAfterExecute,
+  damageWithStatusBonus,
   lifestealHeal,
   planVolley,
   ricochetTarget,
+  shockArcTargets,
   steerVelocity,
 } from '../../assets/scripts/core/combat/shot-effects';
 import { ShieldCharger } from '../../assets/scripts/core/combat/shield';
@@ -246,5 +248,47 @@ describe('firePlayerVolley + BulletPool metadata', () => {
       ttlMs: 1000,
     });
     expect(pool.active()[0]?.hitIds).toEqual([]);
+  });
+});
+
+describe('M13 burn, status amp, and shock arcs', () => {
+  it('StatusEffects tracks burn DoT without exceeding duration and reports hasAnyStatus', () => {
+    const status = new StatusEffects();
+    expect(status.hasAnyStatus(0)).toBe(false);
+
+    status.apply({ burnOnHit: { dps: 2, durationMs: 2500 } }, 100);
+    expect(status.isBurned(100)).toBe(true);
+    expect(status.hasAnyStatus(100)).toBe(true);
+    expect(status.burnDamage(100, 1000)).toBeCloseTo(2, 10);
+    expect(status.burnDamage(2100, 1000)).toBeCloseTo(1, 10);
+    expect(status.isBurned(2600)).toBe(false);
+    expect(status.hasAnyStatus(2600)).toBe(false);
+
+    status.clear();
+    expect(status.hasAnyStatus(100)).toBe(false);
+  });
+
+  it('damageWithStatusBonus scales damage only when target is afflicted and bonus > 0', () => {
+    const stats = statsOf(['corrosive', 2]); // +50%
+    expect(damageWithStatusBonus(stats, 4, false)).toBe(4);
+    expect(damageWithStatusBonus(stats, 4, true)).toBeCloseTo(6, 10);
+    expect(damageWithStatusBonus(statsOf(), 4, true)).toBe(4);
+  });
+
+  it('shockArcTargets chains through nearest unvisited targets within rangeTiles', () => {
+    const shock = { arcs: 2, damageRatio: 0.45, rangeTiles: 4 };
+    const candidates = [
+      { id: 'origin', position: { x: 0, y: 0 } },
+      { id: 'a', position: { x: 2, y: 0 } },
+      { id: 'b', position: { x: 5, y: 0 } }, // 3 tiles from 'a', 5 from 'origin'
+      { id: 'far', position: { x: 20, y: 0 } },
+    ];
+    const arcs = shockArcTargets('origin', { x: 0, y: 0 }, shock, candidates);
+    expect(arcs.map((t) => t.id)).toEqual(['a', 'b']);
+
+    // Out of range from 'origin' -> empty
+    expect(
+      shockArcTargets('origin', { x: 0, y: 0 }, shock, [{ id: 'far', position: { x: 9, y: 0 } }]),
+    ).toEqual([]);
   });
 });

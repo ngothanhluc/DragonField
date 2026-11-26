@@ -25,27 +25,72 @@ import type { BossDef, BossPhase } from '../core/boss/boss-defs';
 import { BOSS_FEET_OFFSET_TILES } from '../core/boss/boss-defs';
 import { summonedEnemies } from '../core/boss/summon';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
-import { fireEnemyVolley, sniperShotPlan } from '../core/combat/enemy-fire';
+import { fireEnemyVolley, casterShotPlan, sniperShotPlan } from '../core/combat/enemy-fire';
 import { segmentHitsCircle } from '../core/combat/hitbox';
 import { HitstopClock } from '../core/combat/hitstop';
 import type { KnockbackState } from '../core/combat/knockback';
 import {
   HOMING_TURN_RATE_RADIANS_PER_SECOND,
   damageAfterExecute,
+  damageWithStatusBonus,
   lifestealHeal,
   ricochetTarget,
+  shockArcTargets,
   steerVelocity,
+  type RicochetCandidate,
+  type RicochetTarget,
 } from '../core/combat/shot-effects';
 import { StatusEffects } from '../core/combat/status-effects';
 import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
 import type { EnemyState } from '../core/enemies/behaviours';
 import { ROOM_EDGE_MARGIN_TILES, maxHealthFor } from '../core/enemies/behaviours';
-import { FEEL_TUNING, NAVIGATION_TUNING, XP_TUNING } from '../core/enemies/tuning';
+import {
+  bomberBlastSpec,
+  isInsideBomberBlast,
+  scheduleFollowUpBlast,
+  stepPendingBlasts,
+  type BomberBlastSpec,
+  type PendingBomberBlast,
+} from '../core/enemies/bomber';
+import { EnemyBuffTracker, resolveBufferPulse, type BufferPulseResult } from '../core/enemies/buffer';
+import {
+  ACTIVE_SKILL_TUNING,
+  DASH_TUNING,
+  FEEL_TUNING,
+  NAVIGATION_TUNING,
+  XP_TUNING,
+} from '../core/enemies/tuning';
 import { eliteVolleyAngles } from '../core/enemies/elite';
 import { splitOnDeath } from '../core/enemies/splitter';
 import { RoomNavigation, separateEnemies, type SeparationBody } from '../core/enemies/navigation';
 import type { ScreenShake } from '../core/feel/screen-shake';
+import { ActionBuffer, type ActionKind } from '../core/input/action-buffer';
+import {
+  activeCooldownSeconds,
+  activeReadyRatio,
+  computeShadowBarrageVolley,
+  createActiveSkillState,
+  isActiveSkillReady,
+  onActiveHit,
+  onActiveKill,
+  stepActiveSkill,
+  tryActivateSkill,
+  type ActiveSkillConfig,
+  type ActiveSkillState,
+} from '../core/input/active-skill';
+import {
+  canStartDash,
+  createDashState,
+  dashCooldownSeconds,
+  dashReadyRatio,
+  isDashing,
+  resolveDashDirection,
+  stepDash,
+  tryStartDash,
+  type DashConfig,
+  type DashState,
+} from '../core/input/dash';
 import { spawnWave } from '../core/enemies/waves';
 import {
   WaveScheduler,
@@ -57,6 +102,8 @@ import type { ViewRect } from '../core/camera/follow-camera';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { distance, type Vec2 } from '../core/math/vec2';
 import type { SeededRng } from '../core/rng';
+import type { DerivedStats } from '../core/skills/derived-stats';
+import type { HudActionsSnapshot } from '../core/view/hud-layout';
 import { screenViewAround } from '../core/view/view-rect';
 import {
   effectsLayers,
@@ -76,7 +123,14 @@ import { spawnLevelUpBurst, type FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE } from './level-view';
 import type { PlayerController } from './player-controller';
 import { pointInCullRect, type CullRect } from './world-culler';
-import { playSfx } from './audio/sfx';
+import {
+  playActiveSkillSfx,
+  playBomberBlastSfx,
+  playBufferPulseSfx,
+  playDashNovaSfx,
+  playSfx,
+  playShockSfx,
+} from './audio/sfx';
 
 /** `cc` is an any module: import names only work in value position. */
 type Node = InstanceType<typeof CocosNodeValue>;
@@ -90,6 +144,13 @@ const CRIT_FLASH_TINT = new CocosColor(255, 255, 255, 255);
 const EXECUTE_TINT = new CocosColor(255, 90, 90, 255);
 const LIFESTEAL_TINT = new CocosColor(230, 60, 60, 255);
 const POISON_TINT = new CocosColor(120, 240, 110, 255);
+const BURN_TINT = new CocosColor(255, 145, 65, 255);
+const SHOCK_ARC_TINT = new CocosColor(135, 235, 255, 255);
+const DASH_NOVA_TINT = new CocosColor(140, 245, 255, 255);
+const SHADOW_BARRAGE_TINT = new CocosColor(195, 130, 255, 255);
+const BOMBER_BLAST_TINT = new CocosColor(255, 110, 55, 255);
+const BOMBER_FOLLOWUP_TINT = new CocosColor(255, 180, 90, 255);
+const BUFFER_AURA_TINT = new CocosColor(145, 255, 160, 255);
 const RICOCHET_TINT = new CocosColor(255, 245, 170, 255);
 /** Spawn telegraph (#41): warm red, so "an enemy is arriving here" never reads as an attack tell. */
 const SPAWN_TELEGRAPH_TINT = new CocosColor(255, 150, 120, 255);
@@ -172,6 +233,19 @@ export interface EnemySnapshot {
   readonly y: number;
 }
 
+export interface ActionsSnapshot {
+  readonly dashReadyRatio: number;
+  readonly dashCooldownSec: number;
+  readonly isDashing: boolean;
+  readonly dashIframeMs: number;
+  readonly dashBuffered: boolean;
+  readonly dashesUsed: number;
+  readonly activeReadyRatio: number;
+  readonly activeCooldownSec: number;
+  readonly activeBuffered: boolean;
+  readonly activeSkillsUsed: number;
+}
+
 /** One spawn waiting out its on-screen telegraph (#41). It already holds a slot of the alive cap. */
 interface PendingSpawn {
   readonly state: EnemyState;
@@ -204,6 +278,31 @@ export class CombatLoop {
   private readonly rewarded = new Set<string>();
   private bossRewarded = false;
   private readonly bossStatus = new StatusEffects();
+  private readonly actionBuffer = new ActionBuffer(DASH_TUNING.bufferMs);
+  private dashState: DashState = createDashState();
+  private activeSkillState: ActiveSkillState = createActiveSkillState(
+    true,
+    ACTIVE_SKILL_TUNING.cooldownMs,
+  );
+  private dashesUsed = 0;
+  private activeSkillsUsed = 0;
+  private readonly shadowBulletIds = new Set<number>();
+  private readonly enemyBuffs = new EnemyBuffTracker();
+  private pendingBlasts: PendingBomberBlast[] = [];
+  private readonly livingEnemyStates: EnemyState[] = [];
+  private readonly shockCandidates: RicochetCandidate[] = [];
+  private readonly shockTargetsOut: RicochetTarget[] = [];
+  private readonly dashConfig: DashConfig = {
+    cooldownMs: DASH_TUNING.cooldownMs,
+    durationMs: DASH_TUNING.durationMs,
+    speedTilesPerSecond: DASH_TUNING.speedTilesPerSecond,
+    invulnerabilityMs: DASH_TUNING.invulnerabilityMs,
+  };
+  private readonly activeConfig: ActiveSkillConfig = {
+    cooldownMs: ACTIVE_SKILL_TUNING.cooldownMs,
+    hitCooldownReductionMs: ACTIVE_SKILL_TUNING.hitCooldownReductionMs,
+    killCooldownReductionMs: ACTIVE_SKILL_TUNING.killCooldownReductionMs,
+  };
   /**
    * Shared enemy navigation for the current room: one flow field per radius class, rebuilt only
    * when the player changes tile and at most every `navigation.rebuildMinMs` (#34).
@@ -325,6 +424,63 @@ export class CombatLoop {
     this.god = on;
   }
 
+  /** Record a discrete gameplay press (`'dash'` / `'active'`) in the 150 ms game-time buffer. */
+  bufferAction(kind: ActionKind): void {
+    this.actionBuffer.press(kind);
+  }
+
+  /** Drop buffered presses when pausing, opening modals, or transitioning rooms. */
+  clearActionBuffer(): void {
+    this.actionBuffer.clear();
+  }
+
+  /** True when `bulletId` was fired by Ninja's Signature Active (*Shadow Barrage*). */
+  isShadowBullet(bulletId: number): boolean {
+    return this.shadowBulletIds.has(bulletId);
+  }
+
+  /** Debug / immediate trigger for Dash (`__yokai.dash()`). */
+  triggerDash(): boolean {
+    if (this.awaitingAdvance || this.player.isDead) return false;
+    return this.tryConsumeOrStartDash(false);
+  }
+
+  /** Debug / immediate trigger for Signature Active (*Shadow Barrage*, `__yokai.activeSkill()`). */
+  triggerActiveSkill(): boolean {
+    if (this.awaitingAdvance || this.player.isDead) return false;
+    return this.tryConsumeOrStartActive(false);
+  }
+
+  /** Populate a pre-allocated HUD actions snapshot without allocating per frame. */
+  actionsHudSnapshot(out: {
+    dashReadyRatio: number;
+    dashCooldownSec: number;
+    activeReadyRatio: number;
+    activeCooldownSec: number;
+  }): HudActionsSnapshot {
+    out.dashReadyRatio = dashReadyRatio(this.dashState);
+    out.dashCooldownSec = dashCooldownSeconds(this.dashState);
+    out.activeReadyRatio = activeReadyRatio(this.activeSkillState);
+    out.activeCooldownSec = activeCooldownSeconds(this.activeSkillState);
+    return out;
+  }
+
+  /** Snapshot for `__yokai.actions()`. */
+  actionsSnapshot(): ActionsSnapshot {
+    return {
+      dashReadyRatio: dashReadyRatio(this.dashState),
+      dashCooldownSec: dashCooldownSeconds(this.dashState),
+      isDashing: isDashing(this.dashState),
+      dashIframeMs: Math.round(this.dashState.invulnerableRemainingMs),
+      dashBuffered: this.actionBuffer.has('dash'),
+      dashesUsed: this.dashesUsed,
+      activeReadyRatio: activeReadyRatio(this.activeSkillState),
+      activeCooldownSec: activeCooldownSeconds(this.activeSkillState),
+      activeBuffered: this.actionBuffer.has('active'),
+      activeSkillsUsed: this.activeSkillsUsed,
+    };
+  }
+
   /** Room change: clear enemies/bullets, take the new level. The sim clock keeps running (i-frames carry across rooms). */
   enterRoom(level: LevelData): void {
     this.clear();
@@ -342,6 +498,16 @@ export class CombatLoop {
     this.hitstop.reset();
     this.rewarded.clear();
     this.bossRewarded = false;
+    this.actionBuffer.clear();
+    this.dashState = createDashState();
+    this.activeSkillState = {
+      cooldownRemainingMs: 0,
+      cooldownTotalMs: ACTIVE_SKILL_TUNING.cooldownMs,
+      activations: this.activeSkillState.activations,
+    };
+    this.enemyBuffs.clear();
+    this.pendingBlasts = [];
+    this.shadowBulletIds.clear();
   }
 
   /**
@@ -363,6 +529,7 @@ export class CombatLoop {
       onPhase: this.onBossPhase,
       onSummon: (role, count) => this.summon(role, count),
       ...(this.fx !== null ? { fx: this.fx } : {}),
+      ...(this.shake !== null ? { shake: this.shake } : {}),
     });
     this.boss = boss;
     return boss;
@@ -452,6 +619,7 @@ export class CombatLoop {
   /** Drop active bullets immediately (used on room clear before vacuuming orbs to doors). */
   clearBullets(): void {
     this.player.bullets.clear();
+    this.shadowBulletIds.clear();
     this.bulletView?.sync();
   }
 
@@ -472,6 +640,14 @@ export class CombatLoop {
     }
     this.nowMs += deltaMs;
 
+    // Advance action buffer & Dash / Signature Active strictly on game-time `deltaMs`.
+    this.actionBuffer.step(deltaMs);
+    this.dashState = stepDash(this.dashState, deltaMs);
+    this.activeSkillState = stepActiveSkill(this.activeSkillState, deltaMs);
+
+    this.tryConsumeOrStartDash(true);
+    this.tryConsumeOrStartActive(true);
+
     const targets: Targetable[] = this.enemies
       .filter((enemy) => !enemy.isDead)
       .map((enemy) => ({ id: enemy.id, position: enemy.position, alive: true }));
@@ -480,7 +656,7 @@ export class CombatLoop {
       targets.push({ id: BOSS_TARGET_ID, position: boss.position, alive: true });
     }
 
-    player.step(this.nowMs, deltaMs, targets, level);
+    player.step(this.nowMs, deltaMs, targets, level, this.dashState);
     // What the player can see this frame (#41): the camera's view, or one screen around the player.
     const view = this.viewNow();
     this.stepSpawns(view);
@@ -579,14 +755,16 @@ export class CombatLoop {
     return alive;
   }
 
-  /** Advance the boss pattern one frame + poison DoT (Freeze does not apply to bosses — see the M4 report). */
+  /** Advance the boss pattern one frame + poison/burn DoT (Freeze does not apply to bosses). */
   private stepBoss(deltaMs: number, playerPosition: Vec2): void {
     const boss = this.boss;
     if (boss === null || boss.isDefeated) return;
 
     boss.step(this.nowMs, deltaMs, playerPosition);
-    const poison = this.bossStatus.poisonDamage(this.nowMs, deltaMs);
-    if (poison > 0) boss.takeDamage(poison, this.nowMs);
+    const dot =
+      this.bossStatus.poisonDamage(this.nowMs, deltaMs) +
+      this.bossStatus.burnDamage(this.nowMs, deltaMs);
+    if (dot > 0) boss.takeDamage(dot, this.nowMs);
 
     // The boss body also deals damage while dashing — otherwise a Samurai charge would
     // pass through the player with nothing happening. i-frames stop multi-frame hits.
@@ -609,30 +787,88 @@ export class CombatLoop {
   }
 
   /**
-   * Fire enemy bullets when an enemy releases an attack. Elite casters fire a 3-shot fan
-   * (`eliteVolleyAngles`); a normal caster fires one straight shot.
+   * Step enemies and trigger released attacks: predictive/burst caster shots, sniper shots,
+   * bomber radial AoE blasts (+ elite follow-up pulse), buffer haste auras / solo orbs, and
+   * tank/elite-chaser charge sweeps.
    */
   private stepEnemies(deltaMs: number, view: ViewRect): void {
     const player = this.player;
+    this.enemyBuffs.prune(this.nowMs);
+    this.livingEnemyStates.length = 0;
+    for (const enemy of this.enemies) {
+      if (!enemy.isDead && enemy.enemyState !== null) {
+        this.livingEnemyStates.push(enemy.enemyState);
+      }
+    }
 
     for (const enemy of this.enemies) {
       if (enemy.isDead) continue;
 
-      const step = enemy.step(this.nowMs, deltaMs, player.position, this.navigation, view);
+      const hasteMult = this.enemyBuffs.speedMultiplierFor(enemy.id, this.nowMs);
+      const step = enemy.step(this.nowMs, deltaMs, player.position, this.navigation, view, hasteMult);
 
       if (step.released === 'shot') {
         const role = enemy.role;
-        if (role !== null) {
-          // #42: the sniper fires a single fast, aimed bullet; everyone else keeps the volley rule.
-          const plan = role === 'sniper' ? sniperShotPlan() : null;
+        if (role === 'caster') {
+          const plan = casterShotPlan({
+            elite: enemy.isElite,
+            chapter: this.level.chapter,
+            origin: enemy.position,
+            targetPos: player.position,
+            targetVel: player.velocity,
+          });
+          fireEnemyVolley({
+            pool: player.bullets,
+            from: enemy.position,
+            to: plan.aimTarget,
+            damage: enemy.contactDamage,
+            angles: plan.angles,
+            speedTilesPerSecond: plan.speedTilesPerSecond,
+          });
+        } else if (role === 'sniper') {
+          const plan = sniperShotPlan();
           fireEnemyVolley({
             pool: player.bullets,
             from: enemy.position,
             to: player.position,
             damage: enemy.contactDamage,
-            angles: plan !== null ? plan.angles : eliteVolleyAngles(role, enemy.isElite),
-            ...(plan !== null ? { speedTilesPerSecond: plan.speedTilesPerSecond } : {}),
+            angles: plan.angles,
+            speedTilesPerSecond: plan.speedTilesPerSecond,
           });
+        } else if (role !== null) {
+          fireEnemyVolley({
+            pool: player.bullets,
+            from: enemy.position,
+            to: player.position,
+            damage: enemy.contactDamage,
+            angles: eliteVolleyAngles(role, enemy.isElite),
+          });
+        }
+      } else if (step.released === 'blast') {
+        const state = enemy.enemyState;
+        if (state !== null) {
+          const spec = bomberBlastSpec(state, this.level.chapter);
+          this.triggerBomberBlast(spec);
+          const followUp = scheduleFollowUpBlast(spec, this.nowMs);
+          if (followUp !== null) this.pendingBlasts.push(followUp);
+        }
+      } else if (step.released === 'buff') {
+        const state = enemy.enemyState;
+        if (state !== null) {
+          const pulse = resolveBufferPulse(state, this.livingEnemyStates, this.nowMs);
+          if (pulse.kind === 'aura') {
+            this.enemyBuffs.applyHaste(pulse.affectedIds, pulse.speedMultiplier, pulse.untilMs);
+            this.spawnBufferAuraEffects(pulse);
+          } else {
+            fireEnemyVolley({
+              pool: player.bullets,
+              from: pulse.center,
+              to: player.position,
+              damage: enemy.contactDamage,
+              angles: pulse.angles,
+              speedTilesPerSecond: pulse.speedTilesPerSecond,
+            });
+          }
         }
       }
 
@@ -645,6 +881,14 @@ export class CombatLoop {
       ) {
         enemy.markChargeHit();
         this.damagePlayer(enemy.contactDamage, sweep.to);
+      }
+    }
+
+    if (this.pendingBlasts.length > 0) {
+      const { triggered, remaining } = stepPendingBlasts(this.pendingBlasts, this.nowMs);
+      this.pendingBlasts = remaining;
+      for (const blast of triggered) {
+        this.triggerBomberBlast(blast);
       }
     }
 
@@ -732,15 +976,18 @@ export class CombatLoop {
         !bullet.hitIds.includes(BOSS_TARGET_ID) &&
         hitsCircle(area, { position: boss.position, radiusTiles: boss.hitboxRadiusTiles })
       ) {
-        const damage = damageAfterExecute(
+        this.bossStatus.apply(stats, this.nowMs);
+        const afflicted = this.bossStatus.hasAnyStatus(this.nowMs);
+        const executed = damageAfterExecute(
           stats,
           bullet.damage,
           boss.health / boss.maxHealth,
         );
+        const damage = damageWithStatusBonus(stats, executed, afflicted);
         const crit = bullet.damage > stats.damage * 1.01;
         boss.takeDamage(damage, this.nowMs);
         this.reportDamage(damage, boss.position, crit);
-        this.bossStatus.apply(stats, this.nowMs);
+        this.activeSkillState = onActiveHit(this.activeSkillState, this.activeConfig, 1);
         playSfx('enemy-hit');
         const heartsBefore = player.hearts;
         const healed = player.heal(lifestealHeal(stats, damage)) - heartsBefore;
@@ -748,11 +995,13 @@ export class CombatLoop {
         this.spawnHitEffects({
           position: boss.position,
           crit,
-          executeApplied: damage > bullet.damage + 1e-9,
+          executeApplied: executed > bullet.damage + 1e-9,
           healed,
-          // Bosses ignore Freeze/Poison, so their status FX never starts.
+          // Bosses ignore Freeze/Poison/Burn FX procs so status visuals stay readable on mobs.
           poisonStarted: false,
+          burnStarted: false,
         });
+        this.applyShockArcs(BOSS_TARGET_ID, boss.position, bullet.damage, stats);
         this.explode(bullet, boss.position, null);
         this.hitstop.request(crit ? FEEL_TUNING.vfx.critHitstopMs : undefined);
         consumed = this.resolveBullet(bullet);
@@ -768,11 +1017,14 @@ export class CombatLoop {
           continue;
         }
 
-        const damage = damageAfterExecute(stats, bullet.damage, victim.health / victim.maxHealth);
+        const status = victim.applyStatus(stats, this.nowMs);
+        const afflicted = victim.hasAnyStatus(this.nowMs);
+        const executed = damageAfterExecute(stats, bullet.damage, victim.health / victim.maxHealth);
+        const damage = damageWithStatusBonus(stats, executed, afflicted);
         const crit = bullet.damage > stats.damage * 1.01;
         victim.takeDamage(damage, bullet.position, this.nowMs);
         this.reportDamage(damage, victim.position, crit);
-        const status = victim.applyStatus(stats, this.nowMs);
+        this.activeSkillState = onActiveHit(this.activeSkillState, this.activeConfig, 1);
         playSfx('enemy-hit');
         const heartsBefore = player.hearts;
         const healed = player.heal(lifestealHeal(stats, damage)) - heartsBefore;
@@ -780,10 +1032,12 @@ export class CombatLoop {
         this.spawnHitEffects({
           position: victim.position,
           crit,
-          executeApplied: damage > bullet.damage + 1e-9,
+          executeApplied: executed > bullet.damage + 1e-9,
           healed,
           poisonStarted: status.poisonStarted,
+          burnStarted: status.burnStarted,
         });
+        this.applyShockArcs(victim.id, victim.position, bullet.damage, stats);
         this.explode(bullet, victim.position, victim);
         this.hitstop.request(crit ? FEEL_TUNING.vfx.critHitstopMs : undefined);
         consumed = this.resolveBullet(bullet);
@@ -794,6 +1048,7 @@ export class CombatLoop {
     }
 
     if (spent.size > 0) {
+      for (const id of spent) this.shadowBulletIds.delete(id);
       pool.consumeWhere((bullet) => spent.has(bullet.id));
     }
   }
@@ -933,6 +1188,7 @@ export class CombatLoop {
     readonly healed: number;
     /** The poison status started on this hit — its FX lives here so it fires once, not per hit. */
     readonly poisonStarted: boolean;
+    readonly burnStarted: boolean;
   }): void {
     const fx = this.fx;
     if (fx === null) return;
@@ -962,6 +1218,17 @@ export class CombatLoop {
           'fx.bubble',
           { x: args.position.x + Math.cos(angle) * 0.3, y: args.position.y + Math.sin(angle) * 0.3 },
           { tint: POISON_TINT, drawUnits: 0.35, lifetimeMs: 500 },
+        );
+      }
+    }
+
+    if (args.burnStarted && secondary) {
+      for (let index = 0; index < 2; index += 1) {
+        const angle = (index / 2) * Math.PI * 2 + 0.5;
+        fx.spawn(
+          'fx.spark',
+          { x: args.position.x + Math.cos(angle) * 0.25, y: args.position.y + Math.sin(angle) * 0.25 },
+          { tint: BURN_TINT, drawUnits: 0.75, lifetimeMs: 360 },
         );
       }
     }
@@ -1097,6 +1364,8 @@ export class CombatLoop {
     for (const enemy of this.enemies) {
       if (!enemy.isDead || this.rewarded.has(enemy.id)) continue;
       this.rewarded.add(enemy.id);
+      this.enemyBuffs.forget(enemy.id);
+      this.activeSkillState = onActiveKill(this.activeSkillState, this.activeConfig, 1);
       const role = enemy.role;
       if (role !== null) this.onKill(role, enemy.isElite, enemy.position);
       // Gold sparkle at the death spot (there are no pickups in a run).
@@ -1122,8 +1391,256 @@ export class CombatLoop {
     const boss = this.boss;
     if (boss !== null && boss.isDefeated && !this.bossRewarded) {
       this.bossRewarded = true;
+      this.activeSkillState = onActiveKill(this.activeSkillState, this.activeConfig, 1);
       this.onBossKilled();
     }
+  }
+
+  /** Try consuming buffered `'dash'` (or start directly in debug) and execute Dash + Dash Nova. */
+  private tryConsumeOrStartDash(fromBuffer: boolean): boolean {
+    if (!canStartDash(this.dashState)) return false;
+    if (fromBuffer && !this.actionBuffer.has('dash')) return false;
+
+    const stats = this.player.derivedStats;
+    const dir = resolveDashDirection(
+      this.player.moveDirectionTile(),
+      this.player.facingVectorTile(),
+    );
+    const result = tryStartDash(this.dashState, dir, this.dashConfig, stats.dashCooldownMult);
+    if (!result.started) return false;
+
+    if (fromBuffer) this.actionBuffer.consume('dash');
+    else this.actionBuffer.clear('dash');
+
+    this.dashState = result.state;
+    this.dashesUsed += 1;
+    this.player.startDash(this.nowMs, result.state);
+    this.triggerDashNova(stats);
+    return true;
+  }
+
+  /** Radial AoE burst emitted at Dash start when `Dash Nova` / `Shadowstep` is owned. */
+  private triggerDashNova(stats: DerivedStats): void {
+    const nova = stats.dashNova;
+    if (nova === undefined || !(nova.radiusTiles > 0) || !(nova.damage > 0)) return;
+
+    const origin = this.player.position;
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      if (distance(origin, enemy.position) > nova.radiusTiles + enemy.radiusTiles) continue;
+      enemy.takeDamage(nova.damage, origin, this.nowMs);
+      this.reportDamage(nova.damage, enemy.position, false);
+    }
+
+    const boss = this.boss;
+    if (
+      boss !== null &&
+      !boss.isDefeated &&
+      distance(origin, boss.position) <= nova.radiusTiles + boss.hitboxRadiusTiles
+    ) {
+      boss.takeDamage(nova.damage, this.nowMs);
+      this.reportDamage(nova.damage, boss.position, false);
+    }
+
+    this.fx?.spawnShockwave(origin, {
+      startRadiusTiles: 0.4,
+      endRadiusTiles: nova.radiusTiles,
+      durationMs: 280,
+      lineWidth: 0.11,
+      tint: DASH_NOVA_TINT,
+    });
+    this.fx?.spawn('fx.boost', origin, {
+      drawUnits: nova.radiusTiles * 1.4,
+      tint: DASH_NOVA_TINT,
+      lifetimeMs: 360,
+    });
+    this.shake?.addTrauma(0.18);
+    playDashNovaSfx();
+  }
+
+  /** Try consuming buffered `'active'` (or trigger directly in debug) to fire *Shadow Barrage*. */
+  private tryConsumeOrStartActive(fromBuffer: boolean): boolean {
+    if (!isActiveSkillReady(this.activeSkillState)) return false;
+    if (fromBuffer && !this.actionBuffer.has('active')) return false;
+
+    const stats = this.player.derivedStats;
+    const triggered = tryActivateSkill(
+      this.activeSkillState,
+      this.activeConfig,
+      stats.activeCooldownMult,
+    );
+    if (!triggered.triggered) return false;
+
+    if (fromBuffer) this.actionBuffer.consume('active');
+    else this.actionBuffer.clear('active');
+
+    this.activeSkillState = triggered.state;
+    this.activeSkillsUsed += 1;
+
+    const origin = this.player.position;
+    const nearest = this.nearestTarget(origin);
+    const aimDir =
+      nearest !== null
+        ? { x: nearest.x - origin.x, y: nearest.y - origin.y }
+        : this.player.facingVectorTile();
+
+    const volley = computeShadowBarrageVolley(origin, aimDir, stats.activePowerMult, {
+      baseDamage: stats.damage,
+      projectileCount: ACTIVE_SKILL_TUNING.barrageProjectiles,
+      damageMultiplier: ACTIVE_SKILL_TUNING.barrageDamageMultiplier,
+    });
+
+    for (const blade of volley) {
+      const spawned = this.player.bullets.spawn({
+        position: blade.position,
+        velocity: blade.velocity,
+        radiusTiles: blade.radiusTiles,
+        damage: blade.damage,
+        owner: 'player',
+        ttlMs: blade.ttlMs,
+        pierceRemaining: blade.pierceRemaining,
+        homing: blade.homing,
+      });
+      this.shadowBulletIds.add(spawned.id);
+    }
+
+    this.fx?.spawnShockwave(origin, {
+      startRadiusTiles: 0.35,
+      endRadiusTiles: 2.2,
+      durationMs: 260,
+      lineWidth: 0.1,
+      tint: SHADOW_BARRAGE_TINT,
+    });
+    this.fx?.spawn('fx.slash-arc', origin, {
+      drawUnits: 2.4,
+      tint: SHADOW_BARRAGE_TINT,
+      lifetimeMs: 300,
+    });
+    playActiveSkillSfx();
+    return true;
+  }
+
+  /** Chain Lightning (`shockOnHit`): hop lightning arcs across nearby unvisited targets. */
+  private applyShockArcs(
+    originId: string,
+    originPos: Vec2,
+    baseDamage: number,
+    stats: DerivedStats,
+  ): void {
+    const shock = stats.shockOnHit;
+    if (shock === undefined || shock.arcs <= 0 || !(shock.damageRatio > 0)) return;
+
+    const candidates = this.shockCandidates;
+    candidates.length = 0;
+    for (const enemy of this.enemies) {
+      if (!enemy.isDead) {
+        candidates.push({ id: enemy.id, position: enemy.position });
+      }
+    }
+    const boss = this.boss;
+    if (boss !== null && !boss.isDefeated) {
+      candidates.push({ id: BOSS_TARGET_ID, position: boss.position });
+    }
+
+    const targets = shockArcTargets(
+      originId,
+      originPos,
+      shock,
+      candidates,
+      this.shockTargetsOut,
+    );
+    if (targets.length === 0) return;
+
+    const arcDamage = baseDamage * shock.damageRatio;
+    let prevPos = originPos;
+    for (const target of targets) {
+      if (target.id === BOSS_TARGET_ID) {
+        if (boss !== null && !boss.isDefeated) {
+          boss.takeDamage(arcDamage, this.nowMs);
+          this.reportDamage(arcDamage, boss.position, false);
+        }
+      } else {
+        const hitEnemy = this.enemies.find((candidate) => candidate.id === target.id);
+        if (hitEnemy !== undefined && !hitEnemy.isDead) {
+          hitEnemy.takeDamage(arcDamage, prevPos, this.nowMs);
+          this.reportDamage(arcDamage, hitEnemy.position, false);
+        }
+      }
+
+      this.fx?.line(prevPos, target.position, SHOCK_ARC_TINT, 190);
+      this.fx?.spawn('fx.spark', target.position, {
+        tint: SHOCK_ARC_TINT,
+        drawUnits: 0.9,
+        lifetimeMs: 240,
+      });
+      prevPos = target.position;
+    }
+    playShockSfx();
+  }
+
+  /** Bomber radial AoE blast + visual explosion/shockwave. */
+  private triggerBomberBlast(spec: BomberBlastSpec): void {
+    if (
+      isInsideBomberBlast(
+        spec.center,
+        spec.radiusTiles,
+        this.player.position,
+        PLAYER_RADIUS_TILES,
+      )
+    ) {
+      this.damagePlayer(spec.damage, spec.center, FEEL_TUNING.shake.explosion);
+    }
+
+    const tint = spec.isFollowUp ? BOMBER_FOLLOWUP_TINT : BOMBER_BLAST_TINT;
+    this.fx?.spawn('fx.explosion', spec.center, {
+      drawUnits: Math.max(1.6, spec.radiusTiles * 2),
+      lifetimeMs: 800,
+      ...(spec.isFollowUp ? { tint } : {}),
+    });
+    this.fx?.spawn('fx.smoke-circular', spec.center, {
+      drawUnits: Math.max(1.4, spec.radiusTiles * 1.8),
+      lifetimeMs: 850,
+    });
+    this.fx?.spawnShockwave(spec.center, {
+      startRadiusTiles: 0.35,
+      endRadiusTiles: spec.radiusTiles,
+      durationMs: 280,
+      lineWidth: 0.11,
+      tint,
+    });
+    this.shake?.addTrauma(FEEL_TUNING.shake.explosion);
+    playBomberBlastSfx();
+  }
+
+  /** Buffer haste aura visual pulse around the caster and hasted allies. */
+  private spawnBufferAuraEffects(pulse: Extract<BufferPulseResult, { kind: 'aura' }>): void {
+    this.fx?.spawnShockwave(pulse.center, {
+      startRadiusTiles: 0.4,
+      endRadiusTiles: pulse.radiusTiles,
+      durationMs: 360,
+      lineWidth: 0.09,
+      tint: BUFFER_AURA_TINT,
+    });
+    this.fx?.spawn('fx.boost', pulse.center, {
+      drawUnits: 2.0,
+      tint: BUFFER_AURA_TINT,
+      lifetimeMs: 460,
+    });
+    if (this.secondaryParticles) {
+      const cap = Math.min(6, pulse.affectedIds.length);
+      for (let index = 0; index < cap; index += 1) {
+        const id = pulse.affectedIds[index];
+        const ally = this.enemies.find((candidate) => candidate.id === id);
+        if (ally !== undefined && !ally.isDead) {
+          this.fx?.spawn('fx.spark', ally.position, {
+            tint: BUFFER_AURA_TINT,
+            drawUnits: 0.85,
+            lifetimeMs: 340,
+          });
+        }
+      }
+    }
+    playBufferPulseSfx();
   }
 
   /** Debug: spawn one enemy at a given position (defaults to near the room centre). */
@@ -1250,6 +1767,10 @@ export class CombatLoop {
     this.rewarded.clear();
     this.bossRewarded = false;
     this.player.bullets.clear();
+    this.shadowBulletIds.clear();
+    this.actionBuffer.clear();
+    this.enemyBuffs.clear();
+    this.pendingBlasts = [];
   }
 
   /** Clean nodes + state; called when leaving a run. */

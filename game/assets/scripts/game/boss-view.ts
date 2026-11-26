@@ -36,6 +36,7 @@ import type { BulletPool } from '../core/combat/bullets';
 import { accumulateDamage } from '../core/combat/integer-damage';
 import { telegraphProgress } from '../core/combat/telegraph';
 import { FEEL_TUNING } from '../core/enemies/tuning';
+import type { ScreenShake } from '../core/feel/screen-shake';
 import { squashScale } from '../core/feel/squash';
 import type { EnemyRole } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
@@ -84,8 +85,10 @@ export interface BossViewOptions {
   readonly actorLayer: Node;
   readonly bullets: BulletPool;
   readonly rng: SeededRng;
-  /** FX pool (boss death). */
+  /** FX pool (boss death, sweep/zone telegraphs). */
   readonly fx?: FxPool;
+  /** Optional camera shake for heavy slam zone bursts. */
+  readonly shake?: ScreenShake;
   /** Called when the boss changes phase (bootstrap shows the banner). */
   readonly onPhase?: (phase: BossPhase) => void;
   /** Called when the pattern requests adds; CombatLoop spawns the EnemyView itself. */
@@ -99,6 +102,7 @@ export class BossView {
   private readonly onPhase: (phase: BossPhase) => void;
   private readonly onSummon: (role: EnemyRole, count: number) => void;
   private readonly fx: FxPool | null;
+  private readonly shake: ScreenShake | null;
   private readonly node: Node;
   private readonly animator: SpriteAnimator;
   private readonly sprite: Sprite;
@@ -127,6 +131,7 @@ export class BossView {
     this.onPhase = options.onPhase ?? (() => undefined);
     this.onSummon = options.onSummon ?? (() => undefined);
     this.fx = options.fx ?? null;
+    this.shake = options.shake ?? null;
     this.state = initialBossState(options.def.id, options.start, options.nowMs);
 
     const node = new CocosNode(`boss-${options.def.id}`);
@@ -239,6 +244,7 @@ export class BossView {
               ttlMs: BOSS_BULLET_TTL_MS,
             });
           }
+          this.spawnVolleyCue(event.bullets);
           break;
         case 'summon':
           this.onSummon(event.role, event.count);
@@ -414,5 +420,45 @@ export class BossView {
     const ring = this.ring;
     if (ring !== null) ring.node.active = false;
     this.ringVisible = false;
+  }
+
+  /**
+   * M13 Dash-pressuring `'zone'` slam shockwave & `'sweep'` wide curtain FX cues.
+   * Uses pre-pooled `FxPool` slots + `PHASE_RING` tints without allocating nodes.
+   */
+  private spawnVolleyCue(bullets: readonly { readonly toward: Vec2 | null }[]): void {
+    if (bullets.length === 0) return;
+    const tint = PHASE_RING[this.state.phase];
+    const first = bullets[0];
+    if (first === undefined) return;
+
+    if (bullets.length >= 12 && first.toward === null) {
+      // M13 radial slam `zone` volley: expanding ring + impact flash + camera bump.
+      this.fx?.spawnShockwave(this.state.position, {
+        startRadiusTiles: 0.6,
+        endRadiusTiles: 5.5,
+        durationMs: 360,
+        lineWidth: 0.12,
+        tint,
+      });
+      this.fx?.spawn('fx.impact', this.state.position, {
+        drawUnits: 3.0,
+        tint,
+        lifetimeMs: 360,
+      });
+      this.shake?.addTrauma(0.35);
+      playSfx('explosion');
+      return;
+    }
+
+    if (bullets.length >= 9 && first.toward !== null) {
+      // M13 wide curtain `sweep` volley: broad slash-arc cue at boss launch.
+      this.fx?.spawn('fx.slash-arc', this.state.position, {
+        drawUnits: 3.2,
+        tint,
+        lifetimeMs: 340,
+      });
+      playSfx('shoot');
+    }
   }
 }

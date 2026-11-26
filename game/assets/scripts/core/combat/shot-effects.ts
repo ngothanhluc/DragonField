@@ -9,7 +9,7 @@
  * factor **applied on hit** because it depends on the target's health at that moment.
  */
 import type { SeededRng } from '../rng';
-import type { DerivedStats } from '../skills/derived-stats';
+import type { DerivedStats, ShockOnHit } from '../skills/derived-stats';
 
 /** Total spread of Twin Shot (GDD §6: ±12°). */
 export const TWIN_SPREAD_RADIANS = (12 * Math.PI) / 180;
@@ -167,4 +167,69 @@ export function steerVelocity(
   const angle = currentAngle + turn;
 
   return { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
+}
+
+/**
+ * Apply `Corrosive` / `Blightfrost` bonus damage against targets afflicted by Freeze, Poison,
+ * or Burn (`statusDamageBonus`). Pure arithmetic — returns `damage` unchanged when unafflicted.
+ */
+export function damageWithStatusBonus(
+  stats: Pick<DerivedStats, 'statusDamageBonus'>,
+  damage: number,
+  afflicted: boolean,
+): number {
+  if (!afflicted || !(stats.statusDamageBonus > 0) || !(damage > 0)) return damage;
+  return damage * (1 + stats.statusDamageBonus);
+}
+
+/**
+ * Compute Chain Lightning (`shockOnHit`) arc targets hopping from `originPos` through nearby
+ * unvisited targets within `shock.rangeTiles`, up to `shock.arcs` hops.
+ *
+ * Accepts an optional `out` array so hot combat loops reuse one buffer without allocating.
+ */
+export function shockArcTargets(
+  originId: string,
+  originPos: { readonly x: number; readonly y: number },
+  shock: ShockOnHit,
+  candidates: readonly RicochetCandidate[],
+  out: RicochetTarget[] = [],
+): RicochetTarget[] {
+  out.length = 0;
+  const maxArcs = Math.max(0, Math.floor(shock.arcs));
+  if (maxArcs === 0 || !(shock.rangeTiles > 0) || !(shock.damageRatio > 0)) {
+    return out;
+  }
+
+  const visited = new Set<string>([originId]);
+  let currentX = originPos.x;
+  let currentY = originPos.y;
+  const rangeSq = shock.rangeTiles * shock.rangeTiles;
+
+  for (let hop = 0; hop < maxArcs; hop += 1) {
+    let best: RicochetCandidate | null = null;
+    let bestDistSq = rangeSq;
+
+    for (const candidate of candidates) {
+      if (visited.has(candidate.id)) continue;
+      const dx = candidate.position.x - currentX;
+      const dy = candidate.position.y - currentY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= bestDistSq) {
+        bestDistSq = distSq;
+        best = candidate;
+      }
+    }
+
+    if (best === null) break;
+    visited.add(best.id);
+    out.push({
+      id: best.id,
+      position: { x: best.position.x, y: best.position.y },
+    });
+    currentX = best.position.x;
+    currentY = best.position.y;
+  }
+
+  return out;
 }

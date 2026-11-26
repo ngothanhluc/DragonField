@@ -74,6 +74,9 @@ const ROTATING_KEYS: ReadonlySet<string> = new Set([
  */
 const BULLET_NO_TINT = new CocosColor(255, 255, 255, 255);
 const ENEMY_BULLET_TINT = new CocosColor(255, 142, 78, 255);
+/** Signature Active (*Shadow Barrage*) shuriken tint + scale so barrages read immediately. */
+const SHADOW_BULLET_TINT = new CocosColor(195, 130, 255, 255);
+const SHADOW_DRAW_SCALE = 1.35;
 
 /** Cached `cc.Color` per element — the trail spawns many ghosts and must not allocate per frame. */
 const ELEMENT_COLORS: Readonly<Record<VfxElement, Color>> = {
@@ -108,6 +111,8 @@ const GHOST_SCALE = 0.85;
 export interface BulletViewOptions {
   /** Chapter of the current run — picks the enemy ball. Cheap read, cached per change. */
   readonly chapter: () => number;
+  /** Optional predicate identifying Ninja's *Shadow Barrage* projectiles for distinct VFX. */
+  readonly isShadowBullet?: (bulletId: number) => boolean;
 }
 
 interface KeyData {
@@ -123,6 +128,8 @@ interface BulletNode {
   lastFrame: number;
   lastKey: string;
   lastPlayer: boolean | null;
+  lastShadow: boolean;
+  lastRadiusScale: number;
   lastAngle: number;
 }
 
@@ -255,7 +262,8 @@ export class BulletView extends Component {
       if (entry === null) break;
 
       const player = bullet.owner === 'player';
-      const key = player ? playerKey : this.enemyKey;
+      const isShadow = player && (options.isShadowBullet?.(bullet.id) ?? false);
+      const key = isShadow ? 'fx.shuriken-magic' : player ? playerKey : this.enemyKey;
       const data = this.byKey.get(key);
       if (data === undefined) continue;
 
@@ -263,20 +271,39 @@ export class BulletView extends Component {
       const frame = data.frames[frameIndex];
       if (frame === undefined) continue;
 
+      const radiusScale = isShadow
+        ? SHADOW_DRAW_SCALE
+        : !player && bullet.radiusTiles > 0.22
+          ? Math.min(1.6, bullet.radiusTiles / 0.2)
+          : 1;
       const drawScale =
-        (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) * (DRAW_SCALE[key] ?? 1);
+        (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) *
+        (DRAW_SCALE[key] ?? 1) *
+        radiusScale;
 
-      if (entry.lastFrame !== frameIndex || entry.lastKey !== key || entry.lastPlayer !== player) {
+      if (
+        entry.lastFrame !== frameIndex ||
+        entry.lastKey !== key ||
+        entry.lastPlayer !== player ||
+        entry.lastShadow !== isShadow ||
+        entry.lastRadiusScale !== radiusScale
+      ) {
         entry.lastFrame = frameIndex;
         entry.lastKey = key;
         entry.lastPlayer = player;
+        entry.lastShadow = isShadow;
+        entry.lastRadiusScale = radiusScale;
         entry.sprite.spriteFrame = frame;
 
         const transform = entry.node.getComponent(CocosUITransform);
         // `sizeMode = CUSTOM` takes its size from UITransform — set the sliced frame size.
         if (transform !== null) transform.setContentSize(data.width, data.height);
         entry.node.setScale(drawScale, drawScale, 1);
-        entry.sprite.color = player ? playerTint : enemyTint;
+        entry.sprite.color = isShadow
+          ? SHADOW_BULLET_TINT
+          : player
+            ? playerTint
+            : enemyTint;
       }
 
       this.applyPosition(entry.node, bullet.position);
@@ -294,7 +321,11 @@ export class BulletView extends Component {
       }
 
       if (player && trailOn) {
-        const element: VfxElement | null = bullet.crit ? 'crit' : baseTrail;
+        const element: VfxElement | null = isShadow
+          ? 'homing'
+          : bullet.crit
+            ? 'crit'
+            : baseTrail;
         if (element !== null) {
           this.spawnGhost(bullet, data, frameIndex, element, angle, drawScale);
         }
@@ -405,6 +436,8 @@ export class BulletView extends Component {
       lastFrame: -1,
       lastKey: '',
       lastPlayer: null,
+      lastShadow: false,
+      lastRadiusScale: 1,
       lastAngle: Number.NaN,
     };
     this.nodes.push(entry);

@@ -32,3 +32,38 @@ export function setSfxSink(next: SfxSink | null): void {
 export function playSfx(id: SfxId): void {
   sink?.(id);
 }
+
+/** Semantic M13 cues routed through existing validated `SFX_BANK` clips. */
+export function playDashSfx(): void {
+  playSfx('ui-move');
+}
+
+export function playDashNovaSfx(): void {
+  playSfx('shield');
+}
+
+export function playActiveSkillSfx(): void {
+  playSfx('shoot');
+  playSfx('skill-acquired');
+}
+
+export function playEvolutionPickSfx(): void {
+  playSfx('level-up');
+  playSfx('skill-acquired');
+}
+
+export function playBurnSfx(): void {
+  playSfx('poison');
+}
+
+export function playShockSfx(): void {
+  playSfx('enemy-hit');
+}
+
+export function playBomberBlastSfx(): void {
+  playSfx('explosion');
+}
+
+export function playBufferPulseSfx(): void {
+  playSfx('xp-pickup');
+}

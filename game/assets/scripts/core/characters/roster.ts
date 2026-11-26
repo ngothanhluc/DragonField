@@ -60,7 +60,7 @@ export interface CharacterFeatureFlags {
 export type CharacterFeatureFlag = keyof CharacterFeatureFlags;
 
 /** Logical player animation clips requested by the player controller. */
-export type CharacterAnimKind = 'idle' | 'walk' | 'attack' | 'hit' | 'dead';
+export type CharacterAnimKind = 'idle' | 'walk' | 'attack' | 'hit' | 'dead' | 'dash';
 
 /** Primary manifest key plus a guaranteed-present fallback key for a character animation. */
 export interface CharacterAnimKeys {

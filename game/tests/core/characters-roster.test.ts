@@ -201,16 +201,22 @@ describe('Character roster — animation key resolution', () => {
     expect(resolveCharacterAnimKey(manifest, CHARACTERS.ninja, 'hit', 'right')).toBe(
       'player.hit.right',
     );
+    expect(resolveCharacterAnimKey(manifest, CHARACTERS.ninja, 'dash', 'down')).toBe(
+      'player.dash.down',
+    );
     expect(resolveCharacterAnimKey(manifest, CHARACTERS.ninja, 'dead')).toBe('player.dead');
 
     for (const dir of DIRECTIONS) {
       expect(resolveCharacterAnimKey(manifest, CHARACTERS.cultivator, 'idle', dir)).toBe(
         `cultivator.idle.${dir}`,
       );
-      // Until cultivator walk/attack/hit sheets are staged, fall back to cultivator's own directional idle.
+      // Until cultivator walk/attack/hit/dash sheets are staged, fall back to cultivator's own directional idle.
       const walkKey = resolveCharacterAnimKey(manifest, CHARACTERS.cultivator, 'walk', dir);
       expect(manifest.sprites[walkKey]).toBeDefined();
       expect(walkKey.startsWith('cultivator.')).toBe(true);
+      expect(resolveCharacterAnimKey(manifest, CHARACTERS.cultivator, 'dash', dir)).toBe(
+        `cultivator.idle.${dir}`,
+      );
     }
     const deadKey = resolveCharacterAnimKey(manifest, CHARACTERS.cultivator, 'dead');
     expect(manifest.sprites[deadKey]).toBeDefined();

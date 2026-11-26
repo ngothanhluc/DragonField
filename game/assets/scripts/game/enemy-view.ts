@@ -43,7 +43,7 @@ import { DEFAULT_COMBAT } from '../core/config';
 import {
   CHASER_CONTACT_RANGE_TILES,
   ROOM_EDGE_MARGIN_TILES,
-  attackReleased,
+  attackReleasedForRole,
   contactDamageFor,
   decideAction,
   speedFor,
@@ -51,6 +51,7 @@ import {
   visualScaleFor,
 } from '../core/enemies/behaviours';
 import type { EnemyAction, EnemyState } from '../core/enemies/behaviours';
+import { bomberBlastSpec } from '../core/enemies/bomber';
 import { nextActionStartedMs } from '../core/enemies/attack-cycle';
 import { eliteScale, spriteActorForRole } from '../core/enemies/elite';
 import { telegraphLine } from '../core/enemies/telegraph-line';
@@ -69,7 +70,7 @@ import { FEEL_TUNING, NAVIGATION_TUNING } from '../core/enemies/tuning';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { loadTexture } from './assets/texture-cache';
 import type { FxPool } from './fx/effect-pool';
-import { playSfx } from './audio/sfx';
+import { playBurnSfx, playSfx } from './audio/sfx';
 import { ACTOR_FEET_OFFSET_TILES, sliceFrame, tileToWorld } from './level-view';
 import type { TileRect } from './level-view';
 
@@ -123,7 +124,9 @@ export function loadTelegraphFrames(): Promise<SpriteFrame[]> {
 const NO_TINT = new CocosColor(255, 255, 255, 255);
 const HIT_TINT = new CocosColor(255, 250, 225, 255);
 const FROZEN_TINT = new CocosColor(150, 220, 255, 255);
+const BURNED_TINT = new CocosColor(255, 165, 105, 255);
 const POISONED_TINT = new CocosColor(170, 230, 130, 255);
+const HASTED_TINT = new CocosColor(180, 255, 170, 255);
 const TELEGRAPH_TINT: Readonly<Record<RoleTelegraphKind, Color>> = {
   chaser: new CocosColor(255, 226, 120, 255),
   caster: new CocosColor(130, 220, 255, 255),
@@ -204,10 +207,10 @@ export interface EnemyViewInitArgs {
   readonly random?: () => number;
 }
 
-/** One enemy frame result — the combat adapter uses it to spawn bullets and sweep charges. */
+/** One enemy frame result — the combat adapter uses it to spawn bullets, sweep charges, and trigger blasts/buffs. */
 export interface EnemyStepResult {
   /** Attack released in this frame. `null` when nothing new happened. */
-  readonly released: 'shot' | 'charge' | null;
+  readonly released: 'shot' | 'charge' | 'blast' | 'buff' | null;
   /** Path travelled this frame **while dashing**, for sweep-tested hitboxes. */
   readonly chargeSweep: { readonly from: Vec2; readonly to: Vec2 } | null;
 }
@@ -238,7 +241,10 @@ export class EnemyView extends Component {
   private ring: Sprite | null = null;
   private ringFrames: SpriteFrame[] = [];
   private ringRole = '';
+  private ringDiameterTiles = 0;
   private ringVisible = false;
+  private hasted = false;
+  private hasteScale = 1;
   /** Role-scale compensation so the ring keeps an absolute diameter (no inflation on brutes). */
   private ringScaleCompensation = 1;
   /** Scratch colour for the ring (rewritten each frame, no allocation). */
@@ -323,7 +329,13 @@ export class EnemyView extends Component {
 
   get contactDamage(): number {
     const state = this.state;
-    return state === null ? 0 : contactDamageFor(state.role, state.elite);
+    return state === null
+      ? 0
+      : contactDamageFor(state.role, state.elite, undefined, this.level?.chapter ?? 1);
+  }
+
+  hasAnyStatus(nowMs: number): boolean {
+    return this.statuses.hasAnyStatus(nowMs);
   }
 
   get contactRangeTiles(): number {
@@ -372,6 +384,7 @@ export class EnemyView extends Component {
     player: Vec2,
     navigation: RoomNavigation,
     view?: ViewRect,
+    hasteMultiplier = 1,
   ): EnemyStepResult {
     const state = this.state;
     const level = this.level;
@@ -384,17 +397,18 @@ export class EnemyView extends Component {
         ? decideAction({ state, player, nowMs, level })
         : decideAction({ state, player, nowMs, level, view });
 
-    // Poison ticks before the action is decided: the enemy may die this frame.
-    const poison = this.statuses.poisonDamage(nowMs, deltaMs);
-    if (poison > 0) {
-      state.health = Math.max(0, state.health - poison);
+    // Poison and Burn tick before the action is decided: the enemy may die this frame.
+    const dot =
+      this.statuses.poisonDamage(nowMs, deltaMs) + this.statuses.burnDamage(nowMs, deltaMs);
+    if (dot > 0) {
+      state.health = Math.max(0, state.health - dot);
       if (state.health <= 0) {
         this.die();
         return result;
       }
     }
 
-    const released = attackReleased(previous, next);
+    const released = attackReleasedForRole(state.role, previous, next);
 
     // `actionStartedMs` is the **attack cycle** anchor — see `core/enemies/attack-cycle.ts`.
     // Stagger (from constant fire) must not restart the cooldown, or the enemy would
@@ -417,6 +431,9 @@ export class EnemyView extends Component {
       return result;
     }
 
+    this.hasteScale = Number.isFinite(hasteMultiplier) && hasteMultiplier > 1 ? hasteMultiplier : 1;
+    this.hasted = this.hasteScale > 1;
+
     const before: Vec2 = { x: state.position.x, y: state.position.y };
     const field = navigation.field(this.hitRadius, player, nowMs);
     const detour = this.stuckGuard.update(
@@ -427,7 +444,13 @@ export class EnemyView extends Component {
       field,
       this.random,
     );
-    this.advance(next, deltaMs, this.statuses.speedMultiplier(nowMs), field, detour);
+    this.advance(
+      next,
+      deltaMs,
+      this.statuses.speedMultiplier(nowMs) * this.hasteScale,
+      field,
+      detour,
+    );
     this.applyKnockback(deltaMs);
     this.syncNodePosition();
 
@@ -473,19 +496,21 @@ export class EnemyView extends Component {
     }
   }
 
-  /** Freeze/Poison when a player bullet lands. Core decides the effect; the view holds state + reports FX. */
+  /** Freeze/Poison/Burn when a player bullet lands. Core decides the effect; the view holds state + reports FX. */
   applyStatus(
     stats: DerivedStats,
     nowMs: number,
-  ): { readonly slowStarted: boolean; readonly poisonStarted: boolean } {
+  ): { readonly slowStarted: boolean; readonly poisonStarted: boolean; readonly burnStarted: boolean } {
     const wasSlowed = this.statuses.isSlowed(nowMs);
     const wasPoisoned = this.statuses.isPoisoned(nowMs);
+    const wasBurned = this.statuses.isBurned(nowMs);
     this.statuses.apply(stats, nowMs);
 
     // The status FX belongs to the **first application** of the status, not to every hit:
     // a rapid-fire loadout hits the same enemy many times per second.
     const slowStarted = !wasSlowed && this.statuses.isSlowed(nowMs);
     const poisonStarted = !wasPoisoned && this.statuses.isPoisoned(nowMs);
+    const burnStarted = !wasBurned && this.statuses.isBurned(nowMs);
 
     if (slowStarted) {
       this.fx?.spawn('fx.ice', this.position);
@@ -495,8 +520,16 @@ export class EnemyView extends Component {
       this.fx?.spawn('fx.poison', this.position);
       playSfx('poison');
     }
+    if (burnStarted) {
+      this.fx?.spawn('fx.impact', this.position, {
+        tint: BURNED_TINT,
+        drawUnits: 1.5,
+        lifetimeMs: 360,
+      });
+      playBurnSfx();
+    }
 
-    return { slowStarted, poisonStarted };
+    return { slowStarted, poisonStarted, burnStarted };
   }
 
   /**
@@ -579,7 +612,7 @@ export class EnemyView extends Component {
     const level = this.level;
     if (state === null || level === null) return;
 
-    const seconds = (deltaMs / 1000) * Math.max(0, Math.min(1, speedMultiplier));
+    const seconds = (deltaMs / 1000) * Math.max(0, speedMultiplier);
 
     // Obstacles are solid (all kinds, pits included): same rule as the player and the sim.
     if (action.kind === 'charge') {
@@ -669,10 +702,12 @@ export class EnemyView extends Component {
     this.hideLine();
   }
 
-  /** Status tint outside telegraph: frozen > poisoned > none (elites have their own art, ADR-015). */
+  /** Status & buffer haste tint outside telegraph: frozen > burned > poisoned > hasted > none. */
   private stateTint(nowMs: number): Color {
     if (this.statuses.isSlowed(nowMs)) return FROZEN_TINT;
+    if (this.statuses.isBurned(nowMs)) return BURNED_TINT;
     if (this.statuses.isPoisoned(nowMs)) return POISONED_TINT;
+    if (this.hasted) return HASTED_TINT;
     return NO_TINT;
   }
 
@@ -713,7 +748,7 @@ export class EnemyView extends Component {
     this.animKey = key;
     this.animDirection = direction;
     this.animMoving = moving;
-    this.animator?.setPlaybackScale(moving ? 1 : 1);
+    this.animator?.setPlaybackScale(moving && this.hasted ? Math.min(1.8, this.hasteScale) : 1);
     this.animator?.play(`${key}.${direction}`, direction);
   }
 
@@ -770,9 +805,14 @@ export class EnemyView extends Component {
     const ring = this.ring;
     if (ring === null) return;
 
-    if (this.ringRole !== kind) {
+    const diameter =
+      kind === 'bomber' && this.state !== null
+        ? bomberBlastSpec(this.state, this.level?.chapter ?? 1).radiusTiles * 2
+        : RING_DIAMETER_TILES[kind];
+
+    if (this.ringRole !== kind || this.ringDiameterTiles !== diameter) {
       this.ringRole = kind;
-      const diameter = RING_DIAMETER_TILES[kind];
+      this.ringDiameterTiles = diameter;
       // 32 px frame at parent scale 1/16 ⇒ 32/16 = 2 tiles; divide by the target diameter and
       // multiply by the role-scale compensation so the brute's ring stays 4 tiles instead of inflating 1.75×.
       const scale = (diameter / 2) * this.ringScaleCompensation;

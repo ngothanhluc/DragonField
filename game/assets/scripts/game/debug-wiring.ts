@@ -8,6 +8,7 @@ import type { Node as CocosNode } from 'cc';
 import { director } from 'cc';
 import type { AudioManager } from './audio/audio-manager';
 import type {
+  DebugActionsSnapshot,
   DebugAnimationSnapshot,
   DebugAtmosphereSnapshot,
   DebugAudioSnapshot,
@@ -85,6 +86,10 @@ export interface DebugWiringHost {
   readonly grantXp: (amount: number) => DebugXpSnapshot;
   readonly rerollSkill: () => boolean;
   readonly playerIframeMs: () => number;
+  readonly dash: () => boolean;
+  readonly activeSkill: () => boolean;
+  readonly actions: () => DebugActionsSnapshot;
+  readonly triggerEvolution: (id?: string) => string | null;
 }
 
 /** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
@@ -163,6 +168,10 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     grantXp: host.grantXp,
     rerollSkill: host.rerollSkill,
     playerIframeMs: host.playerIframeMs,
+    dash: host.dash,
+    activeSkill: host.activeSkill,
+    actions: host.actions,
+    triggerEvolution: host.triggerEvolution,
     nodeCount: () => {
       const scene: Node | null = director.getScene() as Node | null;
       return scene === null ? 0 : countNodes(scene);

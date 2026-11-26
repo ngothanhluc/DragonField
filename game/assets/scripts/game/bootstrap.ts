@@ -58,7 +58,7 @@ import { XpOrbPool } from '../core/xp/xp-orbs';
 import { rerollCost, spendSharedGoldForReroll } from '../core/xp/reroll';
 import { hasAlternativeSkills } from '../core/skills/roll';
 import { chapterFromLevels } from '../core/level/chapter';
-import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
+import { ENEMY_ROLES, ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data';
 import { parseTmxLevel } from '../core/level/tmx';
 import { parseWaterLayout, waterAreasFor } from '../core/level/water-layout';
@@ -91,6 +91,7 @@ import {
   type ShopOffer,
   type SpecialKind,
 } from '../core/run/special-rooms';
+import { EVOLUTIONS, getEvolution, isEvolutionId } from '../core/skills/evolutions';
 import { getSkill, type SkillDef } from '../core/skills/pool';
 import { chapterGate } from '../core/save/chapter-gate';
 import { withBest } from '../core/save/save-data';
@@ -110,6 +111,7 @@ import { DoorView } from './door-view';
 import type { DoorSpot } from './door-view';
 import {
   isDebugEnabled,
+  type DebugActionsSnapshot,
   type DebugDoorSnapshot,
   type DebugSpecialSnapshot,
   type DebugStatus,
@@ -154,7 +156,7 @@ import { cullWorld } from './world-culler';
 import type { CameraFocus } from './world-camera';
 import { AudioManager, bossMusicId } from './audio/audio-manager';
 import type { MusicId } from './audio/audio-manager';
-import { playSfx } from './audio/sfx';
+import { playEvolutionPickSfx, playSfx } from './audio/sfx';
 import { installDebugWiring } from './debug-wiring';
 import { MenuBackdrop } from './menu-backdrop';
 import { createSaveRepository } from './save-storage';
@@ -281,8 +283,8 @@ const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, st
   },
 };
 
-/** Logical player animations whose sheets must be ready before the first frame (`roll` unused). */
-const CHARACTER_ANIM_KINDS: readonly CharacterAnimKind[] = ['idle', 'walk', 'attack', 'hit', 'dead'];
+/** Logical player animations whose sheets must be ready before the first frame. */
+const CHARACTER_ANIM_KINDS: readonly CharacterAnimKind[] = ['idle', 'walk', 'attack', 'hit', 'dead', 'dash'];
 const CARDINAL_DIRECTIONS = ['down', 'up', 'left', 'right'] as const;
 
 /** Bootstrap state — not `RunState` state. */
@@ -403,6 +405,17 @@ export class Bootstrap extends Component {
     level: 1,
     current: 0,
     required: 0,
+  };
+  private readonly actionHudCache: {
+    dashReadyRatio: number;
+    dashCooldownSec: number;
+    activeReadyRatio: number;
+    activeCooldownSec: number;
+  } = {
+    dashReadyRatio: 1,
+    dashCooldownSec: 0,
+    activeReadyRatio: 1,
+    activeCooldownSec: 0,
   };
   private xpOrbElapsedSec = 0;
   private lastXpPickupSfxMs = Number.NEGATIVE_INFINITY;
@@ -655,6 +668,7 @@ export class Bootstrap extends Component {
     if (this.status !== 'playing') return;
     this.status = 'dying';
     this.screens.setScreen('playing');
+    this.combat?.clearActionBuffer();
     const player = this.player;
     if (player !== null) {
       this.fx?.spawn('fx.smoke', player.position, { drawUnits: 2.2, lifetimeMs: 1000 });
@@ -1068,6 +1082,16 @@ export class Bootstrap extends Component {
       }
     }
 
+    // Preload every role mapped for this chapter (including WaveScheduler-injected `bomber`/`buffer`).
+    for (const role of ENEMY_ROLES) {
+      const monster = this.monsterFor(chapter.chapter, role);
+      sheets.add(resolve(manifest, `${monster}.walk.down`).sheet);
+      sheets.add(resolve(manifest, `${monster}.elite.walk.down`).sheet);
+      if (role === 'splitter' || role === 'splitling') {
+        sheets.add(resolve(manifest, `${monster}.splitling.walk.down`).sheet);
+      }
+    }
+
     for (const room of chapter.rooms) {
       for (const wave of room.waves) {
         for (const spawn of wave.enemies) {
@@ -1324,9 +1348,23 @@ export class Bootstrap extends Component {
       attachments: this.attachments,
       bodyNode,
     });
+    player.setActionHandlers({
+      onDash: () => this.combat?.bufferAction('dash'),
+      onActive: () => this.combat?.bufferAction('active'),
+      isGameplayActive: () => this.isGameplayActionActive(),
+    });
 
     this.player = player;
     return player;
+  }
+
+  private isGameplayActionActive(): boolean {
+    return (
+      this.status === 'playing' &&
+      !this.doorPhase &&
+      this.specialRoom === null &&
+      !this.roomClearPending
+    );
   }
 
   private async createBullets(player: PlayerController): Promise<void> {
@@ -1334,7 +1372,10 @@ export class Bootstrap extends Component {
     node.parent = this.bulletLayer ?? this.node;
 
     const bulletView: BulletView = node.addComponent(BulletView);
-    await bulletView.init(player.bullets, { chapter: () => this.run?.chapter ?? 1 });
+    await bulletView.init(player.bullets, {
+      chapter: () => this.run?.chapter ?? 1,
+      isShadowBullet: (bulletId) => this.combat?.isShadowBullet(bulletId) ?? false,
+    });
     // Push the look once; `applyLoadout`/`setFeelSettings` push it again when it really changes,
     // so the per-frame sync never builds a loadout map.
     bulletView.setLoadout(this.skills.snapshot());
@@ -1610,6 +1651,7 @@ export class Bootstrap extends Component {
     this.status = 'skill-pick';
     this.screens.setScreen('skill-pick');
     this.player?.resetInput();
+    this.combat?.clearActionBuffer();
     playSfx('level-up');
     this.openLevelUpModal(choices);
   }
@@ -1706,6 +1748,10 @@ export class Bootstrap extends Component {
 
     const { def, result } = picked;
     this.applyLoadout(result.healNow);
+    if (isEvolutionId(def.id)) {
+      playEvolutionPickSfx();
+      this.player?.playSkillBoost();
+    }
     this.xpTracker?.consumeLevelUp();
     this.syncHud();
     console.log(
@@ -2143,6 +2189,9 @@ export class Bootstrap extends Component {
     if (picked === null) return false;
 
     this.applyLoadout(picked.result.healNow);
+    if (isEvolutionId(picked.def.id)) {
+      playEvolutionPickSfx();
+    }
     this.player?.playSkillBoost();
     console.log(`[YokaiField] Chest skill: ${picked.def.name} → stack ${picked.result.stacks}.`);
     this.finishSpecialRoom();
@@ -2575,24 +2624,97 @@ export class Bootstrap extends Component {
         this.player !== null && this.combat !== null
           ? this.player.remainingInvulnerabilityMs(this.combat.clockMs)
           : 0,
+      dash: () => this.debugDash(),
+      activeSkill: () => this.debugActiveSkill(),
+      actions: () => this.debugActionsSnapshot(),
+      triggerEvolution: (id) => this.debugTriggerEvolution(id),
     });
   }
 
-  /** Sync HUD hearts, enemy counter, boss bar, and live XP bar without allocating per frame. */
+  /** Sync HUD hearts, enemy counter, boss bar, XP bar, and M13 Dash/Active cooldowns without allocating per frame. */
   private syncHud(): void {
     const hud = this.hud;
     const player = this.player;
     if (hud === null || player === null) return;
 
+    const actions = this.combat?.actionsHudSnapshot(this.actionHudCache) ?? null;
     const tracker = this.xpTracker;
     if (tracker === null) {
-      syncCombatHud(hud, player, this.combat);
+      syncCombatHud(hud, player, this.combat, null, actions);
       return;
     }
     this.xpHudCache.level = tracker.level;
     this.xpHudCache.current = tracker.currentXp;
     this.xpHudCache.required = tracker.nextLevelXp;
-    syncCombatHud(hud, player, this.combat, this.xpHudCache);
+    syncCombatHud(hud, player, this.combat, this.xpHudCache, actions);
+  }
+
+  private debugDash(): boolean {
+    if (!this.isGameplayActionActive() || this.combat === null) return false;
+    const ok = this.combat.triggerDash();
+    if (ok) this.syncHud();
+    return ok;
+  }
+
+  private debugActiveSkill(): boolean {
+    if (!this.isGameplayActionActive() || this.combat === null) return false;
+    const ok = this.combat.triggerActiveSkill();
+    if (ok) this.syncHud();
+    return ok;
+  }
+
+  private debugActionsSnapshot(): DebugActionsSnapshot {
+    const evolutions = this.skills.stats().activeEvolutions;
+    if (this.combat === null) {
+      return {
+        dashReadyRatio: 1,
+        dashCooldownSec: 0,
+        isDashing: false,
+        dashIframeMs: 0,
+        dashBuffered: false,
+        dashesUsed: 0,
+        activeReadyRatio: 1,
+        activeCooldownSec: 0,
+        activeBuffered: false,
+        activeSkillsUsed: 0,
+        evolutions,
+      };
+    }
+    return {
+      ...this.combat.actionsSnapshot(),
+      evolutions,
+    };
+  }
+
+  private debugTriggerEvolution(id?: string): string | null {
+    if (this.run === null || this.player === null) return null;
+
+    const target =
+      id !== undefined
+        ? isEvolutionId(id)
+          ? getEvolution(id)
+          : null
+        : (EVOLUTIONS.find((evo) => this.skills.stacks(evo.id) < evo.maxStacks) ?? null);
+    if (target === null) return null;
+
+    let healNow = 0;
+    for (const reqId of target.requires) {
+      const missing = Math.max(0, target.minStacksEach - this.skills.stacks(reqId));
+      if (missing > 0) {
+        healNow += this.skills.grant(reqId, missing).healNow;
+      }
+    }
+    healNow += this.skills.grant(target.id, 1).healNow;
+
+    this.applyLoadout(healNow);
+    this.player.playSkillBoost();
+    playEvolutionPickSfx();
+    spawnLevelUpBurst(this.fx, this.player.position, this.save?.settings.effects ?? 'full', {
+      radiusTiles: XP_TUNING.levelUpWave.knockbackRadiusTiles,
+    });
+    this.syncHud();
+    console.log(`[YokaiField] debug triggerEvolution → ${target.id} (${target.name}).`);
+    return target.id;
   }
 
   private debugXpSnapshot(): DebugXpSnapshot {

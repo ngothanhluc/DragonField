@@ -198,6 +198,21 @@ export interface DebugXpSnapshot {
   readonly isXpDoorRoom: boolean;
 }
 
+/** Live M13 Dash, Signature Active, and Evolution state for `window.__yokai.actions()`. */
+export interface DebugActionsSnapshot {
+  readonly dashReadyRatio: number;
+  readonly dashCooldownSec: number;
+  readonly isDashing: boolean;
+  readonly dashIframeMs: number;
+  readonly dashBuffered: boolean;
+  readonly dashesUsed: number;
+  readonly activeReadyRatio: number;
+  readonly activeCooldownSec: number;
+  readonly activeBuffered: boolean;
+  readonly activeSkillsUsed: number;
+  readonly evolutions: readonly string[];
+}
+
 /** Data bootstrap supplies to the API; every method is a live closure. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
@@ -283,6 +298,14 @@ export interface DebugProvider {
   readonly rerollSkill?: () => boolean;
   /** M12: remaining player invulnerability window in ms (`600` right after level-up resume). */
   readonly playerIframeMs?: () => number;
+  /** M13: trigger Dash immediately during gameplay; returns `false` if on cooldown or unavailable. */
+  readonly dash?: () => boolean;
+  /** M13: trigger Signature Active (*Shadow Barrage*) immediately; returns `false` if cooling down. */
+  readonly activeSkill?: () => boolean;
+  /** M13: live Dash / Signature Active cooldown & active Evolution snapshot. */
+  readonly actions?: () => DebugActionsSnapshot;
+  /** M13: unlock prerequisites and grant an Evolution (`id` optional), returning its id or `null`. */
+  readonly triggerEvolution?: (id?: string) => string | null;
 }
 
 /** Alias for `DebugProvider`. */
@@ -305,6 +328,10 @@ export type YokaiDebugApi = Omit<
   | 'grantXp'
   | 'rerollSkill'
   | 'playerIframeMs'
+  | 'dash'
+  | 'activeSkill'
+  | 'actions'
+  | 'triggerEvolution'
 > & {
   /** The last 200 keyboard events (key/code/keyCode/isComposing) — for IME diagnosis. */
   readonly keyLog: typeof keyLog;
@@ -323,6 +350,10 @@ export type YokaiDebugApi = Omit<
   readonly grantXp: (amount: number) => DebugXpSnapshot;
   readonly rerollSkill: () => boolean;
   readonly playerIframeMs: () => number;
+  readonly dash: () => boolean;
+  readonly activeSkill: () => boolean;
+  readonly actions: () => DebugActionsSnapshot;
+  readonly triggerEvolution: (id?: string) => string | null;
 };
 
 const DEFAULT_CHARACTER_SNAPSHOT: DebugCharacterSnapshot = {
@@ -346,6 +377,20 @@ const DEFAULT_XP_SNAPSHOT: DebugXpSnapshot = {
   isXpDoorRoom: false,
 };
 
+const DEFAULT_ACTIONS_SNAPSHOT: DebugActionsSnapshot = {
+  dashReadyRatio: 1,
+  dashCooldownSec: 0,
+  isDashing: false,
+  dashIframeMs: 0,
+  dashBuffered: false,
+  dashesUsed: 0,
+  activeReadyRatio: 1,
+  activeCooldownSec: 0,
+  activeBuffered: false,
+  activeSkillsUsed: 0,
+  evolutions: [],
+};
+
 /** Install the API if `?debug=1`; returns `true` when installed. */
 export function installDebugApi(provider: DebugProvider): boolean {
   if (!isDebugEnabled()) return false;
@@ -362,6 +407,10 @@ export function installDebugApi(provider: DebugProvider): boolean {
   const grantXp = provider.grantXp ?? ((): DebugXpSnapshot => DEFAULT_XP_SNAPSHOT);
   const rerollSkill = provider.rerollSkill ?? ((): boolean => false);
   const playerIframeMs = provider.playerIframeMs ?? ((): number => 0);
+  const dash = provider.dash ?? ((): boolean => false);
+  const activeSkill = provider.activeSkill ?? ((): boolean => false);
+  const actions = provider.actions ?? ((): DebugActionsSnapshot => DEFAULT_ACTIONS_SNAPSHOT);
+  const triggerEvolution = provider.triggerEvolution ?? ((): string | null => null);
 
   const api: YokaiDebugApi = Object.defineProperties({} as YokaiDebugApi, {
     status: { get: provider.status, enumerable: true },
@@ -413,6 +462,10 @@ export function installDebugApi(provider: DebugProvider): boolean {
     grantXp: { value: grantXp, enumerable: true },
     rerollSkill: { value: rerollSkill, enumerable: true },
     playerIframeMs: { value: playerIframeMs, enumerable: true },
+    dash: { value: dash, enumerable: true },
+    activeSkill: { value: activeSkill, enumerable: true },
+    actions: { value: actions, enumerable: true },
+    triggerEvolution: { value: triggerEvolution, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -424,7 +477,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'screen, save, setGold, markChapterCleared, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
       'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, ' +
       'character, selectCharacter, setCultivatorEnabled, playerAttachment, setAttachmentHidden, ' +
-      'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, keyLog).',
+      'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, ' +
+      'dash, activeSkill, actions, triggerEvolution, keyLog).',
   );
   return true;
 }

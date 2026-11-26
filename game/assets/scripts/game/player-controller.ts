@@ -41,6 +41,7 @@ import { ROOM_EDGE_MARGIN_TILES } from '../core/enemies/behaviours';
 import { squashScale } from '../core/feel/squash';
 import type { LevelData } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
+import { dashVelocity, isDashing, type DashState } from '../core/input/dash';
 import { moveWithCollision } from '../core/movement/collision';
 import { normalizeMoveInput, velocityFromInput } from '../core/movement/move-intent';
 import { SeededRng } from '../core/rng';
@@ -55,8 +56,8 @@ import {
 } from '../core/vfx/weapon-vfx';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { PLAYER_RADIUS_TILES } from './combat-loop';
-import { KeyboardMove } from './keyboard-move';
-import { playSfx } from './audio/sfx';
+import { KeyboardMove, type KeyboardMoveCallbacks } from './keyboard-move';
+import { playDashSfx, playSfx } from './audio/sfx';
 import type { FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, tileToWorld } from './level-view';
 import {
@@ -212,6 +213,8 @@ export class PlayerController extends Component {
   private attackUntilMs = 0;
   private hitUntilMs = 0;
   private attackAnimMs = 0;
+  private postDashFireUntilMs = Number.NEGATIVE_INFINITY;
+  private readonly currentVelocity: { x: number; y: number } = { x: 0, y: 0 };
   /** Node base scale (ACTOR_SCALE) — squash always multiplies from this, so it never drifts. */
   private baseScale = 1;
   /** Squash start time and its parameters; when time is up it returns exactly to `baseScale`. */
@@ -303,6 +306,38 @@ export class PlayerController extends Component {
 
   isInvulnerable(nowMs: number): boolean {
     return this.health.isInvulnerable(nowMs);
+  }
+
+  /** Current movement velocity in tile units/second (y down) for Tier-2 predictive enemy aim. */
+  get velocity(): Vec2 {
+    return this.currentVelocity;
+  }
+
+  /** Current WASD move intent in tile space (y down), or `{ x: 0, y: 0 }` when idle. */
+  moveDirectionTile(): Vec2 {
+    const input2D = normalizeMoveInput(this.keyboard.keys);
+    return { x: input2D.x, y: -input2D.y };
+  }
+
+  /** Current facing unit vector in tile space (y down) for Dash / Signature Active fallback aim. */
+  facingVectorTile(): Vec2 {
+    switch (this.facing) {
+      case 'up':
+        return { x: 0, y: -1 };
+      case 'down':
+        return { x: 0, y: 1 };
+      case 'left':
+        return { x: -1, y: 0 };
+      case 'right':
+        return { x: 1, y: 0 };
+    }
+  }
+
+  /** Bind Dash (`Space`) and Signature Active (`KeyE`/Right-Click) input callbacks. */
+  setActionHandlers(callbacks: KeyboardMoveCallbacks): void {
+    this.keyboard.onDash = callbacks.onDash ?? null;
+    this.keyboard.onActive = callbacks.onActive ?? null;
+    this.keyboard.isGameplayActive = callbacks.isGameplayActive ?? null;
   }
 
   /** Clear held movement keys when pausing or opening a modal so keys never stick on resume. */
@@ -402,9 +437,41 @@ export class PlayerController extends Component {
   /** Reset the position when entering a new room; health is untouched (it lasts the whole run). */
   teleport(at: Vec2): void {
     this.tilePosition = { x: at.x, y: at.y };
-    // On a room change, the old room's knockback must not carry over.
+    // On a room change, the old room's knockback and transient post-dash buff must not carry over.
     this.knockback = null;
+    this.postDashFireUntilMs = Number.NEGATIVE_INFINITY;
+    this.currentVelocity.x = 0;
+    this.currentVelocity.y = 0;
     this.syncNodePosition();
+  }
+
+  /** Begin a Dash: grant dodge i-frames (no hurt flash), trigger Roll anim, and activate Afterimage. */
+  startDash(nowMs: number, dashState: DashState): void {
+    if (this.health.isDead) return;
+
+    if (dashState.invulnerableRemainingMs > 0) {
+      this.health.grantInvulnerability(nowMs, dashState.invulnerableRemainingMs);
+    }
+    if (this.stats.postDashFireRate !== undefined && this.stats.postDashFireRate.durationMs > 0) {
+      this.postDashFireUntilMs = Math.max(
+        this.postDashFireUntilMs,
+        nowMs + this.stats.postDashFireRate.durationMs,
+      );
+    }
+
+    this.facing = directionFromVector(
+      { x: dashState.direction.x, y: -dashState.direction.y },
+      this.facing,
+    );
+    this.animator?.setPlaybackScale(1);
+    this.playCharacterAnimation('dash', this.facing);
+    this.syncAttachmentPose();
+    this.startSquash(nowMs, 110, 0.14);
+
+    if (effectsLayers(this.effectsMode).secondaryParticles) {
+      this.fx?.spawn('fx.smoke', this.tilePosition, { drawUnits: 1.3, lifetimeMs: 260 });
+    }
+    playDashSfx();
   }
 
   /**
@@ -417,18 +484,37 @@ export class PlayerController extends Component {
     deltaMs: number,
     targets: readonly Targetable[],
     level: LevelData,
+    dashState: DashState | null = null,
   ): void {
     if (this.health.isDead) return;
 
     this.shield.update(nowMs);
 
+    const dashing = dashState !== null && isDashing(dashState);
     const input2D = normalizeMoveInput(this.keyboard.keys);
     // `normalizeMoveInput` uses screen convention: up = +y. Tile data has y pointing
     // **down**, so flip the y sign exactly once, here.
     const moveIntent: Vec2 = { x: input2D.x, y: -input2D.y };
-    const moving = moveIntent.x !== 0 || moveIntent.y !== 0;
+    const moving = dashing || moveIntent.x !== 0 || moveIntent.y !== 0;
+    const seconds = deltaMs / 1000;
 
-    if (moving) {
+    if (dashing && dashState !== null) {
+      const velocity = dashVelocity(dashState, this.stats.dashSpeedMult);
+      this.currentVelocity.x = velocity.x;
+      this.currentVelocity.y = velocity.y;
+      this.facing = directionFromVector(
+        { x: dashState.direction.x, y: -dashState.direction.y },
+        this.facing,
+      );
+      this.tilePosition = moveWithCollision(
+        this.tilePosition,
+        { x: velocity.x * seconds, y: velocity.y * seconds },
+        PLAYER_RADIUS_TILES,
+        level,
+        ROOM_EDGE_MARGIN_TILES,
+      );
+      this.syncNodePosition();
+    } else if (moving) {
       const previousFacing = this.facing;
       // `directionFromVector` uses screen-space y-up (`+y` = `'up'`), matching `input2D` rather
       // than tile-space y-down `moveIntent`.
@@ -442,7 +528,8 @@ export class PlayerController extends Component {
         );
       }
       const velocity = velocityFromInput(moveIntent, this.stats.moveSpeedTilesPerSecond);
-      const seconds = deltaMs / 1000;
+      this.currentVelocity.x = velocity.x;
+      this.currentVelocity.y = velocity.y;
       // Obstacles and the room edge are solid: same rule as the enemies and the balance sim.
       this.tilePosition = moveWithCollision(
         this.tilePosition,
@@ -452,12 +539,22 @@ export class PlayerController extends Component {
         ROOM_EDGE_MARGIN_TILES,
       );
       this.syncNodePosition();
+    } else {
+      this.currentVelocity.x = 0;
+      this.currentVelocity.y = 0;
     }
 
-    this.applyKnockback(deltaMs, level);
-    this.fireIfReady(nowMs, deltaMs, targets);
+    if (!dashing) {
+      this.applyKnockback(deltaMs, level);
+    }
+    const postDash = this.stats.postDashFireRate;
+    const fireDeltaMs =
+      postDash !== undefined && nowMs < this.postDashFireUntilMs
+        ? deltaMs * (1 + Math.max(0, postDash.bonus))
+        : deltaMs;
+    this.fireIfReady(nowMs, fireDeltaMs, targets);
     this.updateAura();
-    this.playCurrentAnimation(nowMs, moving);
+    this.playCurrentAnimation(nowMs, moving, dashing);
     this.syncAttachmentPose();
     this.applyStateTint(nowMs);
     this.applySquash(nowMs);
@@ -468,13 +565,28 @@ export class PlayerController extends Component {
    * hit really lands (for later logs/FX).
    */
   applyDamage(nowMs: number, amount: number, source: Vec2 | null = null): boolean {
-    // The shield blocks before i-frames: a blocked hit costs no i-frame and no knockback.
+    // Respect Dash, hit, and level-up i-frames before consuming a Shield charge or rolling Iron Skin.
+    if (this.health.isDead || this.health.isInvulnerable(nowMs)) {
+      return false;
+    }
+
+    // The shield blocks before heart damage: a blocked hit costs no hit i-frame and no knockback.
     if (this.shield.tryBlock(nowMs)) {
       this.tintUntilMs = nowMs + PLAYER_TINT_MS;
       this.tint = PLAYER_SHIELD_TINT;
       this.fx?.spawn('fx.shield', this.tilePosition, { lifetimeMs: 450 });
       playSfx('shield');
       return true;
+    }
+
+    // Iron Skin: chance to ward off incoming hit damage completely.
+    if (this.stats.damageReductionChance > 0 && this.rng.next() < this.stats.damageReductionChance) {
+      this.health.grantInvulnerability(nowMs, Math.min(350, this.stats.invulnerabilityMs));
+      this.tintUntilMs = nowMs + PLAYER_TINT_MS;
+      this.tint = PLAYER_SHIELD_TINT;
+      this.fx?.spawn('fx.spark', this.tilePosition, { tint: PLAYER_SHIELD_TINT, drawUnits: 1.2 });
+      playSfx('shield');
+      return false;
     }
 
     const result = this.health.tryDamage(amount, nowMs);
@@ -624,9 +736,14 @@ export class PlayerController extends Component {
     }
   }
 
-  private playCurrentAnimation(nowMs: number, moving: boolean): void {
+  private playCurrentAnimation(nowMs: number, moving: boolean, dashing = false): void {
     if (this.health.isDead) return;
 
+    if (dashing) {
+      this.animator?.setPlaybackScale(1);
+      this.playCharacterAnimation('dash', this.facing);
+      return;
+    }
     if (nowMs < this.hitUntilMs) {
       this.playCharacterAnimation('hit', this.facing);
       return;
