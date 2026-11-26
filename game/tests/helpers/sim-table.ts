@@ -13,6 +13,10 @@
 import { join } from 'node:path';
 import { BOSS_POOLS, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
 import type { BossId } from '../../assets/scripts/core/boss/boss-defs';
+import {
+  DEFAULT_CHARACTER_ID,
+  type CharacterId,
+} from '../../assets/scripts/core/characters/roster';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import type { ChapterData } from '../../assets/scripts/core/level/level-data';
 import type { DoorReward } from '../../assets/scripts/core/run/doors';
@@ -257,12 +261,14 @@ export interface SimOutcome {
 }
 
 export interface SimTableRow {
+  /** Playable character class simulated for this row (M14). */
+  readonly characterId: CharacterId;
   readonly chapter: number;
   readonly seed: number;
   /** The boss this seed meets (`pickBoss`), i.e. the one the run must beat. */
   readonly boss: BossId;
   readonly standStill: SimOutcome;
-  /** The dodge + M13 kit + XP-earned skills run, plus the door picks it made before the boss door. */
+  /** The dodge + M14 class kit + XP-earned skills run, plus the door picks it made before the boss door. */
   readonly loadout: SimOutcome & { readonly doors: DoorReward[] };
 }
 
@@ -286,56 +292,70 @@ function chapterLevels(chapter: number): ChapterData {
 }
 
 /**
- * One row per (chapter, seed): the standing-still run (no Dash/Active/skills) and the dodge +
- * M13 kit (Dash + Shadow Barrage + XP-earned skills & Evolutions) run.
+ * One row per (character, chapter, seed): the standing-still run (no Dash/Active/skills) and
+ * the dodge + M14 kit (class Layer 1/2 stats + Dash + Signature Active + XP-earned skills &
+ * Evolutions) run.
  */
 export function simTableRows(options: {
   readonly chapters: readonly number[];
   readonly seedsPerBoss: number;
+  readonly characters?: readonly CharacterId[];
 }): SimTableRow[] {
+  const characters = options.characters ?? [DEFAULT_CHARACTER_ID];
+  const levelsByChapter = new Map<number, ChapterData>();
+  for (const chapter of options.chapters) {
+    levelsByChapter.set(chapter, chapterLevels(chapter));
+  }
+
   const rows: SimTableRow[] = [];
 
-  for (const chapter of options.chapters) {
-    const level = chapterLevels(chapter);
+  for (const characterId of characters) {
+    for (const chapter of options.chapters) {
+      const level = levelsByChapter.get(chapter);
+      if (level === undefined) continue;
 
-    for (const seed of balanceSeeds(chapter, options.seedsPerBoss)) {
-      const standStillRun = simulateRun({
-        seed,
-        level,
-        policy: standStill,
-        maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
-      });
-      const loadoutRun = simulateRun({
-        seed,
-        level,
-        policy: makeDodgePolicy(),
-        chooseDash: smartDashPolicy,
-        chooseActive: smartActiveSkillPolicy,
-        chooseSkill: typicalSkillChoice,
-        shouldReroll: typicalRerollPolicy,
-        chooseDoor: typicalDoorChoice,
-        maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
-      });
+      for (const seed of balanceSeeds(chapter, options.seedsPerBoss)) {
+        const standStillRun = simulateRun({
+          seed,
+          characterId,
+          level,
+          policy: standStill,
+          maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
+        });
+        const loadoutRun = simulateRun({
+          seed,
+          characterId,
+          level,
+          policy: makeDodgePolicy(),
+          chooseDash: smartDashPolicy,
+          chooseActive: smartActiveSkillPolicy,
+          chooseSkill: typicalSkillChoice,
+          shouldReroll: typicalRerollPolicy,
+          chooseDoor: typicalDoorChoice,
+          maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
+        });
 
-      rows.push({
-        chapter,
-        seed,
-        boss: pickBoss(chapter, seed),
-        standStill: outcomeOf(standStillRun),
-        loadout: {
-          ...outcomeOf(loadoutRun),
-          /**
-           * Every door the run walked through before the boss door. `offers.length > 1` cannot be
-           * the filter: taking `heal` enters a special room that replaces the next slot, and the
-           * door out of it carries a single (`xp`) offer — filtering those out would drop real
-           * picks and make the count depend on how many heals the seed drew (ch3 seed 3 → 5).
-           * A won run always takes exactly the 7 normal-slot doors, then the boss door.
-           */
-          doors: loadoutRun.events.flatMap((event) =>
-            event.kind === 'door' && event.chosen !== 'boss' ? [event.chosen] : [],
-          ),
-        },
-      });
+        rows.push({
+          characterId,
+          chapter,
+          seed,
+          boss: pickBoss(chapter, seed),
+          standStill: outcomeOf(standStillRun),
+          loadout: {
+            ...outcomeOf(loadoutRun),
+            /**
+             * Every door the run walked through before the boss door. `offers.length > 1` cannot be
+             * the filter: taking `heal` enters a special room that replaces the next slot, and the
+             * door out of it carries a single (`xp`) offer — filtering those out would drop real
+             * picks and make the count depend on how many heals the seed drew (ch3 seed 3 → 5).
+             * A won run always takes exactly the 7 normal-slot doors, then the boss door.
+             */
+            doors: loadoutRun.events.flatMap((event) =>
+              event.kind === 'door' && event.chosen !== 'boss' ? [event.chosen] : [],
+            ),
+          },
+        });
+      }
     }
   }
 
@@ -343,7 +363,7 @@ export function simTableRows(options: {
 }
 
 /** `12 s`, `3m07s` — compact enough to keep one sim row on one table line. */
-function formatDuration(durationMs: number): string {
+export function formatDuration(durationMs: number): string {
   const totalSeconds = Math.round(durationMs / 1000);
   if (totalSeconds < 60) return `${totalSeconds} s`;
 
@@ -364,19 +384,19 @@ function formatHits(hits: number): string {
 /**
  * The Markdown table for the PR: one line per row, in the order given.
  *
- * `| chapter | seed | boss | stand still | dodge + M13 kit | level-ups | dashes | actives | evolutions | doors |`
+ * `| class | chapter | seed | boss | stand still | dodge + M14 kit | level-ups | dashes | actives | evolutions | doors |`
  */
 export function formatSimTable(rows: readonly SimTableRow[]): string {
   const lines = [
-    '| chapter | seed | boss | stand still | dodge + M13 kit | level-ups | dashes | actives | evolutions | doors |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| class | chapter | seed | boss | stand still | dodge + M14 kit | level-ups | dashes | actives | evolutions | doors |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
 
   for (const row of rows) {
     const doors = row.loadout.doors.join(', ') || '—';
     const evolutions = row.loadout.evolutions.join(', ') || '—';
     lines.push(
-      `| ${row.chapter} | ${row.seed} | ${row.boss} | ${formatOutcome(row.standStill)} | ` +
+      `| ${row.characterId} | ${row.chapter} | ${row.seed} | ${row.boss} | ${formatOutcome(row.standStill)} | ` +
         `${formatOutcome(row.loadout)}, ${formatHits(row.loadout.hits)} | ` +
         `${row.loadout.levelUps} (Lv ${row.loadout.finalLevel}) | ` +
         `${row.loadout.dashesUsed} | ${row.loadout.activeSkillsUsed} | ${evolutions} | ${doors} |`,

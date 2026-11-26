@@ -12,9 +12,15 @@ import {
 import { CHASER_CONTACT_RANGE_TILES } from '../../assets/scripts/core/enemies/behaviours';
 import {
   ACTIVE_SKILL_TUNING,
+  CHARACTERS_TUNING,
   DASH_TUNING,
   DOORS_TUNING,
 } from '../../assets/scripts/core/enemies/tuning';
+import {
+  CHARACTERS,
+  CHARACTER_IDS,
+  type CharacterId,
+} from '../../assets/scripts/core/characters/roster';
 import { parseLevelData, type ChapterData, type LevelData } from '../../assets/scripts/core/level/level-data';
 import { ROOMS_PER_CHAPTER } from '../../assets/scripts/core/run/run-state';
 import {
@@ -802,7 +808,10 @@ describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', 
     );
     expect(baseDashTimes.length).toBeGreaterThanOrEqual(2);
     const firstGap = (baseDashTimes[1] ?? 0) - (baseDashTimes[0] ?? 0);
-    expect(firstGap).toBeGreaterThanOrEqual(DASH_TUNING.cooldownMs);
+    // Default character is Ninja: Shadow Agility (-15% Dash cooldown) applies on top of DASH_TUNING.
+    const ninjaDashCdMs = DASH_TUNING.cooldownMs * CHARACTERS_TUNING.ninja.passive.dashCooldownMult;
+    expect(firstGap).toBeGreaterThanOrEqual(ninjaDashCdMs);
+    expect(firstGap).toBeLessThan(DASH_TUNING.cooldownMs);
 
     // Dash Nova kills the nearby splitling on the exact opening dash frame (16 ms).
     const firstSplitlingKill = fastDash.events.find(
@@ -1122,5 +1131,425 @@ describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', 
     expect(
       bossResult.events.some((event) => event.kind === 'boss-shoot' && event.bullets >= 9),
     ).toBe(true);
+  });
+});
+
+describe('simulateRun — M14 4 playable classes (GDD §15.4)', () => {
+  it('applies Layer 1 base stats and Layer 2 passives distinctly across Ninja, Archer, Mage, and Cultivator', () => {
+    // 1. Max hearts differ by class (Archer/Mage 5, Ninja 6, Cultivator 7) on identical melee loss.
+    const hitsByClass = new Map<CharacterId, number>();
+    for (const characterId of CHARACTER_IDS) {
+      const res = simulateRun({
+        seed: 11,
+        characterId,
+        level: meleeChapter,
+        policy: standStill,
+      });
+      expect(res.status, characterId).toBe('lost');
+      hitsByClass.set(
+        characterId,
+        res.events.filter((event) => event.kind === 'player-hit').length,
+      );
+    }
+    expect(hitsByClass.get('archer')).toBe(5);
+    expect(hitsByClass.get('mage')).toBe(5);
+    expect(hitsByClass.get('ninja')).toBe(6);
+    expect(hitsByClass.get('cultivator')).toBe(7);
+
+    // 2. Archer's extended range (10 tiles) hits a sniper parked at 9.6 tiles before it can walk into Ninja's 8-tile range.
+    const longRangeRoom: LevelData = parseLevelData({
+      id: 'm14-archer-range-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 9 },
+      waves: [
+        {
+          enemies: [{ role: 'sniper', at: { x: 25.6, y: 9 }, elite: false }],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+    const oneShotSkills = new Map([['sharpen', 3]]);
+    const ninjaRange = simulateRun({
+      seed: 4,
+      characterId: 'ninja',
+      level: { chapter: 1, rooms: [longRangeRoom] },
+      policy: standStill,
+      skills: oneShotSkills,
+      godMode: true,
+      maxDurationMs: 1200,
+    });
+    const archerRange = simulateRun({
+      seed: 4,
+      characterId: 'archer',
+      level: { chapter: 1, rooms: [longRangeRoom] },
+      policy: standStill,
+      skills: oneShotSkills,
+      godMode: true,
+      maxDurationMs: 1200,
+    });
+    expect(ninjaRange.kills).toBe(0);
+    expect(archerRange.kills).toBe(1);
+
+    // 3. Archer's innate Keen Sight (+1 pierce) clears lined-up targets faster than Ninja.
+    const pierceLineRoom: LevelData = parseLevelData({
+      id: 'm14-archer-pierce-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 9 },
+      waves: [
+        {
+          enemies: [
+            { role: 'caster', at: { x: 20, y: 9 }, elite: false },
+            { role: 'caster', at: { x: 21.2, y: 9 }, elite: false },
+            { role: 'caster', at: { x: 22.4, y: 9 }, elite: false },
+          ],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+    const ninjaLine = simulateRun({
+      seed: 8,
+      characterId: 'ninja',
+      level: { chapter: 1, rooms: [pierceLineRoom] },
+      policy: standStill,
+      godMode: true,
+    });
+    const archerLine = simulateRun({
+      seed: 8,
+      characterId: 'archer',
+      level: { chapter: 1, rooms: [pierceLineRoom] },
+      policy: standStill,
+      godMode: true,
+    });
+    expect(archerLine.status).toBe('won');
+    expect(archerLine.durationMs).toBeLessThan(ninjaLine.durationMs);
+
+    // 4. Mage's Arcane Attunement (-20% Active cooldown) recharges strictly faster than Ninja without hits/kills.
+    const farAnchorRoom: LevelData = parseLevelData({
+      id: 'm14-mage-cdr-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 4, y: 9 },
+      waves: [
+        {
+          // Tank at 24 tiles stays beyond both auto-aim (8 / 9.2 tiles) and Shadow Barrage homing reach for >11 s.
+          enemies: [{ role: 'tank', at: { x: 28, y: 9 }, elite: true }],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+    const spamActiveLeft = () => ({ x: -1, y: 0 });
+    const ninjaCd = simulateRun({
+      seed: 2,
+      characterId: 'ninja',
+      level: { chapter: 1, rooms: [farAnchorRoom] },
+      policy: standStill,
+      chooseActive: spamActiveLeft,
+      godMode: true,
+      maxDurationMs: 11_000,
+    });
+    const mageCd = simulateRun({
+      seed: 2,
+      characterId: 'mage',
+      level: { chapter: 1, rooms: [farAnchorRoom] },
+      policy: standStill,
+      chooseActive: spamActiveLeft,
+      godMode: true,
+      maxDurationMs: 11_000,
+    });
+    const ninjaCasts = ninjaCd.events.flatMap((e) => (e.kind === 'active-skill' ? [e.nowMs] : []));
+    const mageCasts = mageCd.events.flatMap((e) => (e.kind === 'active-skill' ? [e.nowMs] : []));
+    expect(ninjaCasts.length).toBeGreaterThanOrEqual(2);
+    expect(mageCasts.length).toBeGreaterThanOrEqual(2);
+    const ninjaGapMs = (ninjaCasts[1] ?? 0) - (ninjaCasts[0] ?? 0);
+    const mageGapMs = (mageCasts[1] ?? 0) - (mageCasts[0] ?? 0);
+    expect(mageGapMs).toBeLessThan(ninjaGapMs);
+    expect(mageGapMs).toBeGreaterThanOrEqual(
+      CHARACTERS_TUNING.mage.signature.cooldownMs * CHARACTERS_TUNING.mage.passive.activeCooldownMult,
+    );
+
+    // 5. Cultivator's Sword Heart (+15% damage & +10% execute <30% HP) kills a tank faster than Ninja.
+    const duelRoom: LevelData = parseLevelData({
+      id: 'm14-cultivator-duel-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 9 },
+      waves: [{ enemies: [{ role: 'tank', at: { x: 21, y: 9 }, elite: true }] }],
+      obstacles: [],
+      doors: [],
+    });
+    const ninjaDuel = simulateRun({
+      seed: 6,
+      characterId: 'ninja',
+      level: { chapter: 1, rooms: [duelRoom] },
+      policy: standStill,
+      godMode: true,
+    });
+    const cultivatorDuel = simulateRun({
+      seed: 6,
+      characterId: 'cultivator',
+      level: { chapter: 1, rooms: [duelRoom] },
+      policy: standStill,
+      godMode: true,
+    });
+    expect(cultivatorDuel.status).toBe('won');
+    expect(cultivatorDuel.durationMs).toBeLessThan(ninjaDuel.durationMs);
+  });
+
+  it('Archer Signature Active (Piercing Volley) fires 7–9 high-pierce arrows and scales with Arcane Surge', () => {
+    const laneRoom: LevelData = parseLevelData({
+      id: 'm14-piercing-volley-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 10, y: 9 },
+      waves: [
+        {
+          enemies: [
+            { role: 'tank', at: { x: 16, y: 9 }, elite: true },
+            { role: 'tank', at: { x: 18, y: 9 }, elite: true },
+            { role: 'tank', at: { x: 20, y: 9 }, elite: true },
+          ],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+
+    const autoOnly = simulateRun({
+      seed: 5,
+      characterId: 'archer',
+      level: { chapter: 1, rooms: [laneRoom] },
+      policy: standStill,
+      godMode: true,
+    });
+    const withVolley = simulateRun({
+      seed: 5,
+      characterId: 'archer',
+      level: { chapter: 1, rooms: [laneRoom] },
+      policy: standStill,
+      chooseActive: smartActiveSkillPolicy,
+      godMode: true,
+    });
+    const surgedVolley = simulateRun({
+      seed: 5,
+      characterId: 'archer',
+      level: { chapter: 1, rooms: [laneRoom] },
+      policy: standStill,
+      chooseActive: smartActiveSkillPolicy,
+      skills: new Map([['arcane-surge', 2]]),
+      godMode: true,
+    });
+
+    expect(withVolley.status).toBe('won');
+    expect(withVolley.activeSkillsUsed).toBeGreaterThanOrEqual(1);
+    const baseCast = withVolley.events.find((event) => event.kind === 'active-skill');
+    expect(baseCast?.kind === 'active-skill' ? baseCast.skillId : '').toBe('piercing-volley');
+    expect(baseCast?.kind === 'active-skill' ? baseCast.projectiles : 0).toBe(
+      CHARACTERS_TUNING.archer.signature.projectileCount,
+    );
+    expect(withVolley.durationMs).toBeLessThan(autoOnly.durationMs);
+
+    const surgedCast = surgedVolley.events.find((event) => event.kind === 'active-skill');
+    expect(surgedCast?.kind === 'active-skill' ? surgedCast.projectiles : 0).toBe(
+      CHARACTERS_TUNING.archer.signature.maxProjectileCount,
+    );
+  });
+
+  it('Mage Signature Active (Arcane Nova) blasts & slows nearby enemies radially and fires outward bolts', () => {
+    const novaRingRoom: LevelData = parseLevelData({
+      id: 'm14-arcane-nova-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 9 },
+      waves: [
+        {
+          enemies: [
+            // 2 HP splitlings inside Nova radius die on the opening cast frame.
+            { role: 'splitling', at: { x: 19, y: 9 }, elite: false },
+            { role: 'splitling', at: { x: 13, y: 9 }, elite: false },
+            // Elite chaser (12 HP) survives the Nova blast and is chilled/slowed on its approach.
+            { role: 'chaser', at: { x: 16, y: 13.8 }, elite: true },
+          ],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+
+    const withoutNova = simulateRun({
+      seed: 3,
+      characterId: 'mage',
+      level: { chapter: 1, rooms: [novaRingRoom] },
+      policy: standStill,
+      maxDurationMs: 6000,
+    });
+    const withNova = simulateRun({
+      seed: 3,
+      characterId: 'mage',
+      level: { chapter: 1, rooms: [novaRingRoom] },
+      policy: standStill,
+      chooseActive: smartActiveSkillPolicy,
+      maxDurationMs: 6000,
+    });
+
+    const novaCast = withNova.events.find((event) => event.kind === 'active-skill');
+    expect(novaCast?.kind === 'active-skill' ? novaCast.skillId : '').toBe('arcane-nova');
+    // Mage's Arcane Attunement (+0.25 activePowerMult) boosts outward bolts above base 8 -> 9.
+    expect(novaCast?.kind === 'active-skill' ? novaCast.projectiles : 0).toBeGreaterThan(
+      CHARACTERS_TUNING.mage.signature.projectileCount,
+    );
+    expect(novaCast?.kind === 'active-skill' ? (novaCast.novaHits ?? 0) : 0).toBeGreaterThanOrEqual(
+      3,
+    );
+
+    // Splitlings inside the radial blast ring die immediately on the cast frame (<= 64 ms).
+    const earlySplitlingKills = withNova.events.filter(
+      (event) => event.kind === 'kill' && event.role === 'splitling' && event.nowMs <= 64,
+    );
+    expect(earlySplitlingKills).toHaveLength(2);
+
+    // Radial damage + slow prevents or delays contact hits compared to Mage without Arcane Nova.
+    const hitsWithout = withoutNova.events.filter((event) => event.kind === 'player-hit').length;
+    const hitsWith = withNova.events.filter((event) => event.kind === 'player-hit').length;
+    expect(hitsWith).toBeLessThan(hitsWithout);
+  });
+
+  it('Cultivator Signature Active (Ten Thousand Swords) launches 14–16 homing blades with attachment hide duration', () => {
+    const clusterRoom: LevelData = parseLevelData({
+      id: 'm14-ten-thousand-swords-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 9 },
+      waves: [
+        {
+          enemies: [
+            { role: 'tank', at: { x: 22, y: 7 }, elite: true },
+            { role: 'tank', at: { x: 22, y: 11 }, elite: true },
+            { role: 'tank', at: { x: 23, y: 9 }, elite: true },
+            { role: 'tank', at: { x: 24, y: 9 }, elite: true },
+          ],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+
+    const autoOnly = simulateRun({
+      seed: 5,
+      characterId: 'cultivator',
+      level: { chapter: 1, rooms: [clusterRoom] },
+      policy: standStill,
+      godMode: true,
+    });
+    const withSwords = simulateRun({
+      seed: 5,
+      characterId: 'cultivator',
+      level: { chapter: 1, rooms: [clusterRoom] },
+      policy: standStill,
+      chooseActive: smartActiveSkillPolicy,
+      godMode: true,
+    });
+    const surgedSwords = simulateRun({
+      seed: 5,
+      characterId: 'cultivator',
+      level: { chapter: 1, rooms: [clusterRoom] },
+      policy: standStill,
+      chooseActive: smartActiveSkillPolicy,
+      skills: new Map([['arcane-surge', 2]]),
+      godMode: true,
+    });
+
+    expect(withSwords.status).toBe('won');
+    expect(withSwords.activeSkillsUsed).toBeGreaterThanOrEqual(1);
+    const baseCast = withSwords.events.find((event) => event.kind === 'active-skill');
+    expect(baseCast?.kind === 'active-skill' ? baseCast.skillId : '').toBe('ten-thousand-swords');
+    expect(baseCast?.kind === 'active-skill' ? baseCast.projectiles : 0).toBe(
+      CHARACTERS_TUNING.cultivator.signature.projectileCount,
+    );
+    expect(baseCast?.kind === 'active-skill' ? baseCast.hideAttachmentMs : 0).toBe(
+      CHARACTERS_TUNING.cultivator.signature.hideAttachmentMs,
+    );
+    expect(withSwords.durationMs).toBeLessThan(autoOnly.durationMs);
+
+    const surgedCast = surgedSwords.events.find((event) => event.kind === 'active-skill');
+    expect(surgedCast?.kind === 'active-skill' ? surgedCast.projectiles : 0).toBe(
+      CHARACTERS_TUNING.cultivator.signature.maxProjectileCount,
+    );
+  });
+
+  it('simulateBossRun exercises each class Signature Active and defeats the boss across all 4 classes', () => {
+    for (const characterId of CHARACTER_IDS) {
+      const result = simulateBossRun({
+        bossId: 'tengu',
+        seed: 7,
+        characterId,
+        skills: new Map([
+          ['sharpen', 1],
+          ['rapid-fire', 1],
+        ]),
+        chooseActive: (world) =>
+          smartActiveSkillPolicy({
+            nowMs: world.nowMs,
+            room: 17,
+            wave: 0,
+            player: world.player,
+            hearts: world.hearts,
+            shieldCharges: 0,
+            enemies: [
+              {
+                id: 'boss',
+                role: 'chaser',
+                elite: false,
+                position: world.boss,
+                health: world.bossHealth,
+                maxHealth: 1,
+                action: { kind: 'idle' },
+                actionStartedMs: world.nowMs,
+              },
+            ],
+            bullets: world.bullets,
+            activeState: world.activeState,
+            ...(world.signatureSkillId !== undefined
+              ? { signatureSkillId: world.signatureSkillId }
+              : {}),
+          }),
+        godMode: true,
+      });
+
+      expect(result.outcome, characterId).toBe('won');
+      expect(result.activeSkillsUsed, characterId).toBeGreaterThanOrEqual(1);
+      const casts = result.events.filter((event) => event.kind === 'active-skill');
+      expect(casts.length, characterId).toBe(result.activeSkillsUsed);
+      for (const cast of casts) {
+        if (cast.kind === 'active-skill') {
+          expect(cast.skillId, characterId).toBe(CHARACTERS[characterId].signatureSkillId);
+        }
+      }
+    }
   });
 });

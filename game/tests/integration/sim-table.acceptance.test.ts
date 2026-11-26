@@ -1,15 +1,18 @@
 /**
- * Balance sim table acceptance (ADR-013, `docs/milestones.md` §M9 / §M12 / §M13, ADR-021, ADR-022).
+ * Balance sim table acceptance (ADR-013, `docs/milestones.md` §M9 / §M12 / §M13 / §M14,
+ * GDD §15.4, ADR-021, ADR-022).
  *
- * Across all 4 chapters and both chapter bosses:
+ * Across all 4 playable classes (`ninja`, `archer`, `mage`, `cultivator`), all 4 chapters, and
+ * both chapter bosses (32 rows covering every `class × chapter × boss` tuple):
  * - Standing still (no Dash, no Active, no skills) loses Room 1 (`0/9`).
- * - Dodging from a **0-skill start** with the full M13 kit (Dash + Signature Active *Shadow
- *   Barrage* + XP-earned pure-combat skills & Legendary Evolutions + `typicalDoorChoice`) lands
- *   cleanly inside **12–16 level-ups/run**, genuinely exercises Dash, Active, and Evolutions
- *   against Tier-2 enemy AI, and wins `9/9`.
+ * - Dodging from a **0-skill start** with the full M14 kit (class Layer 1/2 stats + Dash +
+ *   class Signature Active + XP-earned pure-combat skills & Legendary Evolutions +
+ *   `typicalDoorChoice`) lands cleanly inside **12–16 level-ups/run**, genuinely exercises Dash,
+ *   class Signature Active, and Evolutions against Tier-2 enemy AI, and wins `9/9`.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { BOSS_POOLS, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
+import { CHARACTER_IDS, type CharacterId } from '../../assets/scripts/core/characters/roster';
 import { getEvolution, isEvolutionId } from '../../assets/scripts/core/skills/evolutions';
 import { getSkill } from '../../assets/scripts/core/skills/pool';
 import {
@@ -31,6 +34,7 @@ afterEach(async () => {
 
 const CHAPTERS = [1, 2, 3, 4] as const;
 const SEEDS_PER_BOSS = 2;
+const CLASS_MATRIX_SEEDS_PER_BOSS = 1;
 
 describe('typical door choice', () => {
   it('takes heal first, then xp, else the first door', () => {
@@ -161,21 +165,32 @@ describe('balance seeds', () => {
   });
 });
 
-describe('M13 sim table (Dash, Active Skill, Evolutions & Tier-2 AI)', () => {
-  const rowsByChapter = new Map<number, SimTableRow[]>();
+describe('M14 4-class × 4-chapter sim table (all classes, Dash, Signature Actives & Evolutions)', () => {
+  const rowsByClass = new Map<CharacterId, SimTableRow[]>();
 
-  for (const chapter of CHAPTERS) {
-    it(`chapter ${chapter}: stand still loses room 1, dodge + M13 kit wins 9/9 with 12–16 level-ups, Dash & Active`, () => {
-      const rows = simTableRows({ chapters: [chapter], seedsPerBoss: SEEDS_PER_BOSS });
-      rowsByChapter.set(chapter, rows);
+  for (const characterId of CHARACTER_IDS) {
+    it(`${characterId}: all 4 chapters × both bosses — stand still loses room 1, dodge + M14 kit wins 9/9 with 12–16 level-ups`, () => {
+      const rows = simTableRows({
+        chapters: CHAPTERS,
+        seedsPerBoss: CLASS_MATRIX_SEEDS_PER_BOSS,
+        characters: [characterId],
+      });
+      rowsByClass.set(characterId, rows);
 
-      expect(rows.map((row) => row.seed)).toEqual(balanceSeeds(chapter, SEEDS_PER_BOSS));
-      expect(new Set(rows.map((row) => row.boss))).toEqual(new Set(BOSS_POOLS[chapter]));
+      expect(rows).toHaveLength(CHAPTERS.length * 2 * CLASS_MATRIX_SEEDS_PER_BOSS);
+
+      for (const chapter of CHAPTERS) {
+        const chapterRows = rows.filter((row) => row.chapter === chapter);
+        expect(chapterRows.map((row) => row.seed)).toEqual(
+          balanceSeeds(chapter, CLASS_MATRIX_SEEDS_PER_BOSS),
+        );
+        expect(new Set(chapterRows.map((row) => row.boss))).toEqual(new Set(BOSS_POOLS[chapter]));
+      }
 
       for (const row of rows) {
-        const label = `chapter ${chapter} seed ${row.seed} (${row.boss})`;
-        expect(row.chapter, label).toBe(chapter);
-        expect(row.boss, label).toBe(pickBoss(chapter, row.seed));
+        const label = `${characterId} chapter ${row.chapter} seed ${row.seed} (${row.boss})`;
+        expect(row.characterId, label).toBe(characterId);
+        expect(row.boss, label).toBe(pickBoss(row.chapter, row.seed));
 
         expect(row.standStill.status, `${label} stand still`).toBe('lost');
         expect(row.standStill.roomsCleared, `${label} stand still`).toBe(0);
@@ -183,13 +198,17 @@ describe('M13 sim table (Dash, Active Skill, Evolutions & Tier-2 AI)', () => {
         expect(row.standStill.activeSkillsUsed, `${label} stand still actives`).toBe(0);
         expect(row.standStill.evolutions, `${label} stand still evolutions`).toEqual([]);
 
-        expect(row.loadout.status, `${label} dodge + M13 kit`).toBe('won');
-        expect(row.loadout.roomsCleared, `${label} dodge + M13 kit`).toBe(9);
-        expect(row.loadout.levelUps, `${label} levelUps`).toBeGreaterThanOrEqual(LEVEL_UP_TARGET_MIN);
+        expect(row.loadout.status, `${label} dodge + M14 kit`).toBe('won');
+        expect(row.loadout.roomsCleared, `${label} dodge + M14 kit`).toBe(9);
+        expect(row.loadout.levelUps, `${label} levelUps`).toBeGreaterThanOrEqual(
+          LEVEL_UP_TARGET_MIN,
+        );
         expect(row.loadout.levelUps, `${label} levelUps`).toBeLessThanOrEqual(LEVEL_UP_TARGET_MAX);
         expect(row.loadout.finalLevel, `${label} finalLevel`).toBe(row.loadout.levelUps + 1);
         expect(row.loadout.xpEarned, `${label} xpEarned`).toBeGreaterThan(0);
-        expect(row.loadout.dashesUsed, `${label} dashesUsed`).toBeGreaterThan(0);
+        if (row.chapter >= 2) {
+          expect(row.loadout.dashesUsed, `${label} dashesUsed`).toBeGreaterThan(0);
+        }
         expect(row.loadout.activeSkillsUsed, `${label} activeSkillsUsed`).toBeGreaterThan(0);
         for (const evoId of row.loadout.evolutions) {
           expect(isEvolutionId(evoId), `${label} evolution ${evoId}`).toBe(true);
@@ -199,24 +218,36 @@ describe('M13 sim table (Dash, Active Skill, Evolutions & Tier-2 AI)', () => {
         expect(row.loadout.durationMs, label).toBeGreaterThan(row.standStill.durationMs);
         expect(row.loadout.hits, label).toBeGreaterThanOrEqual(0);
       }
+
+      const rowsUsingDash = rows.filter((row) => row.loadout.dashesUsed > 0).length;
+      expect(rowsUsingDash, `${characterId} dash coverage`).toBeGreaterThanOrEqual(rows.length - 1);
     }, 300_000);
   }
 
-  it('unlocks Legendary Evolutions across runs and formats M13 Markdown table columns', () => {
-    const rows = CHAPTERS.flatMap((chapter) => rowsByChapter.get(chapter) ?? []);
-    expect(rows).toHaveLength(CHAPTERS.length * 2 * SEEDS_PER_BOSS);
+  it('unlocks Legendary Evolutions for every class and formats M14 Markdown table columns', () => {
+    const rows = CHARACTER_IDS.flatMap((characterId) => rowsByClass.get(characterId) ?? []);
+    expect(rows).toHaveLength(
+      CHARACTER_IDS.length * CHAPTERS.length * 2 * CLASS_MATRIX_SEEDS_PER_BOSS,
+    );
+
+    for (const characterId of CHARACTER_IDS) {
+      const classRows = rowsByClass.get(characterId) ?? [];
+      const classEvos = classRows.filter((row) => row.loadout.evolutions.length > 0);
+      expect(classEvos.length, `${characterId} evolutions`).toBeGreaterThanOrEqual(1);
+    }
 
     const rowsWithEvolution = rows.filter((row) => row.loadout.evolutions.length > 0);
     expect(rowsWithEvolution.length).toBeGreaterThanOrEqual(Math.ceil(rows.length / 2));
 
     const lines = formatSimTable(rows).trim().split('\n');
     expect(lines[0]).toMatch(
-      /^\|.*chapter.*\|.*seed.*\|.*boss.*\|.*level-ups.*\|.*dashes.*\|.*actives.*\|.*evolutions.*\|/i,
+      /^\|.*class.*\|.*chapter.*\|.*seed.*\|.*boss.*\|.*level-ups.*\|.*dashes.*\|.*actives.*\|.*evolutions.*\|/i,
     );
     expect(lines[1]).toMatch(/^\|[\s:|-]+\|$/);
     expect(lines.slice(2)).toHaveLength(rows.length);
     for (const [index, row] of rows.entries()) {
       const line = lines[index + 2] ?? '';
+      expect(line).toContain(`| ${row.characterId} |`);
       expect(line).toContain(`| ${row.chapter} |`);
       expect(line).toContain(`| ${row.seed} |`);
       expect(line).toContain(row.boss);

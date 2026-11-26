@@ -31,6 +31,11 @@
  * - `godMode` is a test hook: skip damage to the player to measure room-clear time.
  */
 import { pickBoss } from '../boss/boss-pool';
+import {
+  CHARACTERS,
+  DEFAULT_CHARACTER_ID,
+  type CharacterId,
+} from '../characters/roster';
 import { AutoFire } from '../combat/auto-fire';
 import { BulletPool, firstHit, hitsCircle, type Bullet } from '../combat/bullets';
 import { HealthState } from '../combat/health';
@@ -87,7 +92,11 @@ import {
 } from '../enemies/tuning';
 import { ActionBuffer } from '../input/action-buffer';
 import {
+  activeSkillConfigFor,
+  computeArcaneNovaSpec,
+  computePiercingVolley,
   computeShadowBarrageVolley,
+  computeTenThousandSwordsVolley,
   createActiveSkillState,
   isActiveSkillReady,
   onActiveHit,
@@ -95,6 +104,7 @@ import {
   stepActiveSkill,
   tryActivateSkill,
   type ActiveSkillState,
+  type SignatureSkillId,
 } from '../input/active-skill';
 import {
   canStartDash,
@@ -110,6 +120,7 @@ import { WaveScheduler, enemyStateFromSpawn, usesWaveScheduler } from '../enemie
 import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
+import { applyCharacterBaseStats, applyCharacterPassive } from '../meta/run-stats';
 import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
 import { moveWithCollision } from '../movement/collision';
 import { SeededRng } from '../rng';
@@ -200,9 +211,10 @@ export interface DashThreatWorld extends PolicyWorld {
   readonly pendingBlasts: readonly PendingBomberBlast[];
 }
 
-/** World snapshot passed to a Signature Active (*Shadow Barrage*, `E`) policy (M13, ADR-022). */
+/** World snapshot passed to a Signature Active (`E`) policy (M13/M14, ADR-022). */
 export interface ActiveSkillPolicyWorld extends PolicyWorld {
   readonly activeState: ActiveSkillState;
+  readonly signatureSkillId?: SignatureSkillId;
 }
 
 /**
@@ -212,7 +224,7 @@ export interface ActiveSkillPolicyWorld extends PolicyWorld {
 export type DashPolicy = (world: DashThreatWorld) => Vec2 | null;
 
 /**
- * Optional Signature Active (*Shadow Barrage*, `E`) policy: return a non-zero tile-space aim
+ * Optional Signature Active (`E`) policy: return a non-zero tile-space aim
  * vector to press Active (buffered through the 150 ms game-time `ActionBuffer`), or `null`.
  */
 export type ActiveSkillPolicy = (world: ActiveSkillPolicyWorld) => Vec2 | null;
@@ -248,6 +260,8 @@ export type SkillRerollPolicy = (
 
 export interface SimulationOptions {
   readonly seed: number;
+  /** Playable character class (M14, defaults to `'ninja'`). */
+  readonly characterId?: CharacterId;
   /** A full chapter; the run plays `drawRunRooms(level, seed)` (8 normal rooms + the boss). */
   readonly level: ChapterData;
   readonly policy: InputPolicy;
@@ -257,7 +271,7 @@ export interface SimulationOptions {
    */
   readonly chooseDash?: DashPolicy;
   /**
-   * Optional Signature Active (*Shadow Barrage*, `E`) policy (M13, ADR-022). Omitted = never
+   * Optional Signature Active (`E`) policy (M13/M14, ADR-022). Omitted = never
    * casts Active (keeps `stand-still` and baseline 0-skill survival checks untouched).
    */
   readonly chooseActive?: ActiveSkillPolicy;
@@ -306,8 +320,10 @@ export type SimulationEvent =
   | (SimEventBase & { readonly kind: 'dash'; readonly direction: Vec2 })
   | (SimEventBase & {
       readonly kind: 'active-skill';
-      readonly skillId: 'shadow-barrage';
+      readonly skillId: SignatureSkillId;
       readonly projectiles: number;
+      readonly novaHits?: number;
+      readonly hideAttachmentMs?: number;
     })
   | (SimEventBase & {
       readonly kind: 'level-up';
@@ -379,11 +395,26 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   /** Reward carried by the door taken after the previous room; `null` in room 1. */
   let doorReward: DoorReward | null = null;
 
+  const characterId = options.characterId ?? DEFAULT_CHARACTER_ID;
+  const characterDef = CHARACTERS[characterId];
+  const signatureSkillId = characterDef.signatureSkillId;
+  const activeConfig = activeSkillConfigFor(signatureSkillId);
+  const characterBase = applyCharacterPassive(
+    applyCharacterBaseStats(DEFAULT_COMBAT, characterId),
+    characterId,
+  );
+
   const rng = new SeededRng(options.seed);
   /** Dedicated skill-roll RNG stream, strictly decoupled from combat RNG (ADR-021). */
   const skillRollRng = createSkillRollRng(options.seed);
   const ownedSkills = new Map<string, number>(options.skills ?? []);
-  let stats = computeDerivedStats(ownedSkills);
+  let stats = computeDerivedStats(ownedSkills, characterBase);
+  const bulletTtlMs = Math.max(
+    PLAYER_BULLET_TTL_MS,
+    stats.projectileSpeedTilesPerSecond > 0
+      ? Math.ceil((stats.targetingRangeTiles / stats.projectileSpeedTilesPerSecond) * 1000 * 1.5)
+      : PLAYER_BULLET_TTL_MS,
+  );
   const startHearts =
     options.playerHearts !== undefined && Number.isFinite(options.playerHearts)
       ? Math.max(1, Math.min(stats.maxHearts, Math.trunc(options.playerHearts)))
@@ -411,7 +442,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const enemyKnockbacks = new Map<string, KnockbackState>();
   const actionBuffer = new ActionBuffer(DASH_TUNING.bufferMs);
   let dashState = createDashState();
-  let activeState = createActiveSkillState(true, ACTIVE_SKILL_TUNING.cooldownMs);
+  let activeState = createActiveSkillState(true, activeConfig.cooldownMs);
   let bufferedDashDir: Vec2 = { x: 0, y: 1 };
   let bufferedActiveDir: Vec2 = { x: 1, y: 0 };
   let postDashFireUntilMs = Number.NEGATIVE_INFINITY;
@@ -573,7 +604,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
     const currentStacks = ownedSkills.get(skill.id) ?? 0;
     ownedSkills.set(skill.id, Math.min(skill.maxStacks, currentStacks + 1));
-    stats = computeDerivedStats(ownedSkills);
+    stats = computeDerivedStats(ownedSkills, characterBase);
 
     health.configure(stats.maxHearts, stats.invulnerabilityMs);
     if (stats.maxHearts > prevMaxHearts) {
@@ -814,7 +845,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     enemyKnockbacks.delete(enemy.id);
     buffTracker.forget(enemy.id);
     burns.delete(enemy.id);
-    activeState = onActiveKill(activeState, ACTIVE_SKILL_TUNING, 1);
+    activeState = onActiveKill(activeState, activeConfig, 1);
     const gold = Math.round(goldForKill(enemy.role, enemy.elite) * stats.goldMultiplier);
     kills += 1;
     goldEarned += gold;
@@ -861,6 +892,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     const result = simulateBossRun({
       bossId,
       seed: options.seed + atRoomIndex * 1_000 + 1,
+      characterId,
       maxDurationMs: Math.max(1, maxDurationMs - durationMs),
       godMode: options.godMode,
       skills: ownedSkills,
@@ -929,6 +961,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           room: bossRoom.room,
           skillId: event.skillId,
           projectiles: event.projectiles,
+          ...(event.novaHits !== undefined ? { novaHits: event.novaHits } : {}),
+          ...(event.hideAttachmentMs !== undefined
+            ? { hideAttachmentMs: event.hideAttachmentMs }
+            : {}),
         });
       }
     }
@@ -1029,17 +1065,18 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           );
         }
         if (stats.dashNova !== undefined) {
-          const nova = stats.dashNova;
+          const novaRadius = stats.dashNova.radiusTiles * stats.aoePowerMult;
+          const novaDamage = stats.dashNova.damage * stats.aoePowerMult;
           for (const enemy of enemies) {
             if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
             const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
-            if (distance(player, enemy.position) > nova.radiusTiles + enemyRadius) continue;
-            const dealt = damageEnemy(enemy, nova.damage);
+            if (distance(player, enemy.position) > novaRadius + enemyRadius) continue;
+            const dealt = damageEnemy(enemy, novaDamage);
             if (dealt > 0) {
               healPlayer(lifestealHeal(stats, dealt));
               statusOf(enemy).apply(stats, durationMs);
               applyBurn(enemy.id, durationMs);
-              activeState = onActiveHit(activeState, ACTIVE_SKILL_TUNING, 1);
+              activeState = onActiveHit(activeState, activeConfig, 1);
             }
           }
         }
@@ -1070,6 +1107,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         ...worldSnapshot,
         player,
         activeState,
+        signatureSkillId,
       });
       if (requestedActive !== null) {
         bufferedActiveDir = requestedActive;
@@ -1079,38 +1117,152 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (actionBuffer.has('active') && isActiveSkillReady(activeState)) {
       const triggered = tryActivateSkill(
         activeState,
-        ACTIVE_SKILL_TUNING,
+        activeConfig,
         stats.activeCooldownMult,
       );
       if (triggered.triggered) {
         actionBuffer.consume('active');
         activeState = triggered.state;
         activeSkillsUsed += 1;
-        const volley = computeShadowBarrageVolley(player, bufferedActiveDir, stats.activePowerMult, {
-          projectileCount: ACTIVE_SKILL_TUNING.barrageProjectiles,
-          baseDamage: stats.damage,
-          damageMultiplier: ACTIVE_SKILL_TUNING.barrageDamageMultiplier,
-        });
-        for (const blade of volley) {
-          const spawned = bullets.spawn({
-            position: blade.position,
-            velocity: blade.velocity,
-            radiusTiles: blade.radiusTiles,
-            damage: blade.damage,
-            owner: 'player',
-            ttlMs: blade.ttlMs,
-            pierceRemaining: blade.pierceRemaining,
-            homing: blade.homing,
+
+        if (signatureSkillId === 'arcane-nova') {
+          const nova = computeArcaneNovaSpec(player, stats.activePowerMult, {
+            baseDamage: stats.damage,
+            aoePowerMult: stats.aoePowerMult,
           });
-          activeBulletIds.add(spawned.id);
+          let novaHits = 0;
+          for (const enemy of enemies) {
+            if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
+            const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
+            if (distance(nova.origin, enemy.position) > nova.radiusTiles + enemyRadius) continue;
+            let novaDmg = damageAfterExecute(
+              stats,
+              nova.damage,
+              enemy.health / enemy.maxHealth,
+            );
+            if (stats.statusDamageBonus > 0 && isAfflicted(enemy, durationMs)) {
+              novaDmg *= 1 + stats.statusDamageBonus;
+            }
+            const dealt = damageEnemy(enemy, novaDmg);
+            if (dealt > 0) {
+              healPlayer(lifestealHeal(stats, dealt));
+              if (enemy.health > 0) {
+                const status = statusOf(enemy);
+                status.apply(stats, durationMs);
+                status.applySlow(
+                  { factor: nova.slowFactor, durationMs: nova.slowDurationMs },
+                  durationMs,
+                );
+                applyBurn(enemy.id, durationMs);
+              }
+              novaHits += 1;
+            }
+          }
+          for (const bolt of nova.bolts) {
+            const spawned = bullets.spawn({
+              position: bolt.position,
+              velocity: bolt.velocity,
+              radiusTiles: bolt.radiusTiles,
+              damage: bolt.damage,
+              owner: 'player',
+              ttlMs: bolt.ttlMs,
+              pierceRemaining: bolt.pierceRemaining,
+              homing: bolt.homing,
+            });
+            activeBulletIds.add(spawned.id);
+          }
+          events.push({
+            kind: 'active-skill',
+            nowMs: durationMs,
+            room: room.room,
+            skillId: 'arcane-nova',
+            projectiles: nova.bolts.length,
+            novaHits,
+          });
+        } else if (signatureSkillId === 'piercing-volley') {
+          const volley = computePiercingVolley(player, bufferedActiveDir, stats.activePowerMult, {
+            baseDamage: stats.damage,
+          });
+          for (const arrow of volley) {
+            const spawned = bullets.spawn({
+              position: arrow.position,
+              velocity: arrow.velocity,
+              radiusTiles: arrow.radiusTiles,
+              damage: arrow.damage,
+              owner: 'player',
+              ttlMs: arrow.ttlMs,
+              pierceRemaining: arrow.pierceRemaining,
+              homing: arrow.homing,
+            });
+            activeBulletIds.add(spawned.id);
+          }
+          events.push({
+            kind: 'active-skill',
+            nowMs: durationMs,
+            room: room.room,
+            skillId: 'piercing-volley',
+            projectiles: volley.length,
+          });
+        } else if (signatureSkillId === 'ten-thousand-swords') {
+          const cast = computeTenThousandSwordsVolley(
+            player,
+            bufferedActiveDir,
+            stats.activePowerMult,
+            {
+              baseDamage: stats.damage,
+            },
+          );
+          for (const sword of cast.projectiles) {
+            const spawned = bullets.spawn({
+              position: sword.position,
+              velocity: sword.velocity,
+              radiusTiles: sword.radiusTiles,
+              damage: sword.damage,
+              owner: 'player',
+              ttlMs: sword.ttlMs,
+              pierceRemaining: sword.pierceRemaining,
+              homing: sword.homing,
+            });
+            activeBulletIds.add(spawned.id);
+          }
+          events.push({
+            kind: 'active-skill',
+            nowMs: durationMs,
+            room: room.room,
+            skillId: 'ten-thousand-swords',
+            projectiles: cast.projectiles.length,
+            hideAttachmentMs: cast.hideAttachmentMs,
+          });
+        } else {
+          const volley = computeShadowBarrageVolley(
+            player,
+            bufferedActiveDir,
+            stats.activePowerMult,
+            {
+              baseDamage: stats.damage,
+            },
+          );
+          for (const blade of volley) {
+            const spawned = bullets.spawn({
+              position: blade.position,
+              velocity: blade.velocity,
+              radiusTiles: blade.radiusTiles,
+              damage: blade.damage,
+              owner: 'player',
+              ttlMs: blade.ttlMs,
+              pierceRemaining: blade.pierceRemaining,
+              homing: blade.homing,
+            });
+            activeBulletIds.add(spawned.id);
+          }
+          events.push({
+            kind: 'active-skill',
+            nowMs: durationMs,
+            room: room.room,
+            skillId: 'shadow-barrage',
+            projectiles: volley.length,
+          });
         }
-        events.push({
-          kind: 'active-skill',
-          nowMs: durationMs,
-          room: room.room,
-          skillId: 'shadow-barrage',
-          projectiles: volley.length,
-        });
       }
     }
 
@@ -1172,7 +1324,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       deltaMs: fireDeltaMs,
       origin: player,
       targets,
-      rangeTiles: DEFAULT_COMBAT.targetingRangeTiles,
+      rangeTiles: stats.targetingRangeTiles,
     });
     if (shot !== null) {
       firePlayerVolley({
@@ -1181,9 +1333,9 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         rng,
         origin: shot.origin,
         direction: shot.direction,
-        speedTilesPerSecond: DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
+        speedTilesPerSecond: stats.projectileSpeedTilesPerSecond,
         radiusTiles: BULLET_RADIUS_TILES,
-        ttlMs: PLAYER_BULLET_TTL_MS,
+        ttlMs: bulletTtlMs,
       });
     }
 
@@ -1331,7 +1483,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         statusOf(enemy).apply(stats, durationMs);
         applyBurn(enemy.id, durationMs);
         if (!activeBulletIds.has(bullet.id)) {
-          activeState = onActiveHit(activeState, ACTIVE_SKILL_TUNING, 1);
+          activeState = onActiveHit(activeState, activeConfig, 1);
         }
         hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
 
@@ -1354,12 +1506,14 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           }
         }
 
-        // Explosive: extra damage to other enemies in radius.
+        // Explosive: extra damage to other enemies in radius (scaled by class `aoePowerMult`).
         if (bullet.explosiveRadiusTiles > 0 && bullet.explosiveDamage > 0) {
+          const blastRadius = bullet.explosiveRadiusTiles * stats.aoePowerMult;
+          const blastDamage = bullet.explosiveDamage * stats.aoePowerMult;
           for (const other of enemies) {
             if (other === enemy || other.health <= 0 || other.action.kind === 'dead') continue;
-            if (distance(bullet.position, other.position) > bullet.explosiveRadiusTiles) continue;
-            damageEnemy(other, bullet.explosiveDamage);
+            if (distance(bullet.position, other.position) > blastRadius) continue;
+            damageEnemy(other, blastDamage);
           }
         }
 
@@ -1733,11 +1887,14 @@ export const smartDashPolicy: DashPolicy = (world: DashThreatWorld): Vec2 | null
 };
 
 /**
- * Competent-player Signature Active (*Shadow Barrage*, `E`) policy (M13, ADR-022).
+ * Competent-player Signature Active (`E`) policy (M13/M14, ADR-022).
  *
  * Fires whenever off cooldown (or inside the 150 ms `ActionBuffer` window) and a boss, elite,
  * special Tier-2 threat (`bomber`/`buffer`/`tank`), pack of ≥ 2 enemies, or last surviving enemy
- * sits within effective barrage range.
+ * sits within effective range for the character's Signature Active:
+ * - *Shadow Barrage* / *Ten Thousand Swords*: mid-to-long fan range (`9.5–13` tiles).
+ * - *Piercing Volley* (Archer): extended range (`11.5–14` tiles) matching fast long-range arrows.
+ * - *Arcane Nova* (Mage): prefers targets inside the ~6-tile freezing AoE ring + outward bolts.
  */
 export const smartActiveSkillPolicy: ActiveSkillPolicy = (
   world: ActiveSkillPolicyWorld,
@@ -1749,6 +1906,49 @@ export const smartActiveSkillPolicy: ActiveSkillPolicy = (
   const living = world.enemies.filter((enemy) => enemy.health > 0 && enemy.action.kind !== 'dead');
   if (living.length === 0) return null;
 
+  if (world.signatureSkillId === 'arcane-nova') {
+    let bossInNova: EnemyState | null = null;
+    let bossInBoltRange: EnemyState | null = null;
+    let novaEnemy: EnemyState | null = null;
+    let novaGap = Number.POSITIVE_INFINITY;
+    let closePackCount = 0;
+    let nearestTarget: EnemyState | null = null;
+    let nearestGap = Number.POSITIVE_INFINITY;
+
+    for (const enemy of living) {
+      const gap = distance(world.player, enemy.position);
+      if (gap < nearestGap) {
+        nearestGap = gap;
+        nearestTarget = enemy;
+      }
+      if (enemy.id === BOSS_TARGET_ID) {
+        if (gap <= 7.4) bossInNova = enemy;
+        if (gap <= 11.5) bossInBoltRange = enemy;
+      }
+      if (gap <= 6.3 && gap < novaGap) {
+        novaGap = gap;
+        novaEnemy = enemy;
+      }
+      if (gap <= 7.5) {
+        closePackCount += 1;
+      }
+    }
+
+    const chosen =
+      bossInNova ??
+      novaEnemy ??
+      bossInBoltRange ??
+      (closePackCount >= 2 || (living.length === 1 && nearestGap <= 9.5) ? nearestTarget : null);
+    if (chosen === null) return null;
+
+    return unitVec(chosen.position.x - world.player.x, chosen.position.y - world.player.y);
+  }
+
+  const isPiercingVolley = world.signatureSkillId === 'piercing-volley';
+  const bossRange = isPiercingVolley ? 14 : 13;
+  const nearbyRange = isPiercingVolley ? 12.5 : 10.5;
+  const priorityRange = isPiercingVolley ? 11.5 : 9.5;
+
   let bossTarget: EnemyState | null = null;
   let priorityTarget: EnemyState | null = null;
   let priorityGap = Number.POSITIVE_INFINITY;
@@ -1758,10 +1958,10 @@ export const smartActiveSkillPolicy: ActiveSkillPolicy = (
 
   for (const enemy of living) {
     const gap = distance(world.player, enemy.position);
-    if (enemy.id === BOSS_TARGET_ID && gap <= 13) {
+    if (enemy.id === BOSS_TARGET_ID && gap <= bossRange) {
       bossTarget = enemy;
     }
-    if (gap <= 10.5) {
+    if (gap <= nearbyRange) {
       nearbyCount += 1;
       if (gap < nearestGap) {
         nearestGap = gap;
@@ -1772,7 +1972,7 @@ export const smartActiveSkillPolicy: ActiveSkillPolicy = (
         enemy.role === 'bomber' ||
         enemy.role === 'buffer' ||
         enemy.role === 'tank';
-      if (highPriority && gap <= 9.5 && gap < priorityGap) {
+      if (highPriority && gap <= priorityRange && gap < priorityGap) {
         priorityGap = gap;
         priorityTarget = enemy;
       }
@@ -1782,7 +1982,9 @@ export const smartActiveSkillPolicy: ActiveSkillPolicy = (
   const chosen =
     bossTarget ??
     priorityTarget ??
-    (nearbyCount >= 2 || (living.length === 1 && nearestGap <= 9.5) ? nearestTarget : null);
+    (nearbyCount >= 2 || (living.length === 1 && nearestGap <= priorityRange)
+      ? nearestTarget
+      : null);
   if (chosen === null) return null;
 
   return unitVec(chosen.position.x - world.player.x, chosen.position.y - world.player.y);
@@ -1970,6 +2172,7 @@ function bossActivePolicyFor(policy: ActiveSkillPolicy, bossRoom: LevelData): Bo
       enemies: bossEnemiesView(world),
       bullets: world.bullets,
       activeState: world.activeState,
+      ...(world.signatureSkillId !== undefined ? { signatureSkillId: world.signatureSkillId } : {}),
     });
 }
 

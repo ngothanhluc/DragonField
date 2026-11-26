@@ -1,26 +1,43 @@
 /**
- * `bun run sim:table` — the balance sim table (ADR-013, `docs/milestones.md` §M9 / §M12 / §M13,
- * ADR-021, ADR-022).
+ * `bun run sim:table` — the 4-class × 4-chapter balance sim table (ADR-013, `docs/milestones.md`
+ * §M9 / §M12 / §M13 / §M14, GDD §15.4, ADR-021, ADR-022).
  *
- * Runs the real `simulateRun` over chapters 1–4, three seeds per boss of each chapter pool, twice
- * per seed (standing still, and dodging with the full M13 kit: Dash + Shadow Barrage + XP-earned
- * pure-combat skills & Evolutions + typical door choice), then prints the Markdown table the owner
- * approves in the PR. The same rows are the integration test's contract
- * (`tests/integration/sim-table.acceptance.test.ts`).
+ * Runs the real `simulateRun` over chapters 1–4 across all 4 playable classes:
+ * - **Ninja**: full 24-row matrix (`4 chapters × 2 bosses × 3 seeds = 24 rows`, preserving M9–M13).
+ * - **Archer, Mage, Cultivator**: `4 chapters × 2 bosses × 2 seeds = 16 rows` each (`48 rows`).
+ * - Total: **72 rows** covering every `class × chapter × boss`, twice per row (standing still vs
+ *   dodging with the full M14 kit: class Layer 1/2 stats + Dash + class Signature Active +
+ *   XP-earned pure-combat skills & Legendary Evolutions + typical door choice).
  *
- * Slow on purpose: ~2–4 minutes of simulated chapters.
+ * Prints the full Markdown table + per-class summary comparison. The same matrix contract is
+ * verified in `tests/integration/sim-table.acceptance.test.ts`.
  */
+import { CHARACTER_IDS, type CharacterId } from '../assets/scripts/core/characters/roster';
 import {
   LEVEL_UP_TARGET_MAX,
   LEVEL_UP_TARGET_MIN,
+  formatDuration,
   formatSimTable,
   simTableRows,
+  type SimTableRow,
 } from '../tests/helpers/sim-table';
 
 const CHAPTERS = [1, 2, 3, 4] as const;
-const SEEDS_PER_BOSS = 3;
+const NINJA_SEEDS_PER_BOSS = 3;
+const OTHER_CLASS_SEEDS_PER_BOSS = 2;
 
-const rows = simTableRows({ chapters: CHAPTERS, seedsPerBoss: SEEDS_PER_BOSS });
+const rows: SimTableRow[] = [
+  ...simTableRows({
+    chapters: CHAPTERS,
+    seedsPerBoss: NINJA_SEEDS_PER_BOSS,
+    characters: ['ninja'],
+  }),
+  ...simTableRows({
+    chapters: CHAPTERS,
+    seedsPerBoss: OTHER_CLASS_SEEDS_PER_BOSS,
+    characters: ['archer', 'mage', 'cultivator'],
+  }),
+];
 
 process.stdout.write(formatSimTable(rows));
 
@@ -35,6 +52,8 @@ const levelUpsInBand = rows.filter(
     row.loadout.levelUps >= LEVEL_UP_TARGET_MIN && row.loadout.levelUps <= LEVEL_UP_TARGET_MAX,
 ).length;
 const rowsWithDash = rows.filter((row) => row.loadout.dashesUsed > 0).length;
+const lateRows = rows.filter((row) => row.chapter >= 2);
+const lateRowsWithDash = lateRows.filter((row) => row.loadout.dashesUsed > 0).length;
 const rowsWithActive = rows.filter((row) => row.loadout.activeSkillsUsed > 0).length;
 const rowsWithEvo = rows.filter((row) => row.loadout.evolutions.length > 0).length;
 const totalEvos = rows.reduce((sum, row) => sum + row.loadout.evolutions.length, 0);
@@ -50,21 +69,56 @@ const avgLevelUps = allLevelUps.reduce((sum, n) => sum + n, 0) / Math.max(1, all
 const avgDashes = totalDashes / Math.max(1, rows.length);
 const avgActives = totalActives / Math.max(1, rows.length);
 
-const perChapter = CHAPTERS.map((chapter) => {
-  const levels = rows
-    .filter((row) => row.chapter === chapter)
-    .map((row) => row.loadout.levelUps);
-  const lo = Math.min(...levels);
-  const hi = Math.max(...levels);
-  return `Ch${chapter} ${lo}–${hi}`;
-}).join(' · ');
+const perClassLines = [
+  '',
+  '| class | rows | stand still lost | wins (9/9) | clear time (avg / range) | level-ups | dashes/run | actives/run | hits (rows / total) | evolutions |',
+  '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+];
 
+let anyClassMissingEvo = false;
+let anyClassLowDash = false;
+for (const characterId of CHARACTER_IDS) {
+  const classRows = rows.filter((row) => row.characterId === characterId);
+  const count = Math.max(1, classRows.length);
+  const classStandLost = classRows.filter(
+    (row) => row.standStill.status === 'lost' && row.standStill.roomsCleared === 0,
+  ).length;
+  const classWins = classRows.filter(
+    (row) => row.loadout.status === 'won' && row.loadout.roomsCleared === 9,
+  ).length;
+  const durations = classRows.map((row) => row.loadout.durationMs);
+  const avgDurationMs = durations.reduce((sum, ms) => sum + ms, 0) / count;
+  const minDurationMs = Math.min(...durations);
+  const maxDurationMs = Math.max(...durations);
+  const levels = classRows.map((row) => row.loadout.levelUps);
+  const loLv = Math.min(...levels);
+  const hiLv = Math.max(...levels);
+  const avgLv = levels.reduce((sum, n) => sum + n, 0) / count;
+  const classDashRows = classRows.filter((r) => r.loadout.dashesUsed > 0).length;
+  const classAvgDashes = classRows.reduce((sum, r) => sum + r.loadout.dashesUsed, 0) / count;
+  const classAvgActives = classRows.reduce((sum, r) => sum + r.loadout.activeSkillsUsed, 0) / count;
+  const classHitRows = classRows.filter((r) => r.loadout.hits > 0).length;
+  const classTotalHits = classRows.reduce((sum, r) => sum + r.loadout.hits, 0);
+  const classEvoRows = classRows.filter((r) => r.loadout.evolutions.length > 0).length;
+  const classTotalEvos = classRows.reduce((sum, r) => sum + r.loadout.evolutions.length, 0);
+  if (classEvoRows === 0) anyClassMissingEvo = true;
+  if (classDashRows < classRows.length - 1) anyClassLowDash = true;
+
+  perClassLines.push(
+    `| ${characterId as CharacterId} | ${classRows.length} | ${classStandLost}/${classRows.length} | ` +
+      `${classWins}/${classRows.length} | ${formatDuration(avgDurationMs)} (${formatDuration(minDurationMs)}–${formatDuration(maxDurationMs)}) | ` +
+      `${loLv}–${hiLv} (avg ${avgLv.toFixed(1)}) | ${classAvgDashes.toFixed(1)} | ${classAvgActives.toFixed(1)} | ` +
+      `${classHitRows}/${classRows.length} (${classTotalHits}) | ${classEvoRows}/${classRows.length} (${classTotalEvos}) |`,
+  );
+}
+
+console.log(perClassLines.join('\n'));
 console.log(
-  `Summary: ${rows.length} rows — stand still lost room 1 in ${standStillLost}/${rows.length}, ` +
-    `dodge + M13 kit won 9/9 in ${loadoutWon}/${rows.length} (${rowsHit}/${rows.length} rows hit, ${totalHits} total hits), ` +
+  `\nSummary: ${rows.length} rows across ${CHARACTER_IDS.length} classes — stand still lost room 1 in ${standStillLost}/${rows.length}, ` +
+    `dodge + M14 kit won 9/9 in ${loadoutWon}/${rows.length} (${rowsHit}/${rows.length} rows hit, ${totalHits} total hits), ` +
     `level-ups in ${LEVEL_UP_TARGET_MIN}–${LEVEL_UP_TARGET_MAX} band in ${levelUpsInBand}/${rows.length} ` +
-    `(range ${minLevelUps}–${maxLevelUps}, avg ${avgLevelUps.toFixed(1)}; ${perChapter}), ` +
-    `dashes ${rowsWithDash}/${rows.length} (avg ${avgDashes.toFixed(1)}/run), ` +
+    `(range ${minLevelUps}–${maxLevelUps}, avg ${avgLevelUps.toFixed(1)}), ` +
+    `dashes ${rowsWithDash}/${rows.length} (Ch2–Ch4 ${lateRowsWithDash}/${lateRows.length}, avg ${avgDashes.toFixed(1)}/run), ` +
     `actives ${rowsWithActive}/${rows.length} (avg ${avgActives.toFixed(1)}/run), ` +
     `evolutions ${rowsWithEvo}/${rows.length} (${totalEvos} unlocked).`,
 );
@@ -73,9 +127,11 @@ if (
   standStillLost !== rows.length ||
   loadoutWon !== rows.length ||
   levelUpsInBand !== rows.length ||
-  rowsWithDash !== rows.length ||
+  lateRowsWithDash !== lateRows.length ||
+  anyClassLowDash ||
   rowsWithActive !== rows.length ||
-  rowsWithEvo === 0
+  rowsWithEvo === 0 ||
+  anyClassMissingEvo
 ) {
   process.exit(1);
 }

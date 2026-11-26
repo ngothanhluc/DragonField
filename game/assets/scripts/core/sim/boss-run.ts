@@ -35,6 +35,11 @@ import {
   type BulletVerb,
 } from '../boss/patterns';
 import { summonedEnemies } from '../boss/summon';
+import {
+  CHARACTERS,
+  DEFAULT_CHARACTER_ID,
+  type CharacterId,
+} from '../characters/roster';
 import { AutoFire } from '../combat/auto-fire';
 import { BulletPool, hitsCircle, type Bullet } from '../combat/bullets';
 import { HealthState } from '../combat/health';
@@ -52,10 +57,14 @@ import { StatusEffects } from '../combat/status-effects';
 import type { Targetable } from '../combat/targeting';
 import { DEFAULT_COMBAT } from '../config';
 import { maxHealthFor } from '../enemies/behaviours';
-import { ACTIVE_SKILL_TUNING, DASH_TUNING } from '../enemies/tuning';
+import { DASH_TUNING } from '../enemies/tuning';
 import { ActionBuffer } from '../input/action-buffer';
 import {
+  activeSkillConfigFor,
+  computeArcaneNovaSpec,
+  computePiercingVolley,
   computeShadowBarrageVolley,
+  computeTenThousandSwordsVolley,
   createActiveSkillState,
   isActiveSkillReady,
   onActiveHit,
@@ -63,6 +72,7 @@ import {
   stepActiveSkill,
   tryActivateSkill,
   type ActiveSkillState,
+  type SignatureSkillId,
 } from '../input/active-skill';
 import {
   canStartDash,
@@ -76,6 +86,7 @@ import {
 } from '../input/dash';
 import { ROOM_COLS, ROOM_ROWS, type EnemyRole } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
+import { applyCharacterBaseStats, applyCharacterPassive } from '../meta/run-stats';
 import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
 import { SeededRng } from '../rng';
 import { computeDerivedStats, type DerivedStats } from '../skills/derived-stats';
@@ -153,9 +164,10 @@ export interface BossDashWorld extends BossRunWorld {
   readonly dashState: DashState;
 }
 
-/** Boss arena world snapshot passed to an optional Signature Active policy (M13, ADR-022). */
+/** Boss arena world snapshot passed to an optional Signature Active policy (M13/M14, ADR-022). */
 export interface BossActiveWorld extends BossRunWorld {
   readonly activeState: ActiveSkillState;
+  readonly signatureSkillId?: SignatureSkillId;
 }
 
 /** Optional Dash (`Space`) policy for boss arenas: return a direction to press Dash, or `null`. */
@@ -209,21 +221,25 @@ export type BossRunEvent =
   | {
       readonly kind: 'active-skill';
       readonly nowMs: number;
-      readonly skillId: 'shadow-barrage';
+      readonly skillId: SignatureSkillId;
       readonly projectiles: number;
+      readonly novaHits?: number;
+      readonly hideAttachmentMs?: number;
     }
   | { readonly kind: 'player-dead'; readonly nowMs: number };
 
 export interface BossRunOptions {
   readonly bossId: BossId;
   readonly seed: number;
+  /** Playable character class (M14, defaults to `'ninja'`). */
+  readonly characterId?: CharacterId;
   /** Defaults to `BOSS_RUN_DEFAULT_MAX_DURATION_MS`; when time runs out it returns `timeout`. */
   readonly maxDurationMs?: number;
   /** Test hook: the player takes no damage. */
   readonly godMode?: boolean;
   /**
    * Damage per player bullet. `0` = zero-DPS (used to measure boss pressure without
-   * killing it). Defaults to `DEFAULT_COMBAT.damage`.
+   * killing it). Defaults to the character's derived shot damage.
    */
   readonly playerDamagePerShot?: number;
   /** Run skills (`Map<id, stacks>`) — the sim must mirror the game. */
@@ -238,7 +254,7 @@ export interface BossRunOptions {
   readonly policy?: BossRunPolicy;
   /** Optional Dash policy (M13, ADR-022). Omitted = never dashes. */
   readonly chooseDash?: BossDashPolicy;
-  /** Optional Signature Active (*Shadow Barrage*) policy (M13, ADR-022). Omitted = never casts. */
+  /** Optional Signature Active policy (M13/M14, ADR-022). Omitted = never casts. */
   readonly chooseActive?: BossActivePolicy;
   /** Optional carry-over Signature Active state from previous rooms. */
   readonly initialActiveState?: ActiveSkillState;
@@ -312,7 +328,15 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     throw new Error(`simulateBossRun needs a finite maxDurationMs > 0, got ${maxDurationMs}`);
   }
 
-  const baseStats = computeDerivedStats(options.skills ?? new Map<string, number>());
+  const characterId = options.characterId ?? DEFAULT_CHARACTER_ID;
+  const characterDef = CHARACTERS[characterId];
+  const signatureSkillId = characterDef.signatureSkillId;
+  const activeConfig = activeSkillConfigFor(signatureSkillId);
+  const characterBase = applyCharacterPassive(
+    applyCharacterBaseStats(DEFAULT_COMBAT, characterId),
+    characterId,
+  );
+  const baseStats = computeDerivedStats(options.skills ?? new Map<string, number>(), characterBase);
   const damagePerShot = options.playerDamagePerShot ?? baseStats.damage;
   if (!Number.isFinite(damagePerShot) || damagePerShot < 0) {
     throw new Error(
@@ -320,6 +344,12 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     );
   }
   const stats: DerivedStats = { ...baseStats, damage: damagePerShot };
+  const bulletTtlMs = Math.max(
+    PLAYER_BULLET_TTL_MS,
+    stats.projectileSpeedTilesPerSecond > 0
+      ? Math.ceil((stats.targetingRangeTiles / stats.projectileSpeedTilesPerSecond) * 1000 * 1.5)
+      : PLAYER_BULLET_TTL_MS,
+  );
   const maxHearts = Math.max(baseStats.maxHearts, options.playerMaxHearts ?? 0);
 
   const rng = new SeededRng(options.seed);
@@ -335,7 +365,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
   const actionBuffer = new ActionBuffer(DASH_TUNING.bufferMs);
   let dashState = createDashState();
   let activeState =
-    options.initialActiveState ?? createActiveSkillState(true, ACTIVE_SKILL_TUNING.cooldownMs);
+    options.initialActiveState ?? createActiveSkillState(true, activeConfig.cooldownMs);
   let bufferedDashDir: Vec2 = { x: 0, y: 1 };
   let bufferedActiveDir: Vec2 = { x: 1, y: 0 };
   let postDashFireUntilMs = Number.NEGATIVE_INFINITY;
@@ -443,7 +473,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     if (victim.health <= 0) {
       summonStatuses.delete(victim.id);
       summonBurns.delete(victim.id);
-      activeState = onActiveKill(activeState, ACTIVE_SKILL_TUNING, 1);
+      activeState = onActiveKill(activeState, activeConfig, 1);
       events.push({ kind: 'boss-summoned-killed', nowMs: durationMs, enemyId: victim.id });
     }
     return dealt;
@@ -562,23 +592,24 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
           );
         }
         if (stats.dashNova !== undefined) {
-          const nova = stats.dashNova;
-          if (boss.health > 0 && distance(player, boss.position) <= nova.radiusTiles + hitboxRadius) {
+          const novaRadius = stats.dashNova.radiusTiles * stats.aoePowerMult;
+          const novaDamage = stats.dashNova.damage * stats.aoePowerMult;
+          if (boss.health > 0 && distance(player, boss.position) <= novaRadius + hitboxRadius) {
             const before = boss.health;
-            damageBoss(nova.damage);
+            damageBoss(novaDamage);
             bossStatus.apply(stats, nowMs);
             applyBossBurn(nowMs);
-            healPlayer(lifestealHeal(stats, Math.min(nova.damage, before)));
-            activeState = onActiveHit(activeState, ACTIVE_SKILL_TUNING, 1);
+            healPlayer(lifestealHeal(stats, Math.min(novaDamage, before)));
+            activeState = onActiveHit(activeState, activeConfig, 1);
           }
           for (const enemy of summoned) {
             if (enemy.health <= 0) continue;
-            if (distance(player, enemy.position) <= nova.radiusTiles + SUMMONED_RADIUS_TILES) {
-              const dealt = damageSummon(enemy, nova.damage);
+            if (distance(player, enemy.position) <= novaRadius + SUMMONED_RADIUS_TILES) {
+              const dealt = damageSummon(enemy, novaDamage);
               summonStatusOf(enemy.id).apply(stats, nowMs);
               applySummonBurn(enemy.id, nowMs);
               healPlayer(lifestealHeal(stats, dealt));
-              activeState = onActiveHit(activeState, ACTIVE_SKILL_TUNING, 1);
+              activeState = onActiveHit(activeState, activeConfig, 1);
             }
           }
         }
@@ -603,6 +634,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         ...worldSnapshot,
         player,
         activeState,
+        signatureSkillId,
       });
       if (requestedActive !== null) {
         bufferedActiveDir = requestedActive;
@@ -612,37 +644,166 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     if (actionBuffer.has('active') && isActiveSkillReady(activeState)) {
       const triggered = tryActivateSkill(
         activeState,
-        ACTIVE_SKILL_TUNING,
+        activeConfig,
         stats.activeCooldownMult,
       );
       if (triggered.triggered) {
         actionBuffer.consume('active');
         activeState = triggered.state;
         activeSkillsUsed += 1;
-        const volley = computeShadowBarrageVolley(player, bufferedActiveDir, stats.activePowerMult, {
-          projectileCount: ACTIVE_SKILL_TUNING.barrageProjectiles,
-          baseDamage: stats.damage,
-          damageMultiplier: ACTIVE_SKILL_TUNING.barrageDamageMultiplier,
-        });
-        for (const blade of volley) {
-          const spawned = bullets.spawn({
-            position: blade.position,
-            velocity: blade.velocity,
-            radiusTiles: blade.radiusTiles,
-            damage: blade.damage,
-            owner: 'player',
-            ttlMs: blade.ttlMs,
-            pierceRemaining: blade.pierceRemaining,
-            homing: blade.homing,
+
+        if (signatureSkillId === 'arcane-nova') {
+          const nova = computeArcaneNovaSpec(player, stats.activePowerMult, {
+            baseDamage: stats.damage,
+            aoePowerMult: stats.aoePowerMult,
           });
-          activeBulletIds.add(spawned.id);
+          let novaHits = 0;
+          if (boss.health > 0 && distance(nova.origin, boss.position) <= nova.radiusTiles + hitboxRadius) {
+            const before = boss.health;
+            let novaDmg = damageAfterExecute(
+              stats,
+              nova.damage,
+              before / BOSSES[options.bossId].maxHealth,
+            );
+            if (stats.statusDamageBonus > 0 && isBossAfflicted(nowMs)) {
+              novaDmg *= 1 + stats.statusDamageBonus;
+            }
+            damageBoss(novaDmg);
+            bossStatus.apply(stats, nowMs);
+            bossStatus.applySlow(
+              { factor: nova.slowFactor, durationMs: nova.slowDurationMs },
+              nowMs,
+            );
+            applyBossBurn(nowMs);
+            healPlayer(lifestealHeal(stats, Math.min(novaDmg, before)));
+            novaHits += 1;
+          }
+          for (const enemy of summoned) {
+            if (enemy.health <= 0) continue;
+            if (distance(nova.origin, enemy.position) <= nova.radiusTiles + SUMMONED_RADIUS_TILES) {
+              let novaDmg = damageAfterExecute(
+                stats,
+                nova.damage,
+                enemy.health / enemy.maxHealth,
+              );
+              if (stats.statusDamageBonus > 0 && isSummonAfflicted(enemy.id, nowMs)) {
+                novaDmg *= 1 + stats.statusDamageBonus;
+              }
+              const dealt = damageSummon(enemy, novaDmg);
+              if (enemy.health > 0) {
+                const status = summonStatusOf(enemy.id);
+                status.apply(stats, nowMs);
+                status.applySlow(
+                  { factor: nova.slowFactor, durationMs: nova.slowDurationMs },
+                  nowMs,
+                );
+                applySummonBurn(enemy.id, nowMs);
+              }
+              healPlayer(lifestealHeal(stats, dealt));
+              novaHits += 1;
+            }
+          }
+          for (const bolt of nova.bolts) {
+            const spawned = bullets.spawn({
+              position: bolt.position,
+              velocity: bolt.velocity,
+              radiusTiles: bolt.radiusTiles,
+              damage: bolt.damage,
+              owner: 'player',
+              ttlMs: bolt.ttlMs,
+              pierceRemaining: bolt.pierceRemaining,
+              homing: bolt.homing,
+            });
+            activeBulletIds.add(spawned.id);
+          }
+          events.push({
+            kind: 'active-skill',
+            nowMs: durationMs,
+            skillId: 'arcane-nova',
+            projectiles: nova.bolts.length,
+            novaHits,
+          });
+        } else if (signatureSkillId === 'piercing-volley') {
+          const volley = computePiercingVolley(player, bufferedActiveDir, stats.activePowerMult, {
+            baseDamage: stats.damage,
+          });
+          for (const arrow of volley) {
+            const spawned = bullets.spawn({
+              position: arrow.position,
+              velocity: arrow.velocity,
+              radiusTiles: arrow.radiusTiles,
+              damage: arrow.damage,
+              owner: 'player',
+              ttlMs: arrow.ttlMs,
+              pierceRemaining: arrow.pierceRemaining,
+              homing: arrow.homing,
+            });
+            activeBulletIds.add(spawned.id);
+          }
+          events.push({
+            kind: 'active-skill',
+            nowMs: durationMs,
+            skillId: 'piercing-volley',
+            projectiles: volley.length,
+          });
+        } else if (signatureSkillId === 'ten-thousand-swords') {
+          const cast = computeTenThousandSwordsVolley(
+            player,
+            bufferedActiveDir,
+            stats.activePowerMult,
+            {
+              baseDamage: stats.damage,
+            },
+          );
+          for (const sword of cast.projectiles) {
+            const spawned = bullets.spawn({
+              position: sword.position,
+              velocity: sword.velocity,
+              radiusTiles: sword.radiusTiles,
+              damage: sword.damage,
+              owner: 'player',
+              ttlMs: sword.ttlMs,
+              pierceRemaining: sword.pierceRemaining,
+              homing: sword.homing,
+            });
+            activeBulletIds.add(spawned.id);
+          }
+          events.push({
+            kind: 'active-skill',
+            nowMs: durationMs,
+            skillId: 'ten-thousand-swords',
+            projectiles: cast.projectiles.length,
+            hideAttachmentMs: cast.hideAttachmentMs,
+          });
+        } else {
+          const volley = computeShadowBarrageVolley(
+            player,
+            bufferedActiveDir,
+            stats.activePowerMult,
+            {
+              baseDamage: stats.damage,
+            },
+          );
+          for (const blade of volley) {
+            const spawned = bullets.spawn({
+              position: blade.position,
+              velocity: blade.velocity,
+              radiusTiles: blade.radiusTiles,
+              damage: blade.damage,
+              owner: 'player',
+              ttlMs: blade.ttlMs,
+              pierceRemaining: blade.pierceRemaining,
+              homing: blade.homing,
+            });
+            activeBulletIds.add(spawned.id);
+          }
+          events.push({
+            kind: 'active-skill',
+            nowMs: durationMs,
+            skillId: 'shadow-barrage',
+            projectiles: volley.length,
+          });
         }
-        events.push({
-          kind: 'active-skill',
-          nowMs: durationMs,
-          skillId: 'shadow-barrage',
-          projectiles: volley.length,
-        });
       }
     }
 
@@ -662,7 +823,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
       deltaMs: fireDeltaMs,
       origin: player,
       targets,
-      rangeTiles: DEFAULT_COMBAT.targetingRangeTiles,
+      rangeTiles: stats.targetingRangeTiles,
     });
     if (shot !== null) {
       firePlayerVolley({
@@ -671,9 +832,9 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         rng,
         origin: shot.origin,
         direction: shot.direction,
-        speedTilesPerSecond: DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
+        speedTilesPerSecond: stats.projectileSpeedTilesPerSecond,
         radiusTiles: PLAYER_BULLET_RADIUS_TILES,
-        ttlMs: PLAYER_BULLET_TTL_MS,
+        ttlMs: bulletTtlMs,
       });
       events.push({ kind: 'player-shot', nowMs: durationMs, damage: stats.damage });
     }
@@ -827,13 +988,13 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         applyBossBurn(nowMs);
         healPlayer(lifestealHeal(stats, Math.min(damage, healthBefore)));
         if (!activeBulletIds.has(bullet.id)) {
-          activeState = onActiveHit(activeState, ACTIVE_SKILL_TUNING, 1);
+          activeState = onActiveHit(activeState, activeConfig, 1);
         }
         applyShockArcs(BOSS_TARGET_ID, boss.position, damage);
         bullet.hitIds.push(BOSS_TARGET_ID);
         hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
         splashDamage(stats, bullet, boss.position, summoned, (target) => {
-          damageSummon(target, bullet.explosiveDamage);
+          damageSummon(target, bullet.explosiveDamage * stats.aoePowerMult);
         });
         consumed = resolveBulletAfterHit(bullet, boss.position, summoned);
         if (consumed) {
@@ -858,7 +1019,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         applySummonBurn(victim.id, nowMs);
         healPlayer(lifestealHeal(stats, dealt));
         if (!activeBulletIds.has(bullet.id)) {
-          activeState = onActiveHit(activeState, ACTIVE_SKILL_TUNING, 1);
+          activeState = onActiveHit(activeState, activeConfig, 1);
         }
         applyShockArcs(victim.id, victim.position, damage);
         bullet.hitIds.push(victim.id);
@@ -932,9 +1093,10 @@ function splashDamage(
   apply: (target: SummonedState) => void,
 ): void {
   if (bullet.explosiveRadiusTiles <= 0 || stats.explosive === undefined) return;
+  const radius = bullet.explosiveRadiusTiles * stats.aoePowerMult;
   for (const enemy of summoned) {
     if (enemy.health <= 0 || bullet.hitIds.includes(enemy.id)) continue;
-    if (distance(center, enemy.position) > bullet.explosiveRadiusTiles) continue;
+    if (distance(center, enemy.position) > radius) continue;
     apply(enemy);
   }
 }
