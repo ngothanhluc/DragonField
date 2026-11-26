@@ -20,6 +20,9 @@ describe('GOLD — reward table', () => {
       sniper: 2,
       splitter: 2,
       splitling: 1,
+      // M13 — bomber/buffer specialist yokai.
+      bomber: 2,
+      buffer: 2,
       eliteMultiplier: 3,
       roomClear: 5,
       boss: 50,
@@ -33,10 +36,21 @@ describe('GOLD — reward table', () => {
     expect(goldForKill('sniper', false)).toBe(2);
     expect(goldForKill('splitter', false)).toBe(2);
     expect(goldForKill('splitling', false)).toBe(1);
+    expect(goldForKill('bomber', false)).toBe(2);
+    expect(goldForKill('buffer', false)).toBe(2);
   });
 
   it('elites are ×3 and always higher than the regular version', () => {
-    for (const role of ['chaser', 'caster', 'tank', 'sniper', 'splitter', 'splitling'] as const) {
+    for (const role of [
+      'chaser',
+      'caster',
+      'tank',
+      'sniper',
+      'splitter',
+      'splitling',
+      'bomber',
+      'buffer',
+    ] as const) {
       expect(goldForKill(role, true)).toBe(goldForKill(role, false) * GOLD.eliteMultiplier);
       expect(goldForKill(role, true)).toBeGreaterThan(goldForKill(role, false));
     }

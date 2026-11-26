@@ -28,9 +28,10 @@
  * variant while the near-black outline (46 `#141b1b`) stays for the silhouette. The ramp
  * colours are fixed points of the mapping, and at least 20 % of every sprite changes colour.
  */
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { paletteFromHex, remapPixels, remapTable, rgbToHex, type Rgb } from './lib/palette-remap';
 import { readPng, writePng } from './lib/png';
@@ -40,7 +41,22 @@ const PROJECT = join(HERE, '..');
 const ASSETS = join(PROJECT, 'assets');
 const MANIFEST = join(ASSETS, 'resources', 'data', 'animations.json');
 const PALETTE_JSON = join(PROJECT, 'config', 'elite-palette.json');
-const PALETTE_PNG = join(PROJECT, '..', 'art-source', 'ninja-adventure', 'Palette.png');
+
+function resolvePalettePng(): string {
+  const candidates = [join(PROJECT, '..', 'art-source', 'ninja-adventure', 'Palette.png')];
+  try {
+    const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: PROJECT,
+      encoding: 'utf8',
+    }).trim();
+    candidates.push(join(dirname(resolve(PROJECT, common)), 'art-source', 'ninja-adventure', 'Palette.png'));
+  } catch {
+    // Non-git environment: only try local candidate.
+  }
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
+}
+
+const PALETTE_PNG = resolvePalettePng();
 
 const DIRS = ['down', 'up', 'left', 'right'] as const;
 const CLIPS = ['idle', 'walk'] as const;
@@ -64,6 +80,15 @@ const MONSTERS = [
   'slimegreen',
   'slime2',
   'slime3',
+  // M13 — bomber and buffer monsters.
+  'flam',
+  'mushroom',
+  'flam2',
+  'mushroom2',
+  'spirit',
+  'lanterngreen',
+  'spirit2',
+  'owl2',
 ] as const;
 
 interface ElitePaletteConfig {

@@ -244,6 +244,8 @@ const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, st
     sniper: 'kappagreen',
     splitter: 'slimegreen',
     splitling: 'slimegreen',
+    bomber: 'flam',
+    buffer: 'spirit',
   },
   2: {
     chaser: 'spiderred',
@@ -252,6 +254,8 @@ const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, st
     sniper: 'kappared',
     splitter: 'slime2',
     splitling: 'slime2',
+    bomber: 'mushroom',
+    buffer: 'lanterngreen',
   },
   // Chapter 4 — desert (#45): a snake chaser, the pack's unused floating eye as the caster,
   // the tyrant lizard as the brute, bones (skull) as the sniper and a slime as the splitter.
@@ -262,6 +266,8 @@ const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, st
     sniper: 'skullblue',
     splitter: 'slime3',
     splitling: 'slime3',
+    bomber: 'mushroom2',
+    buffer: 'owl2',
   },
   3: {
     chaser: 'snake3',
@@ -270,6 +276,8 @@ const MONSTERS_BY_CHAPTER: Readonly<Record<number, Readonly<Record<EnemyRole, st
     sniper: 'skullblue',
     splitter: 'slime3',
     splitling: 'slime3',
+    bomber: 'flam2',
+    buffer: 'spirit2',
   },
 };
 

@@ -26,6 +26,9 @@ export const TILE_SIZE_PX = 16;
  *
  * #42 adds three roles: `sniper` (keeps far, line telegraph, one fast shot), `splitter`
  * (splits into `splitling`s on death) and `splitling` (small, fast, never splits again).
+ * M13 adds two Tier-2 roles: `bomber` (approaches, telegraphs a fuse, radial AoE blast) and
+ * `buffer` (mid-range support yokai casting a haste aura onto nearby allies, or a defensive orb
+ * when solo).
  */
 export const ENEMY_ROLES = [
   'chaser',
@@ -34,6 +37,8 @@ export const ENEMY_ROLES = [
   'sniper',
   'splitter',
   'splitling',
+  'bomber',
+  'buffer',
 ] as const;
 export type EnemyRole = (typeof ENEMY_ROLES)[number];
 

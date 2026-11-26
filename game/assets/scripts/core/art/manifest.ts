@@ -85,6 +85,7 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
     ...DIRECTIONS.map((dir) => `player.attack.${dir}`),
     ...DIRECTIONS.map((dir) => `player.hit.${dir}`),
     ...DIRECTIONS.map((dir) => `player.roll.${dir}`),
+    ...DIRECTIONS.map((dir) => `player.dash.${dir}`),
     'player.dead',
   ],
   bluebat: monsterAnimations('bluebat'),
@@ -96,6 +97,15 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
   bear: monsterAnimations('bear'),
   trex: monsterAnimations('trex'),
   cyclope: monsterAnimations('cyclope'),
+  // M13 — bomber and buffer monsters (Ch1–Ch4).
+  flam: monsterAnimations('flam'),
+  mushroom: monsterAnimations('mushroom'),
+  flam2: monsterAnimations('flam2'),
+  mushroom2: monsterAnimations('mushroom2'),
+  spirit: monsterAnimations('spirit'),
+  lanterngreen: monsterAnimations('lanterngreen'),
+  spirit2: monsterAnimations('spirit2'),
+  owl2: monsterAnimations('owl2'),
   tengu: ['tengu.idle', 'tengu.walk', 'tengu.attack', 'tengu.hit', 'tengu.trans'],
   squid: [
     'squid.idle',

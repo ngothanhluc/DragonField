@@ -459,17 +459,17 @@ describe('bullet verbs', () => {
     );
     expect(tengu1.map((event) => event.bullets.length)).toEqual([5]);
 
-    // Ch1 phase 2: one 8-bullet ring per loop.
+    // Ch1 phase 2: 8-bullet ring + M13 9-bullet Dash-pressuring sweep per loop.
     const tengu2 = shootEvents(
       simulate('tengu', { seconds: scriptDurationMs('tengu', 2) / 1000, healthFraction: 0.6 }).events,
     );
-    expect(tengu2.map((event) => event.bullets.length)).toEqual([8]);
+    expect(tengu2.map((event) => event.bullets.length)).toEqual([8, 9]);
 
-    // Ch1 phase 3: teleport ×3, 5-bullet fans ×3.
+    // Ch1 phase 3: teleport ×3, 5-bullet fans ×3 + M13 9-bullet sweep.
     const tengu3 = shootEvents(
       simulate('tengu', { seconds: scriptDurationMs('tengu', 3) / 1000, healthFraction: 0.2 }).events,
     );
-    expect(tengu3.map((event) => event.bullets.length)).toEqual([5, 5, 5]);
+    expect(tengu3.map((event) => event.bullets.length)).toEqual([5, 5, 5, 9]);
 
     // Ch2 phase 1: one 5-bullet spread per loop.
     const squid1 = shootEvents(
@@ -505,13 +505,15 @@ describe('bullet verbs', () => {
     });
 
     const shots = shootEvents(events);
+    const spiralShots = shots.filter((shot) => shot.bullets.length === 1);
     const expected = Math.ceil(
       (spiralStep?.durationMs ?? 0) / spiralAction.spiral.intervalMs,
     );
-    expect(shots).toHaveLength(expected);
-    for (const shot of shots) expect(shot.bullets).toHaveLength(1);
+    expect(spiralShots).toHaveLength(expected);
+    // M13 adds a 9-bullet Dash-pressuring tidal sweep after the spiral.
+    expect(shots.filter((shot) => shot.bullets.length === 9)).toHaveLength(1);
 
-    const angles = shots.map((shot) => shot.bullets[0]?.angleOffset ?? Number.NaN);
+    const angles = spiralShots.map((shot) => shot.bullets[0]?.angleOffset ?? Number.NaN);
     for (let index = 1; index < angles.length; index += 1) {
       const previous = angles[index - 1] ?? 0;
       const current = angles[index] ?? 0;
@@ -554,22 +556,23 @@ describe('bullet verbs', () => {
     }
   });
 
-  it('samurai phase 3: fire trail + exactly 2 slash waves', () => {
+  it('samurai phase 3: fire trail + 2 slash waves + M13 Dash-pressuring sweep', () => {
     const { events } = simulate('samurai', {
       seconds: scriptDurationMs('samurai', 3) / 1000,
       healthFraction: 0.2,
     });
     const shots = shootEvents(events);
-    expect(shots).toHaveLength(3);
+    expect(shots).toHaveLength(4);
 
     const trail = shots[0];
     expect(trail?.bullets.length).toBeGreaterThanOrEqual(3);
     const trailSpeeds = new Set(trail?.bullets.map((bullet) => bullet.speed));
     expect(trailSpeeds.size).toBe(1);
 
-    for (const slash of shots.slice(1)) {
+    for (const slash of shots.slice(1, 3)) {
       expect(slash.bullets).toHaveLength(3);
     }
+    expect(shots[3]?.bullets).toHaveLength(9);
   });
 });
 

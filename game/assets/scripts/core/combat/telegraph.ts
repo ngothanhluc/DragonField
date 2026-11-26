@@ -18,6 +18,8 @@ export const TELEGRAPH_MS = {
   caster: ENEMY_TUNING.roles.caster.telegraphMs,
   tank: ENEMY_TUNING.roles.tank.telegraphMs,
   sniper: ENEMY_TUNING.roles.sniper.telegraphMs,
+  bomber: ENEMY_TUNING.roles.bomber.telegraphMs,
+  buffer: ENEMY_TUNING.roles.buffer.telegraphMs,
   boss: 800,
 } as const;
 

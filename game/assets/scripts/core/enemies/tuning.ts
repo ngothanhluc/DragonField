@@ -32,12 +32,15 @@
 import { TUNING_DATA } from './tuning.generated';
 import {
   parseTuning,
+  type ActiveSkillTuning,
   type BossTuning,
   type CameraTuning,
   type CombatTuning,
   type CoverTuning,
+  type DashTuning,
   type DoorsTuning,
   type EnemiesTuning,
+  type EnemyAiTuning,
   type FeelTuning,
   type NavigationTuning,
   type SpecialRoomsTuning,
@@ -92,3 +95,12 @@ export const BOSS_TUNING: BossTuning = TUNING.boss;
 
 /** XP curve, orb magnet/vacuum, reroll cost, and level-up wave (M12, ADR-021) — `core/xp/` reads them. */
 export const XP_TUNING: XpTuning = TUNING.xp;
+
+/** Tier-2 enemy AI parameters (M13, GDD §15.3) — predictive aim, bursts, and chaser flanking. */
+export const ENEMY_AI_TUNING: EnemyAiTuning = TUNING.enemies.ai;
+
+/** Player Dash timing, speed, and i-frames (M13, ADR-022) — `core/input/dash.ts` reads them. */
+export const DASH_TUNING: DashTuning = TUNING.dash;
+
+/** Signature Active Skill cooldown, hit/kill recharge, and barrage stats (M13, ADR-022). */
+export const ACTIVE_SKILL_TUNING: ActiveSkillTuning = TUNING.activeSkill;

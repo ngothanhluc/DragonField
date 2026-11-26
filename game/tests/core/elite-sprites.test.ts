@@ -22,7 +22,7 @@ const ASSETS = join(GAME, 'assets');
 const PALETTE_JSON = join(GAME, 'config', 'elite-palette.json');
 const PALETTE_PNG = join(GAME, '..', 'art-source', 'ninja-adventure', 'Palette.png');
 
-/** The 9 monster actors in the manifest (GDD §4 roster, `gen-animations.ts` MONSTERS). */
+/** The monster actors in the manifest (GDD §4 + M13 bomber/buffer roster). */
 const MONSTERS = [
   'bluebat',
   'spiderred',
@@ -33,6 +33,14 @@ const MONSTERS = [
   'bear',
   'trex',
   'cyclope',
+  'flam',
+  'mushroom',
+  'flam2',
+  'mushroom2',
+  'spirit',
+  'lanterngreen',
+  'spirit2',
+  'owl2',
 ] as const;
 const CLIPS = ['idle', 'walk'] as const;
 const DIRS = ['down', 'up', 'left', 'right'] as const;

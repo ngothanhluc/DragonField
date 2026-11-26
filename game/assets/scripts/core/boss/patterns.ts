@@ -205,9 +205,11 @@ export type BossMotion =
 
 /**
  * One bullet batch. `fan`/`spread` auto-aim at the player (they differ in opening);
- * `ring` spreads evenly over 360°; `line` is a slash wave flying along `facing`.
+ * `ring` spreads evenly over 360°; `line` is a slash wave flying along `facing`;
+ * `sweep` (M13) is a wide, dense bullet curtain sweeping the player's lane to pressure Dash timing;
+ * `zone` (M13) is a dense radial shockwave burst expanding from a boss slam to reward Dash evasion.
  */
-export type VolleyShape = 'fan' | 'spread' | 'ring' | 'line';
+export type VolleyShape = 'fan' | 'spread' | 'ring' | 'line' | 'sweep' | 'zone';
 
 export interface VolleySpec {
   readonly shape: VolleyShape;
@@ -714,6 +716,181 @@ const RED_RING_10: BossAction = {
   },
 };
 
+// --- M13 Dash-pressuring wide sweeps & shockwave zones (Phase 2 & Phase 3) ---
+
+const TENGU_SWEEP: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 9,
+    spreadRadians: 135 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 5.5,
+    damage: 1,
+    radiusTiles: 0.28,
+  },
+};
+
+const SQUID_SWEEP: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 9,
+    spreadRadians: 140 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 5,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
+const SQUID_SWEEP_ENRAGED: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 11,
+    spreadRadians: 150 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 5.2,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
+const SAMURAI_SWEEP: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 9,
+    spreadRadians: 130 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 6.2,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
+const FROG_ZONE: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'zone',
+    count: 12,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 5.2,
+    damage: 1,
+    radiusTiles: 0.32,
+  },
+};
+
+const FROG_SWEEP: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 9,
+    spreadRadians: 135 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 5.8,
+    damage: 1,
+    radiusTiles: 0.28,
+  },
+};
+
+const SLIME_ZONE: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'zone',
+    count: 14,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 4.8,
+    damage: 1,
+    radiusTiles: 0.34,
+  },
+};
+
+const SLIME_SWEEP: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 10,
+    spreadRadians: 140 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 5,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
+const BAMBOO_SWEEP: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 9,
+    spreadRadians: 135 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 5.5,
+    damage: 1,
+    radiusTiles: 0.3,
+  },
+};
+
+const BAMBOO_ZONE: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'zone',
+    count: 16,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 5.2,
+    damage: 1,
+    radiusTiles: 0.32,
+  },
+};
+
+const RACOON_SWEEP: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 11,
+    spreadRadians: 140 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 5.8,
+    damage: 1,
+    radiusTiles: 0.28,
+  },
+};
+
+const RACOON_ZONE: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'zone',
+    count: 16,
+    spreadRadians: 0,
+    baseAngleRadians: -HALF_PI,
+    ringAimsAtPlayer: true,
+    speedTilesPerSecond: 5.5,
+    damage: 1,
+    radiusTiles: 0.32,
+  },
+};
+
+const RED_SWEEP: BossAction = {
+  kind: 'volley',
+  volley: {
+    shape: 'sweep',
+    count: 11,
+    spreadRadians: 145 * DEG,
+    baseAngleRadians: 0,
+    speedTilesPerSecond: 6,
+    damage: 1,
+    radiusTiles: 0.28,
+  },
+};
+
 function anim(animation: BossAnimKind): BossAction {
   return { kind: 'animation', animation };
 }
@@ -749,7 +926,9 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 350, actions: [anim('idle')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 700, actions: [TENGU_RING] },
-        { durationMs: 1200, actions: [TENGU_WALK_CHASE, anim('walk')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [TENGU_SWEEP] },
+        { durationMs: 1100, actions: [TENGU_WALK_CHASE, anim('walk')] },
       ],
     },
     3: {
@@ -765,14 +944,16 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 400, actions: [TELEPORT, anim('teleport')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [TENGU_FAN] },
-        { durationMs: 700, actions: [anim('idle')] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [TENGU_SWEEP] },
+        { durationMs: 650, actions: [anim('idle')] },
       ],
     },
   },
 
   // -------------------------------------------------------------------------
-  // Ch2 — SquidGreen: swim sideways + 5-bullet spread Shoot → AttackLoop spiral →
-  // summon 2 casters then spin faster.
+  // Ch2 — SquidGreen: swim sideways + 5-bullet spread Shoot → AttackLoop spiral
+  // + tidal sweep → summon 2 casters then spin faster + wide sweep.
   // -------------------------------------------------------------------------
   squid: {
     1: {
@@ -787,6 +968,8 @@ export const BOSS_SCRIPTS: BossScripts = {
       steps: [
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 2400, actions: [anim('loop'), SQUID_SPIRAL_SLOW] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [anim('shoot'), SQUID_SWEEP] },
         { durationMs: 400, actions: [anim('idle')] },
       ],
     },
@@ -801,6 +984,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 1300, actions: [SQUID_SWIM_FAST, anim('walk')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 2600, actions: [anim('loop'), SQUID_SPIRAL_FAST] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [anim('shoot'), SQUID_SWEEP_ENRAGED] },
         { durationMs: 400, actions: [anim('idle')] },
       ],
     },
@@ -808,7 +993,7 @@ export const BOSS_SCRIPTS: BossScripts = {
 
   // -------------------------------------------------------------------------
   // Ch3 — GiantBlueSamurai: horizontal charge + straight slash wave → double charge changing
-  // direction → charge leaving a fire trail + double slash.
+  // direction + wide iai sweep → charge leaving a fire trail + double slash + sweep.
   // -------------------------------------------------------------------------
   samurai: {
     1: {
@@ -839,6 +1024,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 900, actions: [SAMURAI_CHARGE, anim('charge')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [face('player'), TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [SAMURAI_SLASH] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [face('player'), TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [SAMURAI_SWEEP] },
         { durationMs: 600, actions: [anim('idle')] },
       ],
     },
@@ -854,14 +1041,16 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 450, actions: [SAMURAI_SLASH] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 450, actions: [SAMURAI_SLASH] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [face('player'), TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [SAMURAI_SWEEP] },
         { durationMs: 600, actions: [anim('idle')] },
       ],
     },
   },
 
   // -------------------------------------------------------------------------
-  // Ch1 pool — GiantFrog: hop-chase + 5-bullet fan → leap + aimed 10-bullet ring
-  // → summon 2 chasers once, then leap + ring twice and a fan each loop.
+  // Ch1 pool — GiantFrog: hop-chase + 5-bullet fan → leap + aimed ring + slam zone
+  // → summon 2 chasers once, then leap + ring + tongue sweep each loop.
   // -------------------------------------------------------------------------
   frog: {
     1: {
@@ -881,6 +1070,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 700, actions: [FROG_LEAP, anim('charge')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [FROG_RING] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [FROG_ZONE] },
         { durationMs: 600, actions: [anim('idle')] },
       ],
     },
@@ -902,7 +1093,7 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 600, actions: [FROG_RING] },
         { durationMs: 300, actions: [anim('idle')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
-        { durationMs: 600, actions: [FROG_FAN] },
+        { durationMs: 600, actions: [FROG_SWEEP] },
         { durationMs: 500, actions: [anim('idle')] },
       ],
     },
@@ -910,7 +1101,7 @@ export const BOSS_SCRIPTS: BossScripts = {
 
   // -------------------------------------------------------------------------
   // Ch2 pool — GiantSlime: hop-chase + wide 5-bullet spread → slam leap + aimed
-  // 12-bullet ring → summon 3 chasers once, then a slow spiral + slam + ring.
+  // ring + shockwave zone → summon 3 chasers once, then spiral + slam + sweep.
   // -------------------------------------------------------------------------
   slime: {
     1: {
@@ -927,6 +1118,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 800, actions: [SLIME_SLAM, anim('charge')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 650, actions: [SLIME_RING] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 650, actions: [SLIME_ZONE] },
         { durationMs: 700, actions: [anim('idle')] },
       ],
     },
@@ -944,6 +1137,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 800, actions: [SLIME_SLAM, anim('charge')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [SLIME_RING] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [SLIME_SWEEP] },
         { durationMs: 600, actions: [anim('idle')] },
       ],
     },
@@ -951,8 +1146,8 @@ export const BOSS_SCRIPTS: BossScripts = {
 
   // -------------------------------------------------------------------------
   // Ch3 pool — GiantBamboo: a stomping bamboo golem. Walk-chase + 7-bullet
-  // spread → line up + horizontal charge + aimed 14-bullet ring → summon 2
-  // tanks once, then spiral, charging fire trail and ring each loop.
+  // spread → line up + horizontal charge + ring + wide sweep → summon 2
+  // tanks once, then spiral, charging fire trail, ring, and shockwave zone.
   // -------------------------------------------------------------------------
   bamboo: {
     1: {
@@ -973,6 +1168,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 900, actions: [BAMBOO_CHARGE, anim('charge')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [BAMBOO_RING] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [BAMBOO_SWEEP] },
         { durationMs: 600, actions: [anim('idle')] },
       ],
     },
@@ -994,6 +1191,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 900, actions: [BAMBOO_CHARGE, anim('charge'), BAMBOO_FIRE_TRAIL] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [BAMBOO_RING] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [BAMBOO_ZONE] },
         { durationMs: 500, actions: [anim('idle')] },
       ],
     },
@@ -1001,8 +1200,8 @@ export const BOSS_SCRIPTS: BossScripts = {
 
   // -------------------------------------------------------------------------
   // Ch4 pool — GiantRacoon: a leaping brawler. Hop-chase + 7-bullet fan →
-  // leap + aimed 14-bullet ring + fan → summon 3 chasers once, then a loop of
-  // leaps/rings and a fast spiral.
+  // leap + ring + wide sweep → summon 3 chasers once, then leaps/rings,
+  // shockwave zone, and a fast spiral.
   // -------------------------------------------------------------------------
   racoon: {
     1: {
@@ -1024,6 +1223,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 600, actions: [RACOON_RING] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 550, actions: [RACOON_FAN_5] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RACOON_SWEEP] },
         { durationMs: 500, actions: [anim('idle')] },
       ],
     },
@@ -1041,7 +1242,7 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 250, actions: [anim('idle')] },
         { durationMs: 600, actions: [RACOON_LEAP, anim('charge')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
-        { durationMs: 600, actions: [RACOON_RING] },
+        { durationMs: 600, actions: [RACOON_ZONE] },
         { durationMs: 250, actions: [anim('idle')] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 2000, actions: [anim('attack'), RACOON_SPIRAL] },
@@ -1052,8 +1253,8 @@ export const BOSS_SCRIPTS: BossScripts = {
 
   // -------------------------------------------------------------------------
   // Ch4 pool — Red Tengu: the blue Tengu's structure with stronger volleys and
-  // shorter idles. Fan 7 → teleport + aimed 12-ring + fan → teleport ×3, each
-  // with an aimed 10-ring, then a final fan 7.
+  // shorter idles. Fan 7 → teleport + ring + fan + flame sweep → teleport ×3
+  // with aimed rings + fan + flame sweep.
   // -------------------------------------------------------------------------
   redtengu: {
     1: {
@@ -1072,6 +1273,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 650, actions: [RED_RING_12] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [RED_FAN_5] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RED_SWEEP] },
         { durationMs: 900, actions: [RED_WALK, anim('walk')] },
       ],
     },
@@ -1090,6 +1293,8 @@ export const BOSS_SCRIPTS: BossScripts = {
         { durationMs: 550, actions: [RED_RING_10] },
         { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
         { durationMs: 600, actions: [RED_FAN_7] },
+        { durationMs: TELEGRAPH_MS.boss, actions: [TELEGRAPH_ACTION, anim('attack')] },
+        { durationMs: 600, actions: [RED_SWEEP] },
         { durationMs: 500, actions: [anim('idle')] },
       ],
     },
@@ -1492,7 +1697,8 @@ function buildVolley(spec: VolleySpec, state: BossState, player: Vec2): BulletVe
 
   switch (spec.shape) {
     case 'fan':
-    case 'spread': {
+    case 'spread':
+    case 'sweep': {
       const aim = aimPoint(from, player, spec.baseAngleRadians);
       const stepRadians = spec.count > 1 ? spec.spreadRadians / (spec.count - 1) : 0;
       for (let index = 0; index < spec.count; index += 1) {
@@ -1508,7 +1714,8 @@ function buildVolley(spec: VolleySpec, state: BossState, player: Vec2): BulletVe
       break;
     }
 
-    case 'ring': {
+    case 'ring':
+    case 'zone': {
       const startAngle =
         spec.ringAimsAtPlayer === true
           ? angleBetween(from, player)

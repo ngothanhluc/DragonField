@@ -21,6 +21,9 @@ export const GOLD = {
   sniper: 2,
   splitter: 2,
   splitling: 1,
+  /** M13 roles: bomber and buffer are high-priority specialist yokai. */
+  bomber: 2,
+  buffer: 2,
   /** Elites are ×3 the regular version (GDD §4: elites only change health/damage). */
   eliteMultiplier: 3,
   roomClear: 5,

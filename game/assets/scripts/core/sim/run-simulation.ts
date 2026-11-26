@@ -49,7 +49,7 @@ import { DEFAULT_COMBAT } from '../config';
 import {
   CHASER_CONTACT_RANGE_TILES,
   ROOM_EDGE_MARGIN_TILES,
-  attackReleased,
+  attackReleasedForRole,
   contactDamageFor,
   decideAction,
   speedFor,
@@ -58,9 +58,16 @@ import {
   type EnemyAction,
   type EnemyState,
 } from '../enemies/behaviours';
-import { eliteVolleyAngles } from '../enemies/elite';
+import {
+  bomberBlastSpec,
+  isInsideBomberBlast,
+  scheduleFollowUpBlast,
+  stepPendingBlasts,
+  type PendingBomberBlast,
+} from '../enemies/bomber';
+import { EnemyBuffTracker, resolveBufferPulse } from '../enemies/buffer';
 import { nextActionStartedMs } from '../enemies/attack-cycle';
-import { aimDirection, sniperShotPlan } from '../combat/enemy-fire';
+import { aimDirection, casterShotPlan, sniperShotPlan } from '../combat/enemy-fire';
 import { splitOnDeath } from '../enemies/splitter';
 import {
   RoomNavigation,
@@ -136,8 +143,6 @@ const PLAYER_BULLET_TTL_MS = Math.max(
       1.5,
   ),
 );
-/** Enemy bullets are slow enough to dodge (GDD §4). */
-const ENEMY_BULLET_SPEED_TILES_PER_SECOND = 4;
 const ENEMY_BULLET_TTL_MS = 3000;
 /** Caster bullet angle offset, radians — the only source that needs a seed. */
 const ENEMY_SHOT_SPREAD_RADIANS = 0.15;
@@ -364,6 +369,9 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   /** Id suffix of the next scheduled spawn, unique inside the room. */
   let spawnSeq = 0;
   let enemies: EnemyState[] = [];
+  const buffTracker = new EnemyBuffTracker();
+  let pendingBlasts: PendingBomberBlast[] = [];
+  let playerVelocity: Vec2 = { x: 0, y: 0 };
 
   /**
    * Enter a room's enemies. A normal room is empty and fills from the `WaveScheduler` over time
@@ -377,6 +385,9 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   ): EnemyState[] => {
     scheduler = null;
     pendingSpawns = [];
+    pendingBlasts = [];
+    buffTracker.clear();
+    playerVelocity = { x: 0, y: 0 };
     spawnSeq = 0;
     enemyKnockbacks.clear();
     xpOrbs.clear();
@@ -596,14 +607,20 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       return;
     }
 
-    const dx = player.x - enemy.position.x;
-    const dy = player.y - enemy.position.y;
+    const plan = casterShotPlan({
+      elite: enemy.elite,
+      chapter: room.chapter,
+      origin: enemy.position,
+      targetPos: player,
+      targetVel: playerVelocity,
+    });
+    const dx = plan.aimTarget.x - enemy.position.x;
+    const dy = plan.aimTarget.y - enemy.position.y;
     const length = Math.hypot(dx, dy);
     const baseAngle = length === 0 ? 0 : Math.atan2(dy, dx);
-    const eliteAngles = eliteVolleyAngles(enemy.role, enemy.elite);
     const angles =
-      enemy.elite && eliteAngles.length > 0
-        ? eliteAngles
+      plan.angles.length > 1
+        ? plan.angles
         : [(rng.next() * 2 - 1) * ENEMY_SHOT_SPREAD_RADIANS];
 
     for (const offset of angles) {
@@ -611,8 +628,42 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       bullets.spawn({
         position: enemy.position,
         velocity: {
-          x: Math.cos(angle) * ENEMY_BULLET_SPEED_TILES_PER_SECOND,
-          y: Math.sin(angle) * ENEMY_BULLET_SPEED_TILES_PER_SECOND,
+          x: Math.cos(angle) * plan.speedTilesPerSecond,
+          y: Math.sin(angle) * plan.speedTilesPerSecond,
+        },
+        radiusTiles: BULLET_RADIUS_TILES,
+        damage,
+        owner: 'enemy',
+        ttlMs: ENEMY_BULLET_TTL_MS,
+      });
+    }
+  };
+
+  const triggerBomberBlast = (enemy: EnemyState): void => {
+    const spec = bomberBlastSpec(enemy, room.chapter);
+    if (isInsideBomberBlast(spec.center, spec.radiusTiles, player, PLAYER_RADIUS_TILES)) {
+      damagePlayer(spec.damage);
+    }
+    const followUp = scheduleFollowUpBlast(spec, durationMs);
+    if (followUp !== null) pendingBlasts.push(followUp);
+  };
+
+  const triggerBufferCast = (enemy: EnemyState): void => {
+    const pulse = resolveBufferPulse(enemy, enemies, durationMs);
+    if (pulse.kind === 'aura') {
+      buffTracker.applyHaste(pulse.affectedIds, pulse.speedMultiplier, pulse.untilMs);
+      return;
+    }
+    const damage = contactDamageFor(enemy.role, enemy.elite, undefined, room.chapter);
+    const direction = aimDirection(enemy.position, player);
+    const baseAngle = Math.atan2(direction.y, direction.x);
+    for (const offset of pulse.angles) {
+      const angle = baseAngle + offset;
+      bullets.spawn({
+        position: enemy.position,
+        velocity: {
+          x: Math.cos(angle) * pulse.speedTilesPerSecond,
+          y: Math.sin(angle) * pulse.speedTilesPerSecond,
         },
         radiusTiles: BULLET_RADIUS_TILES,
         damage,
@@ -628,6 +679,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     enemy.action = { kind: 'dead' };
     stuckGuard.forget(enemy.id);
     enemyKnockbacks.delete(enemy.id);
+    buffTracker.forget(enemy.id);
     const gold = Math.round(goldForKill(enemy.role, enemy.elite) * stats.goldMultiplier);
     kills += 1;
     goldEarned += gold;
@@ -762,7 +814,23 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       enemies,
       bullets: bullets.active(),
     });
+    const prevPlayer = player;
     player = movePlayer(player, intent, stats.moveSpeedTilesPerSecond, room);
+    const dtSec = SIM_STEP_MS / 1000;
+    playerVelocity = {
+      x: (player.x - prevPlayer.x) / dtSec,
+      y: (player.y - prevPlayer.y) / dtSec,
+    };
+
+    if (pendingBlasts.length > 0) {
+      const steppedBlasts = stepPendingBlasts(pendingBlasts, durationMs);
+      pendingBlasts = steppedBlasts.remaining;
+      for (const blast of steppedBlasts.triggered) {
+        if (isInsideBomberBlast(blast.center, blast.radiusTiles, player, PLAYER_RADIUS_TILES)) {
+          damagePlayer(blast.damage);
+        }
+      }
+    }
 
     // What the player can see this frame: one screen, clamped to the room (#41). Enemies are
     // held to it — they never start an attack from off screen, and far ones idle.
@@ -863,8 +931,13 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       );
       enemy.action = next;
 
-      if (attackReleased(before, next) === 'shot') {
+      const released = attackReleasedForRole(enemy.role, before, next);
+      if (released === 'shot') {
         fireCasterVolley(enemy);
+      } else if (released === 'blast') {
+        triggerBomberBlast(enemy);
+      } else if (released === 'buff') {
+        triggerBufferCast(enemy);
       }
 
       // Walk on the shared flow field toward the player: straight while in sight, around the
@@ -878,7 +951,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         field,
         random,
       );
-      advanceEnemy(enemy, next, slow, room, field, detour);
+      const haste = buffTracker.speedMultiplierFor(enemy.id, durationMs);
+      advanceEnemy(enemy, next, slow * haste, room, field, detour);
 
       const melee =
         enemy.role === 'chaser' ||

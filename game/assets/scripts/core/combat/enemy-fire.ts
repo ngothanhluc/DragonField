@@ -45,10 +45,185 @@ export function rotateDirection(direction: Vec2, angle: number): Vec2 {
 
 /** What a role fires when its telegraph is released. */
 export interface EnemyShotPlan {
-  /** Angle offsets from the straight line to the player (one bullet per element). */
+  /** Angle offsets from the aim line (one bullet per element). */
   readonly angles: readonly number[];
   /** Bullet speed, tiles/second. */
   readonly speedTilesPerSecond: number;
+}
+
+/** Full shot plan including resolved aim target (straight or predictive lead). */
+export interface ResolvedEnemyShotPlan extends EnemyShotPlan {
+  /** World-space point the volley aims toward (equals `targetPos` when lead is 0). */
+  readonly aimTarget: Vec2;
+}
+
+/**
+ * Predictive lead aim (M13, GDD §15.3): projects where a moving player will be when a bullet
+ * travelling at `bulletSpeed` arrives, scaled by `leadFactor` (0..1) and capped to `maxLeadTiles`
+ * so dodging perpendicularly or using Dash beats it cleanly.
+ *
+ * Pure function — never returns NaN/Infinity; when `targetVel` is zero or `leadFactor <= 0`,
+ * returns `targetPos` unchanged.
+ */
+export function computePredictiveAim(
+  origin: Vec2,
+  targetPos: Vec2,
+  targetVel: Vec2,
+  bulletSpeed: number,
+  leadFactor: number,
+  maxLeadTiles: number = ENEMY_TUNING.ai.predictiveMaxLeadTiles,
+): Vec2 {
+  if (
+    !Number.isFinite(bulletSpeed) ||
+    bulletSpeed <= 0 ||
+    !Number.isFinite(leadFactor) ||
+    leadFactor <= 0
+  ) {
+    return { x: targetPos.x, y: targetPos.y };
+  }
+
+  const vx = Number.isFinite(targetVel.x) ? targetVel.x : 0;
+  const vy = Number.isFinite(targetVel.y) ? targetVel.y : 0;
+  const targetSpeedSq = vx * vx + vy * vy;
+  if (targetSpeedSq < 1e-9) {
+    return { x: targetPos.x, y: targetPos.y };
+  }
+
+  const px = targetPos.x - origin.x;
+  const py = targetPos.y - origin.y;
+  const distSq = px * px + py * py;
+  if (distSq < 1e-9) {
+    return { x: targetPos.x, y: targetPos.y };
+  }
+
+  // Exact intercept quadratic: (v·v - s²)t² + 2(p·v)t + p·p = 0.
+  const a = targetSpeedSq - bulletSpeed * bulletSpeed;
+  const b = 2 * (px * vx + py * vy);
+  const c = distSq;
+
+  let interceptSec = Math.sqrt(distSq) / bulletSpeed;
+  if (Math.abs(a) < 1e-6) {
+    if (b < -1e-6) interceptSec = -c / b;
+  } else {
+    const disc = b * b - 4 * a * c;
+    if (disc >= 0) {
+      const root = Math.sqrt(disc);
+      const t1 = (-b - root) / (2 * a);
+      const t2 = (-b + root) / (2 * a);
+      const positive = [t1, t2].filter((t) => t > 0);
+      if (positive.length > 0) {
+        interceptSec = Math.min(...positive);
+      }
+    }
+  }
+
+  const clampedLead = Math.min(Math.max(leadFactor, 0), 1);
+  let leadX = vx * interceptSec * clampedLead;
+  let leadY = vy * interceptSec * clampedLead;
+
+  const cap = Number.isFinite(maxLeadTiles) && maxLeadTiles >= 0 ? maxLeadTiles : 0;
+  const leadLen = Math.hypot(leadX, leadY);
+  if (cap > 0 && leadLen > cap) {
+    const scale = cap / leadLen;
+    leadX *= scale;
+    leadY *= scale;
+  } else if (cap === 0) {
+    leadX = 0;
+    leadY = 0;
+  }
+
+  return { x: targetPos.x + leadX, y: targetPos.y + leadY };
+}
+
+/**
+ * Predictive lead factor (0..1) for an enemy role in `chapter`.
+ * Ch3–Ch4 casters and elite casters lead moving players; Ch1–Ch2 regular casters aim straight.
+ */
+export function predictiveLeadFactorFor(
+  role: EnemyRole,
+  elite: boolean,
+  chapter = 1,
+  tuning: EnemiesTuning = ENEMY_TUNING,
+): number {
+  if (role !== 'caster') return 0;
+  if (elite) return tuning.ai.elitePredictiveLeadFactor;
+  if (chapter >= tuning.ai.predictiveMinChapter) return tuning.ai.predictiveLeadFactor;
+  return 0;
+}
+
+/** Build symmetric fan/burst angle offsets around 0, radians. */
+function symmetricAngles(shots: number, spreadRadians: number): number[] {
+  const count = Math.max(1, Math.floor(shots));
+  const half = (count - 1) / 2;
+  const angles: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    angles.push((index - half) * spreadRadians);
+  }
+  return angles;
+}
+
+/**
+ * Buffer defensive shot (M13): when a `buffer` has no nearby allies to haste, it fires a slow
+ * defensive orb (or a 3-orb spread when elite) so it is never inert when left solo.
+ */
+export function bufferShotPlan(
+  elite: boolean,
+  tuning: EnemiesTuning = ENEMY_TUNING,
+): EnemyShotPlan {
+  const speedTilesPerSecond =
+    tuning.roles.buffer.projectileSpeedTilesPerSecond ?? ENEMY_BULLET_SPEED_TILES_PER_SECOND;
+  if (!elite) {
+    return { angles: [0], speedTilesPerSecond };
+  }
+  return {
+    angles: symmetricAngles(tuning.elite.buffer.volleyShots, tuning.elite.buffer.volleySpreadRadians),
+    speedTilesPerSecond,
+  };
+}
+
+export interface CasterShotPlanArgs {
+  readonly elite: boolean;
+  readonly chapter?: number;
+  readonly origin: Vec2;
+  readonly targetPos: Vec2;
+  readonly targetVel?: Vec2;
+  readonly tuning?: EnemiesTuning;
+}
+
+/**
+ * Tier-2 caster shot plan (M13):
+ * - Ch1–Ch2 regular: 1 straight shot; Ch1–Ch2 elite: 3-shot fan with predictive lead.
+ * - Ch3–Ch4 regular: 2-shot burst with predictive lead; Ch3–Ch4 elite: 4-shot fan with predictive lead.
+ */
+export function casterShotPlan(args: CasterShotPlanArgs): ResolvedEnemyShotPlan {
+  const tuning = args.tuning ?? ENEMY_TUNING;
+  const chapter = args.chapter ?? 1;
+  const speed = ENEMY_BULLET_SPEED_TILES_PER_SECOND;
+  const lead = predictiveLeadFactorFor('caster', args.elite, chapter, tuning);
+  const vel = args.targetVel ?? { x: 0, y: 0 };
+  const aimTarget = computePredictiveAim(
+    args.origin,
+    args.targetPos,
+    vel,
+    speed,
+    lead,
+    tuning.ai.predictiveMaxLeadTiles,
+  );
+
+  let angles: number[];
+  if (args.elite) {
+    const shots =
+      chapter >= tuning.ai.eliteCasterLateMinChapter
+        ? tuning.ai.eliteCasterLateVolleyShots
+        : tuning.elite.caster.volleyShots;
+    angles = symmetricAngles(shots, tuning.elite.caster.volleySpreadRadians);
+  } else if (chapter >= tuning.ai.casterBurstMinChapter) {
+    angles = symmetricAngles(tuning.ai.casterBurstShots, tuning.ai.casterBurstSpreadRadians);
+  } else {
+    angles = [0];
+  }
+
+  return { angles, speedTilesPerSecond: speed, aimTarget };
 }
 
 /**

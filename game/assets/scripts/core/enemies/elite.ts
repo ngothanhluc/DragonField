@@ -24,15 +24,54 @@ export function eliteVolleyAngles(
   elite: boolean,
   tuning: EnemiesTuning = ENEMY_TUNING,
 ): number[] {
+  if (role === 'buffer') {
+    if (!elite) return [0];
+    return symmetricVolleyAngles(
+      tuning.elite.buffer.volleyShots,
+      tuning.elite.buffer.volleySpreadRadians,
+    );
+  }
   if (role !== 'caster') return [];
   if (!elite) return [0];
 
   const { volleyShots, volleySpreadRadians } = tuning.elite.caster;
-  // Odd so one projectile always flies straight at the player; even still works but is off-centre.
-  const half = (volleyShots - 1) / 2;
+  return symmetricVolleyAngles(volleyShots, volleySpreadRadians);
+}
+
+/**
+ * Chapter-aware volley angles (M13): Ch3–Ch4 regular casters fire a 2-shot burst and Ch3–Ch4
+ * elite casters escalate to a wider 4-shot fan; Ch1–Ch2 keeps the M3 1-shot / 3-shot fan.
+ */
+export function casterVolleyAngles(
+  role: EnemyRole,
+  elite: boolean,
+  chapter = 1,
+  tuning: EnemiesTuning = ENEMY_TUNING,
+): number[] {
+  if (role === 'buffer') return eliteVolleyAngles(role, elite, tuning);
+  if (role !== 'caster') return [];
+  if (elite) {
+    const shots =
+      chapter >= tuning.ai.eliteCasterLateMinChapter
+        ? tuning.ai.eliteCasterLateVolleyShots
+        : tuning.elite.caster.volleyShots;
+    return symmetricVolleyAngles(shots, tuning.elite.caster.volleySpreadRadians);
+  }
+  if (chapter >= tuning.ai.casterBurstMinChapter) {
+    return symmetricVolleyAngles(
+      tuning.ai.casterBurstShots,
+      tuning.ai.casterBurstSpreadRadians,
+    );
+  }
+  return [0];
+}
+
+function symmetricVolleyAngles(shots: number, spreadRadians: number): number[] {
+  const count = Math.max(1, Math.floor(shots));
+  const half = (count - 1) / 2;
   const angles: number[] = [];
-  for (let index = 0; index < volleyShots; index += 1) {
-    angles.push((index - half) * volleySpreadRadians);
+  for (let index = 0; index < count; index += 1) {
+    angles.push((index - half) * spreadRadians);
   }
   return angles;
 }

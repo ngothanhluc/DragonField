@@ -31,6 +31,15 @@ const MONSTERS = [
   'slimegreen',
   'slime2',
   'slime3',
+  // M13 — bomber and buffer monsters (staged from the pack).
+  'flam',
+  'mushroom',
+  'flam2',
+  'mushroom2',
+  'spirit',
+  'lanterngreen',
+  'spirit2',
+  'owl2',
 ] as const;
 const BOSSES = ['tengu', 'squid', 'samurai', 'frog', 'slime', 'bamboo', 'racoon', 'redtengu'] as const;
 
@@ -490,20 +499,20 @@ describe('resolve', () => {
   it('uses the fallback when the primary key is missing', () => {
     const fallback = resolve(manifest, 'player.walk.down');
 
-    expect(resolve(manifest, 'player.dash.down', 'player.walk.down')).toBe(fallback);
+    expect(resolve(manifest, 'player.backflip.down', 'player.walk.down')).toBe(fallback);
   });
 
   it('reports both keys when neither the primary nor the fallback exists', () => {
-    const error = captureError(() => resolve(manifest, 'player.dash.up', 'player.dash.down'));
+    const error = captureError(() => resolve(manifest, 'player.backflip.up', 'player.backflip.down'));
 
-    expect(error.message).toContain('player.dash.up');
-    expect(error.message).toContain('player.dash.down');
+    expect(error.message).toContain('player.backflip.up');
+    expect(error.message).toContain('player.backflip.down');
   });
 
   it('reports same-actor key suggestions when there is no fallback', () => {
-    const error = captureError(() => resolve(manifest, 'player.dash.left'));
+    const error = captureError(() => resolve(manifest, 'player.backflip.left'));
 
-    expect(error.message).toContain('player.dash.left');
+    expect(error.message).toContain('player.backflip.left');
     expect(error.message).toContain('player.walk.down');
   });
 

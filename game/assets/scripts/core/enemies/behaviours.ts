@@ -26,14 +26,17 @@
  * The caster's projectile attack is described by `elite.ts` (angular volley); the other two
  * are actions, so they live here.
  */
+import { computePredictiveAim, predictiveLeadFactorFor } from '../combat/enemy-fire';
 import { isTelegraphElapsed } from '../combat/telegraph';
 import type { ViewRect } from '../camera/follow-camera';
 import type { EnemyRole, LevelData } from '../level/level-data';
 import { obstacleNear } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
 import { canAttackFrom } from '../view/view-rect';
-import { hasLineOfSight } from './navigation';
+import { computeFlankTarget, flankSideFor, hasLineOfSight } from './navigation';
 import { ENEMY_TUNING, CHAPTER_TUNING, WAVES_TUNING, type EnemiesTuning, type EnemyRoleTuning } from './tuning';
+
+export { computeFlankTarget, computePredictiveAim, flankSideFor, predictiveLeadFactorFor };
 
 export interface EnemyState {
   id: string;
@@ -141,6 +144,8 @@ export const ATTACK_COOLDOWN_MS: Readonly<Record<EnemyRole, number>> = {
   sniper: ENEMY_TUNING.roles.sniper.attackCooldownMs,
   splitter: ENEMY_TUNING.roles.splitter.attackCooldownMs,
   splitling: ENEMY_TUNING.roles.splitling.attackCooldownMs,
+  bomber: ENEMY_TUNING.roles.bomber.attackCooldownMs,
+  buffer: ENEMY_TUNING.roles.buffer.attackCooldownMs,
 };
 
 /** Fallback direction when the two points coincide (no defined direction). */
@@ -255,6 +260,25 @@ export function attackReleased(
   return null;
 }
 
+/**
+ * Role-aware attack release helper (M13): distinguishes `bomber` radial blast and `buffer` aura
+ * cast from `caster`/`sniper` projectile shots when a telegraph finishes (`telegraph -> idle`).
+ */
+export function attackReleasedForRole(
+  role: EnemyRole,
+  previous: EnemyAction,
+  next: EnemyAction,
+): 'shot' | 'charge' | 'blast' | 'buff' | null {
+  if (previous.kind !== 'telegraph') return null;
+  if (next.kind === 'charge') return 'charge';
+  if (next.kind === 'idle') {
+    if (role === 'bomber') return 'blast';
+    if (role === 'buffer') return 'buff';
+    return 'shot';
+  }
+  return null;
+}
+
 export interface DecideActionArgs {
   readonly state: EnemyState;
   readonly player: Vec2;
@@ -290,7 +314,7 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
   const decided = ((): EnemyAction => {
     switch (state.role) {
       case 'chaser':
-        return decideChaser(state, player, nowMs, level, role, elite.chaser);
+        return decideChaser(state, player, nowMs, level, role, elite.chaser, tuning);
       case 'caster':
         return decideCaster(state, player, nowMs, level, role);
       case 'tank':
@@ -301,6 +325,10 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
       case 'splitling':
         // Splitters and their brood are contact-only chasers: they never telegraph.
         return decideMelee(state, player, level, role);
+      case 'bomber':
+        return decideBomber(state, player, nowMs, level, role);
+      case 'buffer':
+        return decideBuffer(state, player, nowMs, level, role);
     }
   })();
 
@@ -363,6 +391,7 @@ function decideChaser(
   level: LevelData,
   tuning: EnemyRoleTuning,
   elite: EnemiesTuning['elite']['chaser'],
+  enemiesTuning: EnemiesTuning,
 ): EnemyAction {
   const current = state.action;
   const canPounce = state.elite && elite.pounceTelegraphMs > 0;
@@ -401,7 +430,7 @@ function decideChaser(
     return { kind: 'telegraph', sinceMs: nowMs };
   }
 
-  return { kind: 'walk', target: clampToRoom(level, player) };
+  return { kind: 'walk', target: computeFlankTarget(state.position, player, state.id, level, enemiesTuning) };
 }
 
 /**
@@ -584,6 +613,79 @@ function decideTank(
   // the wall while the player's bullets stopped on the same wall — a stand-off that never resolves
   // (the room could not clear; found by the 64×36 balance sim). Walk on the flow field instead,
   // like the caster, until the player is in sight.
+  if (!hasLineOfSight(level, state.position, player)) {
+    return { kind: 'walk', target: clampToRoom(level, player) };
+  }
+
+  if (isCoolingDown(state, nowMs, tuning)) return { kind: 'idle' };
+  return { kind: 'telegraph', sinceMs: nowMs };
+}
+
+/**
+ * Bomber (M13): approaches to mid-close range (`preferredRangeMaxTiles` ~2.6 tiles), commits to a
+ * clear fuse telegraph (`telegraphMs` ~900 ms), then triggers a radial AoE blast (`telegraph ->
+ * idle`, released as `'blast'` via `attackReleasedForRole`). Once the fuse starts it runs to
+ * completion so Dash or fast repositioning cleanly clears the blast zone.
+ */
+function decideBomber(
+  state: EnemyState,
+  player: Vec2,
+  nowMs: number,
+  level: LevelData,
+  tuning: EnemyRoleTuning,
+): EnemyAction {
+  const current = state.action;
+
+  if (current.kind === 'telegraph') {
+    if (!isTelegraphElapsed(current.sinceMs, nowMs, tuning.telegraphMs)) {
+      return { kind: 'telegraph', sinceMs: current.sinceMs };
+    }
+    return { kind: 'idle' };
+  }
+
+  const gap = distance(state.position, player);
+  if (gap > tuning.preferredRangeMaxTiles + RANGE_TOLERANCE_TILES) {
+    return { kind: 'walk', target: clampToRoom(level, player) };
+  }
+
+  if (!hasLineOfSight(level, state.position, player)) {
+    return { kind: 'walk', target: clampToRoom(level, player) };
+  }
+
+  if (isCoolingDown(state, nowMs, tuning)) return { kind: 'idle' };
+  return { kind: 'telegraph', sinceMs: nowMs };
+}
+
+/**
+ * Buffer (M13): mid-range support yokai (`preferredRangeMinTiles`..`preferredRangeMaxTiles` ~5–8.5
+ * tiles) that telegraphs (`telegraphMs` ~700 ms) then casts a haste/empower aura onto nearby
+ * allies, or fires a slow defensive orb when solo (`telegraph -> idle`, released as `'buff'` via
+ * `attackReleasedForRole`).
+ */
+function decideBuffer(
+  state: EnemyState,
+  player: Vec2,
+  nowMs: number,
+  level: LevelData,
+  tuning: EnemyRoleTuning,
+): EnemyAction {
+  const current = state.action;
+
+  if (current.kind === 'telegraph') {
+    if (!isTelegraphElapsed(current.sinceMs, nowMs, tuning.telegraphMs)) {
+      return { kind: 'telegraph', sinceMs: current.sinceMs };
+    }
+    return { kind: 'idle' };
+  }
+
+  const gap = distance(state.position, player);
+  const outsideBand =
+    gap < tuning.preferredRangeMinTiles - RANGE_TOLERANCE_TILES ||
+    gap > tuning.preferredRangeMaxTiles + RANGE_TOLERANCE_TILES;
+  if (outsideBand) {
+    return { kind: 'walk', target: holdRangeTarget(state, player, level, tuning) };
+  }
+
   if (!hasLineOfSight(level, state.position, player)) {
     return { kind: 'walk', target: clampToRoom(level, player) };
   }

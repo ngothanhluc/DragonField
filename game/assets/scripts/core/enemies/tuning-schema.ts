@@ -84,13 +84,67 @@ export interface EliteTankTuning {
   readonly extraCharges: number;
 }
 
-/** Every number specific to the elite version (GDD §4 + M3). */
+/** Elite bomber extra attack: wider blast radius plus a delayed second shockwave pulse (M13). */
+export interface EliteBomberTuning {
+  /** Multiplier applied to `roles.bomber.blastRadiusTiles` on the primary blast (>= 1). */
+  readonly blastRadiusMultiplier: number;
+  /** Delay between primary blast and secondary pulse, ms. */
+  readonly doublePulseDelayMs: number;
+  /** Multiplier applied to `roles.bomber.blastRadiusTiles` on the secondary pulse (>= 1). */
+  readonly doublePulseRadiusMultiplier: number;
+}
+
+/** Elite buffer extra attack: wider, stronger haste aura and 3-orb defensive spread when solo (M13). */
+export interface EliteBufferTuning {
+  /** Multiplier applied to `roles.buffer.buffRadiusTiles` (>= 1). */
+  readonly buffRadiusMultiplier: number;
+  /** Haste speed multiplier granted by elite buffer (>= 1). */
+  readonly buffSpeedMultiplier: number;
+  /** Defensive orbs fired when solo (odd >= 1). */
+  readonly volleyShots: number;
+  /** Angular spread between adjacent defensive orbs, radians. */
+  readonly volleySpreadRadians: number;
+}
+
+/** Every number specific to the elite version (GDD §4 + M3 + M13). */
 export interface EliteTuning {
   /** Node scale relative to the regular version (GDD §4: 1.15). */
   readonly scale: number;
   readonly chaser: EliteChaserTuning;
   readonly caster: EliteCasterTuning;
   readonly tank: EliteTankTuning;
+  readonly bomber: EliteBomberTuning;
+  readonly buffer: EliteBufferTuning;
+}
+
+/** Tier-2 enemy AI escalation parameters (M13, GDD §15.3): predictive aim, bursts, and chaser flanking. */
+export interface EnemyAiTuning {
+  /** First chapter (1-based) where regular casters use predictive lead aim. */
+  readonly predictiveMinChapter: number;
+  /** Lead factor in `0..1` for regular late-chapter casters. */
+  readonly predictiveLeadFactor: number;
+  /** Lead factor in `0..1` for elite casters. */
+  readonly elitePredictiveLeadFactor: number;
+  /** Hard cap on lead offset distance, tiles (so perpendicular dodges/Dash beat it cleanly). */
+  readonly predictiveMaxLeadTiles: number;
+  /** First chapter (1-based) where regular casters fire a multi-shot burst. */
+  readonly casterBurstMinChapter: number;
+  /** Projectiles per regular late-chapter caster burst. */
+  readonly casterBurstShots: number;
+  /** Angular spacing between burst projectiles, radians. */
+  readonly casterBurstSpreadRadians: number;
+  /** First chapter (1-based) where elite casters upgrade to the wider fan volley. */
+  readonly eliteCasterLateMinChapter: number;
+  /** Projectiles per late-chapter elite caster fan. */
+  readonly eliteCasterLateVolleyShots: number;
+  /** Lateral flank approach angle for chasers, radians. */
+  readonly flankAngleRadians: number;
+  /** Below this distance, flanking chasers collapse directly onto the player, tiles. */
+  readonly flankMinDistanceTiles: number;
+  /** Above this distance, chasers approach directly without lateral offset, tiles. */
+  readonly flankMaxDistanceTiles: number;
+  /** Maximum lateral offset distance at mid-range, tiles. */
+  readonly flankOffsetTiles: number;
 }
 
 /**
@@ -140,6 +194,16 @@ export interface EnemyRoleTuning {
   readonly projectileSpeedTilesPerSecond?: number;
   /** `splitter`: how many `splitling`s it leaves behind (2–3). */
   readonly splitCount?: number;
+  /** `bomber`: radial AoE blast radius, tiles (M13). */
+  readonly blastRadiusTiles?: number;
+  /** `bomber`: radial AoE blast damage before chapter/elite scaling (M13). */
+  readonly blastDamage?: number;
+  /** `buffer`: haste aura radius, tiles (M13). */
+  readonly buffRadiusTiles?: number;
+  /** `buffer`: haste speed multiplier applied to nearby allies (M13). */
+  readonly buffSpeedMultiplier?: number;
+  /** `buffer`: haste aura duration, ms (M13). */
+  readonly buffDurationMs?: number;
 }
 
 export interface EnemiesTuning {
@@ -151,6 +215,8 @@ export interface EnemiesTuning {
   readonly roomEdgeMarginTiles: number;
   /** Elite-only numbers: scale, extra attack per role. */
   readonly elite: EliteTuning;
+  /** Tier-2 AI numbers: predictive lead, late-chapter bursts, flanking chasers (M13). */
+  readonly ai: EnemyAiTuning;
   readonly roles: Readonly<Record<EnemyRole, EnemyRoleTuning>>;
 }
 
@@ -228,6 +294,40 @@ export interface TuningConfig {
   readonly boss: BossTuning;
   /** XP curve, orb magnet/vacuum physics, gold reroll pricing, and level-up safety wave (M12, ADR-021). */
   readonly xp: XpTuning;
+  /** Player Dash action buffer, cooldown, travel speed, and i-frame window (M13, ADR-022). */
+  readonly dash: DashTuning;
+  /** Signature Active Skill action buffer, base + hit/kill cooldown reduction, and barrage stats (M13, ADR-022). */
+  readonly activeSkill: ActiveSkillTuning;
+}
+
+/** Player Dash tuning (M13, ADR-022). */
+export interface DashTuning {
+  /** Game-time action buffer window, ms (freezes during pause/hitstop). */
+  readonly bufferMs: number;
+  /** Base cooldown between dashes, ms. */
+  readonly cooldownMs: number;
+  /** Dash movement duration, ms. */
+  readonly durationMs: number;
+  /** Dash speed, tiles/second. */
+  readonly speedTilesPerSecond: number;
+  /** Invulnerability window granted when starting a dash, ms. */
+  readonly invulnerabilityMs: number;
+}
+
+/** Signature Active Skill tuning (M13, ADR-022). */
+export interface ActiveSkillTuning {
+  /** Game-time action buffer window, ms. */
+  readonly bufferMs: number;
+  /** Base time cooldown, ms. */
+  readonly cooldownMs: number;
+  /** Cooldown reduction on each player projectile hit, ms. */
+  readonly hitCooldownReductionMs: number;
+  /** Cooldown reduction on each enemy kill, ms. */
+  readonly killCooldownReductionMs: number;
+  /** Projectiles emitted by Ninja's Shadow Barrage signature active. */
+  readonly barrageProjectiles: number;
+  /** Damage multiplier per Shadow Barrage projectile relative to player base damage. */
+  readonly barrageDamageMultiplier: number;
 }
 
 /** XP level-up threshold curve: `round((baseThreshold + linearStep·i + quadraticStep·i²) · chapterMultiplier)`. */
@@ -553,6 +653,7 @@ const ENEMY_GROUP_FIELDS = [
   'eliteDamageMultiplier',
   'roomEdgeMarginTiles',
   'elite',
+  'ai',
 ] as const;
 
 const ELITE_CHASER_FIELDS = [
@@ -566,6 +667,52 @@ const ELITE_CHASER_FIELDS = [
 const ELITE_CASTER_FIELDS = ['volleyShots', 'volleySpreadRadians'] as const;
 
 const ELITE_TANK_FIELDS = ['extraCharges'] as const;
+
+const ELITE_BOMBER_FIELDS = [
+  'blastRadiusMultiplier',
+  'doublePulseDelayMs',
+  'doublePulseRadiusMultiplier',
+] as const;
+
+const ELITE_BUFFER_FIELDS = [
+  'buffRadiusMultiplier',
+  'buffSpeedMultiplier',
+  'volleyShots',
+  'volleySpreadRadians',
+] as const;
+
+const ENEMY_AI_FIELDS = [
+  'predictiveMinChapter',
+  'predictiveLeadFactor',
+  'elitePredictiveLeadFactor',
+  'predictiveMaxLeadTiles',
+  'casterBurstMinChapter',
+  'casterBurstShots',
+  'casterBurstSpreadRadians',
+  'eliteCasterLateMinChapter',
+  'eliteCasterLateVolleyShots',
+  'flankAngleRadians',
+  'flankMinDistanceTiles',
+  'flankMaxDistanceTiles',
+  'flankOffsetTiles',
+] as const;
+
+const DASH_FIELDS = [
+  'bufferMs',
+  'cooldownMs',
+  'durationMs',
+  'speedTilesPerSecond',
+  'invulnerabilityMs',
+] as const;
+
+const ACTIVE_SKILL_FIELDS = [
+  'bufferMs',
+  'cooldownMs',
+  'hitCooldownReductionMs',
+  'killCooldownReductionMs',
+  'barrageProjectiles',
+  'barrageDamageMultiplier',
+] as const;
 
 const ROLE_FIELDS = [
   'health',
@@ -882,6 +1029,35 @@ function zeroElite(): EliteTuning {
     },
     caster: { volleyShots: 1, volleySpreadRadians: 0 },
     tank: { extraCharges: 0 },
+    bomber: {
+      blastRadiusMultiplier: 1,
+      doublePulseDelayMs: 0,
+      doublePulseRadiusMultiplier: 1,
+    },
+    buffer: {
+      buffRadiusMultiplier: 1,
+      buffSpeedMultiplier: 1,
+      volleyShots: 1,
+      volleySpreadRadians: 0,
+    },
+  };
+}
+
+function zeroEnemyAi(): EnemyAiTuning {
+  return {
+    predictiveMinChapter: 3,
+    predictiveLeadFactor: 0,
+    elitePredictiveLeadFactor: 0,
+    predictiveMaxLeadTiles: 0,
+    casterBurstMinChapter: 3,
+    casterBurstShots: 1,
+    casterBurstSpreadRadians: 0,
+    eliteCasterLateMinChapter: 3,
+    eliteCasterLateVolleyShots: 3,
+    flankAngleRadians: 0,
+    flankMinDistanceTiles: 0,
+    flankMaxDistanceTiles: 0,
+    flankOffsetTiles: 0,
   };
 }
 
@@ -1003,6 +1179,8 @@ function parseElite(
     'chaser',
     'caster',
     'tank',
+    'bomber',
+    'buffer',
   ] as const);
   if (elite === undefined) return zeroElite();
 
@@ -1012,6 +1190,10 @@ function parseElite(
   const casterSource =
     readObject(elite, 'caster', path, problems, ELITE_CASTER_FIELDS) ?? {};
   const tankSource = readObject(elite, 'tank', path, problems, ELITE_TANK_FIELDS) ?? {};
+  const bomberSource =
+    readObject(elite, 'bomber', path, problems, ELITE_BOMBER_FIELDS) ?? {};
+  const bufferSource =
+    readObject(elite, 'buffer', path, problems, ELITE_BUFFER_FIELDS) ?? {};
 
   const chaser: EliteChaserTuning = {
     pounceTelegraphMs:
@@ -1052,12 +1234,111 @@ function parseElite(
       }) ?? 0,
   };
 
+  const bomberBlastMult =
+    readNumber(bomberSource, 'blastRadiusMultiplier', `${path}.bomber`, problems, {
+      positive: true,
+    }) ?? 1;
+  if (bomberBlastMult < 1) {
+    problems.add(`${path}.bomber.blastRadiusMultiplier`, `must be >= 1, got ${bomberBlastMult}`);
+  }
+  const bomberPulseMult =
+    readNumber(bomberSource, 'doublePulseRadiusMultiplier', `${path}.bomber`, problems, {
+      positive: true,
+    }) ?? 1;
+  if (bomberPulseMult < 1) {
+    problems.add(
+      `${path}.bomber.doublePulseRadiusMultiplier`,
+      `must be >= 1, got ${bomberPulseMult}`,
+    );
+  }
+  const bomber: EliteBomberTuning = {
+    blastRadiusMultiplier: bomberBlastMult,
+    doublePulseDelayMs:
+      readNumber(bomberSource, 'doublePulseDelayMs', `${path}.bomber`, problems, {
+        integer: true,
+      }) ?? 0,
+    doublePulseRadiusMultiplier: bomberPulseMult,
+  };
+
+  const bufferRadiusMult =
+    readNumber(bufferSource, 'buffRadiusMultiplier', `${path}.buffer`, problems, {
+      positive: true,
+    }) ?? 1;
+  if (bufferRadiusMult < 1) {
+    problems.add(`${path}.buffer.buffRadiusMultiplier`, `must be >= 1, got ${bufferRadiusMult}`);
+  }
+  const bufferSpeedMult =
+    readNumber(bufferSource, 'buffSpeedMultiplier', `${path}.buffer`, problems, {
+      positive: true,
+    }) ?? 1;
+  if (bufferSpeedMult < 1) {
+    problems.add(`${path}.buffer.buffSpeedMultiplier`, `must be >= 1, got ${bufferSpeedMult}`);
+  }
+  const buffer: EliteBufferTuning = {
+    buffRadiusMultiplier: bufferRadiusMult,
+    buffSpeedMultiplier: bufferSpeedMult,
+    volleyShots:
+      readNumber(bufferSource, 'volleyShots', `${path}.buffer`, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    volleySpreadRadians:
+      readNumber(bufferSource, 'volleySpreadRadians', `${path}.buffer`, problems) ?? 0,
+  };
+
   return {
     scale:
       readNumber(elite, 'scale', path, problems, { positive: true }) ?? 1,
     chaser,
     caster,
     tank,
+    bomber,
+    buffer,
+  };
+}
+
+function parseEnemyAi(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): EnemyAiTuning {
+  const ai = readObject(source, 'ai', 'enemies', problems, ENEMY_AI_FIELDS);
+  if (ai === undefined) return zeroEnemyAi();
+
+  const path = 'enemies.ai';
+  const flankMinDistanceTiles = readNumber(ai, 'flankMinDistanceTiles', path, problems) ?? 0;
+  const flankMaxDistanceTiles = readNumber(ai, 'flankMaxDistanceTiles', path, problems) ?? 0;
+  if (flankMaxDistanceTiles < flankMinDistanceTiles) {
+    problems.add(
+      `${path}.flankMaxDistanceTiles`,
+      `must be >= flankMinDistanceTiles (${flankMinDistanceTiles}), got ${flankMaxDistanceTiles}`,
+    );
+  }
+
+  return {
+    predictiveMinChapter:
+      readNumber(ai, 'predictiveMinChapter', path, problems, { integer: true, positive: true }) ?? 1,
+    predictiveLeadFactor: readRatio(ai, 'predictiveLeadFactor', path, problems),
+    elitePredictiveLeadFactor: readRatio(ai, 'elitePredictiveLeadFactor', path, problems),
+    predictiveMaxLeadTiles: readNumber(ai, 'predictiveMaxLeadTiles', path, problems) ?? 0,
+    casterBurstMinChapter:
+      readNumber(ai, 'casterBurstMinChapter', path, problems, { integer: true, positive: true }) ?? 1,
+    casterBurstShots:
+      readNumber(ai, 'casterBurstShots', path, problems, { integer: true, positive: true }) ?? 1,
+    casterBurstSpreadRadians: readNumber(ai, 'casterBurstSpreadRadians', path, problems) ?? 0,
+    eliteCasterLateMinChapter:
+      readNumber(ai, 'eliteCasterLateMinChapter', path, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    eliteCasterLateVolleyShots:
+      readNumber(ai, 'eliteCasterLateVolleyShots', path, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    flankAngleRadians: readNumber(ai, 'flankAngleRadians', path, problems) ?? 0,
+    flankMinDistanceTiles,
+    flankMaxDistanceTiles,
+    flankOffsetTiles: readNumber(ai, 'flankOffsetTiles', path, problems) ?? 0,
   };
 }
 
@@ -1084,6 +1365,26 @@ function parseRole(
     { positive: true },
   );
   const splitCount = readOptionalNumber(own, 'splitCount', path, problems, { integer: true });
+  const blastRadiusTiles = readOptionalNumber(own, 'blastRadiusTiles', path, problems, {
+    positive: true,
+  });
+  const blastDamage = readOptionalNumber(own, 'blastDamage', path, problems, {
+    integer: true,
+    positive: true,
+  });
+  const buffRadiusTiles = readOptionalNumber(own, 'buffRadiusTiles', path, problems, {
+    positive: true,
+  });
+  const buffSpeedMultiplier = readOptionalNumber(own, 'buffSpeedMultiplier', path, problems, {
+    positive: true,
+  });
+  if (buffSpeedMultiplier !== undefined && buffSpeedMultiplier < 1) {
+    problems.add(`${path}.buffSpeedMultiplier`, `must be >= 1, got ${buffSpeedMultiplier}`);
+  }
+  const buffDurationMs = readOptionalNumber(own, 'buffDurationMs', path, problems, {
+    integer: true,
+    positive: true,
+  });
   const tuning: EnemyRoleTuning = {
     health: readNumber(own, 'health', path, problems, { positive: true }) ?? 1,
     speedTilesPerSecond:
@@ -1101,6 +1402,11 @@ function parseRole(
     scale: readNumber(own, 'scale', path, problems, { positive: true }) ?? 1,
     ...(projectileSpeedTilesPerSecond !== undefined ? { projectileSpeedTilesPerSecond } : {}),
     ...(splitCount !== undefined ? { splitCount } : {}),
+    ...(blastRadiusTiles !== undefined ? { blastRadiusTiles } : {}),
+    ...(blastDamage !== undefined ? { blastDamage } : {}),
+    ...(buffRadiusTiles !== undefined ? { buffRadiusTiles } : {}),
+    ...(buffSpeedMultiplier !== undefined ? { buffSpeedMultiplier } : {}),
+    ...(buffDurationMs !== undefined ? { buffDurationMs } : {}),
   };
 
   if (tuning.preferredRangeMaxTiles < tuning.preferredRangeMinTiles) {
@@ -1124,6 +1430,7 @@ function parseEnemies(
       eliteDamageMultiplier: 1,
       roomEdgeMarginTiles: 0,
       elite: zeroElite(),
+      ai: zeroEnemyAi(),
       roles: zeroRoles(),
     };
   }
@@ -1146,6 +1453,7 @@ function parseEnemies(
     roomEdgeMarginTiles:
       readNumber(source, 'roomEdgeMarginTiles', 'enemies', problems) ?? 0,
     elite: parseElite(source, problems),
+    ai: parseEnemyAi(source, problems),
     roles,
   };
 }
@@ -1797,6 +2105,68 @@ function parseXp(raw: Record<string, unknown>, problems: ProblemList): XpTuning 
   return { curve, roles, eliteMultiplier, orbs, reroll, levelUpWave };
 }
 
+function zeroDash(): DashTuning {
+  return {
+    bufferMs: 150,
+    cooldownMs: 1800,
+    durationMs: 180,
+    speedTilesPerSecond: 14,
+    invulnerabilityMs: 220,
+  };
+}
+
+function parseDash(raw: Record<string, unknown>, problems: ProblemList): DashTuning {
+  const source = readObject(raw, 'dash', '', problems, DASH_FIELDS);
+  if (source === undefined) return zeroDash();
+
+  const path = 'dash';
+  return {
+    bufferMs: readNumber(source, 'bufferMs', path, problems, { integer: true }) ?? 0,
+    cooldownMs:
+      readNumber(source, 'cooldownMs', path, problems, { integer: true, positive: true }) ?? 1,
+    durationMs:
+      readNumber(source, 'durationMs', path, problems, { integer: true, positive: true }) ?? 1,
+    speedTilesPerSecond:
+      readNumber(source, 'speedTilesPerSecond', path, problems, { positive: true }) ?? 1,
+    invulnerabilityMs:
+      readNumber(source, 'invulnerabilityMs', path, problems, { integer: true }) ?? 0,
+  };
+}
+
+function zeroActiveSkill(): ActiveSkillTuning {
+  return {
+    bufferMs: 150,
+    cooldownMs: 10000,
+    hitCooldownReductionMs: 200,
+    killCooldownReductionMs: 650,
+    barrageProjectiles: 10,
+    barrageDamageMultiplier: 1.5,
+  };
+}
+
+function parseActiveSkill(raw: Record<string, unknown>, problems: ProblemList): ActiveSkillTuning {
+  const source = readObject(raw, 'activeSkill', '', problems, ACTIVE_SKILL_FIELDS);
+  if (source === undefined) return zeroActiveSkill();
+
+  const path = 'activeSkill';
+  return {
+    bufferMs: readNumber(source, 'bufferMs', path, problems, { integer: true }) ?? 0,
+    cooldownMs:
+      readNumber(source, 'cooldownMs', path, problems, { integer: true, positive: true }) ?? 1,
+    hitCooldownReductionMs:
+      readNumber(source, 'hitCooldownReductionMs', path, problems, { integer: true }) ?? 0,
+    killCooldownReductionMs:
+      readNumber(source, 'killCooldownReductionMs', path, problems, { integer: true }) ?? 0,
+    barrageProjectiles:
+      readNumber(source, 'barrageProjectiles', path, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    barrageDamageMultiplier:
+      readNumber(source, 'barrageDamageMultiplier', path, problems, { positive: true }) ?? 1,
+  };
+}
+
 function zeroCover(): CoverTuning {
   return { overlayAlpha: 1, actorInCoverAlpha: 1, fadeRate: 1 };
 }
@@ -1867,6 +2237,8 @@ export function parseTuning(raw: unknown): TuningConfig {
     roomArt: parseRoomArt(raw, problems),
     boss: parseBoss(raw, problems),
     xp: parseXp(raw, problems),
+    dash: parseDash(raw, problems),
+    activeSkill: parseActiveSkill(raw, problems),
   };
 
   problems.throwIfAny();

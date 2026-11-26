@@ -20,9 +20,10 @@
  * Pure `core/`: no `cc`, no `Math.random` (the sim passes its `SeededRng` through), no clock.
  */
 import { firstHit } from '../combat/bullets';
-import type { LevelData } from '../level/level-data';
+import { obstacleNear, type LevelData } from '../level/level-data';
 import type { Vec2 } from '../math/vec2';
 import { circleOverlapsObstacle, moveWithCollision } from '../movement/collision';
+import { ENEMY_TUNING, type EnemiesTuning } from './tuning';
 
 /** Tile grid; a cell is blocked when a circle of the grid's radius at its centre overlaps an obstacle. */
 export interface NavGrid {
@@ -525,6 +526,96 @@ function hashString(value: string): number {
     hash = (hash * 31 + value.charCodeAt(index)) | 0;
   }
   return Math.abs(hash);
+}
+
+/**
+ * Deterministic per-enemy flank side (`-1` left / `+1` right) so approaching chasers spread
+ * around the player instead of stacking in a single-file line (M13, GDD §15.3).
+ */
+export function flankSideFor(enemyId: string): -1 | 1 {
+  return hashString(enemyId) % 2 === 0 ? -1 : 1;
+}
+
+/** Clearance checked around a candidate flank point so chasers never aim into a wall/pillar. */
+const FLANK_CLEARANCE_TILES = 0.75;
+
+/**
+ * Mid-range flanking walk target for a chaser (M13):
+ * - Inside `flankMinDistanceTiles`: collapses straight onto `player` to finish the strike.
+ * - Outside `flankMaxDistanceTiles`: heads straight toward `player` (flow-field approach).
+ * - In between: offsets laterally on the enemy's deterministic flank side (`-1` / `+1`),
+ *   peaking smoothly at mid-range and staying closer to the player than `position` so chasers
+ *   arc in from both sides without ever orbiting indefinitely.
+ * - If the primary flank point is blocked by an obstacle/wall, tries the opposite side, then
+ *   falls back cleanly to `player`.
+ */
+export function computeFlankTarget(
+  position: Vec2,
+  player: Vec2,
+  enemyId: string,
+  level: LevelData,
+  tuning: EnemiesTuning = ENEMY_TUNING,
+): Vec2 {
+  const margin = tuning.roomEdgeMarginTiles;
+  const clampedPlayer = clampPoint(level, player, margin);
+
+  const dx = clampedPlayer.x - position.x;
+  const dy = clampedPlayer.y - position.y;
+  const gap = Math.hypot(dx, dy);
+
+  const { flankMinDistanceTiles, flankMaxDistanceTiles, flankAngleRadians, flankOffsetTiles } =
+    tuning.ai;
+  if (
+    gap <= flankMinDistanceTiles ||
+    gap >= flankMaxDistanceTiles ||
+    flankMaxDistanceTiles <= flankMinDistanceTiles ||
+    flankOffsetTiles <= 0 ||
+    flankAngleRadians <= 0 ||
+    !hasWalkLineOfSight(level, position, clampedPlayer)
+  ) {
+    return clampedPlayer;
+  }
+
+  // Smooth arch peaking at the middle of the mid-range band and tapering to 0 at both edges.
+  const t = (gap - flankMinDistanceTiles) / (flankMaxDistanceTiles - flankMinDistanceTiles);
+  const arch = Math.sin(Math.PI * t);
+  const lateral = Math.min(flankOffsetTiles, gap * Math.sin(flankAngleRadians)) * arch;
+  if (lateral < 1e-4) return clampedPlayer;
+
+  const unitX = dx / gap;
+  const unitY = dy / gap;
+  const ahead = Math.max(0.5, gap * 0.65);
+  const primarySide = flankSideFor(enemyId);
+
+  for (const side of [primarySide, (primarySide * -1) as -1 | 1]) {
+    const perpX = -unitY * side;
+    const perpY = unitX * side;
+    const candidate = clampPoint(
+      level,
+      {
+        x: position.x + unitX * ahead + perpX * lateral,
+        y: position.y + unitY * ahead + perpY * lateral,
+      },
+      margin,
+    );
+    if (
+      obstacleNear(level, candidate, FLANK_CLEARANCE_TILES) === null &&
+      hasWalkLineOfSight(level, position, candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  return clampedPlayer;
+}
+
+function clampPoint(level: LevelData, point: Vec2, margin: number): Vec2 {
+  const maxX = Math.max(margin, level.size.cols - margin);
+  const maxY = Math.max(margin, level.size.rows - margin);
+  return {
+    x: clamp(point.x, margin, maxX),
+    y: clamp(point.y, margin, maxY),
+  };
 }
 
 /**

@@ -192,6 +192,34 @@ export function aliveCapForSlot(slot: number): number {
   return Math.min(max, start + step * index);
 }
 
+/**
+ * M13 Tier-2 special role mix shares for a normal room slot (`runSlot` is 1-based within the run):
+ * - Ch1 slots 1–3 keep classic onboarding roles; slots 4+ introduce `bomber`.
+ * - Ch2–Ch3 slot 1 keeps the 0-skill chapter entrance readable; slots 2+ mix `bomber` & `buffer`.
+ * - Ch4 mixes `bomber` & `buffer` from slot 1 onward.
+ */
+export function specialRoleMixForRoom(
+  chapter: number,
+  runSlot: number,
+): { readonly bomberShare: number; readonly bufferShare: number } {
+  if (chapter <= 1) {
+    return runSlot >= 4 ? { bomberShare: 0.12, bufferShare: 0 } : { bomberShare: 0, bufferShare: 0 };
+  }
+  if (chapter === 2) {
+    return runSlot >= 2
+      ? { bomberShare: 0.12, bufferShare: 0.08 }
+      : { bomberShare: 0, bufferShare: 0 };
+  }
+  if (chapter === 3) {
+    return runSlot >= 2
+      ? { bomberShare: 0.12, bufferShare: 0.08 }
+      : { bomberShare: 0, bufferShare: 0 };
+  }
+  return runSlot >= 2
+    ? { bomberShare: 0.12, bufferShare: 0.1 }
+    : { bomberShare: 0, bufferShare: 0 };
+}
+
 export class WaveScheduler {
   private readonly rng: SeededRng;
   /** Role + elite of every spawn, in order (the room's own list, cycled to the total). */
@@ -227,7 +255,52 @@ export class WaveScheduler {
       if (source === undefined) break;
       this.queue.push(source);
     }
+    this.mixSpecialRoles(authored.length);
     this.promoteExtraElites(extraElites);
+  }
+
+  /**
+   * Deterministically mix M13 `bomber` and `buffer` roles into post-cycle non-elite slots
+   * (preserving every authored role and elite from the `.tmx` and keeping `roomEnemyTotal` exact).
+   */
+  private mixSpecialRoles(authoredCount: number): void {
+    if (!usesWaveScheduler(this.level)) return;
+    const { bomberShare, bufferShare } = specialRoleMixForRoom(this.level.chapter, this.runSlot);
+    if (bomberShare <= 0 && bufferShare <= 0) return;
+
+    const candidates: number[] = [];
+    const startIndex = Math.max(authoredCount, 1);
+    for (let index = startIndex; index < this.queue.length; index += 1) {
+      const entry = this.queue[index];
+      if (
+        entry !== undefined &&
+        !entry.elite &&
+        (entry.role === 'chaser' || entry.role === 'caster')
+      ) {
+        candidates.push(index);
+      }
+    }
+    if (candidates.length === 0) return;
+
+    const total = this.queue.length;
+    const bomberTarget = bomberShare > 0 ? Math.max(1, Math.round(total * bomberShare)) : 0;
+    const bufferTarget = bufferShare > 0 ? Math.max(1, Math.round(total * bufferShare)) : 0;
+
+    const assign = (role: EnemyRole, count: number): void => {
+      const limit = Math.min(count, candidates.length);
+      for (let step = 0; step < limit; step += 1) {
+        const pick = this.rng.int(candidates.length);
+        const targetIndex = candidates.splice(pick, 1)[0];
+        if (targetIndex === undefined) continue;
+        const current = this.queue[targetIndex];
+        if (current !== undefined) {
+          this.queue[targetIndex] = { ...current, role };
+        }
+      }
+    };
+
+    assign('bomber', bomberTarget);
+    assign('buffer', bufferTarget);
   }
 
   /** Promote up to `extraElites` non-elite enemies (excluding splitlings) deterministically. */

@@ -129,6 +129,8 @@ const TELEGRAPH_TINT: Readonly<Record<RoleTelegraphKind, Color>> = {
   caster: new CocosColor(130, 220, 255, 255),
   tank: new CocosColor(255, 150, 80, 255),
   sniper: new CocosColor(255, 120, 120, 255),
+  bomber: new CocosColor(255, 110, 60, 255),
+  buffer: new CocosColor(150, 255, 170, 255),
 };
 
 /** Telegraph ring diameter by role, in tiles (distinguishable at a glance). */
@@ -137,6 +139,8 @@ const RING_DIAMETER_TILES: Readonly<Record<RoleTelegraphKind, number>> = {
   caster: 2.8,
   tank: 4,
   sniper: 2.8,
+  bomber: 5,
+  buffer: 3.4,
 };
 
 /**
@@ -149,6 +153,8 @@ function telegraphKindFor(role: EnemyRole): RoleTelegraphKind | null {
     case 'caster':
     case 'tank':
     case 'sniper':
+    case 'bomber':
+    case 'buffer':
       return role;
     case 'splitter':
     case 'splitling':

@@ -53,6 +53,15 @@ const MONSTERS = [
   'slimegreen',
   'slime2',
   'slime3',
+  // M13 — bomber and buffer monsters (staged by `stage-m13-monsters.ts`).
+  'flam',
+  'mushroom',
+  'flam2',
+  'mushroom2',
+  'spirit',
+  'lanterngreen',
+  'spirit2',
+  'owl2',
 ] as const;
 
 const FX: Readonly<Record<string, Omit<RawEntry, 'anchor' | 'footPx'>>> = {
