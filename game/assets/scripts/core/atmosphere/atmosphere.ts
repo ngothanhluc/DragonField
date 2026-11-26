@@ -1,41 +1,141 @@
 /**
- * Per-chapter atmosphere config (#6). Pure TS: must not import 'cc'.
+ * Per-chapter atmosphere config (#6, rebuilt in M11 per ADR-019). Pure TS: must not import 'cc'.
  *
  * Source data: `assets/resources/data/atmosphere.json` (one entry per chapter, 1–4).
- * This module owns the shape, the validation and the Effects-mode filter; the Cocos adapter
+ * This module owns the schema, validation, 1:1 pixel-scale rule (`PARTICLE_PIXEL_SCALE`),
+ * per-layer motion/tint metadata, and the Effects-mode filter; the Cocos adapter
  * (`game/atmosphere-view.ts`) only draws what `visibleAtmosphere` hands it.
  */
+import { TILE_SIZE_PX } from '../level/level-data';
 import type { EffectsMode } from '../vfx/weapon-vfx';
 
+/**
+ * Valid chapter weather layer kinds (ADR-019).
+ * Full-screen/oversized overlays (`raylight`, `fog`, `vignette`, `heat-haze`) were removed in M11.
+ */
 export const ATMOSPHERE_LAYER_KINDS = [
-  'raylight',
   'leaves',
-  'fog',
+  'blossoms',
+  'cloud-shadows',
+  'rain',
+  'rain-splash',
   'ripples',
   'ash',
-  'vignette',
   'sand',
-  'heat-haze',
 ] as const;
 export type AtmosphereLayerKind = (typeof ATMOSPHERE_LAYER_KINDS)[number];
 
 /**
- * Where a layer draws. `under-actors`: above the tile map, below obstacles/actors/bullets.
- * `over-actors`: above the world, below the HUD — must stay low alpha so it never hides
- * telegraphs or projectiles.
+ * Where a layer draws.
+ * - `under-actors`: in world space above the tile map/water, below props/obstacles/actors/bullets.
+ * - `over-actors`: in screen space above world FX, below the HUD — crisp 1:1 particles that stay
+ *   sparse/compact so they never hide telegraphs or projectiles.
  */
 export type AtmosphereDepth = 'under-actors' | 'over-actors';
 
+/** Motion family driven by the shared `AtmosphereLayers` clock. */
+export type AtmosphereMotion = 'flutter' | 'rain' | 'splash' | 'drift' | 'gust' | 'still';
+
+/**
+ * Strict 1:1 pixel scale in world units (ADR-019): 1 texture pixel = `1 / TILE_SIZE_PX` (1/16) tile,
+ * identical to `ACTOR_SCALE` in `game/level-view.ts`. Weather sprites are never crushed or stretched.
+ */
+export const PARTICLE_PIXEL_SCALE = 1 / TILE_SIZE_PX;
+
+export interface AtmosphereLayerStyle {
+  readonly motion: AtmosphereMotion;
+  readonly tint: readonly [number, number, number];
+  /** Velocity bounds in world units/s (x right, y up). */
+  readonly vxRange: readonly [number, number];
+  readonly vyRange: readonly [number, number];
+}
+
+/** Per-kind visual/motion style; scale is always `PARTICLE_PIXEL_SCALE` (1:1 pixel art). */
+export const ATMOSPHERE_LAYER_STYLES: Readonly<Record<AtmosphereLayerKind, AtmosphereLayerStyle>> = {
+  leaves: {
+    motion: 'flutter',
+    tint: [255, 255, 255],
+    vxRange: [1.6, 2.6],
+    vyRange: [-1.7, -1.0],
+  },
+  blossoms: {
+    motion: 'flutter',
+    tint: [255, 255, 255],
+    vxRange: [1.8, 2.9],
+    vyRange: [-1.5, -0.9],
+  },
+  'cloud-shadows': {
+    motion: 'drift',
+    // Palette dark `#141b1b` so the white `Clouds.png` silhouette renders as a soft ground shadow.
+    tint: [20, 27, 27],
+    vxRange: [0.55, 0.95],
+    vyRange: [-0.22, -0.1],
+  },
+  rain: {
+    motion: 'rain',
+    tint: [255, 255, 255],
+    // Aligned with `Rain.png`'s `/` pixel angle (down-left in world-up space).
+    vxRange: [-7.2, -5.6],
+    vyRange: [-16.0, -13.0],
+  },
+  'rain-splash': {
+    motion: 'splash',
+    tint: [255, 255, 255],
+    vxRange: [0, 0],
+    vyRange: [0, 0],
+  },
+  ripples: {
+    motion: 'still',
+    tint: [255, 255, 255],
+    vxRange: [0, 0],
+    vyRange: [0, 0],
+  },
+  ash: {
+    motion: 'flutter',
+    tint: [255, 255, 255],
+    vxRange: [1.3, 2.2],
+    vyRange: [-1.4, -0.85],
+  },
+  sand: {
+    motion: 'gust',
+    tint: [255, 255, 255],
+    vxRange: [9.0, 13.0],
+    vyRange: [-3.5, -2.0],
+  },
+};
+
+/** Node scale for any atmosphere particle sprite: strictly 1:1 pixel scale (`1 / 16` tile/px). */
+export function particleScaleForEntry(entry: {
+  readonly frameWidth: number;
+  readonly frameHeight: number;
+}): number {
+  if (!(entry.frameWidth > 0) || !(entry.frameHeight > 0)) {
+    throw new Error(`atmosphere sprite must have positive pixel size, got ${entry.frameWidth}×${entry.frameHeight}`);
+  }
+  return PARTICLE_PIXEL_SCALE;
+}
+
+/** World size in tiles of an atmosphere sprite drawn at 1:1 pixel scale. */
+export function particleDrawSizeTiles(entry: {
+  readonly frameWidth: number;
+  readonly frameHeight: number;
+}): { readonly width: number; readonly height: number } {
+  return {
+    width: entry.frameWidth * PARTICLE_PIXEL_SCALE,
+    height: entry.frameHeight * PARTICLE_PIXEL_SCALE,
+  };
+}
+
 export interface AtmosphereLayer {
   readonly kind: AtmosphereLayerKind;
-  /** Secondary = particles/extra motion; Effects Reduced drops these. */
+  /** Secondary = extra particles / ground shadows; `Effects: Reduced` drops these. */
   readonly secondary: boolean;
   readonly depth: AtmosphereDepth;
-  /** Manifest key in `animations.json` (e.g. `fx.raylight`); `null` = drawn with `Graphics` only. */
-  readonly sprite: string | null;
+  /** Manifest key in `animations.json` (e.g. `fx.leaf`, `fx.rain`). */
+  readonly sprite: string;
   /** Peak opacity, 0 < opacity ≤ 1. */
   readonly opacity: number;
-  /** How many sprites/particles the layer uses (≥ 1). */
+  /** Base particle count per 32×18 screen (≥ 1). */
   readonly count: number;
 }
 
@@ -43,11 +143,11 @@ export interface AtmosphereLayer {
 export interface DecorSpec {
   /** Manifest keys of animals (`animal.*`) picked for the chapter's rooms. */
   readonly animals: readonly string[];
-  /** Manifest keys of animated props (`decor.*`: flags, flowers, plants). */
+  /** Manifest keys of animated props (`decor.*`: campfires, flags, flowers, plants). */
   readonly props: readonly string[];
-  /** Exactly this many animals per room. */
+  /** Exactly this many animals per 32×18 screen. */
   readonly animalsPerRoom: number;
-  /** Exactly this many animated props per room. */
+  /** Exactly this many animated props per 32×18 screen. */
   readonly propsPerRoom: number;
 }
 
@@ -77,7 +177,7 @@ export interface VisibleAtmosphere {
   readonly layers: readonly AtmosphereLayer[];
   /** Animals are created at all. */
   readonly animals: boolean;
-  /** Animated props (flags/flowers/plants) are created at all. */
+  /** Animated props (campfires/flags/flowers/plants) are created at all. */
   readonly animatedProps: boolean;
 }
 
@@ -203,11 +303,11 @@ function readLayer(value: unknown, path: string, problems: ProblemList): Atmosph
   }
 
   const sprite = value['sprite'];
-  const spriteOk = sprite === null || (typeof sprite === 'string' && sprite.length > 0);
+  const spriteOk = typeof sprite === 'string' && sprite.length > 0;
   if (!spriteOk) {
     problems.add(
       `${path}.sprite`,
-      `must be a manifest key or null (Graphics-only layer), got ${describeValue(sprite)}`,
+      `must be a non-empty manifest key (Graphics overlays were removed in M11), got ${describeValue(sprite)}`,
     );
   }
 
@@ -225,7 +325,7 @@ function readLayer(value: unknown, path: string, problems: ProblemList): Atmosph
   if (!kindOk || typeof secondary !== 'boolean' || !depthOk || !spriteOk || opacity === null || !countOk) {
     return null;
   }
-  return { kind, secondary, depth, sprite: sprite as string | null, opacity, count };
+  return { kind, secondary, depth, sprite, opacity, count };
 }
 
 function readDecor(value: unknown, path: string, problems: ProblemList): DecorSpec | null {

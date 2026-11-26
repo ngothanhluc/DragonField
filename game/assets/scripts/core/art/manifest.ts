@@ -149,19 +149,22 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
     'fx.boost',
     'fx.smoke-circular',
     'fx.aura',
-    // Ticket #6 — chapter atmosphere layers (light shafts, fog, drifting particles).
-    'fx.raylight',
-    'fx.fog',
+    // Ticket #6 / M11 (ADR-019) — chapter weather particles at 1:1 pixel scale (no full-screen overlays).
     'fx.leaf',
+    'fx.leaf-pink',
+    'fx.cloud-shadow',
+    'fx.rain',
+    'fx.rain-splash',
     'fx.ash',
     'fx.sand',
     'fx.ripple',
   ],
-  // Ticket #6 — living decor: wandering animals and animated flags/flowers/plants.
+  // Ticket #6 / M11 — living decor: wandering animals and animated flags/flowers/plants/campfires.
   animal: ['animal.frog', 'animal.chicken', 'animal.cat', 'animal.racoon', 'animal.dog'],
   decor: [
     'decor.flower',
     'decor.plant',
+    'decor.campfire',
     'decor.flag-green',
     'decor.flag-blue',
     'decor.flag-red',

@@ -1,18 +1,21 @@
 /**
- * Acceptance test for ticket #6 (chapter atmosphere + living decor). Written by the orchestrator;
- * the executor does NOT edit this file.
+ * Acceptance & unit tests for chapter weather & living decor (#6, rebuilt in M11 per ADR-019).
  *
- * Seam: the pure `core/atmosphere/*` modules + `assets/resources/data/atmosphere.json` + the real
- * `.tmx` rooms of chapters 1–3. What is actually drawn (layer order, fps) is proven in the
- * browser, not here.
+ * Seam: pure `core/atmosphere/*` modules + `assets/resources/data/atmosphere.json` +
+ * `assets/resources/data/animations.json` + real `.tmx` rooms of chapters 1–3.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  ATMOSPHERE_LAYER_KINDS,
+  ATMOSPHERE_LAYER_STYLES,
+  PARTICLE_PIXEL_SCALE,
   chapterAtmosphere,
   parseAtmosphereConfig,
+  particleDrawSizeTiles,
+  particleScaleForEntry,
   visibleAtmosphere,
   type AnimalTuning,
   type AtmosphereConfig,
@@ -25,8 +28,8 @@ import {
   stepAnimal,
   type AnimalState,
 } from '../../assets/scripts/core/atmosphere/living-decor';
-import { validateManifest } from '../../assets/scripts/core/art/manifest';
-import type { LevelData, Obstacle } from '../../assets/scripts/core/level/level-data';
+import { resolve, validateManifest } from '../../assets/scripts/core/art/manifest';
+import { TILE_SIZE_PX, type LevelData, type Obstacle } from '../../assets/scripts/core/level/level-data';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
 import { distance } from '../../assets/scripts/core/math/vec2';
 import { SeededRng } from '../../assets/scripts/core/rng';
@@ -36,10 +39,15 @@ import { LEVELS_ROOT, loadTmxLevels } from '../helpers/tmx-levels';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA = join(HERE, '..', '..', 'assets', 'resources', 'data');
 
-/** Read lazily so a missing file fails the tests that need it, not the whole module. */
 function loadConfig(): AtmosphereConfig {
   return parseAtmosphereConfig(
     JSON.parse(readFileSync(join(DATA, 'atmosphere.json'), 'utf8')) as unknown,
+  );
+}
+
+function loadManifest() {
+  return validateManifest(
+    JSON.parse(readFileSync(join(DATA, 'animations.json'), 'utf8')) as unknown,
   );
 }
 
@@ -66,7 +74,10 @@ function footprintHits(at: Vec2, obstacle: Obstacle): boolean {
 function insideRoom(at: Vec2, size: { readonly cols: number; readonly rows: number }): boolean {
   const eps = 1e-6;
   return (
-    at.x >= 0.5 - eps && at.x <= size.cols - 0.5 + eps && at.y >= 0.5 - eps && at.y <= size.rows - 0.5 + eps
+    at.x >= 0.5 - eps &&
+    at.x <= size.cols - 0.5 + eps &&
+    at.y >= 0.5 - eps &&
+    at.y <= size.rows - 0.5 + eps
   );
 }
 
@@ -78,38 +89,80 @@ function reservedPoints(level: LevelData): Vec2[] {
   return points;
 }
 
-describe('atmosphere.json — per-chapter config is data', () => {
-  it('chapters 1–4 each have the layers the spec names', () => {
+describe('ADR-019 — overlays dropped and chapter weather particles configured at 1:1 pixel scale', () => {
+  it('removes raylight, fog, vignette, and heat-haze from ATMOSPHERE_LAYER_KINDS', () => {
+    for (const removed of ['raylight', 'fog', 'vignette', 'heat-haze']) {
+      expect(ATMOSPHERE_LAYER_KINDS).not.toContain(removed);
+    }
+    expect(ATMOSPHERE_LAYER_KINDS).toEqual(
+      expect.arrayContaining([
+        'leaves',
+        'blossoms',
+        'cloud-shadows',
+        'rain',
+        'rain-splash',
+        'ripples',
+        'ash',
+        'sand',
+      ]),
+    );
+  });
+
+  it('chapters 1–4 each have the M11 weather layers and Ch3 includes smoking campfires', () => {
     const config = loadConfig();
-    const kinds = (chapter: number): string[] => chapterOf(config, chapter).layers.map((layer) => layer.kind);
-    expect(kinds(1)).toEqual(expect.arrayContaining(['raylight', 'leaves']));
-    expect(kinds(2)).toEqual(expect.arrayContaining(['fog', 'ripples']));
-    expect(kinds(3)).toEqual(expect.arrayContaining(['ash', 'vignette']));
-    // Chapter 4 (M9 desert) is configured now so M9 only has to add rooms.
-    expect(kinds(4)).toEqual(expect.arrayContaining(['sand', 'heat-haze']));
+    const kinds = (chapter: number): string[] =>
+      chapterOf(config, chapter).layers.map((layer) => layer.kind);
+
+    expect(kinds(1)).toEqual(expect.arrayContaining(['leaves', 'blossoms', 'cloud-shadows']));
+    expect(kinds(2)).toEqual(expect.arrayContaining(['rain', 'rain-splash', 'ripples']));
+    expect(kinds(3)).toEqual(['ash']);
+    expect(chapterOf(config, 3).decor.props).toContain('decor.campfire');
+    expect(kinds(4)).toEqual(expect.arrayContaining(['sand', 'cloud-shadows']));
     expect(chapterAtmosphere(config, 99)).toBeNull();
   });
 
-  it('particle layers are secondary; the base light/fog/vignette is not', () => {
+  it('sizes every particle layer strictly at 1:1 pixel scale (1/16 tile per texture px, never crushed)', () => {
+    expect(PARTICLE_PIXEL_SCALE).toBe(1 / TILE_SIZE_PX);
+    expect(PARTICLE_PIXEL_SCALE).toBe(1 / 16);
+
     const config = loadConfig();
-    const layer = (chapter: number, kind: string) =>
-      chapterOf(config, chapter).layers.find((entry) => entry.kind === kind);
-    for (const [chapter, kind] of [[1, 'leaves'], [2, 'ripples'], [3, 'ash'], [4, 'sand']] as const) {
-      expect(layer(chapter, kind)?.secondary, `${chapter}/${kind}`).toBe(true);
+    const manifest = loadManifest();
+    for (const chapter of [1, 2, 3, 4]) {
+      for (const layer of chapterOf(config, chapter).layers) {
+        const entry = resolve(manifest, layer.sprite);
+        expect(particleScaleForEntry(entry), `${chapter}/${layer.kind}`).toBe(1 / 16);
+        const draw = particleDrawSizeTiles(entry);
+        expect(draw.width, `${chapter}/${layer.kind} width`).toBe(entry.frameWidth / 16);
+        expect(draw.height, `${chapter}/${layer.kind} height`).toBe(entry.frameHeight / 16);
+        expect(ATMOSPHERE_LAYER_STYLES[layer.kind]).toBeDefined();
+      }
     }
-    for (const [chapter, kind] of [[1, 'raylight'], [2, 'fog'], [3, 'vignette']] as const) {
-      expect(layer(chapter, kind)?.secondary, `${chapter}/${kind}`).toBe(false);
-    }
+    // 12×7 leaves draw at 0.75 × 0.4375 tiles (never crushed to 0.45 max-axis); 8×8 rain draws at 0.5 × 0.5.
+    expect(particleDrawSizeTiles(resolve(manifest, 'fx.leaf'))).toEqual({
+      width: 12 / 16,
+      height: 7 / 16,
+    });
+    expect(particleDrawSizeTiles(resolve(manifest, 'fx.rain'))).toEqual({
+      width: 0.5,
+      height: 0.5,
+    });
   });
 
-  it('a layer drawn over actors is low alpha, so it never hides telegraphs or bullets', () => {
+  it('keeps over-actor weather particles crisp (never washed out to 0.38) and cloud-shadows subtle under-actors', () => {
     const config = loadConfig();
     for (const chapter of [1, 2, 3, 4]) {
       for (const layer of chapterOf(config, chapter).layers) {
         expect(layer.opacity, `${chapter}/${layer.kind}`).toBeGreaterThan(0);
         expect(layer.count, `${chapter}/${layer.kind}`).toBeGreaterThanOrEqual(1);
-        if (layer.depth === 'over-actors') {
-          expect(layer.opacity, `${chapter}/${layer.kind} is over actors`).toBeLessThanOrEqual(0.4);
+        if (layer.kind === 'cloud-shadows') {
+          expect(layer.depth, `${chapter}/cloud-shadows`).toBe('under-actors');
+          expect(layer.opacity, `${chapter}/cloud-shadows`).toBeLessThanOrEqual(0.25);
+        } else if (layer.depth === 'over-actors') {
+          // ADR-019: crisp 1:1 particles, never washed out to 0.38 alpha, and sparse enough not to hide bullets.
+          expect(layer.opacity, `${chapter}/${layer.kind} crisp opacity`).toBeGreaterThanOrEqual(0.85);
+          expect(layer.count, `${chapter}/${layer.kind} sparse count`).toBeLessThanOrEqual(32);
+        } else {
+          expect(layer.depth, `${chapter}/${layer.kind}`).toBe('under-actors');
         }
       }
     }
@@ -117,9 +170,7 @@ describe('atmosphere.json — per-chapter config is data', () => {
 
   it('chapters 1–3 have animals and animated props; every sprite key resolves in animations.json', () => {
     const config = loadConfig();
-    const manifest = validateManifest(
-      JSON.parse(readFileSync(join(DATA, 'animations.json'), 'utf8')) as unknown,
-    );
+    const manifest = loadManifest();
     for (const chapter of [1, 2, 3]) {
       const { decor } = chapterOf(config, chapter);
       expect(decor.animals.length, `chapter ${chapter} animals`).toBeGreaterThan(0);
@@ -131,12 +182,10 @@ describe('atmosphere.json — per-chapter config is data', () => {
     }
     for (const chapter of [1, 2, 3, 4]) {
       const { layers, decor } = chapterOf(config, chapter);
-      const keys = [
-        ...layers.flatMap((layer) => (layer.sprite === null ? [] : [layer.sprite])),
-        ...decor.animals,
-        ...decor.props,
-      ];
-      for (const key of keys) expect(manifest.sprites[key], `${key} missing in animations.json`).toBeDefined();
+      const keys = [...layers.map((layer) => layer.sprite), ...decor.animals, ...decor.props];
+      for (const key of keys) {
+        expect(manifest.sprites[key], `${key} missing in animations.json`).toBeDefined();
+      }
     }
   });
 
@@ -154,7 +203,7 @@ describe('atmosphere.json — per-chapter config is data', () => {
   });
 });
 
-describe('Effects setting — Reduced turns off the secondary layers', () => {
+describe('Effects setting — Reduced drops secondary layers, cloud shadows, animals, and props', () => {
   it('Full (the default) keeps every layer, animals and animated props', () => {
     const config = loadConfig();
     for (const chapter of [1, 2, 3, 4]) {
@@ -167,18 +216,30 @@ describe('Effects setting — Reduced turns off the secondary layers', () => {
     }
   });
 
-  it('Reduced drops secondary particles, animals and animated props but keeps the base layer', () => {
+  it('Reduced drops secondary layers (blossoms, cloud-shadows, rain-splash, ripples) and keeps primary weather', () => {
     const config = loadConfig();
     for (const chapter of [1, 2, 3, 4]) {
       const atmosphere = chapterOf(config, chapter);
       const visible = visibleAtmosphere(atmosphere, 'reduced');
       expect(visible.layers.some((layer) => layer.secondary), `chapter ${chapter}`).toBe(false);
+      expect(visible.layers.some((layer) => layer.kind === 'cloud-shadows'), `chapter ${chapter}`).toBe(
+        false,
+      );
       expect(visible.layers).toEqual(atmosphere.layers.filter((layer) => !layer.secondary));
       expect(visible.animals).toBe(false);
       expect(visible.animatedProps).toBe(false);
     }
     expect(visibleAtmosphere(chapterOf(config, 1), 'reduced').layers.map((layer) => layer.kind)).toEqual([
-      'raylight',
+      'leaves',
+    ]);
+    expect(visibleAtmosphere(chapterOf(config, 2), 'reduced').layers.map((layer) => layer.kind)).toEqual([
+      'rain',
+    ]);
+    expect(visibleAtmosphere(chapterOf(config, 3), 'reduced').layers.map((layer) => layer.kind)).toEqual([
+      'ash',
+    ]);
+    expect(visibleAtmosphere(chapterOf(config, 4), 'reduced').layers.map((layer) => layer.kind)).toEqual([
+      'sand',
     ]);
   });
 });
@@ -188,20 +249,23 @@ describe('decor placement — off obstacles and spawns, in every real room of ch
     it(`chapter ${chapter}: exact counts, inside the room, no obstacle, ≥ clearance from spawns/doors, no overlap`, () => {
       const spec = chapterOf(loadConfig(), chapter).decor;
       const rooms = roomsOf(chapter);
-      // Every room on disk: the chapter's 16-room pool + its boss (#38).
       expect(rooms.length).toBeGreaterThanOrEqual(9);
       for (const level of rooms) {
         for (const seed of [1, 42, 20261119]) {
           const items = placeDecor(level, spec, seed);
           const where = `${level.id} seed ${seed}`;
-          expect(items.filter((item) => item.kind === 'animal'), where).toHaveLength(spec.animalsPerRoom);
+          expect(items.filter((item) => item.kind === 'animal'), where).toHaveLength(
+            spec.animalsPerRoom,
+          );
           expect(items.filter((item) => item.kind === 'prop'), where).toHaveLength(spec.propsPerRoom);
           for (const item of items) {
             const at = `${where} ${item.sprite} @ ${item.at.x},${item.at.y}`;
             expect(insideRoom(item.at, level.size), at).toBe(true);
             const allowed = item.kind === 'animal' ? spec.animals : spec.props;
             expect(allowed, at).toContain(item.sprite);
-            for (const obstacle of level.obstacles) expect(footprintHits(item.at, obstacle), at).toBe(false);
+            for (const obstacle of level.obstacles) {
+              expect(footprintHits(item.at, obstacle), at).toBe(false);
+            }
             for (const point of reservedPoints(level)) {
               expect(distance(item.at, point), `${at} vs ${point.x},${point.y}`).toBeGreaterThanOrEqual(
                 DECOR_SPAWN_CLEARANCE_TILES,
@@ -229,11 +293,18 @@ describe('decor placement — off obstacles and spawns, in every real room of ch
 });
 
 describe('animals — flee when the player comes within the radius', () => {
-  const tuning: AnimalTuning = { fleeRadiusTiles: 3, wanderSpeedTilesPerSec: 1, fleeSpeedTilesPerSec: 4 };
-  /** An open room: no obstacles, so only the flee rule moves the animal. */
+  const tuning: AnimalTuning = {
+    fleeRadiusTiles: 3,
+    wanderSpeedTilesPerSec: 1,
+    fleeSpeedTilesPerSec: 4,
+  };
   const open: LevelData = { ...roomsOf(1)[0]!, obstacles: [] };
-  const step = (state: AnimalState, player: Vec2 | null, level: LevelData = open, rng = new SeededRng(3)) =>
-    stepAnimal(state, { player, dtMs: 100, level, tuning, rng });
+  const step = (
+    state: AnimalState,
+    player: Vec2 | null,
+    level: LevelData = open,
+    rng = new SeededRng(3),
+  ) => stepAnimal(state, { player, dtMs: 100, level, tuning, rng });
 
   it('player inside the radius → flee straight away from the player, at flee speed', () => {
     const start = createAnimal({ x: 16, y: 9 });
@@ -241,7 +312,6 @@ describe('animals — flee when the player comes within the radius', () => {
     expect(next.mode).toBe('flee');
     expect(next.at.x).toBeLessThan(16);
     expect(next.at.y).toBeCloseTo(9, 5);
-    // 4 tiles/s × 0.1 s = 0.4 tiles.
     expect(distance(start.at, next.at)).toBeCloseTo(0.4, 5);
     expect(next.facing).toBe(-1);
   });
@@ -258,7 +328,13 @@ describe('animals — flee when the player comes within the radius', () => {
     let state = createAnimal({ x: 16, y: 9 });
     const rng = new SeededRng(11);
     for (let tick = 0; tick < 200; tick += 1) {
-      state = stepAnimal(state, { player: { x: 16 + 3 * 2, y: 9 }, dtMs: 50, level: open, tuning, rng });
+      state = stepAnimal(state, {
+        player: { x: 16 + 3 * 2, y: 9 },
+        dtMs: 50,
+        level: open,
+        tuning,
+        rng,
+      });
       expect(state.mode).not.toBe('flee');
     }
     let alone = createAnimal({ x: 10, y: 5 });
@@ -278,27 +354,29 @@ describe('animals — flee when the player comes within the radius', () => {
     expect(state.mode).not.toBe('flee');
   });
 
-  // 51 rooms since #38 (16-room pools + bosses); the per-tick obstacle scan needs more than the
-  // default 5 s budget.
-  it('chased or wandering in every real room, the footprint never enters an obstacle or leaves the room', () => {
-    for (const chapter of [1, 2, 3]) {
-      for (const level of roomsOf(chapter)) {
-        const spec = chapterOf(loadConfig(), chapter).decor;
-        const rng = new SeededRng(level.room * 31 + chapter);
-        for (const item of placeDecor(level, spec, 9).filter((entry) => entry.kind === 'animal')) {
-          let state = createAnimal(item.at);
-          for (let tick = 0; tick < 400; tick += 1) {
-            // First half: the player walks straight at the animal; second half: player far away.
-            const player =
-              tick < 200 ? { x: state.at.x + 1.2, y: state.at.y + 0.8 } : { x: 0.5, y: 0.5 };
-            state = stepAnimal(state, { player, dtMs: 50, level, tuning, rng });
-            const at = `${level.id} ${item.sprite} tick ${tick} @ ${state.at.x},${state.at.y}`;
-            expect(insideRoom(state.at, level.size), at).toBe(true);
-            for (const obstacle of level.obstacles) expect(footprintHits(state.at, obstacle), at).toBe(false);
+  it(
+    'chased or wandering in every real room, the footprint never enters an obstacle or leaves the room',
+    () => {
+      for (const chapter of [1, 2, 3]) {
+        for (const level of roomsOf(chapter)) {
+          const spec = chapterOf(loadConfig(), chapter).decor;
+          const rng = new SeededRng(level.room * 31 + chapter);
+          for (const item of placeDecor(level, spec, 9).filter((entry) => entry.kind === 'animal')) {
+            let state = createAnimal(item.at);
+            for (let tick = 0; tick < 400; tick += 1) {
+              const player =
+                tick < 200 ? { x: state.at.x + 1.2, y: state.at.y + 0.8 } : { x: 0.5, y: 0.5 };
+              state = stepAnimal(state, { player, dtMs: 50, level, tuning, rng });
+              const at = `${level.id} ${item.sprite} tick ${tick} @ ${state.at.x},${state.at.y}`;
+              expect(insideRoom(state.at, level.size), at).toBe(true);
+              for (const obstacle of level.obstacles) {
+                expect(footprintHits(state.at, obstacle), at).toBe(false);
+              }
+            }
           }
         }
       }
-    }
-  }, 30_000);
+    },
+    30_000,
+  );
 });
-

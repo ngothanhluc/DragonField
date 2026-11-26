@@ -241,3 +241,38 @@ describe('skill icon files (#5)', () => {
     }
   });
 });
+
+describe('M11 weather particle & campfire art files (ADR-019)', () => {
+  const WEATHER_KEYS = [
+    'fx.leaf',
+    'fx.leaf-pink',
+    'fx.cloud-shadow',
+    'fx.rain',
+    'fx.rain-splash',
+    'fx.ash',
+    'fx.sand',
+    'fx.ripple',
+    'decor.campfire',
+  ] as const;
+
+  it('every weather particle and campfire sheet has a valid nearest-filtered image .meta and no legacy overlays remain', () => {
+    expect(manifest.sprites['fx.raylight']).toBeUndefined();
+    expect(manifest.sprites['fx.fog']).toBeUndefined();
+    expect(existsSync(join(ASSETS, 'resources/art/atmosphere.meta'))).toBe(true);
+
+    for (const key of WEATHER_KEYS) {
+      const entry = manifest.sprites[key];
+      expect(entry, `${key} missing from manifest`).toBeDefined();
+      if (entry === undefined) continue;
+      const path = sheetPath(entry);
+      expect(existsSync(`${path}.meta`), `${entry.sheet}.meta missing`).toBe(true);
+      const meta = JSON.parse(readFileSync(`${path}.meta`, 'utf8')) as {
+        importer?: string;
+        subMetas?: Record<string, { userData?: Record<string, unknown> }>;
+      };
+      expect(meta.importer, `${entry.sheet}.meta importer`).toBe('image');
+      expect(meta.subMetas?.['6c48a']?.userData?.['minfilter'], `${key} minfilter`).toBe('nearest');
+      expect(meta.subMetas?.['6c48a']?.userData?.['magfilter'], `${key} magfilter`).toBe('nearest');
+    }
+  });
+});

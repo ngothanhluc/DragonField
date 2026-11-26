@@ -1,18 +1,22 @@
 /**
- * Stage the chapter-atmosphere + living-decor art (#6) from `art-source/ninja-adventure/`
- * and add the manifest entries that point at it.
+ * Stage the chapter-atmosphere + living-decor art (#6, rebuilt in M11 per ADR-019) from
+ * `art-source/ninja-adventure/` and update the manifest entries in `animations.json`.
  *
  * Run: `bun run scripts/stage-atmosphere.ts`
  *
- * - PNGs are copied byte-for-byte (no re-encoding pixel art), except `fx.leaf`: the pack ships
- *   leaves as a loose scatter on one strip, so a single complete 8×7 leaf is cropped out.
- * - `footPx` is read from the staged PNG (`bottomPadding`): the same number `gen-animations.ts`
- *   would compute, so running either script last leaves an identical `animations.json`.
- * - The manifest is merged, not regenerated: every other key keeps its order and values.
- * - Existing `.meta` files keep their uuid; re-running the script changes nothing.
+ * - Pack particle strips (`Leaf.png`, `LeafPink.png`, `Rain.png`, `RainOnFloor.png`, `Clouds.png`)
+ *   are copied byte-for-byte into `assets/resources/art/atmosphere/` for crisp 1:1 pixel rendering.
+ * - `DryLeaf.png` (Ch3 ash/dry leaves) and `Sand.png` (Ch4 wind-driven sand gusts) are derived
+ *   directly from pack particle strips using exact `Palette.png` colours (ADR-015).
+ * - `campfire.png` (Ch3 smoking campfire living-decor prop) composites the pack's campfire base,
+ *   flickering `FX/Particle/Fire.png`, and rising `FX/Smoke/Smoke/SpriteSheet.png` into a 6-frame
+ *   vertical `grid` sheet (`directions: []`, `anchor: 'feet'`).
+ * - Legacy M8 overlay assets (`fx.raylight`, `fx.fog`, and old `art/fx/{raylight,fog,leaf,ash,sand}`)
+ *   are removed cleanly.
+ * - Existing `.meta` files keep their UUIDs so re-running the script is idempotent.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -173,37 +177,40 @@ function existingImageUuid(path: string): string | null {
   }
 }
 
+/** Preserve an existing `.meta` verbatim when its dimensions still match (avoids churning editor trim data). */
+function writeImageMetaIfNeeded(path: string): void {
+  const metaPath = `${path}.meta`;
+  if (existsSync(metaPath)) {
+    try {
+      const { width, height } = pngSize(path);
+      const parsed = JSON.parse(readFileSync(metaPath, 'utf8')) as {
+        subMetas?: Record<string, { userData?: { rawWidth?: unknown; rawHeight?: unknown } }>;
+      };
+      const userData = parsed.subMetas?.['f9941']?.userData;
+      if (userData?.rawWidth === width && userData?.rawHeight === height) return;
+    } catch {
+      // Regenerate malformed meta below.
+    }
+  }
+  writeMeta(path, imageMeta(path));
+}
+
+function writeStagedPng(targetRel: string, image: PngImage): void {
+  const target = join(RES, targetRel);
+  ensureDir(dirname(target));
+  writeFileSync(target, encodePng(image));
+  writeImageMetaIfNeeded(target);
+  console.log(`gen  ${targetRel} (${image.width}×${image.height})`);
+}
+
 function copyPng(sourceRel: string, targetRel: string): void {
   const source = join(PACK, sourceRel);
   const target = join(RES, targetRel);
   if (!existsSync(source)) throw new Error(`missing source asset: ${source}`);
   ensureDir(dirname(target));
   writeFileSync(target, readFileSync(source));
-  writeMeta(target, imageMeta(target));
+  writeImageMetaIfNeeded(target);
   console.log(`png  ${targetRel} (${statSync(target).size} B)`);
-}
-
-/** Crop a rect out of a pack sheet (pixel art only; the result is re-encoded losslessly). */
-function cropPng(
-  sourceRel: string,
-  targetRel: string,
-  rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
-): void {
-  const source = readPng(join(PACK, sourceRel));
-  const data = Buffer.alloc(rect.width * rect.height * 4);
-  for (let y = 0; y < rect.height; y += 1) {
-    for (let x = 0; x < rect.width; x += 1) {
-      const from = ((rect.y + y) * source.width + rect.x + x) * 4;
-      const to = (y * rect.width + x) * 4;
-      source.data.copy(data, to, from, from + 4);
-    }
-  }
-  const cropped: PngImage = { width: rect.width, height: rect.height, data };
-  const target = join(RES, targetRel);
-  ensureDir(dirname(target));
-  writeFileSync(target, encodePng(cropped));
-  writeMeta(target, imageMeta(target));
-  console.log(`crop ${targetRel} (${rect.width}×${rect.height})`);
 }
 
 /**
@@ -233,30 +240,144 @@ function stackFrames(
       }
     }
   }
-  const stacked: PngImage = { width, height, data };
-  const target = join(RES, targetRel);
-  ensureDir(dirname(target));
-  writeFileSync(target, encodePng(stacked));
-  writeMeta(target, imageMeta(target));
-  console.log(`grid ${targetRel} (${width}×${height}, ${frames} frame(s))`);
+  writeStagedPng(targetRel, { width, height, data });
 }
 
-// --- Copy the pack art ------------------------------------------------------
-ensureDirMeta('art/fx/raylight');
-ensureDirMeta('art/fx/fog');
-ensureDirMeta('art/fx/leaf');
-ensureDirMeta('art/fx/ash');
-ensureDirMeta('art/fx/sand');
+/**
+ * Palette-remap `FX/Particle/Leaf.png` (6 frames of 12×7) to dry autumn / ash-brown leaves for Ch3,
+ * keeping `#141b1b` (20,27,27) dark pixel outlines and mapping greens to `Palette.png` `#9c6546`
+ * (156,101,70) and `#d2b37d` (210,179,125).
+ */
+function stageDryLeaf(targetRel: string): void {
+  const source = readPng(join(PACK, 'FX/Particle/Leaf.png'));
+  const data = Buffer.from(source.data);
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const r = data[i]!;
+    const g = data[i + 1]!;
+    const b = data[i + 2]!;
+    if (r === 116 && g === 163 && b === 52) {
+      data[i] = 156;
+      data[i + 1] = 101;
+      data[i + 2] = 70;
+    } else if (r === 173 && g === 188 && b === 58) {
+      data[i] = 210;
+      data[i + 1] = 179;
+      data[i + 2] = 125;
+    }
+  }
+  writeStagedPng(targetRel, { width: source.width, height: source.height, data });
+}
+
+/**
+ * Derive crisp 3-frame `8×8` wind-driven desert sand streaks from `FX/Particle/Rain.png`,
+ * oriented along the wind (`dx > 0, dy < 0`) and coloured with `Palette.png` desert ochre `#d78b4a`
+ * (215,139,74) and umber `#965340` (150,83,64) so grains read crisply against bright sand tiles.
+ */
+function stageSandStreaks(targetRel: string): void {
+  const rain = readPng(join(PACK, 'FX/Particle/Rain.png'));
+  const data = Buffer.alloc(24 * 8 * 4);
+  for (let frame = 0; frame < 3; frame += 1) {
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 8; x += 1) {
+        const sx = frame * 8 + (7 - y);
+        const sy = x;
+        const si = (sy * rain.width + sx) * 4;
+        if (rain.data[si + 3]! === 0) continue;
+        const di = (y * 24 + frame * 8 + x) * 4;
+        const head = x >= 4;
+        data[di] = head ? 150 : 215;
+        data[di + 1] = head ? 83 : 139;
+        data[di + 2] = head ? 64 : 74;
+        data[di + 3] = 255;
+      }
+    }
+  }
+  writeStagedPng(targetRel, { width: 24, height: 8, data });
+}
+
+function blitOpaque(
+  dst: PngImage,
+  dx0: number,
+  dy0: number,
+  src: PngImage,
+  sx0: number,
+  sy0: number,
+  w: number,
+  h: number,
+): void {
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const dx = dx0 + x;
+      const dy = dy0 + y;
+      if (dx < 0 || dx >= dst.width || dy < 0 || dy >= dst.height) continue;
+      const si = ((sy0 + y) * src.width + (sx0 + x)) * 4;
+      if (src.data[si + 3]! === 0) continue;
+      const di = (dy * dst.width + dx) * 4;
+      src.data.copy(dst.data, di, si, si + 4);
+    }
+  }
+}
+
+/**
+ * Build a 6-frame vertical `grid` smoking campfire prop (`32×42` per frame → `32×252`) for Ch3
+ * from pack sheets:
+ * 1. Rising smoke puff (`FX/Smoke/Smoke/SpriteSheet.png`, 6 frames of 32×32) drifting upward,
+ * 2. 16×16 campfire base (`TilesetElement.png` `(112, 64, 16, 16)`) centred on the 1×1 floor tile,
+ * 3. Flickering campfire flame (`FX/Particle/Fire.png`, frames 2..7 of 8×12) burning in front.
+ */
+function stageCampfireProp(targetRel: string): void {
+  const element = readPng(join(PACK, 'Backgrounds/Tilesets/TilesetElement.png'));
+  const fire = readPng(join(PACK, 'FX/Particle/Fire.png'));
+  const smoke = readPng(join(PACK, 'FX/Smoke/Smoke/SpriteSheet.png'));
+
+  const frameWidth = 32;
+  const frameHeight = 42;
+  const frames = 6;
+  const out: PngImage = {
+    width: frameWidth,
+    height: frameHeight * frames,
+    data: Buffer.alloc(frameWidth * frameHeight * frames * 4),
+  };
+
+  for (let frame = 0; frame < frames; frame += 1) {
+    const yOff = frame * frameHeight;
+    // Smoke rises upward by 2 px per frame above the fire, then dissipates cleanly.
+    blitOpaque(out, 0, yOff + (10 - frame * 2), smoke, frame * 32, 0, 32, 32);
+    // 16×16 hearth/logs centred at the bottom of the frame (`x = 8..24`, `y = 26..42`).
+    blitOpaque(out, 8, yOff + 26, element, 112, 64, 16, 16);
+    // 8×12 flame drawn in front of the smoke so the fire core stays bright on every frame.
+    blitOpaque(out, 12, yOff + 23, fire, (frame + 2) * 8, 0, 8, 12);
+  }
+
+  writeStagedPng(targetRel, out);
+}
+
+/** Remove obsolete M8 atmosphere folders so dead overlay PNGs/metas do not linger in resources. */
+function removeLegacyAtmosphereDirs(): void {
+  for (const legacy of ['raylight', 'fog', 'leaf', 'ash', 'sand']) {
+    const dir = join(RES, 'art', 'fx', legacy);
+    const meta = `${dir}.meta`;
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+    if (existsSync(meta)) rmSync(meta, { force: true });
+  }
+}
+
+// --- Stage pack art --------------------------------------------------------
+removeLegacyAtmosphereDirs();
+
+ensureDirMeta('art/atmosphere');
 ensureDirMeta('art/characters/animals');
 ensureDirMeta('art/decor');
 
-copyPng('FX/Environment/Raylight.png', 'art/fx/raylight/Raylight.png');
-copyPng('FX/Environment/Fog.png', 'art/fx/fog/Fog.png');
-// The pack's leaf sheet is a loose scatter (72×7, not on a grid): crop one complete 8×7 leaf.
-cropPng('FX/Particle/Leaf.png', 'art/fx/leaf/Leaf.png', { x: 2, y: 0, width: 8, height: 7 });
-// Ash flakes (8×8 each, 7 frames) — tinted grey in the adapter; sand streaks (8×8, 3 frames).
-copyPng('FX/Particle/Snow.png', 'art/fx/ash/Snow.png');
-copyPng('FX/Particle/Rain.png', 'art/fx/sand/Rain.png');
+// Crisp 1:1 pack weather particle sheets (copied byte-for-byte where unremapped).
+copyPng('FX/Particle/Leaf.png', 'art/atmosphere/Leaf.png');
+copyPng('FX/Particle/LeafPink.png', 'art/atmosphere/LeafPink.png');
+copyPng('FX/Particle/Clouds.png', 'art/atmosphere/Clouds.png');
+copyPng('FX/Particle/Rain.png', 'art/atmosphere/Rain.png');
+copyPng('FX/Particle/RainOnFloor.png', 'art/atmosphere/RainOnFloor.png');
+stageDryLeaf('art/atmosphere/DryLeaf.png');
+stageSandStreaks('art/atmosphere/Sand.png');
 
 const ANIMALS: ReadonlyArray<readonly [string, string]> = [
   ['Frog', 'frog'],
@@ -289,6 +410,7 @@ stackFrames(
   2,
 );
 stackFrames('Backgrounds/Animated/Plant/SpriteSheet16x16.png', 'art/decor/plant.png', 16, 16, 4);
+stageCampfireProp('art/decor/campfire.png');
 
 // --- Manifest entries ------------------------------------------------------
 // Every grid below is the real PNG size divided into whole frames (checked by `art-files.test`).
@@ -296,7 +418,6 @@ const SPRITES: Record<string, StagedSprite> = {};
 
 const animalEntry = (name: string): StagedSprite => ({
   target: `resources/art/characters/animals/${name}.png`,
-  // Staged as a 16×32 single-column grid (2 frames of 16×16) — the shape `manifest.ts` calls `grid`.
   entry: {
     frameWidth: 16,
     frameHeight: 16,
@@ -314,8 +435,6 @@ for (const [, name] of ANIMALS) {
 
 SPRITES['decor.flower'] = {
   target: 'resources/art/decor/flower.png',
-  // Flower sheet is 20×8: two 10×8 frames (the pack names it 16x16 but the pixels are 10 wide),
-  // staged as a 10×16 vertical grid.
   entry: {
     frameWidth: 10,
     frameHeight: 8,
@@ -330,7 +449,6 @@ SPRITES['decor.flower'] = {
 for (const name of ['plant', 'flag-green', 'flag-blue', 'flag-red', 'flag-black']) {
   SPRITES[`decor.${name}`] = {
     target: `resources/art/decor/${name}.png`,
-    // 4 frames of 16×16, staged as a 16×64 vertical grid.
     entry: {
       frameWidth: 16,
       frameHeight: 16,
@@ -343,79 +461,120 @@ for (const name of ['plant', 'flag-green', 'flag-blue', 'flag-red', 'flag-black'
     },
   };
 }
+SPRITES['decor.campfire'] = {
+  target: 'resources/art/decor/campfire.png',
+  entry: {
+    frameWidth: 32,
+    frameHeight: 42,
+    layout: 'grid',
+    directions: [],
+    frames: 6,
+    fps: 7,
+    loop: true,
+    anchor: 'feet',
+  },
+};
 
-SPRITES['fx.raylight'] = {
-  target: 'resources/art/fx/raylight/Raylight.png',
-  // One 216×102 light-shaft image (a still, slowly pulsed by the adapter).
-  entry: {
-    frameWidth: 216,
-    frameHeight: 102,
-    layout: 'strip',
-    directions: [],
-    frames: 1,
-    fps: 1,
-    loop: true,
-    anchor: 'center',
-  },
-};
-SPRITES['fx.fog'] = {
-  target: 'resources/art/fx/fog/Fog.png',
-  // One 320×180 fog image, drifted/scaled by the adapter.
-  entry: {
-    frameWidth: 320,
-    frameHeight: 180,
-    layout: 'strip',
-    directions: [],
-    frames: 1,
-    fps: 1,
-    loop: true,
-    anchor: 'center',
-  },
-};
 SPRITES['fx.leaf'] = {
-  target: 'resources/art/fx/leaf/Leaf.png',
-  // One cropped 8×7 leaf (see `cropPng` above).
+  target: 'resources/art/atmosphere/Leaf.png',
+  // 72×7: six 12×7 tumbling green leaf frames.
   entry: {
-    frameWidth: 8,
+    frameWidth: 12,
     frameHeight: 7,
     layout: 'strip',
     directions: [],
+    frames: 6,
+    fps: 8,
+    loop: true,
+    anchor: 'center',
+  },
+};
+SPRITES['fx.leaf-pink'] = {
+  target: 'resources/art/atmosphere/LeafPink.png',
+  // 72×7: six 12×7 cherry-blossom petal frames.
+  entry: {
+    frameWidth: 12,
+    frameHeight: 7,
+    layout: 'strip',
+    directions: [],
+    frames: 6,
+    fps: 8,
+    loop: true,
+    anchor: 'center',
+  },
+};
+SPRITES['fx.cloud-shadow'] = {
+  target: 'resources/art/atmosphere/Clouds.png',
+  // 80×36: soft cloud silhouette tinted dark on the ground (`under-actors`).
+  entry: {
+    frameWidth: 80,
+    frameHeight: 36,
+    layout: 'strip',
+    directions: [],
     frames: 1,
     fps: 1,
     loop: true,
     anchor: 'center',
   },
 };
-SPRITES['fx.ash'] = {
-  target: 'resources/art/fx/ash/Snow.png',
-  // 56×8: seven 8×8 flake frames, tinted grey by the adapter.
-  entry: {
-    frameWidth: 8,
-    frameHeight: 8,
-    layout: 'strip',
-    directions: [],
-    frames: 7,
-    fps: 6,
-    loop: true,
-    anchor: 'center',
-  },
-};
-SPRITES['fx.sand'] = {
-  target: 'resources/art/fx/sand/Rain.png',
-  // 24×8: three 8×8 streak frames, tinted sand by the adapter.
+SPRITES['fx.rain'] = {
+  target: 'resources/art/atmosphere/Rain.png',
+  // 24×8: three 8×8 diagonal rain streak frames.
   entry: {
     frameWidth: 8,
     frameHeight: 8,
     layout: 'strip',
     directions: [],
     frames: 3,
-    fps: 10,
+    fps: 12,
+    loop: true,
+    anchor: 'center',
+  },
+};
+SPRITES['fx.rain-splash'] = {
+  target: 'resources/art/atmosphere/RainOnFloor.png',
+  // 24×8: three 8×8 ground rain-splash ring frames.
+  entry: {
+    frameWidth: 8,
+    frameHeight: 8,
+    layout: 'strip',
+    directions: [],
+    frames: 3,
+    fps: 8,
+    loop: true,
+    anchor: 'center',
+  },
+};
+SPRITES['fx.ash'] = {
+  target: 'resources/art/atmosphere/DryLeaf.png',
+  // 72×7: six 12×7 palette-remapped dry/charred leaf frames for Ch3.
+  entry: {
+    frameWidth: 12,
+    frameHeight: 7,
+    layout: 'strip',
+    directions: [],
+    frames: 6,
+    fps: 7,
+    loop: true,
+    anchor: 'center',
+  },
+};
+SPRITES['fx.sand'] = {
+  target: 'resources/art/atmosphere/Sand.png',
+  // 24×8: three 8×8 palette-true wind-driven sand streak frames for Ch4.
+  entry: {
+    frameWidth: 8,
+    frameHeight: 8,
+    layout: 'strip',
+    directions: [],
+    frames: 3,
+    fps: 12,
     loop: true,
     anchor: 'center',
   },
 };
 SPRITES['fx.ripple'] = {
-  // Already staged by `stage-water.ts` — only the manifest key is new.
+  // Already staged by `stage-water.ts` — only the manifest key is maintained here.
   target: 'resources/art/fx/water/ripple.png',
   entry: {
     frameWidth: 16,
@@ -447,6 +606,10 @@ if (typeof record.sprites !== 'object' || record.sprites === null) {
 }
 
 const sprites = record.sprites as Record<string, ManifestEntry>;
+// Drop removed M8 full-screen overlay entries (`fx.raylight`, `fx.fog`) per ADR-019.
+delete sprites['fx.raylight'];
+delete sprites['fx.fog'];
+
 const added: string[] = [];
 for (const [key, sprite] of Object.entries(SPRITES)) {
   sprites[key] = withFoot(sprite);

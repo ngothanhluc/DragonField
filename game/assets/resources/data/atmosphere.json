@@ -10,20 +10,28 @@
       "chapter": 1,
       "layers": [
         {
-          "kind": "raylight",
-          "secondary": false,
-          "depth": "over-actors",
-          "sprite": "fx.raylight",
-          "opacity": 0.22,
+          "kind": "cloud-shadows",
+          "secondary": true,
+          "depth": "under-actors",
+          "sprite": "fx.cloud-shadow",
+          "opacity": 0.18,
           "count": 3
         },
         {
           "kind": "leaves",
-          "secondary": true,
+          "secondary": false,
           "depth": "over-actors",
           "sprite": "fx.leaf",
-          "opacity": 0.38,
-          "count": 16
+          "opacity": 1,
+          "count": 14
+        },
+        {
+          "kind": "blossoms",
+          "secondary": true,
+          "depth": "over-actors",
+          "sprite": "fx.leaf-pink",
+          "opacity": 1,
+          "count": 10
         }
       ],
       "decor": {
@@ -37,20 +45,28 @@
       "chapter": 2,
       "layers": [
         {
-          "kind": "fog",
-          "secondary": false,
-          "depth": "over-actors",
-          "sprite": "fx.fog",
-          "opacity": 0.22,
-          "count": 2
-        },
-        {
           "kind": "ripples",
           "secondary": true,
           "depth": "under-actors",
           "sprite": "fx.ripple",
-          "opacity": 0.8,
+          "opacity": 0.85,
           "count": 8
+        },
+        {
+          "kind": "rain-splash",
+          "secondary": true,
+          "depth": "under-actors",
+          "sprite": "fx.rain-splash",
+          "opacity": 0.88,
+          "count": 14
+        },
+        {
+          "kind": "rain",
+          "secondary": false,
+          "depth": "over-actors",
+          "sprite": "fx.rain",
+          "opacity": 0.92,
+          "count": 28
         }
       ],
       "decor": {
@@ -65,46 +81,38 @@
       "layers": [
         {
           "kind": "ash",
-          "secondary": true,
-          "depth": "over-actors",
-          "sprite": "fx.ash",
-          "opacity": 0.35,
-          "count": 18
-        },
-        {
-          "kind": "vignette",
           "secondary": false,
           "depth": "over-actors",
-          "sprite": null,
-          "opacity": 0.35,
-          "count": 1
+          "sprite": "fx.ash",
+          "opacity": 1,
+          "count": 16
         }
       ],
       "decor": {
         "animals": ["animal.racoon", "animal.dog", "animal.chicken"],
-        "props": ["decor.flag-red", "decor.flag-black", "decor.plant"],
+        "props": ["decor.campfire", "decor.flag-red", "decor.flag-black", "decor.plant"],
         "animalsPerRoom": 2,
-        "propsPerRoom": 3
+        "propsPerRoom": 4
       }
     },
     "4": {
       "chapter": 4,
       "layers": [
         {
-          "kind": "sand",
+          "kind": "cloud-shadows",
           "secondary": true,
-          "depth": "over-actors",
-          "sprite": "fx.sand",
-          "opacity": 0.38,
-          "count": 18
+          "depth": "under-actors",
+          "sprite": "fx.cloud-shadow",
+          "opacity": 0.15,
+          "count": 3
         },
         {
-          "kind": "heat-haze",
+          "kind": "sand",
           "secondary": false,
           "depth": "over-actors",
-          "sprite": null,
-          "opacity": 0.12,
-          "count": 1
+          "sprite": "fx.sand",
+          "opacity": 0.95,
+          "count": 22
         }
       ],
       "decor": {

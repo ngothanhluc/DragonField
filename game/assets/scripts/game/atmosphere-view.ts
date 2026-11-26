@@ -1,23 +1,26 @@
 /**
- * Draw one chapter's atmosphere layers (#6), engine side.
+ * Draw one chapter's atmosphere layers (#6, rebuilt in M11 per ADR-019), engine side.
  *
- * Pure decisions live in `core/atmosphere/atmosphere.ts` (`visibleAtmosphere`); this file only
- * turns the visible layers into nodes:
+ * Pure decisions live in `core/atmosphere/atmosphere.ts` (`visibleAtmosphere`,
+ * `ATMOSPHERE_LAYER_STYLES`, `particleScaleForEntry`); this file only turns the visible layers
+ * into pooled sprite nodes:
  *
- * - `under-actors` layers are inserted in the room root right after the water node, so they sit
- *   above the tile map but below obstacles/actors/bullets.
- * - `over-actors` layers go into the dedicated `atmosphere-layer` of the world (after `fx-layer`,
- *   still below the HUD), at the low alpha the data allows — they never hide telegraphs/bullets.
- * - Vignette and heat haze are `Graphics` (ADR-017: sprites + Graphics, no custom shaders).
- *
- * Every particle of a group is driven by **one** `update` and **one** clock (same rule as
- * `WaterView`/`FxPool`): ~60 sprites cost one component tick, not 60.
+ * - Every weather sprite uses strict **1:1 pixel scale** (`ACTOR_SCALE` = `1 / 16` tile per px)
+ *   and crisp opacity — no full-screen `Graphics` vignette/heat-haze overlays and no `Raylight`
+ *   or `Fog` washes.
+ * - `under-actors` layers (`cloud-shadows`, `rain-splash`, `ripples`) are inserted in `roomRoot`
+ *   right after the water node in **world space** (`0..cols × 0..rows`), so they drift/pop on the
+ *   ground below obstacles, actors, telegraphs, and bullets, and are culled off-screen by
+ *   `world-culler.ts`.
+ * - `over-actors` layers (`leaves`, `blossoms`, `rain`, `ash`, `sand`) sit in the screen-space
+ *   `atmosphere-layer` (`ROOM_COLS × ROOM_ROWS`) pinned to the camera.
+ * - Every particle of a group is driven by **one** `update` and **one** shared clock (~60 sprites
+ *   cost one component tick, holding 60 fps in `stress()`).
  */
 import {
   _decorator,
   Color as CocosColor,
   Component,
-  Graphics as CocosGraphics,
   Node as CocosNode,
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
@@ -27,21 +30,29 @@ import type {
   AtmosphereConfig,
   AtmosphereLayer,
   AtmosphereLayerKind,
+  AtmosphereLayerStyle,
+  AtmosphereMotion,
   DecorSpec,
   VisibleAtmosphere,
 } from '../core/atmosphere/atmosphere';
-import { chapterAtmosphere, visibleAtmosphere } from '../core/atmosphere/atmosphere';
+import {
+  ATMOSPHERE_LAYER_STYLES,
+  PARTICLE_PIXEL_SCALE,
+  chapterAtmosphere,
+  particleScaleForEntry,
+  visibleAtmosphere,
+} from '../core/atmosphere/atmosphere';
 import { resolve, type AnimationManifest } from '../core/art/manifest';
-import type { LevelData } from '../core/level/level-data';
+import type { LevelData, Obstacle, RoomSize } from '../core/level/level-data';
 import { ROOM_COLS, ROOM_ROWS } from '../core/level/level-data';
 import type { Vec2 } from '../core/math/vec2';
 import { SeededRng } from '../core/rng';
 import type { EffectsMode } from '../core/vfx/weapon-vfx';
 import { attachLivingDecor, type DecorHandle } from './living-decor-view';
 import { getFrame } from './assets/sprite-frame-cache';
+import { ACTOR_SCALE } from './level-view';
 
 type Color = InstanceType<typeof CocosColor>;
-type Graphics = InstanceType<typeof CocosGraphics>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type UITransform = InstanceType<typeof CocosUITransform>;
@@ -49,27 +60,9 @@ type SpriteFrame = Awaited<ReturnType<typeof getFrame>>;
 
 const { ccclass } = _decorator;
 
-type Motion = 'still' | 'fall' | 'wind' | 'fog';
+// Compile-time & runtime sanity: engine `ACTOR_SCALE` and core `PARTICLE_PIXEL_SCALE` are one rule.
+const PIXEL_SCALE = ACTOR_SCALE === PARTICLE_PIXEL_SCALE ? ACTOR_SCALE : PARTICLE_PIXEL_SCALE;
 
-/**
- * Per-kind draw size (world units = tiles) and motion; `still` layers only animate frames.
- * Over-actors particles are laid out in **one view** of `ROOM_COLS × ROOM_ROWS` local units and
- * the adapter pins the node to the camera (#37), so these numbers mean "the screen", not the room.
- */
-const STYLE: Readonly<
-  Record<AtmosphereLayerKind, { readonly motion: Motion; readonly drawUnits: number; readonly tint: readonly [number, number, number] }>
-> = {
-  raylight: { motion: 'still', drawUnits: 13, tint: [255, 246, 200] },
-  leaves: { motion: 'fall', drawUnits: 0.45, tint: [255, 255, 255] },
-  fog: { motion: 'fog', drawUnits: 34, tint: [220, 230, 240] },
-  ripples: { motion: 'still', drawUnits: 1, tint: [255, 255, 255] },
-  ash: { motion: 'fall', drawUnits: 0.3, tint: [210, 205, 200] },
-  vignette: { motion: 'still', drawUnits: 1, tint: [12, 8, 16] },
-  sand: { motion: 'wind', drawUnits: 0.5, tint: [224, 196, 138] },
-  'heat-haze': { motion: 'still', drawUnits: 1, tint: [255, 236, 190] },
-};
-
-/** Layers drawn with `Graphics` instead of a sprite (data has `sprite: null`). */
 interface Particle {
   readonly node: Node;
   readonly sprite: Sprite;
@@ -77,21 +70,22 @@ interface Particle {
   readonly fps: number;
   /** Frame-phase offset (0..1) so particles of one layer do not flip in lockstep. */
   phase: number;
-  readonly color: Color;
-  /** World units, y up. */
+  /** World units (or view units for `over-actors`), y up. */
   x: number;
   y: number;
   vx: number;
   vy: number;
   frameIndex: number;
-  /** Last written alpha (0..255) so a pulsing layer does not rewrite the colour every frame. */
-  alpha: number;
+  /** Animation loop counter so `rain-splash` relocates each time its 3-frame splash finishes. */
+  cycle: number;
 }
 
 interface LayerRuntime {
   readonly layer: AtmosphereLayer;
   readonly particles: Particle[];
-  readonly motion: Motion;
+  readonly motion: AtmosphereMotion;
+  readonly boundsCols: number;
+  readonly boundsRows: number;
 }
 
 /** World rect (tile units, top-left origin, y down) ripples may be placed in. */
@@ -106,9 +100,10 @@ export interface RippleArea {
 export class AtmosphereLayers extends Component {
   private readonly layers: LayerRuntime[] = [];
   private rippleAreas: readonly RippleArea[] = [];
+  private obstacles: readonly Obstacle[] = [];
+  private rng = new SeededRng(1);
   private elapsedMs = 0;
-  /** Room height, for the tile → world flip of world-space layers (ripples). */
-  private rows = ROOM_ROWS;
+  private roomSize: RoomSize = { cols: ROOM_COLS, rows: ROOM_ROWS };
 
   /** Build the layers that `visibleAtmosphere` allows; returns the kinds actually created. */
   async init(
@@ -116,42 +111,44 @@ export class AtmosphereLayers extends Component {
     manifest: AnimationManifest,
     seed: number,
     rippleAreas: readonly RippleArea[] = [],
-    rows: number = ROOM_ROWS,
+    roomSize: RoomSize = { cols: ROOM_COLS, rows: ROOM_ROWS },
+    obstacles: readonly Obstacle[] = [],
   ): Promise<AtmosphereLayerKind[]> {
-    const rng = new SeededRng(seed);
+    this.rng = new SeededRng(seed);
     this.rippleAreas = rippleAreas;
-    this.rows = rows;
+    this.roomSize = roomSize;
+    this.obstacles = obstacles;
     const created: AtmosphereLayerKind[] = [];
+    const screens = roomScreens(roomSize);
 
     for (const layer of visible.layers) {
-      if (layer.sprite === null) {
-        this.drawGraphics(layer);
-        created.push(layer.kind);
-        continue;
-      }
-
       let frames: readonly SpriteFrame[];
       let fps: number;
-      let frameWidth: number;
-      let frameHeight: number;
+      let scale: number;
       try {
         const entry = resolve(manifest, layer.sprite);
         frames = await Promise.all(
           Array.from({ length: entry.frames }, (_, index) => getFrame(entry, 'down', index)),
         );
         fps = entry.fps;
-        frameWidth = entry.frameWidth;
-        frameHeight = entry.frameHeight;
+        scale = particleScaleForEntry(entry) * (PIXEL_SCALE / PARTICLE_PIXEL_SCALE);
         created.push(layer.kind);
       } catch (error: unknown) {
         warn(`[YokaiField] Atmosphere layer ${layer.kind} skipped: ${String(error)}`);
         continue;
       }
+      if (!this.isValid) return created;
 
-      const style = STYLE[layer.kind];
-      const scale = style.drawUnits / Math.max(1, frameWidth, frameHeight);
+      const style = ATMOSPHERE_LAYER_STYLES[layer.kind];
+      const worldSpace = layer.depth === 'under-actors';
+      const boundsCols = worldSpace ? roomSize.cols : ROOM_COLS;
+      const boundsRows = worldSpace ? roomSize.rows : ROOM_ROWS;
+      // Under-actors layers live across the whole room (culled off-screen by `world-culler`),
+      // so scale their count by screen area to hold constant per-screen density.
+      const count = worldSpace ? Math.max(1, Math.round(layer.count * screens)) : layer.count;
+
       const particles: Particle[] = [];
-      for (let index = 0; index < layer.count; index += 1) {
+      for (let index = 0; index < count; index += 1) {
         const particle = this.createParticle(
           layer,
           frames,
@@ -161,10 +158,10 @@ export class AtmosphereLayers extends Component {
           frames[0]!.rect.width,
           frames[0]!.rect.height,
         );
-        this.placeParticle(layer.kind, particle, index, layer.count, rng);
+        this.placeParticle(layer.kind, style, particle, boundsCols, boundsRows, this.rng);
         particles.push(particle);
       }
-      this.layers.push({ layer, particles, motion: style.motion });
+      this.layers.push({ layer, particles, motion: style.motion, boundsCols, boundsRows });
     }
     return created;
   }
@@ -176,49 +173,60 @@ export class AtmosphereLayers extends Component {
     const dtSec = dtMs / 1000;
 
     for (const runtime of this.layers) {
-      const { motion } = runtime;
+      const { motion, boundsCols, boundsRows } = runtime;
+      const gustFactor =
+        motion === 'gust' ? 0.78 + 0.42 * Math.sin(this.elapsedMs / 1100) : 1;
+
       for (const particle of runtime.particles) {
         // Frame animation shares one clock for the whole layer group.
         if (particle.frames.length > 1) {
-          const frame = Math.floor((this.elapsedMs * particle.fps) / 1000 + particle.phase) % particle.frames.length;
+          const totalFrames = (this.elapsedMs * particle.fps) / 1000 + particle.phase * particle.frames.length;
+          const frame = Math.floor(totalFrames) % particle.frames.length;
           if (frame !== particle.frameIndex) {
             particle.frameIndex = frame;
             const next = particle.frames[frame];
             if (next !== undefined) particle.sprite.spriteFrame = next;
           }
+          if (motion === 'splash') {
+            const cycle = Math.floor(totalFrames / particle.frames.length);
+            if (cycle !== particle.cycle) {
+              particle.cycle = cycle;
+              const spot = this.pickWalkableGroundSpot(boundsCols, boundsRows, this.rng);
+              particle.x = spot.x;
+              particle.y = spot.y;
+              particle.node.setPosition(particle.x, particle.y, 0);
+            }
+            continue;
+          }
         }
 
-        if (motion === 'still') {
-          // Light shafts breathe instead of moving (no allocation: only the alpha changes).
-          if (runtime.layer.kind === 'raylight') {
-            const pulse = 0.7 + 0.3 * Math.sin(this.elapsedMs / 1400 + particle.phase * Math.PI * 2);
-            const alpha = clampByte(runtime.layer.opacity * pulse * 255);
-            if (Math.abs(alpha - particle.alpha) >= 2) {
-              particle.alpha = alpha;
-              particle.color.a = alpha;
-              particle.sprite.color = particle.color;
-            }
-          }
+        if (motion === 'still' || motion === 'splash') {
           continue;
         }
 
-        if (motion === 'fall') {
+        if (motion === 'flutter') {
+          const sway = Math.sin(this.elapsedMs / 650 + particle.phase * Math.PI * 2) * 0.55;
+          particle.x += (particle.vx + sway) * dtSec;
           particle.y += particle.vy * dtSec;
-          particle.x += Math.sin(this.elapsedMs / 900 + particle.phase * Math.PI * 2) * 0.35 * dtSec;
-          if (particle.y < -1) {
-            particle.y = ROOM_ROWS + 1;
-            particle.x = ((particle.x % ROOM_COLS) + ROOM_COLS) % ROOM_COLS;
-          }
-        } else if (motion === 'wind') {
+          particle.x = wrapRange(particle.x, -1, boundsCols + 1);
+          particle.y = wrapRange(particle.y, -1, boundsRows + 1);
+        } else if (motion === 'rain') {
           particle.x += particle.vx * dtSec;
-          particle.y += Math.sin(this.elapsedMs / 700 + particle.phase * Math.PI * 2) * 0.2 * dtSec;
-          if (particle.x > ROOM_COLS + 2) {
-            particle.x = -2;
-            particle.y = ((particle.y % ROOM_ROWS) + ROOM_ROWS) % ROOM_ROWS;
-          }
-        } else {
+          particle.y += particle.vy * dtSec;
+          particle.x = wrapRange(particle.x, -1, boundsCols + 1);
+          particle.y = wrapRange(particle.y, -1, boundsRows + 1);
+        } else if (motion === 'gust') {
+          const wobble = Math.sin(this.elapsedMs / 480 + particle.phase * Math.PI * 2) * 0.35;
+          particle.x += particle.vx * gustFactor * dtSec;
+          particle.y += (particle.vy * gustFactor + wobble) * dtSec;
+          particle.x = wrapRange(particle.x, -1, boundsCols + 1);
+          particle.y = wrapRange(particle.y, -1, boundsRows + 1);
+        } else if (motion === 'drift') {
+          // `Clouds.png` is 5 tiles wide: use a 3.5-tile margin so shadows enter/leave smoothly off-screen.
           particle.x += particle.vx * dtSec;
-          if (particle.x > ROOM_COLS + 4) particle.x = -4;
+          particle.y += particle.vy * dtSec;
+          particle.x = wrapRange(particle.x, -3.5, boundsCols + 3.5);
+          particle.y = wrapRange(particle.y, -2, boundsRows + 2);
         }
 
         particle.node.setPosition(particle.x, particle.y, 0);
@@ -230,7 +238,7 @@ export class AtmosphereLayers extends Component {
     layer: AtmosphereLayer,
     frames: readonly SpriteFrame[],
     fps: number,
-    style: (typeof STYLE)[AtmosphereLayerKind],
+    style: AtmosphereLayerStyle,
     scale: number,
     frameWidth: number,
     frameHeight: number,
@@ -244,13 +252,13 @@ export class AtmosphereLayers extends Component {
     sprite.spriteFrame = frames[0]!;
 
     const transform: UITransform | null = node.getComponent(CocosUITransform);
-    // CUSTOM reads its size from UITransform (defaults to 100×100) — set the real frame size.
+    // CUSTOM reads its size from UITransform (defaults to 100×100) — set the exact pixel frame size.
     if (transform !== null) transform.setContentSize(frameWidth, frameHeight);
 
     node.setScale(scale, scale, 1);
 
     const alpha = clampByte(layer.opacity * 255);
-    const color = new CocosColor(style.tint[0], style.tint[1], style.tint[2], alpha);
+    const color: Color = new CocosColor(style.tint[0], style.tint[1], style.tint[2], alpha);
     sprite.color = color;
 
     return {
@@ -259,138 +267,99 @@ export class AtmosphereLayers extends Component {
       frames,
       fps,
       phase: 0,
-      color,
       x: 0,
       y: 0,
       vx: 0,
       vy: 0,
       frameIndex: 0,
-      alpha: -1,
+      cycle: 0,
     };
   }
 
   /** Initial position/velocity per layer kind. */
   private placeParticle(
     kind: AtmosphereLayerKind,
+    style: AtmosphereLayerStyle,
     particle: Particle,
-    index: number,
-    count: number,
+    boundsCols: number,
+    boundsRows: number,
     rng: SeededRng,
   ): void {
-    switch (kind) {
-      case 'raylight': {
-        particle.x = ((index + 0.5) * ROOM_COLS) / count;
-        particle.y = ROOM_ROWS - 2.5;
-        break;
+    particle.vx = sampleRange(style.vxRange, rng);
+    particle.vy = sampleRange(style.vyRange, rng);
+
+    if (kind === 'ripples') {
+      const areas = this.rippleAreas;
+      if (areas.length > 0) {
+        const area = areas[rng.int(areas.length)] ?? areas[0]!;
+        // Keep the 1×1 ripple sprite half a tile inside the water rectangle.
+        particle.x = area.x + 0.5 + rng.next() * Math.max(0, area.width - 1);
+        particle.y = this.roomSize.rows - (area.y + 0.5 + rng.next() * Math.max(0, area.height - 1));
+      } else {
+        particle.x = 1 + rng.next() * Math.max(1, boundsCols - 2);
+        particle.y = 1 + rng.next() * Math.max(1, boundsRows - 2);
       }
-      case 'fog': {
-        particle.x = (index * ROOM_COLS) / count;
-        particle.y = ROOM_ROWS / 2;
-        particle.vx = 0.25 + rng.next() * 0.2;
-        break;
-      }
-      case 'leaves': {
-        particle.x = rng.next() * ROOM_COLS;
-        particle.y = rng.next() * ROOM_ROWS;
-        particle.vy = -(0.8 + rng.next() * 0.6);
-        break;
-      }
-      case 'ash': {
-        particle.x = rng.next() * ROOM_COLS;
-        particle.y = rng.next() * ROOM_ROWS;
-        particle.vy = -(0.5 + rng.next() * 0.5);
-        break;
-      }
-      case 'sand': {
-        particle.x = rng.next() * ROOM_COLS;
-        particle.y = rng.next() * ROOM_ROWS;
-        particle.vx = 5 + rng.next() * 3;
-        break;
-      }
-      case 'ripples': {
-        const areas = this.rippleAreas;
-        if (areas.length > 0) {
-          const area = areas[rng.int(areas.length)] ?? areas[0]!;
-          // The 1×1 ripple sprite must stay fully inside the water: keep half a tile off each edge.
-          particle.x = area.x + 0.5 + rng.next() * Math.max(0, area.width - 1);
-          // Tile y (down) → world y (up): the ripple sits on the water surface.
-          particle.y = this.rows - (area.y + 0.5 + rng.next() * Math.max(0, area.height - 1));
-        } else {
-          particle.x = 1 + rng.next() * (ROOM_COLS - 2);
-          particle.y = 1 + rng.next() * (ROOM_ROWS - 2);
-        }
-        break;
-      }
-      default: {
-        particle.x = ROOM_COLS / 2;
-        particle.y = ROOM_ROWS / 2;
-        break;
-      }
+    } else if (kind === 'rain-splash') {
+      const spot = this.pickWalkableGroundSpot(boundsCols, boundsRows, rng);
+      particle.x = spot.x;
+      particle.y = spot.y;
+    } else {
+      particle.x = rng.next() * boundsCols;
+      particle.y = rng.next() * boundsRows;
     }
 
-    // Spread the frame phase so ripples/particles do not flip in lockstep.
     particle.phase = rng.next();
     particle.node.setPosition(particle.x, particle.y, 0);
   }
 
-  /**
-   * Vignette / heat haze with `Graphics` (no texture, no shader). Drawn once at build time.
-   *
-   * One node per colour: `Graphics.fill()` fills every subpath in the buffer again, so stacking
-   * differently-coloured rects in one node would paint the earlier ones twice.
-   */
-  private drawGraphics(layer: AtmosphereLayer): void {
-    const style = STYLE[layer.kind];
+  /** Pick a walkable floor point (world units, y up) off obstacles/pits and off river water. */
+  private pickWalkableGroundSpot(cols: number, rows: number, rng: SeededRng): Vec2 {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const tileX = 1 + rng.next() * Math.max(1, cols - 2);
+      const tileY = 1 + rng.next() * Math.max(1, rows - 2);
+      if (this.inObstacleOrWater(tileX, tileY)) continue;
+      return { x: tileX, y: rows - tileY };
+    }
+    return {
+      x: 1 + rng.next() * Math.max(1, cols - 2),
+      y: 1 + rng.next() * Math.max(1, rows - 2),
+    };
+  }
 
-    if (layer.kind === 'vignette') {
-      // Thin, many rings: 6 thick bands read as a picture frame, 12 thin ones as a gradient.
-      const rings = 12;
-      const thickness = 0.32;
-      for (let ring = 0; ring < rings; ring += 1) {
-        const inset = ring * thickness;
-        const width = ROOM_COLS - inset * 2;
-        const height = ROOM_ROWS - inset * 2;
-        if (width <= 0 || height <= 0) break;
-        const alpha = clampByte(layer.opacity * 255 * 0.5 * ((ring + 1) / rings));
-        this.fillRects(
-          `vignette-${ring}`,
-          new CocosColor(style.tint[0], style.tint[1], style.tint[2], alpha),
-          [
-            { x: inset, y: inset, width, height: thickness },
-            { x: inset, y: inset + height - thickness, width, height: thickness },
-            { x: inset, y: inset, width: thickness, height },
-            { x: inset + width - thickness, y: inset, width: thickness, height },
-          ],
-        );
+  private inObstacleOrWater(tileX: number, tileY: number): boolean {
+    for (const obs of this.obstacles) {
+      if (
+        tileX >= obs.x - 0.25 &&
+        tileX <= obs.x + obs.width + 0.25 &&
+        tileY >= obs.y - 0.25 &&
+        tileY <= obs.y + obs.height + 0.25
+      ) {
+        return true;
       }
-      return;
     }
-
-    // Heat haze: a few thin, faint horizontal bands (still cheaper than a shader).
-    const bands: Array<{ x: number; y: number; width: number; height: number }> = [];
-    for (let band = 0; band < 6; band += 1) {
-      bands.push({ x: 0.5, y: ROOM_ROWS * 0.12 + band * 1.1, width: ROOM_COLS - 1, height: 0.35 });
+    for (const area of this.rippleAreas) {
+      if (
+        tileX >= area.x &&
+        tileX <= area.x + area.width &&
+        tileY >= area.y &&
+        tileY <= area.y + area.height
+      ) {
+        return true;
+      }
     }
-    this.fillRects(
-      'heat-haze',
-      new CocosColor(style.tint[0], style.tint[1], style.tint[2], clampByte(layer.opacity * 255 * 0.5)),
-      bands,
-    );
+    return false;
   }
+}
 
-  /** One `Graphics` node holding same-coloured rectangles (a single `fill` pass). */
-  private fillRects(
-    name: string,
-    color: Color,
-    rects: ReadonlyArray<{ x: number; y: number; width: number; height: number }>,
-  ): void {
-    const node = new CocosNode(name);
-    node.parent = this.node;
-    const graphics: Graphics = node.addComponent(CocosGraphics);
-    graphics.fillColor = color;
-    for (const rect of rects) graphics.rect(rect.x, rect.y, rect.width, rect.height);
-    graphics.fill();
-  }
+function sampleRange(range: readonly [number, number], rng: SeededRng): number {
+  return range[0] + rng.next() * (range[1] - range[0]);
+}
+
+function wrapRange(value: number, min: number, max: number): number {
+  const span = max - min;
+  if (!(span > 0)) return min;
+  if (value >= min && value <= max) return value;
+  return ((((value - min) % span) + span) % span) + min;
 }
 
 function clampByte(value: number): number {
@@ -398,7 +367,7 @@ function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
-/** How many 32×18 screens a room covers (1 for every chapter/boss room today). */
+/** How many 32×18 screens a room covers (1 for boss arenas, 4 for 64×36 rooms). */
 function roomScreens(size: { readonly cols: number; readonly rows: number }): number {
   return Math.max(1, (size.cols / ROOM_COLS) * (size.rows / ROOM_ROWS));
 }
@@ -407,10 +376,14 @@ export interface AtmosphereAttachOptions {
   readonly visible: VisibleAtmosphere;
   readonly manifest: AnimationManifest;
   readonly seed: number;
-  /** Water rectangles of this room (ch2), so ripples land on water instead of the floor. */
+  /** Water rectangles of this room (ch2), so ripples land on water and splashes stay on land. */
   readonly rippleAreas?: readonly RippleArea[];
-  /** Room height (tiles): the tile → world flip for world-space layers. */
+  /** Room height (tiles): kept for backwards-compatible callers; overridden by `roomSize` when given. */
   readonly rows: number;
+  /** Full room dimensions (tiles) so world-space under-actors layers cover 64×36 rooms. */
+  readonly roomSize?: RoomSize;
+  /** Obstacles (walls, props, river pits) so `rain-splash` pops on walkable ground. */
+  readonly obstacles?: readonly Obstacle[];
 }
 
 export interface AtmosphereHandle {
@@ -431,12 +404,14 @@ export function attachAtmosphere(
 ): AtmosphereHandle {
   const kinds: AtmosphereLayerKind[] = [];
   const nodes: Node[] = [];
+  const size: RoomSize = options.roomSize ?? { cols: ROOM_COLS, rows: options.rows };
 
   const build = (
     visible: VisibleAtmosphere,
     parent: Node,
     name: string,
     siblingIndex: number | null,
+    seedOffset: number,
   ): Node | null => {
     if (visible.layers.length === 0) return null;
     const node = new CocosNode(name);
@@ -444,7 +419,14 @@ export function attachAtmosphere(
     if (siblingIndex !== null) node.setSiblingIndex(siblingIndex);
     const view: AtmosphereLayers = node.addComponent(AtmosphereLayers);
     void view
-      .init(visible, options.manifest, options.seed, options.rippleAreas ?? [], options.rows)
+      .init(
+        visible,
+        options.manifest,
+        (options.seed + seedOffset) >>> 0,
+        options.rippleAreas ?? [],
+        size,
+        options.obstacles ?? [],
+      )
       .catch((error: unknown) => {
         warn(`[YokaiField] Could not build the atmosphere: ${String(error)}`);
       });
@@ -466,10 +448,12 @@ export function attachAtmosphere(
     'atmosphere-under',
     // 0 = tile map, 1 = water; atmosphere goes right above the water.
     2,
+    0,
   );
-  const over = overLayer === null
-    ? null
-    : build({ ...options.visible, layers: overLayers }, overLayer, 'atmosphere-over', null);
+  const over =
+    overLayer === null
+      ? null
+      : build({ ...options.visible, layers: overLayers }, overLayer, 'atmosphere-over', null, 97);
 
   return {
     under,
@@ -521,7 +505,7 @@ export interface RoomAtmosphereParts {
 }
 
 /**
- * Build the atmosphere layers + living decor of one room (#6) for the current Effects mode.
+ * Build the atmosphere layers + living decor of one room (#6, M11) for the current Effects mode.
  *
  * Shared by the run (`bootstrap.rebuildRoomAtmosphere`) and the living menu backdrop (#8), so the
  * menu shows exactly what a run would. Returns `null` when the chapter has no atmosphere config.
@@ -545,6 +529,8 @@ export function attachRoomAtmosphere(options: RoomAtmosphereOptions): RoomAtmosp
     manifest: options.manifest,
     seed: options.seed,
     rows: options.level.size.rows,
+    roomSize: options.level.size,
+    obstacles: options.level.obstacles,
     ...(options.rippleAreas !== undefined ? { rippleAreas: options.rippleAreas } : {}),
   });
 

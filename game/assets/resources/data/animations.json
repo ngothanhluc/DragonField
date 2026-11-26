@@ -3313,62 +3313,38 @@
       "anchor": "feet",
       "footPx": 1
     },
-    "fx.raylight": {
-      "sheet": "resources/art/fx/raylight/Raylight.png",
-      "frameWidth": 216,
-      "frameHeight": 102,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 1,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 51
-    },
-    "fx.fog": {
-      "sheet": "resources/art/fx/fog/Fog.png",
-      "frameWidth": 320,
-      "frameHeight": 180,
-      "layout": "strip",
-      "directions": [],
-      "frames": 1,
-      "fps": 1,
-      "loop": true,
-      "anchor": "center",
-      "footPx": 90
-    },
     "fx.leaf": {
-      "sheet": "resources/art/fx/leaf/Leaf.png",
-      "frameWidth": 8,
+      "sheet": "resources/art/atmosphere/Leaf.png",
+      "frameWidth": 12,
       "frameHeight": 7,
       "layout": "strip",
       "directions": [],
-      "frames": 1,
-      "fps": 1,
+      "frames": 6,
+      "fps": 8,
       "loop": true,
       "anchor": "center",
       "footPx": 3
     },
     "fx.ash": {
-      "sheet": "resources/art/fx/ash/Snow.png",
-      "frameWidth": 8,
-      "frameHeight": 8,
+      "sheet": "resources/art/atmosphere/DryLeaf.png",
+      "frameWidth": 12,
+      "frameHeight": 7,
       "layout": "strip",
       "directions": [],
-      "frames": 7,
-      "fps": 6,
+      "frames": 6,
+      "fps": 7,
       "loop": true,
       "anchor": "center",
-      "footPx": 4
+      "footPx": 3
     },
     "fx.sand": {
-      "sheet": "resources/art/fx/sand/Rain.png",
+      "sheet": "resources/art/atmosphere/Sand.png",
       "frameWidth": 8,
       "frameHeight": 8,
       "layout": "strip",
       "directions": [],
       "frames": 3,
-      "fps": 10,
+      "fps": 12,
       "loop": true,
       "anchor": "center",
       "footPx": 4
@@ -6096,6 +6072,66 @@
       "loop": false,
       "anchor": "feet",
       "footPx": 1
+    },
+    "decor.campfire": {
+      "sheet": "resources/art/decor/campfire.png",
+      "frameWidth": 32,
+      "frameHeight": 42,
+      "layout": "grid",
+      "directions": [],
+      "frames": 6,
+      "fps": 7,
+      "loop": true,
+      "anchor": "feet",
+      "footPx": 5
+    },
+    "fx.leaf-pink": {
+      "sheet": "resources/art/atmosphere/LeafPink.png",
+      "frameWidth": 12,
+      "frameHeight": 7,
+      "layout": "strip",
+      "directions": [],
+      "frames": 6,
+      "fps": 8,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 3
+    },
+    "fx.cloud-shadow": {
+      "sheet": "resources/art/atmosphere/Clouds.png",
+      "frameWidth": 80,
+      "frameHeight": 36,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 18
+    },
+    "fx.rain": {
+      "sheet": "resources/art/atmosphere/Rain.png",
+      "frameWidth": 8,
+      "frameHeight": 8,
+      "layout": "strip",
+      "directions": [],
+      "frames": 3,
+      "fps": 12,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 4
+    },
+    "fx.rain-splash": {
+      "sheet": "resources/art/atmosphere/RainOnFloor.png",
+      "frameWidth": 8,
+      "frameHeight": 8,
+      "layout": "strip",
+      "directions": [],
+      "frames": 3,
+      "fps": 8,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 4
     }
   }
 }

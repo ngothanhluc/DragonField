@@ -1,13 +1,13 @@
 /**
- * Contract details of the atmosphere data that the acceptance test leaves loose (#6):
- * the validation message has to name the chapter and the field (a broken JSON in production
- * must say where to look), and a chapter without decor must still parse.
- *
- * The placement/flee rules themselves are covered by `atmosphere.test.ts`; this file only
- * pins the parse surface.
+ * Contract details of the atmosphere schema (`core/atmosphere/atmosphere.ts`, ADR-019):
+ * - validation messages name the broken chapter and field,
+ * - removed M8 overlay kinds (`raylight`, `fog`, `vignette`, `heat-haze`) and `sprite: null`
+ *   fail schema validation cleanly,
+ * - all M11 particle layer kinds parse cleanly, and chapters without decor still parse.
  */
 import { describe, expect, it } from 'vitest';
 import {
+  ATMOSPHERE_LAYER_KINDS,
   chapterAtmosphere,
   parseAtmosphereConfig,
 } from '../../assets/scripts/core/atmosphere/atmosphere';
@@ -21,14 +21,14 @@ function rawChapter(overrides: Record<string, unknown> = {}): Record<string, unk
   return {
     chapter: 2,
     layers: [
-      { kind: 'fog', secondary: false, depth: 'over-actors', sprite: 'fx.fog', opacity: 0.3, count: 1 },
+      { kind: 'rain', secondary: false, depth: 'over-actors', sprite: 'fx.rain', opacity: 0.9, count: 20 },
     ],
     decor: { animals: [], props: [], animalsPerRoom: 0, propsPerRoom: 0 },
     ...overrides,
   };
 }
 
-describe('parseAtmosphereConfig — errors say where to look', () => {
+describe('parseAtmosphereConfig — errors say where to look and reject removed overlays', () => {
   it('names the chapter and the field of a broken layer', () => {
     const raw = {
       version: 1,
@@ -36,7 +36,7 @@ describe('parseAtmosphereConfig — errors say where to look', () => {
       chapters: {
         '2': rawChapter({
           layers: [
-            { kind: 'fog', secondary: false, depth: 'over-actors', sprite: 'fx.fog', opacity: 2, count: 1 },
+            { kind: 'rain', secondary: false, depth: 'over-actors', sprite: 'fx.rain', opacity: 2, count: 1 },
           ],
         }),
       },
@@ -44,20 +44,72 @@ describe('parseAtmosphereConfig — errors say where to look', () => {
     expect(() => parseAtmosphereConfig(raw)).toThrow(/chapter 2\.layers\[0\]\.opacity/);
   });
 
-  it('rejects an unknown layer kind and lists the valid ones', () => {
-    const raw = {
+  it('rejects removed M8 overlay kinds (raylight, fog, vignette, heat-haze) and lists valid kinds', () => {
+    for (const removedKind of ['raylight', 'fog', 'vignette', 'heat-haze', 'lava']) {
+      const raw = {
+        version: 1,
+        animal: ANIMAL,
+        chapters: {
+          '2': rawChapter({
+            layers: [
+              {
+                kind: removedKind,
+                secondary: false,
+                depth: 'over-actors',
+                sprite: 'fx.rain',
+                opacity: 0.3,
+                count: 1,
+              },
+            ],
+          }),
+        },
+      };
+      expect(() => parseAtmosphereConfig(raw), removedKind).toThrow(/chapter 2\.layers\[0\]\.kind/);
+      expect(() => parseAtmosphereConfig(raw), removedKind).toThrow(/leaves/);
+    }
+  });
+
+  it('rejects null or empty sprite keys (Graphics-only overlays were removed in M11)', () => {
+    for (const badSprite of [null, '']) {
+      const raw = {
+        version: 1,
+        animal: ANIMAL,
+        chapters: {
+          '2': rawChapter({
+            layers: [
+              {
+                kind: 'rain',
+                secondary: false,
+                depth: 'over-actors',
+                sprite: badSprite,
+                opacity: 0.5,
+                count: 1,
+              },
+            ],
+          }),
+        },
+      };
+      expect(() => parseAtmosphereConfig(raw)).toThrow(/chapter 2\.layers\[0\]\.sprite/);
+    }
+  });
+
+  it('accepts every M11 layer kind cleanly', () => {
+    const layers = ATMOSPHERE_LAYER_KINDS.map((kind) => ({
+      kind,
+      secondary: kind === 'cloud-shadows' || kind === 'blossoms' || kind === 'rain-splash' || kind === 'ripples',
+      depth: kind === 'cloud-shadows' || kind === 'rain-splash' || kind === 'ripples' ? 'under-actors' : 'over-actors',
+      sprite: `fx.${kind}`,
+      opacity: 0.9,
+      count: 4,
+    }));
+    const parsed = parseAtmosphereConfig({
       version: 1,
       animal: ANIMAL,
-      chapters: {
-        '2': rawChapter({
-          layers: [
-            { kind: 'lava', secondary: true, depth: 'under-actors', sprite: null, opacity: 0.2, count: 1 },
-          ],
-        }),
-      },
-    };
-    expect(() => parseAtmosphereConfig(raw)).toThrow(/chapter 2\.layers\[0\]\.kind/);
-    expect(() => parseAtmosphereConfig(raw)).toThrow(/raylight/);
+      chapters: { '1': { ...rawChapter(), chapter: 1, layers } },
+    });
+    expect(chapterAtmosphere(parsed, 1)?.layers.map((layer) => layer.kind)).toEqual([
+      ...ATMOSPHERE_LAYER_KINDS,
+    ]);
   });
 
   it('rejects a decor key of the wrong family', () => {
@@ -66,7 +118,7 @@ describe('parseAtmosphereConfig — errors say where to look', () => {
       animal: ANIMAL,
       chapters: {
         '2': rawChapter({
-          decor: { animals: ['fx.fog'], props: [], animalsPerRoom: 1, propsPerRoom: 0 },
+          decor: { animals: ['fx.rain'], props: [], animalsPerRoom: 1, propsPerRoom: 0 },
         }),
       },
     };
