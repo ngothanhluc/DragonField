@@ -327,6 +327,31 @@ export class PlayerController extends Component {
     return this.health.heal(amount);
   }
 
+  /**
+   * Restore exact hearts when resuming an `ActiveRunSave` or continuing Endless (M15)
+   * without triggering hurt animation, SFX, or i-frames.
+   */
+  restoreHearts(hearts: number): number {
+    const clamped = Math.max(1, Math.min(this.health.max, Math.floor(hearts)));
+    return this.health.setHearts(clamped);
+  }
+
+  /**
+   * Immediately kill the player bypassing i-frames, shield, and Iron Skin (used by `?debug=1`
+   * `__yokai.triggerDeath`). Plays the standard death animation and SFX.
+   */
+  forceKill(): void {
+    if (this.health.isDead) return;
+    this.health.setHearts(0);
+    this.node.setScale(this.baseScale, this.baseScale, 1);
+    this.fx?.setAura(null, null);
+    this.auraShown = false;
+    this.attachmentView?.clearHidden();
+    this.playCharacterAnimation('dead');
+    this.syncAttachmentPose(true);
+    playSfx('game-over');
+  }
+
   /** Grant `durationMs` of i-frames at `nowMs` without dealing damage (M12 level-up resume). */
   grantInvulnerability(nowMs: number, durationMs: number): void {
     this.health.grantInvulnerability(nowMs, durationMs);

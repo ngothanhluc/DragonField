@@ -82,6 +82,8 @@ export interface SkillPickRerollOptions {
   readonly cost: number;
   readonly availableGold: number;
   readonly hasAlternatives: boolean;
+  /** Remaining free Meta Utility rerolls for this run (M15); when > 0 reroll costs 0g. */
+  readonly freeRerollsLeft?: number;
   readonly onReroll: () => boolean;
 }
 
@@ -132,10 +134,17 @@ export async function buildSkillPick(
   let rerollHandle: MenuButtonHandle | null = null;
 
   const rerollOpt = options.reroll;
+  const freeRerollsLeft =
+    rerollOpt !== undefined &&
+    rerollOpt.freeRerollsLeft !== undefined &&
+    Number.isFinite(rerollOpt.freeRerollsLeft)
+      ? Math.max(0, Math.floor(rerollOpt.freeRerollsLeft))
+      : 0;
+  const isFreeReroll = freeRerollsLeft > 0;
   const canRerollNow =
     rerollOpt !== undefined &&
     rerollOpt.hasAlternatives &&
-    rerollOpt.availableGold >= rerollOpt.cost;
+    (isFreeReroll || rerollOpt.availableGold >= rerollOpt.cost);
 
   const applyFocus = (): void => {
     cards.forEach((card, index) => {
@@ -336,14 +345,18 @@ export async function buildSkillPick(
   });
 
   if (rerollOpt !== undefined) {
-    const label = rerollOpt.hasAlternatives
-      ? `Reroll (R) — ${rerollOpt.cost}g`
-      : 'Reroll (R)';
+    const label = !rerollOpt.hasAlternatives
+      ? 'Reroll (R)'
+      : isFreeReroll
+        ? `Free Reroll (R) · ${freeRerollsLeft} left`
+        : `Reroll (R) — ${rerollOpt.cost}g`;
     const detail = !rerollOpt.hasAlternatives
       ? 'No alternative skills'
-      : canRerollNow
-        ? `Gold: ${rerollOpt.availableGold}g`
-        : `Gold: ${rerollOpt.availableGold}g — Not enough gold`;
+      : isFreeReroll
+        ? `0g · Gold: ${rerollOpt.availableGold}g`
+        : canRerollNow
+          ? `Gold: ${rerollOpt.availableGold}g`
+          : `Gold: ${rerollOpt.availableGold}g — Not enough gold`;
 
     const handle = createMenuButton(
       root,

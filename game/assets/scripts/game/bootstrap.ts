@@ -73,7 +73,19 @@ import { attachRoomAtmosphere } from './atmosphere-view';
 import type { RoomAtmosphereParts } from './atmosphere-view';
 import type { Vec2 } from '../core/math/vec2';
 import { SeededRng } from '../core/rng';
-import { RunState } from '../core/run/run-state';
+import {
+  utilityStatsFromSave,
+  type RunUtilityStats,
+} from '../core/meta/run-stats';
+import { clampAscension } from '../core/run/ascension';
+import {
+  canStartEndless,
+  combinedDifficultyModifiers,
+  nextEndlessStep,
+  type RunDifficultyModifiers,
+} from '../core/run/endless';
+import { CHAPTERS_PER_RUN, RunState } from '../core/run/run-state';
+import type { DeathCause } from '../core/run/run-summary';
 import { drawRunRooms } from '../core/run/room-draw';
 import { RunRewards } from '../core/run/run-rewards';
 import {
@@ -97,9 +109,20 @@ import {
 import { EVOLUTIONS, getEvolution, isEvolutionId } from '../core/skills/evolutions';
 import { getSkill, type SkillDef } from '../core/skills/pool';
 import { chapterGate } from '../core/save/chapter-gate';
-import { withBest, withSelectedCharacter } from '../core/save/save-data';
+import {
+  migrateRunSave,
+  RUN_SAVE_VERSION,
+  type ActiveRunSave,
+  type RunSaveRepository,
+} from '../core/save/run-save';
+import {
+  MAX_ASCENSION_TIER,
+  unlockChapterAscension,
+  withBest,
+  withSelectedCharacter,
+} from '../core/save/save-data';
 import type { SaveData } from '../core/save/save-data';
-import { applySettings } from '../core/save/settings';
+import { applySettings, clampVolume } from '../core/save/settings';
 import type { Settings } from '../core/save/settings';
 import type { SaveRepository } from '../core/save/storage';
 import { preloadSheets } from './assets/texture-cache';
@@ -119,6 +142,7 @@ import {
   type DebugCharacterStatsSnapshot,
   type DebugDoorSnapshot,
   type DebugSpecialSnapshot,
+  type DebugStateSnapshot,
   type DebugStatus,
   type DebugUiText,
   type DebugVfxSnapshot,
@@ -140,7 +164,7 @@ import {
 import { enemyProjectileKey } from '../core/vfx/weapon-vfx';
 import { FeelView } from './feel-view';
 import { FpsMeter } from './fps-meter';
-import { Hud, HEART_SHEET, MAX_EDGE_ARROWS } from './hud';
+import { formatRunRoomLabel, Hud, HEART_SHEET, MAX_EDGE_ARROWS } from './hud';
 import type { DoorArrowOffset } from './hud';
 import { syncCombatHud } from './hud-sync';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE, buildRoom, obstacleSheets } from './level-view';
@@ -161,7 +185,12 @@ import type { MusicId } from './audio/audio-manager';
 import { playEvolutionPickSfx, playSfx } from './audio/sfx';
 import { installDebugWiring } from './debug-wiring';
 import { MenuBackdrop } from './menu-backdrop';
-import { createSaveRepository } from './save-storage';
+import {
+  buildRichRunResult,
+  computeRunUnlocksSummary,
+  type RichRunResultData,
+} from './run-end';
+import { createRunSaveRepository, createSaveRepository } from './save-storage';
 import { ScreenFlow } from './screen-flow';
 import type { RunSnapshot } from './screen-flow';
 import { SkillPreview } from './skill-preview';
@@ -298,6 +327,27 @@ interface LoadedChapter {
   readonly assets: ReadonlyMap<number, TiledMapAsset>;
 }
 
+/** Snapshot captured before victory teardown so `Continue Endless` preserves the full run build. */
+interface EndlessCarryover {
+  readonly seed: number;
+  readonly chapter: number;
+  readonly ascension: number;
+  readonly endlessLoop: number;
+  readonly characterId: CharacterDef['id'];
+  readonly hearts: number;
+  readonly maxHearts: number;
+  readonly xpLevel: number;
+  readonly xpCurrent: number;
+  readonly xpTotal: number;
+  readonly pendingLevelUps: number;
+  readonly ownedSkills: Readonly<Record<string, number>>;
+  readonly rerollsUsed: number;
+  readonly freeRerollsLeft: number;
+  readonly goldEarned: number;
+  readonly kills: number;
+  readonly elapsedMs: number;
+}
+
 @ccclass('Bootstrap')
 export class Bootstrap extends Component {
   private manifest: AnimationManifest | null = null;
@@ -340,6 +390,26 @@ export class Bootstrap extends Component {
   private shopOfferList: readonly ShopOffer[] = [];
   private save: SaveData | null = null;
   private saveRepo: SaveRepository | null = null;
+  /** Separate active-run storage (`yokai-field.run`, ADR-023); wiped on death/win/abandon. */
+  private runSaveRepo: RunSaveRepository | null = null;
+  /** M15 Ascension tier (0–5) & Endless loop counter (0+) for the active run. */
+  private runAscension = 0;
+  private pendingAscension = 0;
+  private runEndlessLoop = 0;
+  private difficulty: RunDifficultyModifiers = combinedDifficultyModifiers(0, 0);
+  private runUtility: RunUtilityStats = { xpMagnetMult: 1, goldBonusMult: 1, freeRerolls: 0 };
+  /** Boss id locked for the current chapter (persisted in `ActiveRunSave`). */
+  private runBossId: BossId | null = null;
+  /** Door chosen to enter the current room (`null` on room 1). */
+  private currentChosenDoor: DoorReward | null = null;
+  /** Accumulated run clock (ms) carried across safe-boundary resumes and Endless chapters. */
+  private elapsedBaseMs = 0;
+  /** Attributed lethal hit cause for rich ResultScreen / debug inspection. */
+  private lastDeathCause: DeathCause | null = null;
+  /** Full M15 run summary captured before teardown on win/loss. */
+  private lastRunResult: RichRunResultData | null = null;
+  /** Preserved build captured before Ch4 victory teardown so `Continue Endless` can resume cleanly. */
+  private endlessCarryover: EndlessCarryover | null = null;
 
   /**
    * Child layers of the `world` node, created exactly once in draw order
@@ -458,6 +528,7 @@ export class Bootstrap extends Component {
     status: () => this.status,
     setStatus: (status) => {
       this.status = status;
+      this.syncMusicDucking();
     },
     chapterAvailable: (chapter) => CHAPTER_FOLDERS[chapter] !== undefined,
     showMenuBackdrop: (chapter) => {
@@ -471,7 +542,7 @@ export class Bootstrap extends Component {
     },
     runSnapshot: () => this.runSnapshot(),
     launchChapter: (chapter) => this.launchChapter(chapter),
-    teardownRun: () => this.teardownRun(),
+    teardownRun: () => this.teardownRun(true),
     setMusic: (id) => {
       if (id === null) this.audio?.stopMusic();
       else this.audio?.playMusic(id);
@@ -665,10 +736,14 @@ export class Bootstrap extends Component {
     hud.setArrows(this.arrowOffsets);
   }
 
-  /** Death: in-place FX + hold player.dead for ~1.4 s, then open result (GDD §9). */
+  /** Death: strict permadeath (wipe runSave immediately), play FX for ~1.4 s, then open result. */
   private beginDeath(): void {
     if (this.status !== 'playing') return;
+    this.lastDeathCause = this.combat?.deathCause ?? { kind: 'unknown' };
+    // Strict permadeath (ADR-023): wipe `yokai-field.run` the instant the player dies.
+    this.runSaveRepo?.clear();
     this.status = 'dying';
+    this.syncMusicDucking();
     this.screens.setScreen('playing');
     this.combat?.clearActionBuffer();
     const player = this.player;
@@ -681,6 +756,71 @@ export class Bootstrap extends Component {
       if (!this.isValid || this.status !== 'dying') return;
       this.finishLoss();
     }, 1.4);
+  }
+
+  /** Duck music smoothly while Pause or Level-up (`skill-pick`) is open; unduck otherwise. */
+  private syncMusicDucking(): void {
+    this.audio?.setMusicDucked(this.status === 'paused' || this.status === 'skill-pick');
+  }
+
+  /** Read the currently persisted `ActiveRunSave` (for Title `Continue Run` / debug). */
+  getActiveRunSave(): ActiveRunSave | null {
+    return this.runSaveRepo?.load() ?? null;
+  }
+
+  /** Latest rich M15 run summary captured before teardown (for `ResultScreen` / debug). */
+  getLastRunResult(): RichRunResultData | null {
+    return this.lastRunResult;
+  }
+
+  /** Set & persist the Music channel slider (`0..1`, M15). */
+  setMusicVolume(volume: number): number {
+    const clamped = clampVolume(volume);
+    this.audio?.setMusicVolume(clamped);
+    this.persistAudioSettings({ musicVolume: clamped });
+    return clamped;
+  }
+
+  /** Set & persist the SFX channel slider (`0..1`, M15). */
+  setSfxVolume(volume: number): number {
+    const clamped = clampVolume(volume);
+    this.audio?.setSfxVolume(clamped);
+    this.persistAudioSettings({ sfxVolume: clamped });
+    return clamped;
+  }
+
+  /** Directly toggle smooth music ducking (used by Pause/Level-up or debug). */
+  setMusicDucked(ducked: boolean): boolean {
+    this.audio?.setMusicDucked(Boolean(ducked));
+    return this.audio?.isMusicDucked() ?? false;
+  }
+
+  private persistAudioSettings(patch: Partial<Settings>): void {
+    const save = this.save;
+    const repo = this.saveRepo;
+    if (save === null || repo === null) return;
+    const merged = applySettings({
+      ...save.settings,
+      ...patch,
+      volume: Math.max(
+        patch.musicVolume ?? save.settings.musicVolume,
+        patch.sfxVolume ?? save.settings.sfxVolume,
+      ),
+    });
+    if (
+      merged.musicVolume === save.settings.musicVolume &&
+      merged.sfxVolume === save.settings.sfxVolume &&
+      merged.volume === save.settings.volume
+    ) {
+      return;
+    }
+    try {
+      const next: SaveData = { ...save, settings: merged };
+      repo.save(next);
+      this.save = next;
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] Could not write audio settings: ${errorMessage(error)}`);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -697,13 +837,17 @@ export class Bootstrap extends Component {
     document.getElementById('GameCanvas')?.focus();
 
     this.saveRepo = createSaveRepository();
+    this.runSaveRepo = createRunSaveRepository();
     this.save = this.saveRepo.load();
-    if (this.saveRepo.lastLoadError !== null) {
+    if (this.saveRepo.recoveredFromBackup) {
+      console.warn('[YokaiField] Recovered profile save from .bak backup.');
+    } else if (this.saveRepo.lastLoadError !== null) {
       console.warn(`[YokaiField] Corrupt save, using the default save: ${this.saveRepo.lastLoadError}`);
     }
 
     this.audio = new AudioManager(this.node);
-    this.audio.setVolume(this.save.settings.volume);
+    this.audio.setMusicVolume(this.save.settings.musicVolume);
+    this.audio.setSfxVolume(this.save.settings.sfxVolume);
     this.audio.preload();
     this.audio.playMusic('title');
     this.installDebugHook();
@@ -760,7 +904,11 @@ export class Bootstrap extends Component {
    * Start a run at `chapterNumber`, bypassing the menu guard (debug `startChapter`).
    * Seed for the run RNG; `undefined` = take it from the clock (different every run).
    */
-  private async launchChapter(chapterNumber: number, seedArg?: number): Promise<void> {
+  private async launchChapter(
+    chapterNumber: number,
+    seedArg?: number,
+    ascensionArg?: number,
+  ): Promise<void> {
     const folder = CHAPTER_FOLDERS[chapterNumber];
     if (folder === undefined) {
       console.warn(`[YokaiField] Chapter ${chapterNumber} has no .tmx data — not opening.`);
@@ -768,6 +916,7 @@ export class Bootstrap extends Component {
     }
 
     this.status = 'loading';
+    this.syncMusicDucking();
     this.screens.setScreen('playing');
     this.screens.clearMenu();
     // The living menu room must be gone before the run's own room is built.
@@ -780,9 +929,20 @@ export class Bootstrap extends Component {
     const seed =
       seedArg ?? ((Date.now() ^ (chapterNumber * 0x9e3779b1)) >>> 0);
     this.runSeed = seed;
+    this.runAscension = clampAscension(ascensionArg ?? this.pendingAscension);
+    this.runEndlessLoop = 0;
+    this.difficulty = combinedDifficultyModifiers(this.runAscension, this.runEndlessLoop);
+    this.runUtility = utilityStatsFromSave(save);
+    this.elapsedBaseMs = 0;
+    this.lastDeathCause = null;
+    this.lastRunResult = null;
+    this.endlessCarryover = null;
+    this.currentChosenDoor = null;
+    this.runBossId = null;
+
     // Lock the playable character once when the run starts (M10: one character per run, no mid-run swap).
     this.runCharacter = this.screens.selectedCharacter();
-    // Run baseline = Layer 1 class base stats -> Meta upgrades -> Layer 2 class passive.
+    // Run baseline = Layer 1 class base stats -> Meta upgrades -> Layer 2 class passive + Utility free rerolls.
     this.skills.resetForRun(seed, save, this.runCharacter.id);
     this.rewards = new RunRewards();
     // A new run starts with no door reward, clean XP state, and no doors on screen (#39).
@@ -813,6 +973,7 @@ export class Bootstrap extends Component {
     this.chapterAssets = loaded.assets;
     // The run's room list is drawn **once** from the chapter pool by the run seed (#38).
     this.runRooms = drawRunRooms(loaded.chapter, seed);
+    this.runBossId = this.chapterBoss(loaded.chapter.chapter);
     const run = new RunState(loaded.chapter.chapter, this.runRooms.length);
     this.run = run;
     this.xpTracker = new XpTracker(loaded.chapter.chapter);
@@ -855,6 +1016,7 @@ export class Bootstrap extends Component {
       level: firstRoom,
       monsterFor: (role) => this.monsterFor(firstRoom.chapter, role),
       rng: this.combatRng,
+      difficulty: this.difficulty,
       onBossPhase: (phase) => this.bossPhases.show(phase),
       onKill: (role, elite, position) => this.awardKill(role, elite, position),
       onDamage: (info) => this.feel?.spawnDamage(info.position, info.amount, info.crit),
@@ -867,20 +1029,452 @@ export class Bootstrap extends Component {
     this.combat = combat;
     combat.setEffectsMode(save.settings.effects);
     this.status = 'playing';
+    this.syncMusicDucking();
     this.screens.setScreen('playing');
     this.persistBest(run.room);
-    this.combat.startWaves(this.waveSeed(firstRoom), run.room);
+    this.combat.startWaves(this.waveSeed(firstRoom), run.room, this.difficulty.extraElitesPerRoom);
     this.syncHud();
     this.hud?.setSkills(this.skills.entries);
     this.displayedGold = 0;
     // The HUD shows the gold the player can actually spend: meta gold + this run's banked gold.
     this.hud?.setGold(this.hudGoldTotal());
+    this.autosaveRunState(1, null);
     console.log(
       `[YokaiField] Chapter ${loaded.chapter.chapter}: ${loaded.chapter.rooms.length} rooms in the ` +
-        `pool, playing 9 from resources/${folder}. Starting room ${run.roomLabel} ` +
-        `(${firstRoom.waves.length} waves, pool room ${firstRoom.room}). seed=${seed} ` +
-        `player=${JSON.stringify(player.position)}`,
+        `pool, playing ${this.runRooms.length} from resources/${folder}. Starting room ${run.roomLabel} ` +
+        `(A${this.runAscension}/E${this.runEndlessLoop}, ${firstRoom.waves.length} waves, pool room ${firstRoom.room}). ` +
+        `seed=${seed} player=${JSON.stringify(player.position)}`,
     );
+  }
+
+  /**
+   * Resume a saved mid-run snapshot at its safe room boundary (M15, ADR-023).
+   * Restores seed, chapter, room index, chosen door, drawn rooms, boss id, character, hearts,
+   * XP/level, full skill + Evolution build, rerolls, gold, kills, elapsed time, Ascension, and
+   * Endless loop, then spawns cleanly at the start of that room.
+   */
+  async resumeSavedRun(rawSaved: ActiveRunSave): Promise<boolean> {
+    const saved = migrateRunSave(rawSaved);
+    if (saved === null) return false;
+    const folder = CHAPTER_FOLDERS[saved.chapter];
+    if (folder === undefined) return false;
+
+    const save = this.save;
+    const manifest = this.manifest;
+    if (save === null || manifest === null) return false;
+
+    this.screens.clearMenu();
+    this.menuBackdrop?.clear();
+    this.teardownRun(false);
+
+    this.status = 'loading';
+    this.syncMusicDucking();
+    this.screens.setScreen('playing');
+
+    this.runSeed = saved.seed;
+    this.runAscension = clampAscension(saved.ascension);
+    this.runEndlessLoop = saved.endlessLoop;
+    this.difficulty = combinedDifficultyModifiers(this.runAscension, this.runEndlessLoop);
+    this.runUtility = utilityStatsFromSave(save);
+    this.elapsedBaseMs = saved.elapsedMs;
+    this.lastDeathCause = null;
+    this.lastRunResult = null;
+    this.endlessCarryover = null;
+    this.runBossId = saved.bossId;
+    this.runCharacter = CHARACTERS[saved.characterId];
+    this.currentChosenDoor = saved.chosenDoor;
+
+    this.skills.restoreForRun({
+      seed: saved.seed,
+      save,
+      characterId: saved.characterId,
+      ownedSkills: saved.ownedSkills,
+      rerollsUsed: saved.rerollsUsed,
+      freeRerollsLeft: saved.freeRerollsLeft,
+    });
+    this.rewards = new RunRewards();
+    this.rewards.restore(saved.goldEarned, saved.kills);
+
+    // Re-apply the door reward that led into this room so special rooms or XP/Gold clear rules match.
+    this.roomReward = null;
+    this.pendingSpecial = null;
+    if (saved.chosenDoor !== null) {
+      if (isSpecialDoor(saved.chosenDoor)) {
+        this.pendingSpecial = saved.chosenDoor;
+      } else if (saved.chosenDoor !== 'boss') {
+        this.roomReward = saved.chosenDoor;
+      }
+    }
+
+    this.combatRng = SeededRng.fromSeed(
+      (saved.seed ^ 0x85ebca6b ^ Math.imul(saved.roomIndex, 0xc2b2ae35)) >>> 0,
+    );
+
+    const loaded = await this.loadChapter(folder);
+    this.chapter = loaded.chapter;
+    this.chapterAssets = loaded.assets;
+    this.runRooms = this.resolveSavedRooms(loaded.chapter, saved.drawnRooms, saved.seed);
+
+    const run = new RunState(loaded.chapter.chapter, this.runRooms.length);
+    const targetRoomIndex = Math.min(saved.roomIndex, this.runRooms.length);
+    run.restoreRoom(targetRoomIndex);
+    this.run = run;
+
+    const tracker = new XpTracker(loaded.chapter.chapter);
+    tracker.restore({
+      level: saved.xpLevel,
+      currentXp: saved.xpCurrent,
+      totalXp: saved.xpTotal,
+      pendingLevelUps: saved.pendingLevelUps,
+      chapter: loaded.chapter.chapter,
+    });
+    this.xpTracker = tracker;
+
+    await preloadSheets(this.collectSheets(manifest, loaded.chapter));
+
+    const entryLevel = this.levelFor(targetRoomIndex) ?? this.levelFor(1);
+    if (entryLevel === null) {
+      throw new Error(`"resources/${folder}" has no room ${targetRoomIndex}`);
+    }
+
+    const fxLayer = this.fxLayer;
+    if (fxLayer === null) throw new Error('Bootstrap: no fx-layer');
+    this.fx = await createFxPool(fxLayer);
+
+    const player = this.createPlayer(entryLevel.playerStart);
+    player.applyStats(this.skills.stats());
+    player.setLoadout(this.skills.snapshot());
+    player.restoreHearts(saved.hearts);
+
+    const bulletLayer = this.bulletLayer ?? this.node;
+    this.xpOrbView = await createXpOrbView(bulletLayer, XP_TUNING.orbs.poolCapacity);
+    await this.createBullets(player);
+    await this.createHud();
+
+    const actorLayer = this.actorLayer;
+    if (actorLayer === null) throw new Error('Bootstrap: no actor-layer');
+
+    const combat = new CombatLoop({
+      player,
+      bulletView: this.bulletView,
+      manifest,
+      actorLayer,
+      level: entryLevel,
+      monsterFor: (role) => this.monsterFor(entryLevel.chapter, role),
+      rng: this.combatRng,
+      difficulty: this.difficulty,
+      onBossPhase: (phase) => this.bossPhases.show(phase),
+      onKill: (role, elite, position) => this.awardKill(role, elite, position),
+      onDamage: (info) => this.feel?.spawnDamage(info.position, info.amount, info.crit),
+      ...(this.fx !== null ? { fx: this.fx } : {}),
+      ...(this.camera !== null ? { shake: this.camera.shake } : {}),
+      view: () => this.camera?.tileViewRect() ?? null,
+    });
+    this.combat = combat;
+    combat.setEffectsMode(save.settings.effects);
+
+    this.displayedGold = saved.goldEarned;
+    this.hud?.setGold(this.hudGoldTotal());
+    this.hud?.setSkills(this.skills.entries);
+    this.hud?.setMaxHearts(player.maxHearts);
+    this.hud?.setHearts(player.hearts);
+
+    this.status = 'playing';
+    this.syncMusicDucking();
+    this.screens.setScreen('playing');
+    this.enterRoom(targetRoomIndex);
+
+    if (tracker.pendingLevelUps > 0 && this.specialRoom === null) {
+      this.openLevelUpSkillPick();
+    }
+
+    console.log(
+      `[YokaiField] Resumed saved run: Ch${saved.chapter} room ${run.roomLabel} ` +
+        `(A${this.runAscension}/E${this.runEndlessLoop}, ${saved.characterId}, ` +
+        `${player.hearts}/${player.maxHearts} hearts, LV ${tracker.level}, ` +
+        `${this.skills.size} skills, gold +${saved.goldEarned}).`,
+    );
+    return true;
+  }
+
+  /**
+   * Continue into the next Endless chapter / loop (M15, GDD §15.5):
+   * - After Ch4 win (or Endless Ch4 win): loops to Chapter 1 with `endlessLoop + 1`.
+   * - During Endless (`endlessLoop >= 1`) after Ch1/Ch2/Ch3 win: advances Ch1→Ch2→Ch3→Ch4.
+   * Preserves full build (skills + Evolutions), HP/maxHP, XP/level, gold, kills, elapsedMs,
+   * seed, Ascension, and remaining free rerolls, then enters room 1 and autosaves.
+   */
+  async continueEndless(): Promise<boolean> {
+    const carryover = this.captureLiveEndlessCarryover() ?? this.endlessCarryover;
+    if (carryover === null) return false;
+
+    const save = this.save;
+    const manifest = this.manifest;
+    if (save === null || manifest === null) return false;
+
+    const step = nextEndlessStep(carryover.chapter, carryover.endlessLoop);
+    const folder = CHAPTER_FOLDERS[step.chapter];
+    if (folder === undefined) return false;
+
+    this.screens.clearMenu();
+    this.menuBackdrop?.clear();
+    this.teardownRun(false);
+
+    this.status = 'loading';
+    this.syncMusicDucking();
+    this.screens.setScreen('playing');
+
+    this.runSeed = carryover.seed;
+    this.runAscension = clampAscension(carryover.ascension);
+    this.runEndlessLoop = step.loop;
+    this.difficulty = combinedDifficultyModifiers(this.runAscension, this.runEndlessLoop);
+    this.runUtility = utilityStatsFromSave(save);
+    this.elapsedBaseMs = carryover.elapsedMs;
+    this.lastDeathCause = null;
+    this.lastRunResult = null;
+    this.endlessCarryover = null;
+    this.currentChosenDoor = null;
+    this.runCharacter = CHARACTERS[carryover.characterId];
+
+    const chapterSeed = (carryover.seed ^ Math.imul(step.loop + 1, 0x9e3779b1)) >>> 0;
+    this.runBossId = this.forcedBoss() ?? pickBoss(step.chapter, chapterSeed);
+
+    this.skills.restoreForRun({
+      seed: (carryover.seed ^ Math.imul(step.loop, 0x85ebca6b) ^ Math.imul(step.chapter, 0xc2b2ae35)) >>> 0,
+      save,
+      characterId: carryover.characterId,
+      ownedSkills: carryover.ownedSkills,
+      rerollsUsed: carryover.rerollsUsed,
+      freeRerollsLeft: carryover.freeRerollsLeft,
+    });
+    this.rewards = new RunRewards();
+    this.rewards.restore(carryover.goldEarned, carryover.kills);
+
+    this.combatRng = SeededRng.fromSeed(
+      (carryover.seed ^ 0x85ebca6b ^ Math.imul(step.loop, 0x9e3779b1) ^ step.chapter) >>> 0,
+    );
+
+    const loaded = await this.loadChapter(folder);
+    this.chapter = loaded.chapter;
+    this.chapterAssets = loaded.assets;
+    this.runRooms = drawRunRooms(loaded.chapter, chapterSeed);
+    const run = new RunState(loaded.chapter.chapter, this.runRooms.length);
+    this.run = run;
+
+    const tracker = new XpTracker(loaded.chapter.chapter);
+    tracker.restore({
+      level: carryover.xpLevel,
+      currentXp: carryover.xpCurrent,
+      totalXp: carryover.xpTotal,
+      pendingLevelUps: carryover.pendingLevelUps,
+      chapter: loaded.chapter.chapter,
+    });
+    tracker.setChapter(loaded.chapter.chapter);
+    this.xpTracker = tracker;
+
+    await preloadSheets(this.collectSheets(manifest, loaded.chapter));
+
+    const firstRoom = this.levelFor(1);
+    if (firstRoom === null) {
+      throw new Error(`"resources/${folder}" has no room 1`);
+    }
+
+    const fxLayer = this.fxLayer;
+    if (fxLayer === null) throw new Error('Bootstrap: no fx-layer');
+    this.fx = await createFxPool(fxLayer);
+
+    const player = this.createPlayer(firstRoom.playerStart);
+    player.applyStats(this.skills.stats());
+    player.setLoadout(this.skills.snapshot());
+    player.restoreHearts(carryover.hearts);
+    this.createRoom(firstRoom);
+    player.teleport(firstRoom.playerStart);
+
+    const bulletLayer = this.bulletLayer ?? this.node;
+    this.xpOrbView = await createXpOrbView(bulletLayer, XP_TUNING.orbs.poolCapacity);
+    await this.createBullets(player);
+    await this.createHud();
+
+    const actorLayer = this.actorLayer;
+    if (actorLayer === null) throw new Error('Bootstrap: no actor-layer');
+
+    this.audio?.playMusic(chapterMusic(firstRoom.chapter));
+
+    const combat = new CombatLoop({
+      player,
+      bulletView: this.bulletView,
+      manifest,
+      actorLayer,
+      level: firstRoom,
+      monsterFor: (role) => this.monsterFor(firstRoom.chapter, role),
+      rng: this.combatRng,
+      difficulty: this.difficulty,
+      onBossPhase: (phase) => this.bossPhases.show(phase),
+      onKill: (role, elite, position) => this.awardKill(role, elite, position),
+      onDamage: (info) => this.feel?.spawnDamage(info.position, info.amount, info.crit),
+      ...(this.fx !== null ? { fx: this.fx } : {}),
+      ...(this.camera !== null ? { shake: this.camera.shake } : {}),
+      view: () => this.camera?.tileViewRect() ?? null,
+    });
+    this.combat = combat;
+    combat.setEffectsMode(save.settings.effects);
+
+    this.status = 'playing';
+    this.syncMusicDucking();
+    this.screens.setScreen('playing');
+    this.persistBest(run.room);
+    this.combat.startWaves(this.waveSeed(firstRoom), run.room, this.difficulty.extraElitesPerRoom);
+    this.syncHud();
+    this.hud?.setSkills(this.skills.entries);
+    this.displayedGold = carryover.goldEarned;
+    this.hud?.setGold(this.hudGoldTotal());
+    this.autosaveRunState(1, null);
+
+    console.log(
+      `[YokaiField] Continue Endless → Ch${step.chapter} Loop ${step.loop} ` +
+        `(A${this.runAscension}/E${this.runEndlessLoop}, ${player.hearts}/${player.maxHearts} hearts, ` +
+        `${this.skills.size} skills).`,
+    );
+    return true;
+  }
+
+  private resolveSavedRooms(
+    chapter: ChapterData,
+    drawnRoomNumbers: readonly number[],
+    seed: number,
+  ): LevelData[] {
+    const byNumber = new Map<number, LevelData>();
+    for (const room of chapter.rooms) {
+      byNumber.set(room.room, room);
+    }
+    const resolved: LevelData[] = [];
+    for (const roomNum of drawnRoomNumbers) {
+      const level = byNumber.get(roomNum);
+      if (level === undefined) {
+        return drawRunRooms(chapter, seed);
+      }
+      resolved.push(level);
+    }
+    return resolved.length > 0 ? resolved : drawRunRooms(chapter, seed);
+  }
+
+  private ownedSkillsRecord(): Record<string, number> {
+    const record: Record<string, number> = {};
+    for (const [id, stacks] of this.skills.snapshot().entries()) {
+      if (Number.isFinite(stacks) && stacks > 0) record[id] = Math.floor(stacks);
+    }
+    return record;
+  }
+
+  private runElapsedMs(): number {
+    return Math.max(0, Math.round(this.elapsedBaseMs + (this.combat?.clockMs ?? 0)));
+  }
+
+  /**
+   * Persist `ActiveRunSave` at safe room / door boundaries ONLY (ADR-023).
+   * Never called mid-frame during combat; stores zero engine node references.
+   */
+  private autosaveRunState(
+    roomIndexOverride?: number,
+    chosenDoorOverride?: DoorReward | null,
+  ): void {
+    const repo = this.runSaveRepo;
+    const run = this.run;
+    const player = this.player;
+    const tracker = this.xpTracker;
+    const character = this.runCharacter;
+    if (
+      repo === null ||
+      run === null ||
+      player === null ||
+      tracker === null ||
+      character === null ||
+      player.hearts <= 0 ||
+      this.runRooms.length === 0
+    ) {
+      return;
+    }
+
+    const roomIndex = Math.min(
+      this.runRooms.length,
+      Math.max(1, Math.floor(roomIndexOverride ?? run.room)),
+    );
+    const chosenDoor =
+      chosenDoorOverride !== undefined ? chosenDoorOverride : this.currentChosenDoor;
+    const bossId = this.runBossId ?? this.chapterBoss(run.chapter);
+
+    const payload: ActiveRunSave = {
+      version: RUN_SAVE_VERSION,
+      seed: this.runSeed >>> 0,
+      chapter: run.chapter,
+      roomIndex,
+      chosenDoor,
+      drawnRooms: this.runRooms.map((level) => level.room),
+      bossId,
+      characterId: character.id,
+      hearts: player.hearts,
+      maxHearts: player.maxHearts,
+      xpLevel: tracker.level,
+      xpCurrent: tracker.currentXp,
+      xpTotal: tracker.totalXp,
+      pendingLevelUps: tracker.pendingLevelUps,
+      ownedSkills: this.ownedSkillsRecord(),
+      rerollsUsed: this.skills.rerollsUsed,
+      freeRerollsLeft: this.skills.freeRerollsLeft,
+      goldEarned: this.rewards.goldEarned,
+      kills: this.rewards.killCount,
+      elapsedMs: this.runElapsedMs(),
+      ascension: this.runAscension,
+      endlessLoop: this.runEndlessLoop,
+    };
+
+    try {
+      repo.save(payload);
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] Could not autosave active run: ${errorMessage(error)}`);
+    }
+  }
+
+  private captureLiveEndlessCarryover(goldAlreadyBanked = false): EndlessCarryover | null {
+    const run = this.run;
+    const player = this.player;
+    const tracker = this.xpTracker;
+    const character = this.runCharacter;
+    if (run === null || player === null || tracker === null || character === null) return null;
+    return {
+      seed: this.runSeed >>> 0,
+      chapter: run.chapter,
+      ascension: this.runAscension,
+      endlessLoop: this.runEndlessLoop,
+      characterId: character.id,
+      hearts: Math.max(1, player.hearts),
+      maxHearts: player.maxHearts,
+      xpLevel: tracker.level,
+      xpCurrent: tracker.currentXp,
+      xpTotal: tracker.totalXp,
+      pendingLevelUps: tracker.pendingLevelUps,
+      ownedSkills: this.ownedSkillsRecord(),
+      rerollsUsed: this.skills.rerollsUsed,
+      freeRerollsLeft: this.skills.freeRerollsLeft,
+      goldEarned: goldAlreadyBanked ? 0 : this.rewards.goldEarned,
+      kills: this.rewards.killCount,
+      elapsedMs: this.runElapsedMs(),
+    };
+  }
+
+  /** Combined gold gain multiplier: skills × Meta Gold Bonus × Ascension/Endless gold reward. */
+  private runGoldMultiplier(): number {
+    return (
+      (this.player?.derivedStats.goldMultiplier ?? 1) *
+      this.runUtility.goldBonusMult *
+      this.difficulty.goldRewardMult
+    );
+  }
+
+  /** Formatted HUD room label with compact `A<n>`/`E<n>` tags when active. */
+  private hudRoomText(): string {
+    const label = this.run?.roomLabel ?? '1/9';
+    return formatRunRoomLabel(label, this.runAscension, this.runEndlessLoop);
   }
 
   private loadManifest(): Promise<AnimationManifest> {
@@ -1149,6 +1743,7 @@ export class Bootstrap extends Component {
    * from the chapter pool. The same call decides preload, spawn and music, so they never disagree.
    */
   private chapterBoss(chapter: number): BossId {
+    if (this.runBossId !== null) return this.runBossId;
     const forced = this.forcedBoss();
     if (forced !== null) return forced;
     return pickBoss(chapter, this.runSeed);
@@ -1401,7 +1996,7 @@ export class Bootstrap extends Component {
     node.parent = canvas;
 
     const hud: Hud = node.addComponent(Hud);
-    await hud.init(this.player?.maxHearts ?? DEFAULT_COMBAT.playerMaxHearts, run.roomLabel);
+    await hud.init(this.player?.maxHearts ?? DEFAULT_COMBAT.playerMaxHearts, this.hudRoomText());
     // World draws at integer multiples so it can be smaller than the UI band; shrink the HUD to hug the room edges.
     const hudScale = this.camera?.hudScale ?? 1;
     node.setScale(hudScale, hudScale, 1);
@@ -1475,10 +2070,10 @@ export class Bootstrap extends Component {
     run.onRoomCleared();
     this.persistBest(run.room);
 
-    // Room-clear reward (GDD §7): boss 50, normal room 5, times Greed.
+    // Room-clear reward (GDD §7): boss 50, normal room 5, times Meta Gold Bonus & Ascension.
     const roomGold = this.rewards.awardRoomClear(
       level.isBossRoom,
-      this.player?.derivedStats.goldMultiplier ?? 1,
+      this.runGoldMultiplier(),
     );
     const playerPos = this.player?.position ?? { x: level.size.cols / 2, y: level.size.rows / 2 };
     this.flyGold(roomGold, playerPos);
@@ -1555,8 +2150,14 @@ export class Bootstrap extends Component {
     if (run === null) return;
 
     // The last room of the chapter (count taken from data) = this chapter's run is over.
-    // Do not use `RunState.isBossRoom`: a chapter may have normal rooms after the boss.
+    // During Endless (loop >= 1), clearing Ch1–Ch3 seamlessly advances to the next chapter;
+    // clearing Ch4 (Normal or Endless) opens ResultScreen with `Continue Endless`.
     if (run.room >= run.roomsTotal) {
+      if (this.runEndlessLoop >= 1 && run.chapter < CHAPTERS_PER_RUN) {
+        playSfx('chapter-clear');
+        void this.continueEndless().catch((error: unknown) => this.fail(error));
+        return;
+      }
       this.finishWin();
       return;
     }
@@ -1571,7 +2172,12 @@ export class Bootstrap extends Component {
 
     const dtSec = Math.max(0, deltaMs) / 1000;
     this.xpOrbElapsedSec += dtSec;
-    const collectedXp = this.xpPool.step(dtSec, player.position, roomCleared);
+    const collectedXp = this.xpPool.step(
+      dtSec,
+      player.position,
+      roomCleared,
+      this.runUtility.xpMagnetMult,
+    );
     this.syncXpOrbView();
 
     if (collectedXp > 0) {
@@ -1658,6 +2264,7 @@ export class Bootstrap extends Component {
     this.roomClearBanner?.destroy();
     this.roomClearBanner = null;
     this.status = 'skill-pick';
+    this.syncMusicDucking();
     this.screens.setScreen('skill-pick');
     this.player?.resetInput();
     this.combat?.clearActionBuffer();
@@ -1668,7 +2275,8 @@ export class Bootstrap extends Component {
   private openLevelUpModal(choices: readonly SkillDef[]): void {
     const canvas = this.ensureUiRoot();
     const availableGold = this.shopGoldTotal();
-    const cost = rerollCost(this.skills.rerollsUsed);
+    const freeRerollsLeft = this.skills.freeRerollsLeft;
+    const cost = freeRerollsLeft > 0 ? 0 : rerollCost(this.skills.rerollsUsed);
     const hasAlternatives = hasAlternativeSkills(this.skills.snapshot(), choices);
 
     void this.skills
@@ -1680,6 +2288,7 @@ export class Bootstrap extends Component {
           cost,
           availableGold,
           hasAlternatives,
+          freeRerollsLeft,
           onReroll: () => this.rerollActiveSkillPick(),
         },
       )
@@ -1693,7 +2302,10 @@ export class Bootstrap extends Component {
       .catch((error: unknown) => this.fail(error));
   }
 
-  /** Spend shared gold (run first, then meta bank) to reroll the active level-up cards. */
+  /**
+   * Reroll active level-up cards: consumes a Free Meta Utility reroll (0g, without advancing the
+   * paid cost ramp) when available; otherwise spends shared gold (run first, then meta bank).
+   */
   private rerollActiveSkillPick(): boolean {
     if (this.status !== 'skill-pick' || this.specialRoom !== null) return false;
     const currentChoices = this.skills.choices;
@@ -1701,35 +2313,38 @@ export class Bootstrap extends Component {
       return false;
     }
 
-    const save = this.save;
-    const repo = this.saveRepo;
-    if (save !== null && repo !== null) {
-      const spend = spendSharedGoldForReroll(
-        save,
-        this.rewards.goldEarned,
-        this.skills.rerollsUsed,
-      );
-      if (!spend.ok) return false;
+    const usingFreeReroll = this.skills.freeRerollsLeft > 0;
+    if (!usingFreeReroll) {
+      const save = this.save;
+      const repo = this.saveRepo;
+      if (save !== null && repo !== null) {
+        const spend = spendSharedGoldForReroll(
+          save,
+          this.rewards.goldEarned,
+          this.skills.rerollsUsed,
+        );
+        if (!spend.ok) return false;
 
-      if (spend.save !== save) {
-        try {
-          repo.save(spend.save);
-        } catch (error: unknown) {
-          console.warn(`[YokaiField] Could not persist reroll gold: ${errorMessage(error)}`);
-          return false;
+        if (spend.save !== save) {
+          try {
+            repo.save(spend.save);
+          } catch (error: unknown) {
+            console.warn(`[YokaiField] Could not persist reroll gold: ${errorMessage(error)}`);
+            return false;
+          }
+          this.save = spend.save;
         }
-        this.save = spend.save;
-      }
 
-      const spentFromRun = this.rewards.spend(this.rewards.goldEarned - spend.runGold);
-      this.displayedGold = Math.max(0, this.displayedGold - spentFromRun);
-      this.hud?.setGold(this.hudGoldTotal());
-    } else {
-      const cost = rerollCost(this.skills.rerollsUsed);
-      if (this.rewards.goldEarned < cost) return false;
-      const spent = this.rewards.spend(cost);
-      this.displayedGold = Math.max(0, this.displayedGold - spent);
-      this.hud?.setGold(this.hudGoldTotal());
+        const spentFromRun = this.rewards.spend(this.rewards.goldEarned - spend.runGold);
+        this.displayedGold = Math.max(0, this.displayedGold - spentFromRun);
+        this.hud?.setGold(this.hudGoldTotal());
+      } else {
+        const cost = rerollCost(this.skills.rerollsUsed);
+        if (this.rewards.goldEarned < cost) return false;
+        const spent = this.rewards.spend(cost);
+        this.displayedGold = Math.max(0, this.displayedGold - spent);
+        this.hud?.setGold(this.hudGoldTotal());
+      }
     }
 
     const nextChoices = this.skills.reroll();
@@ -1737,8 +2352,11 @@ export class Bootstrap extends Component {
 
     playSfx('ui-confirm');
     console.log(
-      `[YokaiField] Rerolled skill choices (#${this.skills.rerollsUsed}): ` +
-        `${nextChoices.map((skill) => skill.id).join(', ')}.`,
+      `[YokaiField] Rerolled skill choices (${
+        usingFreeReroll
+          ? `free, ${this.skills.freeRerollsLeft} left`
+          : `paid #${this.skills.rerollsUsed}`
+      }): ${nextChoices.map((skill) => skill.id).join(', ')}.`,
     );
     this.openLevelUpModal(nextChoices);
     return true;
@@ -1783,6 +2401,7 @@ export class Bootstrap extends Component {
     }
 
     this.status = 'playing';
+    this.syncMusicDucking();
     this.screens.setScreen('playing');
     this.player?.resetInput();
 
@@ -1817,17 +2436,17 @@ export class Bootstrap extends Component {
     const bonus = Math.max(0, Math.round(DOORS_TUNING.goldBonus));
     if (!(bonus > 0)) return;
 
-    this.rewards.awardBonus(bonus);
+    const awarded = this.rewards.awardBonus(bonus, this.runGoldMultiplier());
     const level = this.currentLevel;
     this.flyGold(
-      bonus,
+      awarded,
       this.player?.position ?? {
         x: level?.size.cols ?? ROOM_COLS / 2,
         y: level?.size.rows ?? ROOM_ROWS / 2,
       },
     );
     playSfx('gold');
-    console.log(`[YokaiField] Gold door: +${bonus} gold instead of a skill pick.`);
+    console.log(`[YokaiField] Gold door: +${awarded} gold instead of a skill pick.`);
   }
 
   /** Normal rooms in this run: the door count that ends with the boss door. */
@@ -1945,11 +2564,16 @@ export class Bootstrap extends Component {
     this.hud?.setDoorHint(false);
     // `boss` carries no clear reward; the next room is the boss arena. A special door replaces
     // the next slot with a heal/shop/chest room (`enterRoom` reads `pendingSpecial`).
+    this.currentChosenDoor = chosen;
     this.roomReward = chosen === 'boss' ? null : chosen;
     if (isSpecialDoor(chosen)) {
       this.pendingSpecial = chosen;
       this.roomReward = null;
     }
+    // Safe-boundary autosave immediately after door choice (ADR-023): reloading now starts
+    // cleanly at the next room with the chosen door applied.
+    const nextRoomIndex = (this.run?.room ?? 1) + 1;
+    this.autosaveRunState(nextRoomIndex, chosen);
     playSfx('ui-confirm');
     console.log(`[YokaiField] Took the ${chosen} door.`);
     this.advanceRoom();
@@ -2006,12 +2630,14 @@ export class Bootstrap extends Component {
     }
 
     this.isXpDoorRoom = !level.isBossRoom && this.roomReward === 'xp';
-    const extraElites = this.isXpDoorRoom ? DOORS_TUNING.xpRoomExtraElites : 0;
+    const extraElites =
+      (this.isXpDoorRoom ? DOORS_TUNING.xpRoomExtraElites : 0) +
+      this.difficulty.extraElitesPerRoom;
 
     this.createRoom(level);
     this.combat?.enterRoom(level);
     this.player?.teleport(level.playerStart);
-    this.hud?.setRoomLabel(run.roomLabel);
+    this.hud?.setRoomLabel(this.hudRoomText());
     this.hud?.setBoss(null);
     this.persistBest(roomNumber);
 
@@ -2025,6 +2651,7 @@ export class Bootstrap extends Component {
     }
     this.combat?.startWaves(this.waveSeed(level), run.room, extraElites);
     this.syncHud();
+    this.autosaveRunState(roomNumber, this.currentChosenDoor);
 
     console.log(
       `[YokaiField] Entering room ${run.roomLabel} (` +
@@ -2079,7 +2706,7 @@ export class Bootstrap extends Component {
     this.createRoom(level, asset);
     this.combat?.enterRoom(level);
     this.player?.teleport(level.playerStart);
-    this.hud?.setRoomLabel(run.roomLabel);
+    this.hud?.setRoomLabel(this.hudRoomText());
     this.hud?.setBoss(null);
     this.persistBest(roomNumber);
     this.audio?.playMusic(chapterMusic(level.chapter));
@@ -2096,8 +2723,10 @@ export class Bootstrap extends Component {
     }
 
     this.status = 'playing';
+    this.syncMusicDucking();
     this.screens.setScreen('playing');
     this.syncHud();
+    this.autosaveRunState(roomNumber, kind);
     console.log(
       `[YokaiField] Entering the ${kind} room in slot ${run.roomLabel} ` +
         `(32×18 chapter floor, no enemies).`,
@@ -2170,10 +2799,10 @@ export class Bootstrap extends Component {
 
     const reward = chestReward(this.runSeed, run.room);
     if (reward.kind === 'gold') {
-      this.rewards.awardBonus(reward.amount);
-      this.flyGold(reward.amount, this.specialView?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
+      const awarded = this.rewards.awardBonus(reward.amount, this.runGoldMultiplier());
+      this.flyGold(awarded, this.specialView?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
       playSfx('gold');
-      console.log(`[YokaiField] Chest: +${reward.amount} gold.`);
+      console.log(`[YokaiField] Chest: +${awarded} gold.`);
       this.finishSpecialRoom();
       return;
     }
@@ -2185,6 +2814,7 @@ export class Bootstrap extends Component {
       return;
     }
     this.status = 'skill-pick';
+    this.syncMusicDucking();
     this.screens.setScreen('skill-pick');
     const canvas = this.ensureUiRoot();
     void this.skills
@@ -2214,7 +2844,12 @@ export class Bootstrap extends Component {
     const run = this.run;
     if (run === null) return;
 
-    const offers = shopOffers(this.runSeed, run.room, this.skills.snapshot());
+    const offers = shopOffers(
+      this.runSeed,
+      run.room,
+      this.skills.snapshot(),
+      this.difficulty.shopPriceMult,
+    );
     this.shopOfferList = offers;
     this.status = 'special';
     this.screens.setScreen('playing');
@@ -2225,6 +2860,7 @@ export class Bootstrap extends Component {
       offers,
       owned: this.skills.snapshot(),
       gold: this.shopGoldTotal(),
+      priceMultiplier: this.difficulty.shopPriceMult,
       onBuy: (index) => this.buyShopOffer(index),
       onClose: () => this.closeMidRunShop(),
     })
@@ -2316,7 +2952,7 @@ export class Bootstrap extends Component {
 
     const gold = this.rewards.awardRoomClear(
       false,
-      this.player?.derivedStats.goldMultiplier ?? 1,
+      this.runGoldMultiplier(),
     );
     this.flyGold(gold, this.specialView?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
     this.syncHud();
@@ -2349,6 +2985,7 @@ export class Bootstrap extends Component {
     this.bulletView?.sync();
     this.doorPhase = true;
     this.status = 'playing';
+    this.syncMusicDucking();
     this.screens.setScreen('playing');
     this.roomClearBanner?.destroy();
     this.roomClearBanner = null;
@@ -2360,8 +2997,34 @@ export class Bootstrap extends Component {
     if (run === null) return;
     if (run.status === 'lost' || run.status === 'won') return;
 
+    // Strict permadeath: ensure active run save is wiped before showing ResultScreen.
+    this.runSaveRepo?.clear();
+    this.endlessCarryover = null;
+    const cause = this.lastDeathCause ?? this.combat?.deathCause ?? { kind: 'unknown' };
+    this.lastDeathCause = cause;
+    const characterId = this.runCharacter?.id ?? this.screens.selectedCharacter().id;
+    const goldTotalAfter = (this.save?.gold ?? 0) + this.rewards.goldEarned;
+    this.lastRunResult = buildRichRunResult({
+      chapter: run.chapter,
+      roomReached: run.room,
+      roomsTotal: run.roomsTotal,
+      goldEarned: this.rewards.goldEarned,
+      goldTotal: goldTotalAfter,
+      durationMs: this.runElapsedMs(),
+      kills: this.rewards.killCount,
+      won: false,
+      seed: this.runSeed,
+      ascension: this.runAscension,
+      endlessLoop: this.runEndlessLoop,
+      characterId,
+      deathCause: cause,
+      ownedSkills: this.skills.snapshot(),
+      unlocks: {},
+    });
+
     run.markLost();
     this.audio?.stopMusic();
+    this.audio?.setMusicDucked(false);
     console.log(`[YokaiField] Lost in room ${run.roomLabel} (0 hearts).`);
     this.screens.finishRun(false);
   }
@@ -2371,9 +3034,68 @@ export class Bootstrap extends Component {
     if (run === null) return;
     if (run.status === 'won' || run.status === 'lost') return;
 
+    // Wipe active run save on victory; clicking `Continue Endless` writes a fresh run save on room 1.
+    this.runSaveRepo?.clear();
+    const canEndless = canStartEndless(run.chapter, true) || this.runEndlessLoop >= 1;
+    // Gold earned this chapter will be banked into `save.gold` by `ScreenFlow.finishRun(true)`.
+    this.endlessCarryover = canEndless ? this.captureLiveEndlessCarryover(true) : null;
+
+    const prevSave = this.save;
+    const repo = this.saveRepo;
+    let unlocksSummary = {};
+    if (prevSave !== null && repo !== null) {
+      let predictedAfter = prevSave;
+      if (this.runEndlessLoop === 0) {
+        try {
+          const withAsc = unlockChapterAscension(prevSave, run.chapter, this.runAscension);
+          if (withAsc !== prevSave) {
+            repo.save(withAsc);
+            this.save = withAsc;
+          }
+          predictedAfter = withAsc;
+        } catch (error: unknown) {
+          console.warn(`[YokaiField] Could not advance Ascension unlock: ${errorMessage(error)}`);
+        }
+      }
+      const nextChapterCap = Math.min(
+        CHAPTERS_PER_RUN,
+        Math.max(predictedAfter.chaptersUnlocked, run.chapter + 1),
+      );
+      const predictedFinal: SaveData = { ...predictedAfter, chaptersUnlocked: nextChapterCap };
+      unlocksSummary = computeRunUnlocksSummary(
+        prevSave,
+        predictedFinal,
+        run.chapter,
+        true,
+        this.runEndlessLoop,
+      ).unlocks;
+    }
+
+    const characterId = this.runCharacter?.id ?? this.screens.selectedCharacter().id;
+    const goldTotalAfter = (this.save?.gold ?? 0) + this.rewards.goldEarned;
+    this.lastDeathCause = { kind: 'victory' };
+    this.lastRunResult = buildRichRunResult({
+      chapter: run.chapter,
+      roomReached: run.room,
+      roomsTotal: run.roomsTotal,
+      goldEarned: this.rewards.goldEarned,
+      goldTotal: goldTotalAfter,
+      durationMs: this.runElapsedMs(),
+      kills: this.rewards.killCount,
+      won: true,
+      seed: this.runSeed,
+      ascension: this.runAscension,
+      endlessLoop: this.runEndlessLoop,
+      characterId,
+      deathCause: { kind: 'victory' },
+      ownedSkills: this.skills.snapshot(),
+      unlocks: unlocksSummary,
+    });
+
     // GDD §2: winning a chapter unlocks the next; `commitRunEnd` writes both gold and unlocks.
     run.markWon();
     this.audio?.stopMusic();
+    this.audio?.setMusicDucked(false);
     playSfx('chapter-clear');
     console.log(`[YokaiField] CHAPTER CLEAR — chapter ${run.chapter}, room ${run.roomLabel}.`);
     this.screens.finishRun(true);
@@ -2381,7 +3103,7 @@ export class Bootstrap extends Component {
 
   /** Credit gold and drop a pooled XP orb at the kill spot (`splitling` yields 0 XP → no orb). */
   private awardKill(role: EnemyRole, elite: boolean, position: Vec2): void {
-    const multiplier = this.player?.derivedStats.goldMultiplier ?? 1;
+    const multiplier = this.runGoldMultiplier();
     const amount = this.rewards.awardKill(role, elite, multiplier);
     this.flyGold(amount, position);
 
@@ -2445,14 +3167,25 @@ export class Bootstrap extends Component {
   private runSnapshot(): RunSnapshot | null {
     const run = this.run;
     if (run === null) return null;
-    return { chapter: run.chapter, room: run.room, roomsTotal: run.roomsTotal, durationMs: this.combat?.clockMs ?? 0, goldEarned: this.rewards.goldEarned, kills: this.rewards.killCount };
+    return {
+      chapter: run.chapter,
+      room: run.room,
+      roomsTotal: run.roomsTotal,
+      durationMs: this.runElapsedMs(),
+      goldEarned: this.rewards.goldEarned,
+      kills: this.rewards.killCount,
+    };
   }
   /**
    * Remove a run from the scene. Destroys node groups instead of reloading the scene: a reload
    * cancels in-flight image loads and devtools logs `net::ERR_CONNECTION_RESET` (harmless but
    * pollutes the "no console errors" gate), while this teardown drops only the run's own nodes.
    */
-  private teardownRun(): void {
+  private teardownRun(clearSavedRun = false): void {
+    if (clearSavedRun) {
+      this.runSaveRepo?.clear();
+    }
+    this.audio?.setMusicDucked(false);
     this.skills.destroy();
     this.xpPool.clear();
     this.xpOrbView?.destroy();
@@ -2473,6 +3206,7 @@ export class Bootstrap extends Component {
     this.doorPhase = false;
     this.roomReward = null;
     this.clearReward = null;
+    this.currentChosenDoor = null;
     this.pendingSpecial = null;
     this.clearSpecialRoom();
     this.bossPhases.destroy();
@@ -2484,6 +3218,7 @@ export class Bootstrap extends Component {
     this.player?.node.destroy();
     this.player = null;
     this.runCharacter = null;
+    this.runBossId = null;
     this.bulletView?.node.destroy();
     this.bulletView = null;
     this.hud?.node.destroy();
@@ -2514,6 +3249,7 @@ export class Bootstrap extends Component {
     this.runRooms = [];
     this.run = null;
     this.rewards = new RunRewards();
+    this.elapsedBaseMs = 0;
     this.fpsMeter.clear();
   }
 
@@ -2569,13 +3305,13 @@ export class Bootstrap extends Component {
           : { name: boss.name, hp: boss.health, maxHp: boss.maxHealth, phase: boss.phase };
       },
       setBossHp: (fraction) => this.combat?.setBossHealthFraction(fraction) ?? false,
-      startChapter: async (chapter, seed) => {
+      startChapter: async (chapter, seed, ascension) => {
         if (this.status === 'loading') return false;
         this.screens.clearMenu();
         this.menuBackdrop?.clear();
-        this.teardownRun();
+        this.teardownRun(false);
         try {
-          await this.launchChapter(chapter, seed);
+          await this.launchChapter(chapter, seed, ascension);
           return true;
         } catch (error: unknown) {
           this.fail(error);
@@ -2640,7 +3376,87 @@ export class Bootstrap extends Component {
       activeSkill: () => this.debugActiveSkill(),
       actions: () => this.debugActionsSnapshot(),
       triggerEvolution: (id) => this.debugTriggerEvolution(id),
+      state: () => this.debugStateSnapshot(),
+      runSave: () => this.getActiveRunSave(),
+      setAscension: (tier) => this.debugSetAscension(tier),
+      unlockAllAscensions: () => this.debugUnlockAllAscensions(),
+      triggerDeath: (cause) => this.debugTriggerDeath(cause),
+      continueRun: () => this.debugContinueRun(),
+      continueEndless: () => this.continueEndless(),
+      setMusicVolume: (volume) => this.setMusicVolume(volume),
+      setSfxVolume: (volume) => this.setSfxVolume(volume),
+      setMusicDucked: (ducked) => this.setMusicDucked(ducked),
     });
+  }
+
+  private debugStateSnapshot(): DebugStateSnapshot {
+    const run = this.run;
+    const canEndless =
+      this.endlessCarryover !== null ||
+      (run !== null && (run.chapter === CHAPTERS_PER_RUN || this.runEndlessLoop >= 1));
+    return {
+      status: this.status,
+      screen: this.screens.screenId,
+      chapter: run?.chapter ?? 0,
+      room: run?.room ?? 0,
+      roomTotal: run?.roomsTotal ?? 0,
+      seed: this.runSeed,
+      ascension: this.run !== null ? this.runAscension : this.pendingAscension,
+      endlessLoop: this.runEndlessLoop,
+      freeRerollsLeft: this.skills.freeRerollsLeft,
+      deathCause: this.lastDeathCause ?? this.combat?.deathCause ?? null,
+      hasRunSave: this.runSaveRepo?.hasRun() ?? false,
+      canContinueEndless: canEndless,
+    };
+  }
+
+  private debugSetAscension(tier: number): number {
+    const clamped = clampAscension(tier);
+    this.pendingAscension = clamped;
+    if (this.run !== null) {
+      this.runAscension = clamped;
+      this.difficulty = combinedDifficultyModifiers(this.runAscension, this.runEndlessLoop);
+      this.combat?.setDifficulty(this.difficulty);
+      this.hud?.setRoomLabel(this.hudRoomText());
+    }
+    return clamped;
+  }
+
+  private debugUnlockAllAscensions(): number[] {
+    const maxed: [number, number, number, number] = [
+      MAX_ASCENSION_TIER,
+      MAX_ASCENSION_TIER,
+      MAX_ASCENSION_TIER,
+      MAX_ASCENSION_TIER,
+    ];
+    const save = this.save;
+    const repo = this.saveRepo;
+    if (save !== null && repo !== null) {
+      const next: SaveData = { ...save, ascensionUnlocked: maxed };
+      try {
+        repo.save(next);
+        this.save = next;
+      } catch (error: unknown) {
+        console.warn(`[YokaiField] Could not unlock all ascensions: ${errorMessage(error)}`);
+      }
+    }
+    return [...maxed];
+  }
+
+  private debugTriggerDeath(cause?: DeathCause): boolean {
+    if (this.status !== 'playing' || this.combat === null || this.player === null) return false;
+    const killed = this.combat.triggerDebugDeath(cause);
+    if (!killed) return false;
+    this.lastDeathCause = this.combat.deathCause ?? cause ?? { kind: 'unknown' };
+    this.syncHud();
+    this.beginDeath();
+    return true;
+  }
+
+  private async debugContinueRun(): Promise<boolean> {
+    const saved = this.getActiveRunSave();
+    if (saved === null) return false;
+    return this.resumeSavedRun(saved);
   }
 
   private debugUnlockAllCharacters(): string[] {
@@ -2855,7 +3671,8 @@ export class Bootstrap extends Component {
       activeOrbs: orbs.length,
       orbs,
       rerollsUsed: this.skills.rerollsUsed,
-      rerollCost: rerollCost(this.skills.rerollsUsed),
+      freeRerollsLeft: this.skills.freeRerollsLeft,
+      rerollCost: this.skills.nextRerollCost(),
       sharedGold: this.shopGoldTotal(),
       isXpDoorRoom: this.isXpDoorRoom,
     };

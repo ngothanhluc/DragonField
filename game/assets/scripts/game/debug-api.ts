@@ -7,7 +7,9 @@
  */
 import type { DerivedStats } from '../core/skills/derived-stats';
 import type { DoorReward } from '../core/run/doors';
+import type { DeathCause } from '../core/run/run-summary';
 import type { SpecialKind } from '../core/run/special-rooms';
+import type { ActiveRunSave } from '../core/save/run-save';
 import { keyLog } from './keyboard-move';
 
 export type DebugStatus =
@@ -74,6 +76,12 @@ export interface DebugBossSnapshot {
 export interface DebugAudioSnapshot {
   readonly unlocked: boolean;
   readonly volume: number;
+  readonly musicVolume?: number;
+  readonly sfxVolume?: number;
+  readonly musicGain?: number;
+  readonly sfxGain?: number;
+  readonly ducked?: boolean;
+  readonly duckFactor?: number;
   readonly music: string | null;
   readonly lastSfx: readonly string[];
   /** Every SFX event → its resource paths (the bank is the single source in core). */
@@ -218,9 +226,26 @@ export interface DebugXpSnapshot {
   readonly activeOrbs: number;
   readonly orbs: readonly DebugXpOrbSnapshot[];
   readonly rerollsUsed: number;
+  readonly freeRerollsLeft?: number;
   readonly rerollCost: number;
   readonly sharedGold: number;
   readonly isXpDoorRoom: boolean;
+}
+
+/** High-level live run & M15 state snapshot for `window.__yokai.state()`. */
+export interface DebugStateSnapshot {
+  readonly status: DebugStatus;
+  readonly screen: DebugScreenId;
+  readonly chapter: number;
+  readonly room: number;
+  readonly roomTotal: number;
+  readonly seed: number;
+  readonly ascension: number;
+  readonly endlessLoop: number;
+  readonly freeRerollsLeft: number;
+  readonly deathCause: DeathCause | null;
+  readonly hasRunSave: boolean;
+  readonly canContinueEndless: boolean;
 }
 
 /** Live M13 Dash, Signature Active, and Evolution state for `window.__yokai.actions()`. */
@@ -261,7 +286,7 @@ export interface DebugProvider {
   readonly stats: () => DerivedStats;
   readonly boss: () => DebugBossSnapshot | null;
   readonly setBossHp: (fraction: number) => boolean;
-  readonly startChapter: (chapter: number, seed?: number) => Promise<boolean>;
+  readonly startChapter: (chapter: number, seed?: number, ascension?: number) => Promise<boolean>;
   /** Debug: load a standalone dev room by id (`dev-big`); `false` when unknown/failed. */
   readonly loadRoom: (id: string) => Promise<boolean>;
   /** Current screen (title/chapter-select/playing/...). */
@@ -335,6 +360,26 @@ export interface DebugProvider {
   readonly actions?: () => DebugActionsSnapshot;
   /** M13: unlock prerequisites and grant an Evolution (`id` optional), returning its id or `null`. */
   readonly triggerEvolution?: (id?: string) => string | null;
+  /** M15: full run/M15 state snapshot (`ascension`, `endlessLoop`, `freeRerollsLeft`, `deathCause`, `seed`). */
+  readonly state?: () => DebugStateSnapshot;
+  /** M15: currently persisted `ActiveRunSave` (`yokai-field.run`) or `null`. */
+  readonly runSave?: () => ActiveRunSave | null;
+  /** M15: set active/next run Ascension tier (`0..5`) and return clamped tier. */
+  readonly setAscension?: (tier: number) => number;
+  /** M15: unlock Ascension 5 on all 4 chapters and return the tuple. */
+  readonly unlockAllAscensions?: () => number[];
+  /** M15: trigger immediate player death with optional `DeathCause` (tests permadeath & summary). */
+  readonly triggerDeath?: (cause?: DeathCause) => boolean;
+  /** M15: resume the currently saved `ActiveRunSave` if present. */
+  readonly continueRun?: () => Promise<boolean>;
+  /** M15: continue into the next Endless chapter / loop. */
+  readonly continueEndless?: () => Promise<boolean>;
+  /** M15: set and persist Music channel volume (`0..1`). */
+  readonly setMusicVolume?: (volume: number) => number;
+  /** M15: set and persist SFX channel volume (`0..1`). */
+  readonly setSfxVolume?: (volume: number) => number;
+  /** M15: toggle music ducking directly and return the new ducked state. */
+  readonly setMusicDucked?: (ducked: boolean) => boolean;
 }
 
 /** Alias for `DebugProvider`. */
@@ -363,6 +408,16 @@ export type YokaiDebugApi = Omit<
   | 'activeSkill'
   | 'actions'
   | 'triggerEvolution'
+  | 'state'
+  | 'runSave'
+  | 'setAscension'
+  | 'unlockAllAscensions'
+  | 'triggerDeath'
+  | 'continueRun'
+  | 'continueEndless'
+  | 'setMusicVolume'
+  | 'setSfxVolume'
+  | 'setMusicDucked'
 > & {
   /** The last 200 keyboard events (key/code/keyCode/isComposing) — for IME diagnosis. */
   readonly keyLog: typeof keyLog;
@@ -387,6 +442,16 @@ export type YokaiDebugApi = Omit<
   readonly activeSkill: () => boolean;
   readonly actions: () => DebugActionsSnapshot;
   readonly triggerEvolution: (id?: string) => string | null;
+  readonly state: () => DebugStateSnapshot;
+  readonly runSave: () => ActiveRunSave | null;
+  readonly setAscension: (tier: number) => number;
+  readonly unlockAllAscensions: () => number[];
+  readonly triggerDeath: (cause?: DeathCause) => boolean;
+  readonly continueRun: () => Promise<boolean>;
+  readonly continueEndless: () => Promise<boolean>;
+  readonly setMusicVolume: (volume: number) => number;
+  readonly setSfxVolume: (volume: number) => number;
+  readonly setMusicDucked: (ducked: boolean) => boolean;
 };
 
 const DEFAULT_CHARACTER_SNAPSHOT: DebugCharacterSnapshot = {
@@ -458,6 +523,31 @@ export function installDebugApi(provider: DebugProvider): boolean {
   const activeSkill = provider.activeSkill ?? ((): boolean => false);
   const actions = provider.actions ?? ((): DebugActionsSnapshot => DEFAULT_ACTIONS_SNAPSHOT);
   const triggerEvolution = provider.triggerEvolution ?? ((): string | null => null);
+  const state =
+    provider.state ??
+    ((): DebugStateSnapshot => ({
+      status: provider.status(),
+      screen: provider.screen(),
+      chapter: provider.chapter(),
+      room: provider.room(),
+      roomTotal: provider.roomTotal(),
+      seed: 0,
+      ascension: 0,
+      endlessLoop: 0,
+      freeRerollsLeft: 0,
+      deathCause: null,
+      hasRunSave: false,
+      canContinueEndless: false,
+    }));
+  const runSave = provider.runSave ?? ((): ActiveRunSave | null => null);
+  const setAscension = provider.setAscension ?? ((): number => 0);
+  const unlockAllAscensions = provider.unlockAllAscensions ?? ((): number[] => [0, 0, 0, 0]);
+  const triggerDeath = provider.triggerDeath ?? ((): boolean => false);
+  const continueRun = provider.continueRun ?? (async (): Promise<boolean> => false);
+  const continueEndless = provider.continueEndless ?? (async (): Promise<boolean> => false);
+  const setMusicVolume = provider.setMusicVolume ?? ((): number => 0);
+  const setSfxVolume = provider.setSfxVolume ?? ((): number => 0);
+  const setMusicDucked = provider.setMusicDucked ?? ((): boolean => false);
 
   const api: YokaiDebugApi = Object.defineProperties({} as YokaiDebugApi, {
     status: { get: provider.status, enumerable: true },
@@ -515,6 +605,16 @@ export function installDebugApi(provider: DebugProvider): boolean {
     activeSkill: { value: activeSkill, enumerable: true },
     actions: { value: actions, enumerable: true },
     triggerEvolution: { value: triggerEvolution, enumerable: true },
+    state: { value: state, enumerable: true },
+    runSave: { value: runSave, enumerable: true },
+    setAscension: { value: setAscension, enumerable: true },
+    unlockAllAscensions: { value: unlockAllAscensions, enumerable: true },
+    triggerDeath: { value: triggerDeath, enumerable: true },
+    continueRun: { value: continueRun, enumerable: true },
+    continueEndless: { value: continueEndless, enumerable: true },
+    setMusicVolume: { value: setMusicVolume, enumerable: true },
+    setSfxVolume: { value: setSfxVolume, enumerable: true },
+    setMusicDucked: { value: setMusicDucked, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -527,7 +627,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, ' +
       'character, selectCharacter, unlockAllCharacters, playerAttachment, attachmentState, characterStats, setAttachmentHidden, ' +
       'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, ' +
-      'dash, activeSkill, actions, triggerEvolution, keyLog).',
+      'dash, activeSkill, actions, triggerEvolution, state, runSave, setAscension, unlockAllAscensions, ' +
+      'triggerDeath, continueRun, continueEndless, setMusicVolume, setSfxVolume, setMusicDucked, keyLog).',
   );
   return true;
 }

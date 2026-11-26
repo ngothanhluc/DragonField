@@ -92,4 +92,14 @@ export class HealthState {
     this.hearts = Math.min(this.maxHearts, this.hearts + Math.max(0, amount));
     return this.hearts;
   }
+
+  /**
+   * Directly set current hearts clamped into `[0, max]` (used by M15 run resume and debug
+   * death trigger without triggering hit SFX or i-frames).
+   */
+  setHearts(hearts: number): number {
+    if (!Number.isFinite(hearts)) return this.hearts;
+    this.hearts = Math.min(this.maxHearts, Math.max(0, Math.floor(hearts)));
+    return this.hearts;
+  }
 }

@@ -23,6 +23,7 @@ import type {
   DebugProvider,
   DebugScreenId,
   DebugSpecialSnapshot,
+  DebugStateSnapshot,
   DebugStatus,
   DebugUiText,
   DebugVfxSnapshot,
@@ -33,6 +34,8 @@ import { animationOfNode, collectAnimations, collectPlaceholders } from './debug
 import type { DerivedStats } from '../core/skills/derived-stats';
 import { SFX_BANK } from '../core/audio/sfx-bank';
 import type { Vec2 } from '../core/math/vec2';
+import type { DeathCause } from '../core/run/run-summary';
+import type { ActiveRunSave } from '../core/save/run-save';
 
 type Node = InstanceType<typeof CocosNode>;
 
@@ -54,7 +57,7 @@ export interface DebugWiringHost {
   readonly stats: () => DerivedStats;
   readonly boss: () => DebugBossSnapshot | null;
   readonly setBossHp: (fraction: number) => boolean;
-  readonly startChapter: (chapter: number, seed?: number) => Promise<boolean>;
+  readonly startChapter: (chapter: number, seed?: number, ascension?: number) => Promise<boolean>;
   readonly loadRoom: (id: string) => Promise<boolean>;
   readonly screen: () => DebugScreenId;
   readonly save: () => unknown;
@@ -94,6 +97,16 @@ export interface DebugWiringHost {
   readonly activeSkill: () => boolean;
   readonly actions: () => DebugActionsSnapshot;
   readonly triggerEvolution: (id?: string) => string | null;
+  readonly state: () => DebugStateSnapshot;
+  readonly runSave: () => ActiveRunSave | null;
+  readonly setAscension: (tier: number) => number;
+  readonly unlockAllAscensions: () => number[];
+  readonly triggerDeath: (cause?: DeathCause) => boolean;
+  readonly continueRun: () => Promise<boolean>;
+  readonly continueEndless: () => Promise<boolean>;
+  readonly setMusicVolume: (volume: number) => number;
+  readonly setSfxVolume: (volume: number) => number;
+  readonly setMusicDucked: (ducked: boolean) => boolean;
 }
 
 /** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
@@ -144,6 +157,12 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
       host.audioManager()?.snapshot() ?? {
         unlocked: false,
         volume: 0,
+        musicVolume: 0,
+        sfxVolume: 0,
+        musicGain: 0,
+        sfxGain: 0,
+        ducked: false,
+        duckFactor: 1,
         music: null,
         lastSfx: [],
         bank: SFX_BANK,
@@ -178,6 +197,16 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     activeSkill: host.activeSkill,
     actions: host.actions,
     triggerEvolution: host.triggerEvolution,
+    state: host.state,
+    runSave: host.runSave,
+    setAscension: host.setAscension,
+    unlockAllAscensions: host.unlockAllAscensions,
+    triggerDeath: host.triggerDeath,
+    continueRun: host.continueRun,
+    continueEndless: host.continueEndless,
+    setMusicVolume: host.setMusicVolume,
+    setSfxVolume: host.setSfxVolume,
+    setMusicDucked: host.setMusicDucked,
     nodeCount: () => {
       const scene: Node | null = director.getScene() as Node | null;
       return scene === null ? 0 : countNodes(scene);

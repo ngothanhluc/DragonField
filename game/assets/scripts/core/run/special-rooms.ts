@@ -61,6 +61,12 @@ function skillPrice(skillId: string): number {
   return prices[getSkill(skillId).rarity];
 }
 
+/** Scale a base shop price by `priceMultiplier` (Ascension 3–5 shop surcharge, M15). */
+function scaledShopPrice(base: number, priceMultiplier: number): number {
+  const mult = Number.isFinite(priceMultiplier) && priceMultiplier > 0 ? priceMultiplier : 1;
+  return Math.max(1, Math.round(base * mult));
+}
+
 /**
  * Three offers for the mid-run shop: two skills from the pool (respecting the pick's stack
  * caps) and a heart refill, seeded by `seed + room`. When the pool has fewer than two buyable
@@ -70,6 +76,7 @@ export function shopOffers(
   seed: number,
   room: number,
   ownedSkills: ReadonlyMap<string, number>,
+  priceMultiplier = 1,
 ): ShopOffer[] {
   const rng = new SeededRng(
     (Math.trunc(seed) >>> 0) ^
@@ -80,9 +87,12 @@ export function shopOffers(
 
   const offers: ShopOffer[] = skills.map((skill) => ({
     item: skill.id,
-    price: skillPrice(skill.id),
+    price: scaledShopPrice(skillPrice(skill.id), priceMultiplier),
   }));
-  offers.push({ item: 'heart-refill', price: SPECIAL_ROOMS_TUNING.shop.heartRefill });
+  offers.push({
+    item: 'heart-refill',
+    price: scaledShopPrice(SPECIAL_ROOMS_TUNING.shop.heartRefill, priceMultiplier),
+  });
   return offers;
 }
 

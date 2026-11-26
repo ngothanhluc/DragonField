@@ -205,6 +205,12 @@ export interface EnemyViewInitArgs {
    * pass a fixed value; the guard is a safety net, its choice does not matter beyond variety.
    */
   readonly random?: () => number;
+  /** Ascension / Endless enemy damage multiplier (M15, default `1`). */
+  readonly damageMult?: number;
+  /** Ascension enemy movement speed multiplier (M15, default `1`). */
+  readonly speedMult?: number;
+  /** Ascension enemy attack-rate multiplier (M15, default `1`). */
+  readonly fireRateMult?: number;
 }
 
 /** One enemy frame result — the combat adapter uses it to spawn bullets, sweep charges, and trigger blasts/buffs. */
@@ -245,6 +251,9 @@ export class EnemyView extends Component {
   private ringVisible = false;
   private hasted = false;
   private hasteScale = 1;
+  private damageMult = 1;
+  private speedMult = 1;
+  private fireRateMult = 1;
   /** Role-scale compensation so the ring keeps an absolute diameter (no inflation on brutes). */
   private ringScaleCompensation = 1;
   /** Scratch colour for the ring (rewritten each frame, no allocation). */
@@ -331,7 +340,13 @@ export class EnemyView extends Component {
     const state = this.state;
     return state === null
       ? 0
-      : contactDamageFor(state.role, state.elite, undefined, this.level?.chapter ?? 1);
+      : contactDamageFor(
+          state.role,
+          state.elite,
+          undefined,
+          this.level?.chapter ?? 1,
+          this.damageMult,
+        );
   }
 
   hasAnyStatus(nowMs: number): boolean {
@@ -352,6 +367,18 @@ export class EnemyView extends Component {
     this.ringScaleCompensation = roleScale > 0 ? 1 / roleScale : 1;
     this.fx = args.fx ?? null;
     this.random = args.random ?? this.random;
+    this.damageMult =
+      args.damageMult !== undefined && Number.isFinite(args.damageMult) && args.damageMult > 0
+        ? args.damageMult
+        : 1;
+    this.speedMult =
+      args.speedMult !== undefined && Number.isFinite(args.speedMult) && args.speedMult > 0
+        ? args.speedMult
+        : 1;
+    this.fireRateMult =
+      args.fireRateMult !== undefined && Number.isFinite(args.fireRateMult) && args.fireRateMult > 0
+        ? args.fireRateMult
+        : 1;
     this.hitRadius = args.radiusTiles ?? DEFAULT_ENEMY_RADIUS_TILES * roleScale;
     this.contactRange = args.contactRangeTiles ?? CHASER_CONTACT_RANGE_TILES * roleScale;
     this.animator = this.getComponent(SpriteAnimator);
@@ -394,8 +421,8 @@ export class EnemyView extends Component {
     const previous = state.action;
     const next =
       view === undefined
-        ? decideAction({ state, player, nowMs, level })
-        : decideAction({ state, player, nowMs, level, view });
+        ? decideAction({ state, player, nowMs, level, fireRateMult: this.fireRateMult })
+        : decideAction({ state, player, nowMs, level, view, fireRateMult: this.fireRateMult });
 
     // Poison and Burn tick before the action is decided: the enemy may die this frame.
     const dot =
@@ -447,7 +474,7 @@ export class EnemyView extends Component {
     this.advance(
       next,
       deltaMs,
-      this.statuses.speedMultiplier(nowMs) * this.hasteScale,
+      this.statuses.speedMultiplier(nowMs) * this.hasteScale * this.speedMult,
       field,
       detour,
     );

@@ -107,6 +107,11 @@ import type { ViewRect } from '../core/camera/follow-camera';
 import type { EnemyRole, LevelData } from '../core/level/level-data';
 import { distance, type Vec2 } from '../core/math/vec2';
 import type { SeededRng } from '../core/rng';
+import {
+  combinedDifficultyModifiers,
+  type RunDifficultyModifiers,
+} from '../core/run/endless';
+import type { DeathCause } from '../core/run/run-summary';
 import type { DerivedStats } from '../core/skills/derived-stats';
 import type { HudActionsSnapshot } from '../core/view/hud-layout';
 import { screenViewAround } from '../core/view/view-rect';
@@ -213,6 +218,8 @@ export interface CombatLoopOptions {
    * `crit` is derived from the bullet's damage versus base damage (crit is multiplied at fire time).
    */
   readonly onDamage?: (info: DamagePopupInfo) => void;
+  /** Unified Ascension + Endless difficulty modifiers (M15; defaults to Ascension 0 / Loop 0). */
+  readonly difficulty?: RunDifficultyModifiers;
 }
 
 /** One enemy/boss hit, enough to show a floating number. */
@@ -324,6 +331,8 @@ export class CombatLoop {
   private spawnedSequence = 0;
   private nowMs = 0;
   private playerDied = false;
+  private lastDeathCause: DeathCause | null = null;
+  private difficulty: RunDifficultyModifiers;
   private awaitingAdvance = false;
   private god = false;
 
@@ -355,6 +364,36 @@ export class CombatLoop {
     this.shake = options.shake ?? null;
     this.onDamage = options.onDamage ?? (() => undefined);
     this.viewProvider = options.view ?? (() => null);
+    this.difficulty = options.difficulty ?? combinedDifficultyModifiers(0, 0);
+  }
+
+  /** Live Ascension + Endless difficulty modifiers applied to enemies and bosses (M15). */
+  get difficultyModifiers(): RunDifficultyModifiers {
+    return this.difficulty;
+  }
+
+  /** Update active difficulty modifiers (used by run setup / debug `setAscension`). */
+  setDifficulty(difficulty: RunDifficultyModifiers): void {
+    this.difficulty = difficulty;
+  }
+
+  /** Exact attributed cause of death recorded on the lethal player hit (M15). */
+  get deathCause(): DeathCause | null {
+    return this.lastDeathCause;
+  }
+
+  /**
+   * Debug helper (`__yokai.triggerDeath`): bypasses god mode, records `cause`, and kills the
+   * player cleanly so permadeath & rich result summary can be verified deterministically.
+   */
+  triggerDebugDeath(cause?: DeathCause): boolean {
+    if (this.player.isDead) return false;
+    this.god = false;
+    this.lastDeathCause = cause ?? { kind: 'unknown' };
+    this.player.forceKill();
+    this.playerDied = true;
+    this.clearSkillAttachmentHide();
+    return true;
   }
 
   get currentLevel(): LevelData {
@@ -538,6 +577,7 @@ export class CombatLoop {
     this.pendingSpawns.length = 0;
     this.spawnedSequence = 0;
     this.playerDied = false;
+    this.lastDeathCause = null;
     this.awaitingAdvance = false;
     this.hitstop.reset();
     this.rewarded.clear();
@@ -573,6 +613,9 @@ export class CombatLoop {
       rng: this.rng,
       onPhase: this.onBossPhase,
       onSummon: (role, count) => this.summon(role, count),
+      healthMult: this.difficulty.bossHealthMult,
+      damageMult: this.difficulty.enemyDamageMult,
+      attackSpeedMult: this.difficulty.enemyFireRateMult,
       ...(this.fx !== null ? { fx: this.fx } : {}),
       ...(this.shake !== null ? { shake: this.shake } : {}),
     });
@@ -586,7 +629,13 @@ export class CombatLoop {
     if (boss === null) return;
 
     for (const enemy of summonedEnemies(boss.bossState, role, count, this.rng)) {
-      const maxHealth = maxHealthFor(role, false, undefined, this.level.chapter);
+      const maxHealth = maxHealthFor(
+        role,
+        false,
+        undefined,
+        this.level.chapter,
+        this.difficulty.enemyHealthMult,
+      );
       const state: EnemyState = {
         id: enemy.id,
         role: enemy.role,
@@ -621,11 +670,17 @@ export class CombatLoop {
       for (const state of states) {
         if (remainingExtra > 0 && !state.elite && state.role !== 'splitling') {
           state.elite = true;
-          const boostedHp = maxHealthFor(state.role, true, undefined, level.chapter);
-          state.maxHealth = boostedHp;
-          state.health = boostedHp;
           remainingExtra -= 1;
         }
+        const scaledHp = maxHealthFor(
+          state.role,
+          state.elite,
+          undefined,
+          level.chapter,
+          this.difficulty.enemyHealthMult,
+        );
+        state.maxHealth = scaledHp;
+        state.health = scaledHp;
         this.addEnemy(state);
       }
       return;
@@ -755,7 +810,13 @@ export class CombatLoop {
       alive: this.liveEnemyCount(),
     });
     for (const spawn of spawns) {
-      const state = enemyStateFromSpawn(this.level, spawn, this.spawnedSequence, this.nowMs);
+      const state = enemyStateFromSpawn(
+        this.level,
+        spawn,
+        this.spawnedSequence,
+        this.nowMs,
+        this.difficulty.enemyHealthMult,
+      );
       this.spawnedSequence += 1;
       if (spawn.telegraphMs > 0) {
         this.pendingSpawns.push({ state, atMs: this.nowMs + spawn.telegraphMs });
@@ -823,10 +884,15 @@ export class CombatLoop {
       distance(boss.position, playerPosition) <= boss.hitboxRadiusTiles + PLAYER_RADIUS_TILES
     ) {
       const heartsBefore = this.player.hearts;
+      const bossContactDmg = Math.max(
+        1,
+        Math.round(DEFAULT_COMBAT.contactDamage * this.difficulty.enemyDamageMult),
+      );
       this.damagePlayer(
-        DEFAULT_COMBAT.contactDamage,
+        bossContactDmg,
         boss.position,
         FEEL_TUNING.shake.bossCharge,
+        { kind: 'boss', bossId: boss.bossId, phase: boss.phase },
       );
       const thorns = this.player.derivedStats.thorns;
       if (thorns !== undefined && this.player.hearts < heartsBefore) {
@@ -873,6 +939,7 @@ export class CombatLoop {
             damage: enemy.contactDamage,
             angles: plan.angles,
             speedTilesPerSecond: plan.speedTilesPerSecond,
+            source: { kind: 'enemy-bullet', role: 'caster' },
           });
         } else if (role === 'sniper') {
           const plan = sniperShotPlan();
@@ -883,6 +950,7 @@ export class CombatLoop {
             damage: enemy.contactDamage,
             angles: plan.angles,
             speedTilesPerSecond: plan.speedTilesPerSecond,
+            source: { kind: 'enemy-bullet', role: 'sniper' },
           });
         } else if (role !== null) {
           fireEnemyVolley({
@@ -891,12 +959,18 @@ export class CombatLoop {
             to: player.position,
             damage: enemy.contactDamage,
             angles: eliteVolleyAngles(role, enemy.isElite),
+            source: { kind: 'enemy-bullet', role },
           });
         }
       } else if (step.released === 'blast') {
         const state = enemy.enemyState;
         if (state !== null) {
-          const spec = bomberBlastSpec(state, this.level.chapter);
+          const spec = bomberBlastSpec(
+            state,
+            this.level.chapter,
+            undefined,
+            this.difficulty.enemyDamageMult,
+          );
           this.triggerBomberBlast(spec);
           const followUp = scheduleFollowUpBlast(spec, this.nowMs);
           if (followUp !== null) this.pendingBlasts.push(followUp);
@@ -916,6 +990,7 @@ export class CombatLoop {
               damage: enemy.contactDamage,
               angles: pulse.angles,
               speedTilesPerSecond: pulse.speedTilesPerSecond,
+              source: { kind: 'enemy-bullet', role: 'buffer' },
             });
           }
         }
@@ -929,7 +1004,13 @@ export class CombatLoop {
         segmentHitsCircle(sweep.from, sweep.to, player.position, PLAYER_RADIUS_TILES, enemy.radiusTiles)
       ) {
         enemy.markChargeHit();
-        this.damagePlayer(enemy.contactDamage, sweep.to);
+        const role = enemy.role;
+        this.damagePlayer(
+          enemy.contactDamage,
+          sweep.to,
+          FEEL_TUNING.shake.playerHurt,
+          role !== null ? { kind: 'enemy', role, elite: enemy.isElite } : { kind: 'unknown' },
+        );
       }
     }
 
@@ -1011,7 +1092,12 @@ export class CombatLoop {
           continue;
         }
         spent.add(bullet.id);
-        this.damagePlayer(bullet.damage, bullet.position);
+        this.damagePlayer(
+          bullet.damage,
+          bullet.position,
+          FEEL_TUNING.shake.playerHurt,
+          bullet.source ?? { kind: 'enemy-bullet' },
+        );
         continue;
       }
 
@@ -1220,7 +1306,13 @@ export class CombatLoop {
       if (distance(enemy.position, player.position) > enemy.contactRangeTiles) continue;
 
       const heartsBefore = player.hearts;
-      this.damagePlayer(enemy.contactDamage, enemy.position);
+      const role = enemy.role;
+      this.damagePlayer(
+        enemy.contactDamage,
+        enemy.position,
+        FEEL_TUNING.shake.playerHurt,
+        role !== null ? { kind: 'enemy', role, elite: enemy.isElite } : { kind: 'unknown' },
+      );
       // Thorns only fires when the blow **actually** reaches a heart, not when a shield/i-frame blocks it.
       if (thorns !== undefined && player.hearts < heartsBefore) {
         enemy.takeDamage(thorns.damage, player.position, this.nowMs);
@@ -1326,12 +1418,16 @@ export class CombatLoop {
     amount: number,
     source: Vec2 | null,
     trauma: number = FEEL_TUNING.shake.playerHurt,
+    cause: DeathCause = { kind: 'unknown' },
   ): boolean {
     if (this.god) return false;
     const before = this.player.hearts;
     this.player.applyDamage(this.nowMs, amount, source);
     if (this.player.hearts >= before) return false;
 
+    if (this.player.isDead) {
+      this.lastDeathCause = cause;
+    }
     this.shake?.addTrauma(trauma);
     return true;
   }
@@ -1376,6 +1472,9 @@ export class CombatLoop {
       contactRangeTiles: options.contactRangeTiles,
       roleScale: options.roleScale,
       random: () => this.rng.next(),
+      damageMult: this.difficulty.enemyDamageMult,
+      speedMult: this.difficulty.enemySpeedMult,
+      fireRateMult: this.difficulty.enemyFireRateMult,
       ...(this.fx !== null ? { fx: this.fx } : {}),
     });
 
@@ -1436,6 +1535,14 @@ export class CombatLoop {
 
     // Spawn after iterating: `addEnemy` pushes into `this.enemies`.
     for (const child of splits) {
+      if (this.difficulty.enemyHealthMult !== 1) {
+        const scaledHp = Math.max(
+          1,
+          Math.round(child.maxHealth * this.difficulty.enemyHealthMult),
+        );
+        child.maxHealth = scaledHp;
+        child.health = scaledHp;
+      }
       this.addEnemy(child);
       this.fx?.spawn('fx.smoke', child.position);
     }
@@ -1802,7 +1909,10 @@ export class CombatLoop {
         PLAYER_RADIUS_TILES,
       )
     ) {
-      this.damagePlayer(spec.damage, spec.center, FEEL_TUNING.shake.explosion);
+      this.damagePlayer(spec.damage, spec.center, FEEL_TUNING.shake.explosion, {
+        kind: 'bomber-blast',
+        elite: spec.elite === true,
+      });
     }
 
     const tint = spec.isFollowUp ? BOMBER_FOLLOWUP_TINT : BOMBER_BLAST_TINT;
@@ -1859,7 +1969,13 @@ export class CombatLoop {
 
   /** Debug: spawn one enemy at a given position (defaults to near the room centre). */
   spawnDebug(role: EnemyRole, elite: boolean, at?: Vec2): string {
-    const maxHealth = maxHealthFor(role, elite, undefined, this.level.chapter);
+    const maxHealth = maxHealthFor(
+      role,
+      elite,
+      undefined,
+      this.level.chapter,
+      this.difficulty.enemyHealthMult,
+    );
     const position = at ?? this.defaultSpawnPoint(role);
     const state: EnemyState = {
       id: `debug-${this.debugSeq + 1}`,
@@ -1994,6 +2110,7 @@ export class CombatLoop {
     this.fx?.destroy();
     this.stress = false;
     this.awaitingAdvance = false;
+    this.lastDeathCause = null;
     this.nowMs = 0;
   }
 

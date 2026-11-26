@@ -15,8 +15,10 @@ import { DEFAULT_COMBAT } from '../core/config';
 import {
   derivedStatsForRun,
   statsForRun,
+  utilityStatsFromSave,
   type RunStatsSource,
 } from '../core/meta/run-stats';
+import { MAX_FREE_REROLLS_TRACK } from '../core/meta/upgrades';
 import { SkillLoadout, type AcquireResult } from '../core/skills/loadout';
 import type { DerivedStats, StatsBaseline } from '../core/skills/derived-stats';
 import type { OwnedSkillStacks, SkillDef } from '../core/skills/pool';
@@ -26,6 +28,7 @@ import {
   rerollChoices,
   rollChoices,
 } from '../core/skills/roll';
+import { rerollCost } from '../core/xp/reroll';
 import {
   buildSkillPick,
   type SkillPickRerollOptions,
@@ -55,11 +58,13 @@ export class SkillRun {
   private screen: SkillPickScreen | null = null;
   private offered: readonly SkillDef[] | null = null;
   private rerolls = 0;
+  /** Remaining free Meta Utility skill rerolls for this run (`0..MAX_FREE_REROLLS_TRACK`, M15). */
+  private freeRerolls = 0;
   /** Bumped on every open/close to drop stale screen builds (fast room changes). */
   private token = 0;
 
   /** Start a new run: empty loadout, dedicated skill-roll sub-seed (ADR-021), baseline from meta. */
-  reset(seed: number, base: StatsBaseline = DEFAULT_COMBAT): void {
+  reset(seed: number, base: StatsBaseline = DEFAULT_COMBAT, freeRerolls = 0): void {
     this.destroy();
     this.loadout = new SkillLoadout();
     this.rng = createSkillRollRng(seed);
@@ -67,17 +72,47 @@ export class SkillRun {
     this.characterId = DEFAULT_CHARACTER_ID;
     this.runSave = null;
     this.rerolls = 0;
+    this.setFreeRerollsLeft(freeRerolls);
   }
 
   /**
    * Start a new run for `characterId` + `save`: composes Layer 1 class base stats, permanent
-   * Meta upgrades, and Layer 2 class starting passive (`statsForRun` / `derivedStatsForRun`).
+   * Meta upgrades, Layer 2 class starting passive, and Meta Utility `freeRerolls` (M15).
    */
   resetForRun(seed: number, save: RunStatsSource, characterId?: CharacterId): void {
     const resolvedId = characterId ?? resolveSelectedCharacter(save).id;
-    this.reset(seed, statsForRun(save, resolvedId));
+    const utility = utilityStatsFromSave(save);
+    this.reset(seed, statsForRun(save, resolvedId), utility.freeRerolls);
     this.characterId = resolvedId;
     this.runSave = save;
+  }
+
+  /**
+   * Restore full skill loadout (base skills + Legendary Evolutions), class/meta baseline,
+   * paid reroll counter, and remaining free rerolls from an `ActiveRunSave` or Endless carryover.
+   */
+  restoreForRun(args: {
+    readonly seed: number;
+    readonly save: RunStatsSource;
+    readonly characterId: CharacterId;
+    readonly ownedSkills: Readonly<Record<string, number>>;
+    readonly rerollsUsed: number;
+    readonly freeRerollsLeft: number;
+  }): void {
+    this.destroy();
+    const map = new Map<string, number>();
+    for (const [id, stacks] of Object.entries(args.ownedSkills)) {
+      if (Number.isFinite(stacks) && stacks > 0) {
+        map.set(id, Math.floor(stacks));
+      }
+    }
+    this.loadout = SkillLoadout.from(map);
+    this.rng = createSkillRollRng(args.seed);
+    this.characterId = args.characterId;
+    this.runSave = args.save;
+    this.base = statsForRun(args.save, args.characterId);
+    this.rerolls = Number.isFinite(args.rerollsUsed) ? Math.max(0, Math.floor(args.rerollsUsed)) : 0;
+    this.setFreeRerollsLeft(args.freeRerollsLeft);
   }
 
   /** Debug helper: switch the active character baseline mid-run without resetting owned skills. */
@@ -101,6 +136,23 @@ export class SkillRun {
 
   get rerollsUsed(): number {
     return this.rerolls;
+  }
+
+  get freeRerollsLeft(): number {
+    return this.freeRerolls;
+  }
+
+  setFreeRerollsLeft(count: number): void {
+    if (!Number.isFinite(count) || count <= 0) {
+      this.freeRerolls = 0;
+      return;
+    }
+    this.freeRerolls = Math.min(MAX_FREE_REROLLS_TRACK, Math.floor(count));
+  }
+
+  /** Gold cost of the next reroll: `0` while free Meta rerolls remain, else normal paid ramp. */
+  nextRerollCost(): number {
+    return this.freeRerolls > 0 ? 0 : rerollCost(this.rerolls);
   }
 
   stats(): DerivedStats {
@@ -136,8 +188,9 @@ export class SkillRun {
 
   /**
    * Reroll the current offered cards via `rerollChoices`, avoiding `offered` IDs whenever fresh
-   * skills exist, and increment `rerollsUsed`. Returns `null` when no picker is active or no
-   * skills can be rolled.
+   * skills exist. While `freeRerollsLeft > 0`, decrements free rerolls without advancing the paid
+   * `rerollsUsed` cost ramp (M15); otherwise increments `rerollsUsed`. Returns `null` when no
+   * picker is active or no skills can be rolled.
    */
   reroll(): SkillDef[] | null {
     if (this.offered === null) return null;
@@ -147,7 +200,11 @@ export class SkillRun {
       previous: this.offered,
     });
     if (next.length === 0) return null;
-    this.rerolls += 1;
+    if (this.freeRerolls > 0) {
+      this.freeRerolls -= 1;
+    } else {
+      this.rerolls += 1;
+    }
     return next;
   }
 
@@ -216,6 +273,7 @@ export class SkillRun {
     this.token += 1;
     this.offered = null;
     this.rerolls = 0;
+    this.freeRerolls = 0;
     this.screen?.destroy();
     this.screen = null;
   }

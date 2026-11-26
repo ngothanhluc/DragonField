@@ -57,10 +57,16 @@ export class RunRewards {
   }
 
   /** A flat bonus outside the kill/room table — the `gold` door's clear reward (#39). */
-  awardBonus(amount: number): number {
-    const safe = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+  awardBonus(amount: number, goldMultiplier = 1): number {
+    const safe = scaled(amount, goldMultiplier);
     this.earned = clampGold(this.earned + safe);
     return safe;
+  }
+
+  /** Restore accumulated run gold and kill count from a saved or Endless run (M15). */
+  restore(goldEarned: number, killCount: number): void {
+    this.earned = clampGold(goldEarned);
+    this.kills = Number.isFinite(killCount) ? Math.max(0, Math.trunc(killCount)) : 0;
   }
 
   /**

@@ -100,6 +100,8 @@ export interface ShopPanelOptions {
   readonly onBuy: (index: number) => ShopBuyResult;
   /** Leave the shop (Esc / the leave card); bootstrap opens the exit door. */
   readonly onClose: () => void;
+  /** Optional Ascension shop price multiplier (M15); when > 1 displays compact surcharge cue. */
+  readonly priceMultiplier?: number;
 }
 
 export interface ShopPanel {
@@ -244,7 +246,14 @@ export async function buildShopPanel(options: ShopPanelOptions): Promise<ShopPan
 
   addDim(root);
 
-  const title = createLabel(root, 'shop-title', 'SHOP');
+  const surchargePct =
+    options.priceMultiplier !== undefined &&
+    Number.isFinite(options.priceMultiplier) &&
+    options.priceMultiplier > 1
+      ? Math.round((options.priceMultiplier - 1) * 100)
+      : 0;
+  const titleText = surchargePct > 0 ? `SHOP (+${surchargePct}%)` : 'SHOP';
+  const title = createLabel(root, 'shop-title', titleText);
   title.fontSize = 20;
   title.lineHeight = 24;
   title.color = TITLE_COLOR;

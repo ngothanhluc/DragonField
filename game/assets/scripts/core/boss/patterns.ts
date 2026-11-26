@@ -60,6 +60,8 @@ export interface BossState {
   id: BossId;
   position: Vec2;
   health: number;
+  /** Optional scaled maxHealth override (Ascension/Endless `bossHealthMult`, M15). */
+  maxHealth?: number;
   phase: BossPhase;
   /** Current step in the `phase` script. */
   step: number;
@@ -120,15 +122,23 @@ export function initialBossState(
   position: Vec2,
   nowMs = 0,
   introGraceMs = BOSS_TUNING.introGraceMs,
+  maxHealthOverride?: number,
 ): BossState {
   const safeNowMs = Number.isFinite(nowMs) ? nowMs : 0;
   const safeGraceMs = Number.isFinite(introGraceMs) && introGraceMs > 0 ? introGraceMs : 0;
   const introUntilMs = safeNowMs + safeGraceMs;
+  const scaledMaxHealth =
+    maxHealthOverride !== undefined &&
+    Number.isFinite(maxHealthOverride) &&
+    maxHealthOverride > 0
+      ? Math.max(1, Math.round(maxHealthOverride))
+      : undefined;
   return {
     id,
     // A `.tmx` spawn may be against the wall; pull it in so the sprite is not cut on the first frame.
     position: clampToRoom(position, bossRoomBounds(id)),
-    health: BOSSES[id].maxHealth,
+    health: scaledMaxHealth ?? BOSSES[id].maxHealth,
+    ...(scaledMaxHealth !== undefined ? { maxHealth: scaledMaxHealth } : {}),
     phase: 1,
     step: 0,
     stepStartedMs: introUntilMs,
@@ -1329,7 +1339,7 @@ export function stepBoss(args: StepBossArgs): { state: BossState; events: BossEv
   if (isBossDefeated(state)) return { state, events };
 
   // --- Phase change: each crossed threshold emits exactly one event ---------
-  const targetPhase = phaseFor(state.id, healthFraction(state.id, state.health));
+  const targetPhase = phaseFor(state.id, healthFraction(state.id, state.health, state.maxHealth));
   if (targetPhase > state.phase) {
     for (let next = state.phase + 1; next <= targetPhase; next += 1) {
       const phase: BossPhase = next === 2 ? 2 : 3;

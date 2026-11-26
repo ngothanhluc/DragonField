@@ -219,23 +219,33 @@ export function contactDamageFor(
   elite: boolean,
   tuning: EnemiesTuning = ENEMY_TUNING,
   chapter = 1,
+  damageMult = 1,
 ): number {
   const base = tuning.roles[role].contactDamage;
   const scaled = elite ? base * tuning.eliteDamageMultiplier : base;
+  const safeMult = Number.isFinite(damageMult) && damageMult > 0 ? damageMult : 1;
   // Hearts are whole units: 2 × 1.25 = 2.5 must become 3, not leave the HUD showing 3.5.
-  return Math.max(1, Math.round(scaled * chapterMultiplier(CHAPTER_TUNING.enemyDamageMultipliers, chapter)));
+  return Math.max(
+    1,
+    Math.round(scaled * chapterMultiplier(CHAPTER_TUNING.enemyDamageMultipliers, chapter) * safeMult),
+  );
 }
 
-/** Max health, with elite and chapter scaling applied. `waves.ts` uses this to spawn. */
+/** Max health, with elite, chapter, and optional Ascension/Endless scaling applied. */
 export function maxHealthFor(
   role: EnemyRole,
   elite: boolean,
   tuning: EnemiesTuning = ENEMY_TUNING,
   chapter = 1,
+  healthMult = 1,
 ): number {
   const base = tuning.roles[role].health;
   const scaled = elite ? base * tuning.eliteHealthMultiplier : base;
-  return Math.max(1, Math.round(scaled * chapterMultiplier(CHAPTER_TUNING.enemyHealthMultipliers, chapter)));
+  const safeMult = Number.isFinite(healthMult) && healthMult > 0 ? healthMult : 1;
+  return Math.max(
+    1,
+    Math.round(scaled * chapterMultiplier(CHAPTER_TUNING.enemyHealthMultipliers, chapter) * safeMult),
+  );
 }
 
 /** Factor for `chapter` (1-based); out of range clamps to the first/last chapter. */
@@ -293,12 +303,23 @@ export interface DecideActionArgs {
    * callers and every unit test), the decision is exactly the pre-#41 one.
    */
   readonly view?: ViewRect;
+  /**
+   * Optional attack-cadence multiplier (Ascension 3–5 `enemyFireRateMult`, default `1`).
+   * Values > 1 shorten attack cooldowns proportionally (`cooldown / fireRateMult`).
+   */
+  readonly fireRateMult?: number;
 }
 
 /** Next action of the enemy at `nowMs`. Never mutates `state`. */
 export function decideAction(args: DecideActionArgs): EnemyAction {
   const { state, player, nowMs, level } = args;
   const tuning = args.tuning ?? ENEMY_TUNING;
+  const fireRateMult =
+    args.fireRateMult !== undefined &&
+    Number.isFinite(args.fireRateMult) &&
+    args.fireRateMult > 0
+      ? args.fireRateMult
+      : 1;
 
   if (state.action.kind === 'dead' || state.health <= 0) return { kind: 'dead' };
 
@@ -314,21 +335,21 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
   const decided = ((): EnemyAction => {
     switch (state.role) {
       case 'chaser':
-        return decideChaser(state, player, nowMs, level, role, elite.chaser, tuning);
+        return decideChaser(state, player, nowMs, level, role, elite.chaser, tuning, fireRateMult);
       case 'caster':
-        return decideCaster(state, player, nowMs, level, role);
+        return decideCaster(state, player, nowMs, level, role, fireRateMult);
       case 'tank':
-        return decideTank(state, player, nowMs, level, role, elite.tank);
+        return decideTank(state, player, nowMs, level, role, elite.tank, fireRateMult);
       case 'sniper':
-        return decideSniper(state, player, nowMs, level, role);
+        return decideSniper(state, player, nowMs, level, role, fireRateMult);
       case 'splitter':
       case 'splitling':
         // Splitters and their brood are contact-only chasers: they never telegraph.
         return decideMelee(state, player, level, role);
       case 'bomber':
-        return decideBomber(state, player, nowMs, level, role);
+        return decideBomber(state, player, nowMs, level, role, fireRateMult);
       case 'buffer':
-        return decideBuffer(state, player, nowMs, level, role);
+        return decideBuffer(state, player, nowMs, level, role, fireRateMult);
     }
   })();
 
@@ -392,6 +413,7 @@ function decideChaser(
   tuning: EnemyRoleTuning,
   elite: EnemiesTuning['elite']['chaser'],
   enemiesTuning: EnemiesTuning,
+  fireRateMult: number,
 ): EnemyAction {
   const current = state.action;
   const canPounce = state.elite && elite.pounceTelegraphMs > 0;
@@ -425,7 +447,7 @@ function decideChaser(
   const gap = distance(state.position, player);
   if (gap <= tuning.preferredRangeMaxTiles) return { kind: 'idle' };
 
-  const cooldown = elite.pounceCooldownMs;
+  const cooldown = elite.pounceCooldownMs / fireRateMult;
   if (canPounce && gap <= elite.pounceRangeTiles && nowMs - state.actionStartedMs >= cooldown) {
     return { kind: 'telegraph', sinceMs: nowMs };
   }
@@ -450,6 +472,7 @@ function decideCaster(
   nowMs: number,
   level: LevelData,
   tuning: EnemyRoleTuning,
+  fireRateMult: number,
 ): EnemyAction {
   const current = state.action;
 
@@ -474,7 +497,7 @@ function decideCaster(
     return { kind: 'walk', target: clampToRoom(level, player) };
   }
 
-  if (isCoolingDown(state, nowMs, tuning)) return { kind: 'idle' };
+  if (isCoolingDown(state, nowMs, tuning, fireRateMult)) return { kind: 'idle' };
   return { kind: 'telegraph', sinceMs: nowMs };
 }
 
@@ -494,6 +517,7 @@ function decideSniper(
   nowMs: number,
   level: LevelData,
   tuning: EnemyRoleTuning,
+  fireRateMult: number,
 ): EnemyAction {
   const current = state.action;
 
@@ -525,7 +549,7 @@ function decideSniper(
   }
   // Between shots it closes to the near edge instead of standing in place at whatever distance
   // it happened to stop (see `SNIPER_APPROACH_INSET_TILES`).
-  if (isCoolingDown(state, nowMs, tuning)) {
+  if (isCoolingDown(state, nowMs, tuning, fireRateMult)) {
     const target = sniperHoldTarget(state, player, level, tuning);
     // Already at the stand-off point: hold still. A `walk` to its own position moves it nowhere,
     // and the stuck guard then keeps detouring it sideways (it paced back and forth between the
@@ -563,6 +587,7 @@ function decideTank(
   level: LevelData,
   tuning: EnemyRoleTuning,
   elite: EnemiesTuning['elite']['tank'],
+  fireRateMult: number,
 ): EnemyAction {
   const current = state.action;
 
@@ -617,7 +642,7 @@ function decideTank(
     return { kind: 'walk', target: clampToRoom(level, player) };
   }
 
-  if (isCoolingDown(state, nowMs, tuning)) return { kind: 'idle' };
+  if (isCoolingDown(state, nowMs, tuning, fireRateMult)) return { kind: 'idle' };
   return { kind: 'telegraph', sinceMs: nowMs };
 }
 
@@ -633,6 +658,7 @@ function decideBomber(
   nowMs: number,
   level: LevelData,
   tuning: EnemyRoleTuning,
+  fireRateMult: number,
 ): EnemyAction {
   const current = state.action;
 
@@ -652,7 +678,7 @@ function decideBomber(
     return { kind: 'walk', target: clampToRoom(level, player) };
   }
 
-  if (isCoolingDown(state, nowMs, tuning)) return { kind: 'idle' };
+  if (isCoolingDown(state, nowMs, tuning, fireRateMult)) return { kind: 'idle' };
   return { kind: 'telegraph', sinceMs: nowMs };
 }
 
@@ -668,6 +694,7 @@ function decideBuffer(
   nowMs: number,
   level: LevelData,
   tuning: EnemyRoleTuning,
+  fireRateMult: number,
 ): EnemyAction {
   const current = state.action;
 
@@ -690,12 +717,17 @@ function decideBuffer(
     return { kind: 'walk', target: clampToRoom(level, player) };
   }
 
-  if (isCoolingDown(state, nowMs, tuning)) return { kind: 'idle' };
+  if (isCoolingDown(state, nowMs, tuning, fireRateMult)) return { kind: 'idle' };
   return { kind: 'telegraph', sinceMs: nowMs };
 }
 
-function isCoolingDown(state: EnemyState, nowMs: number, tuning: EnemyRoleTuning): boolean {
-  return nowMs - state.actionStartedMs < tuning.attackCooldownMs;
+function isCoolingDown(
+  state: EnemyState,
+  nowMs: number,
+  tuning: EnemyRoleTuning,
+  fireRateMult = 1,
+): boolean {
+  return nowMs - state.actionStartedMs < tuning.attackCooldownMs / fireRateMult;
 }
 
 /**

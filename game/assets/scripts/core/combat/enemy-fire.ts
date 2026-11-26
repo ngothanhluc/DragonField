@@ -13,6 +13,7 @@
 import type { Vec2 } from '../math/vec2';
 import { ENEMY_TUNING, type EnemiesTuning } from '../enemies/tuning';
 import type { EnemyRole } from '../level/level-data';
+import type { DeathCause } from '../run/run-summary';
 import type { BulletPool } from './bullets';
 
 /** Enemy bullet radius, tiles — same convention as player bullets (0.15). */
@@ -257,6 +258,8 @@ export interface EnemyVolleyArgs {
   readonly speedTilesPerSecond?: number;
   readonly ttlMs?: number;
   readonly radiusTiles?: number;
+  /** Optional killer attribution attached to each spawned enemy bullet (M15). */
+  readonly source?: DeathCause;
 }
 
 /**
@@ -278,6 +281,7 @@ export function fireEnemyVolley(args: EnemyVolleyArgs): number {
       damage: args.damage,
       owner: 'enemy',
       ttlMs,
+      ...(args.source !== undefined ? { source: args.source } : {}),
     });
   }
 

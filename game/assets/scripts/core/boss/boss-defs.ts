@@ -339,11 +339,17 @@ export function bossForSpriteName(spriteName: string): BossDef | undefined {
 }
 
 /** Remaining health fraction, clamped into [0, 1] so overheal cannot push past a threshold. */
-export function healthFraction(bossId: BossId, health: number): number {
+export function healthFraction(bossId: BossId, health: number, maxHealthOverride?: number): number {
   if (!Number.isFinite(health)) {
     throw new Error(`healthFraction needs finite health, got ${health}`);
   }
-  const ratio = health / BOSSES[bossId].maxHealth;
+  const maxHealth =
+    maxHealthOverride !== undefined &&
+    Number.isFinite(maxHealthOverride) &&
+    maxHealthOverride > 0
+      ? maxHealthOverride
+      : BOSSES[bossId].maxHealth;
+  const ratio = health / maxHealth;
   if (ratio <= 0) return 0;
   if (ratio >= 1) return 1;
   return ratio;

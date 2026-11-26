@@ -28,6 +28,7 @@
  */
 import type { LevelData, Obstacle } from '../level/level-data';
 import { distanceSquared, type Vec2 } from '../math/vec2';
+import type { DeathCause } from '../run/run-summary';
 
 export type BulletOwner = 'player' | 'enemy';
 
@@ -54,6 +55,8 @@ export interface Bullet {
   crit: boolean;
   /** Actor ids already hit — a piercing/ricocheting bullet never hits the same target twice. */
   hitIds: string[];
+  /** Optional killer attribution for enemy/boss bullets (M15 rich death cause). */
+  source?: DeathCause | undefined;
 }
 
 export interface CircleArea {
@@ -74,6 +77,7 @@ export interface BulletSpawnArgs {
   readonly explosiveRadiusTiles?: number;
   readonly explosiveDamage?: number;
   readonly crit?: boolean;
+  readonly source?: DeathCause;
 }
 
 /** Default capacity: more than 5× the M3 target of max on-screen bullets (40). */
@@ -221,6 +225,7 @@ export class BulletPool {
     bullet.explosiveDamage = Math.max(0, args.explosiveDamage ?? 0);
     bullet.crit = args.crit === true;
     bullet.hitIds.length = 0;
+    bullet.source = args.source;
 
     this.live.push(bullet);
     return bullet;
@@ -334,6 +339,7 @@ export class BulletPool {
       explosiveDamage: bullet.explosiveDamage,
       crit: bullet.crit,
       hitIds: bullet.hitIds.slice(),
+      ...(bullet.source !== undefined ? { source: bullet.source } : {}),
     }));
   }
 

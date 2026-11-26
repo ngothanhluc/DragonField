@@ -237,4 +237,52 @@ export class XpTracker {
   reset(chapter: number = this.state.chapter): void {
     this.state = createXpState(chapter, this.tuning);
   }
+
+  /**
+   * Restore XP progress from an `ActiveRunSave` snapshot (M15 safe-boundary resume).
+   * Clamps fields defensively so a stale/edited snapshot never produces invalid thresholds.
+   */
+  restore(saved: {
+    readonly level: number;
+    readonly currentXp: number;
+    readonly totalXp: number;
+    readonly pendingLevelUps: number;
+    readonly chapter: number;
+  }): void {
+    const chapter = Number.isFinite(saved.chapter) ? Math.max(1, Math.floor(saved.chapter)) : 1;
+    const level = Number.isFinite(saved.level) ? Math.max(1, Math.floor(saved.level)) : 1;
+    const nextLevelXp = xpForNextLevel(level, chapter, this.tuning);
+    const rawCurrent = Number.isFinite(saved.currentXp)
+      ? Math.max(0, Math.floor(saved.currentXp))
+      : 0;
+    const currentXp = Math.min(rawCurrent, Math.max(0, nextLevelXp - 1));
+    const rawTotal = Number.isFinite(saved.totalXp) ? Math.max(0, Math.floor(saved.totalXp)) : 0;
+    const totalXp = Math.max(currentXp, rawTotal);
+    const pendingLevelUps = Number.isFinite(saved.pendingLevelUps)
+      ? Math.max(0, Math.floor(saved.pendingLevelUps))
+      : 0;
+
+    this.state = {
+      level,
+      currentXp,
+      nextLevelXp,
+      totalXp,
+      pendingLevelUps,
+      chapter,
+    };
+  }
+
+  /**
+   * Update the active chapter (M15 Endless loop transition) while preserving level, XP, and
+   * queued level-ups; recomputes `nextLevelXp` for the new chapter's curve.
+   */
+  setChapter(chapter: number): void {
+    const safeChapter = Number.isFinite(chapter) ? Math.max(1, Math.floor(chapter)) : 1;
+    const nextLevelXp = xpForNextLevel(this.state.level, safeChapter, this.tuning);
+    this.state = {
+      ...this.state,
+      chapter: safeChapter,
+      nextLevelXp,
+    };
+  }
 }

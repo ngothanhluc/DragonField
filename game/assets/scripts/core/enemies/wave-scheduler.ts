@@ -130,8 +130,9 @@ export function enemyStateFromSpawn(
   spawn: ScheduledSpawn,
   index: number,
   nowMs = 0,
+  healthMult = 1,
 ): EnemyState {
-  const maxHealth = maxHealthFor(spawn.role, spawn.elite, undefined, level.chapter);
+  const maxHealth = maxHealthFor(spawn.role, spawn.elite, undefined, level.chapter, healthMult);
   const cooldownMs = ENEMY_TUNING.roles[spawn.role].attackCooldownMs;
   const graceMs = Math.min(cooldownMs, ENEMY_TUNING.roles[spawn.role].telegraphMs);
   return {

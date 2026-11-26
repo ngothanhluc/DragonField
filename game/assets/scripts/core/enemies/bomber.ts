@@ -14,6 +14,8 @@ export interface BomberBlastSpec {
   readonly center: Vec2;
   readonly radiusTiles: number;
   readonly damage: number;
+  /** True when the bomber was an elite variant (used for M15 death attribution). */
+  readonly elite?: boolean;
   /** True for the elite bomber's secondary shockwave pulse. */
   readonly isFollowUp: boolean;
   /** Delay before an elite bomber's second pulse fires, or `null` for normal / follow-up blasts. */
@@ -27,6 +29,7 @@ export interface PendingBomberBlast {
   readonly center: Vec2;
   readonly radiusTiles: number;
   readonly damage: number;
+  readonly elite?: boolean;
   readonly triggerAtMs: number;
 }
 
@@ -45,12 +48,17 @@ export function bomberBlastSpec(
   enemy: Pick<EnemyState, 'id' | 'position' | 'elite'>,
   chapter = 1,
   tuning: EnemiesTuning = ENEMY_TUNING,
+  damageMult = 1,
 ): BomberBlastSpec {
   const role = tuning.roles.bomber;
   const baseRadius = role.blastRadiusTiles ?? 2.5;
   const baseDamage = role.blastDamage ?? Math.max(1, role.contactDamage);
   const eliteMult = enemy.elite ? tuning.eliteDamageMultiplier : 1;
-  const damage = Math.max(1, Math.round(baseDamage * eliteMult * chapterDamageMultiplier(chapter)));
+  const safeMult = Number.isFinite(damageMult) && damageMult > 0 ? damageMult : 1;
+  const damage = Math.max(
+    1,
+    Math.round(baseDamage * eliteMult * chapterDamageMultiplier(chapter) * safeMult),
+  );
 
   if (!enemy.elite) {
     return {
@@ -58,6 +66,7 @@ export function bomberBlastSpec(
       center: { x: enemy.position.x, y: enemy.position.y },
       radiusTiles: baseRadius,
       damage,
+      elite: false,
       isFollowUp: false,
       followUpDelayMs: null,
       followUpRadiusTiles: 0,
@@ -71,6 +80,7 @@ export function bomberBlastSpec(
     center: { x: enemy.position.x, y: enemy.position.y },
     radiusTiles: baseRadius * elite.blastRadiusMultiplier,
     damage,
+    elite: true,
     isFollowUp: false,
     followUpDelayMs: delayMs,
     followUpRadiusTiles: delayMs !== null ? baseRadius * elite.doublePulseRadiusMultiplier : 0,
@@ -90,6 +100,7 @@ export function scheduleFollowUpBlast(
     center: { x: spec.center.x, y: spec.center.y },
     radiusTiles: spec.followUpRadiusTiles,
     damage: spec.damage,
+    elite: spec.elite === true,
     triggerAtMs: nowMs + spec.followUpDelayMs,
   };
 }
@@ -109,6 +120,7 @@ export function stepPendingBlasts(
         center: { x: item.center.x, y: item.center.y },
         radiusTiles: item.radiusTiles,
         damage: item.damage,
+        elite: item.elite === true,
         isFollowUp: true,
         followUpDelayMs: null,
         followUpRadiusTiles: 0,

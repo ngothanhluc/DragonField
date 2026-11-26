@@ -21,7 +21,7 @@ import {
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
 } from 'cc';
-import { animationFor, type BossDef, type BossPhase } from '../core/boss/boss-defs';
+import { animationFor, type BossDef, type BossId, type BossPhase } from '../core/boss/boss-defs';
 import {
   bulletVelocity,
   initialBossState,
@@ -93,6 +93,12 @@ export interface BossViewOptions {
   readonly onPhase?: (phase: BossPhase) => void;
   /** Called when the pattern requests adds; CombatLoop spawns the EnemyView itself. */
   readonly onSummon?: (role: EnemyRole, count: number) => void;
+  /** Ascension / Endless boss HP multiplier (M15, default `1`). */
+  readonly healthMult?: number;
+  /** Ascension / Endless boss damage multiplier (M15, default `1`). */
+  readonly damageMult?: number;
+  /** Ascension boss attack-speed multiplier (M15, default `1`). */
+  readonly attackSpeedMult?: number;
 }
 
 export class BossView {
@@ -103,6 +109,10 @@ export class BossView {
   private readonly onSummon: (role: EnemyRole, count: number) => void;
   private readonly fx: FxPool | null;
   private readonly shake: ScreenShake | null;
+  private readonly scaledMaxHealth: number;
+  private readonly damageMult: number;
+  private readonly attackSpeedMult: number;
+  private bossClockMs: number;
   private readonly node: Node;
   private readonly animator: SpriteAnimator;
   private readonly sprite: Sprite;
@@ -132,7 +142,33 @@ export class BossView {
     this.onSummon = options.onSummon ?? (() => undefined);
     this.fx = options.fx ?? null;
     this.shake = options.shake ?? null;
-    this.state = initialBossState(options.def.id, options.start, options.nowMs);
+    const healthMult =
+      options.healthMult !== undefined &&
+      Number.isFinite(options.healthMult) &&
+      options.healthMult > 0
+        ? options.healthMult
+        : 1;
+    this.scaledMaxHealth = Math.max(1, Math.round(options.def.maxHealth * healthMult));
+    this.damageMult =
+      options.damageMult !== undefined &&
+      Number.isFinite(options.damageMult) &&
+      options.damageMult > 0
+        ? options.damageMult
+        : 1;
+    this.attackSpeedMult =
+      options.attackSpeedMult !== undefined &&
+      Number.isFinite(options.attackSpeedMult) &&
+      options.attackSpeedMult > 0
+        ? options.attackSpeedMult
+        : 1;
+    this.bossClockMs = options.nowMs;
+    this.state = initialBossState(
+      options.def.id,
+      options.start,
+      options.nowMs,
+      undefined,
+      healthMult !== 1 ? this.scaledMaxHealth : undefined,
+    );
 
     const node = new CocosNode(`boss-${options.def.id}`);
     node.parent = options.actorLayer;
@@ -163,6 +199,10 @@ export class BossView {
     return this.def.id;
   }
 
+  get bossId(): BossId {
+    return this.def.id;
+  }
+
   get position(): Vec2 {
     return this.state.position;
   }
@@ -181,7 +221,7 @@ export class BossView {
   }
 
   get maxHealth(): number {
-    return this.def.maxHealth;
+    return this.scaledMaxHealth;
   }
 
   get phase(): BossPhase {
@@ -208,17 +248,22 @@ export class BossView {
 
   /** Whether the boss is still inside its entrance grace window at `nowMs`. */
   isInIntro(nowMs: number): boolean {
-    return isBossInIntro(this.state, nowMs);
+    return isBossInIntro(this.state, Math.max(nowMs, this.bossClockMs));
   }
 
   /** One pattern frame. Returns events for CombatLoop to handle summons (bullets are spawned here). */
   step(nowMs: number, deltaMs: number, player: Vec2): readonly BossEvent[] {
     if (this.isDefeated) return [];
 
+    // Keep entrance grace at real simulation speed; scale active combat pattern cadence by Ascension.
+    const inIntro = isBossInIntro(this.state, this.bossClockMs);
+    const stepDeltaMs = inIntro ? deltaMs : deltaMs * this.attackSpeedMult;
+    this.bossClockMs += stepDeltaMs;
+
     const result = stepBoss({
       state: this.state,
-      nowMs,
-      deltaMs,
+      nowMs: this.bossClockMs,
+      deltaMs: stepDeltaMs,
       player,
       rng: this.rng,
     });
@@ -230,7 +275,7 @@ export class BossView {
           this.playAnimation(event.animation);
           break;
         case 'telegraph':
-          this.telegraphStartedMs = nowMs;
+          this.telegraphStartedMs = this.bossClockMs;
           this.telegraphDurationMs = event.durationMs;
           break;
         case 'shoot':
@@ -239,9 +284,10 @@ export class BossView {
               position: verb.from,
               velocity: bulletVelocity(verb),
               radiusTiles: verb.radiusTiles,
-              damage: verb.damage,
+              damage: Math.max(1, Math.round(verb.damage * this.damageMult)),
               owner: 'enemy',
               ttlMs: BOSS_BULLET_TTL_MS,
+              source: { kind: 'boss', bossId: this.def.id, phase: this.state.phase },
             });
           }
           this.spawnVolleyCue(event.bullets);
@@ -267,7 +313,7 @@ export class BossView {
     this.syncPosition();
     this.applySquash(nowMs);
     this.applyTint(nowMs);
-    this.updateRing(nowMs);
+    this.updateRing(this.bossClockMs);
 
     if (this.state.chargeDirection !== null) {
       this.charging = true;

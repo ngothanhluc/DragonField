@@ -244,6 +244,26 @@ export interface DoorArrowOffset {
   readonly reward: DoorReward;
 }
 
+/**
+ * Format the room counter with optional compact Ascension (`A<n>`) and Endless (`E<n>`) badges
+ * (M15) while keeping Normal runs identical (`1/9` → `Room 1/9`). Sized so `Room 9/9 A5 E9`
+ * fits inside the top-right plate clear of the Boss bar at 512×288 design resolution.
+ */
+export function formatRunRoomLabel(
+  roomLabel: string,
+  ascension = 0,
+  endlessLoop = 0,
+): string {
+  const tags: string[] = [];
+  if (Number.isFinite(ascension) && ascension >= 1) {
+    tags.push(`A${Math.floor(ascension)}`);
+  }
+  if (Number.isFinite(endlessLoop) && endlessLoop >= 1) {
+    tags.push(`E${Math.floor(endlessLoop)}`);
+  }
+  return tags.length === 0 ? roomLabel : `${roomLabel} ${tags.join(' ')}`;
+}
+
 function heartRect(index: number): TileRect {
   return {
     x: index * HUD_HEART_SIZE_PX,

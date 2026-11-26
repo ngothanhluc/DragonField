@@ -163,18 +163,23 @@ export class XpOrbPool {
    * on this step.
    *
    * - While `roomCleared` is `false`: orbs finish their brief scatter glide, remain idle until
-   *   entering `magnetRadiusTiles`, then accelerate smoothly toward `playerPos` and collect within
-   *   `pickupRadiusTiles`.
+   *   entering `magnetRadiusTiles * magnetRadiusMultiplier`, then accelerate smoothly toward
+   *   `playerPos` and collect within `pickupRadiusTiles`.
    * - When `roomCleared` is `true`: every orb across the entire room immediately switches to
    *   `vacuum` mode and accelerates rapidly toward `playerPos` regardless of distance.
    */
-  step(dt: number, playerPos: Vec2, roomCleared: boolean): number {
+  step(dt: number, playerPos: Vec2, roomCleared: boolean, magnetRadiusMultiplier = 1): number {
     this.collectedLastStep = 0;
     if (!Number.isFinite(dt) || dt <= 0 || this.live.length === 0) return 0;
 
     const pickupRadius = this.tuning.pickupRadiusTiles;
     const pickupRadiusSq = pickupRadius * pickupRadius;
-    const magnetRadiusSq = this.tuning.magnetRadiusTiles * this.tuning.magnetRadiusTiles;
+    const safeMagnetMult =
+      Number.isFinite(magnetRadiusMultiplier) && magnetRadiusMultiplier > 0
+        ? magnetRadiusMultiplier
+        : 1;
+    const effectiveMagnetRadius = this.tuning.magnetRadiusTiles * safeMagnetMult;
+    const magnetRadiusSq = effectiveMagnetRadius * effectiveMagnetRadius;
     const magnetAccel = this.tuning.magnetAccelTilesPerSecondSq;
     const magnetMaxSpeed = this.tuning.magnetMaxSpeedTilesPerSecond;
     const vacuumAccel = this.tuning.vacuumAccelTilesPerSecondSq;

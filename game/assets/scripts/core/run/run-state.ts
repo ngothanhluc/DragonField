@@ -145,6 +145,21 @@ export class RunState {
     this.currentWave += 1;
   }
 
+  /**
+   * Jump directly to a 1-based room index within the current chapter (M15 safe-boundary resume).
+   * Resets wave to 1 and status to `'playing'`. Throws if `room` is outside `1..roomsTotal`.
+   */
+  restoreRoom(room: number): void {
+    if (!Number.isInteger(room) || room < 1 || room > this.roomsInChapter) {
+      throw new Error(
+        `restoreRoom: room must be an integer in 1..${this.roomsInChapter}, got ${room}`,
+      );
+    }
+    this.currentRoom = room;
+    this.currentWave = 1;
+    this.currentStatus = 'playing';
+  }
+
   markLost(): void {
     if (this.currentStatus === 'won' || this.currentStatus === 'lost') {
       throw new Error(
