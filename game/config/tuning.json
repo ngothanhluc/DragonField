@@ -236,5 +236,9 @@
         "epic": 40
       }
     }
+  },
+  "roomArt": {
+    "detailDensity": 0.08,
+    "pathStoneDensity": 0.14
   }
 }

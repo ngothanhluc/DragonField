@@ -9,6 +9,7 @@ const NATURE = 'resources/art/tilesets/TilesetNature.png';
 const ELEMENT = 'resources/art/tilesets/TilesetElement.png';
 const VILLAGE = 'resources/art/tilesets/TilesetVillageAbandoned.png';
 const HOLE = 'resources/art/tilesets/TilesetHole.png';
+const DESERT = 'resources/art/tilesets/TilesetDesert.png';
 const KEYS: readonly ObstacleVisualKey[] = ['pillar', 'pillarSmall', 'wall', 'pit'];
 
 describe('obstacleVisual', () => {
@@ -59,5 +60,24 @@ describe('obstacleVisual', () => {
     }
     expect(obstacleVisual(3, 'pillar')).toMatchObject({ tile: false, rect: { width: 16, height: 32 } });
     expect(obstacleVisual(3, 'pit')).toMatchObject({ tile: false, rect: { width: 32, height: 32 } });
+  });
+
+  it('draws chapter 4 desert obstacles with sandstone rocks and the 3×3 oasis pond pit', () => {
+    expect(obstacleVisual(4, 'pillar')).toEqual({
+      sheet: NATURE,
+      rect: { x: 240, y: 160, width: 32, height: 32 },
+      tile: false,
+    });
+    expect(obstacleVisual(4, 'pillarSmall')).toEqual({
+      sheet: NATURE,
+      rect: { x: 272, y: 208, width: 16, height: 16 },
+      tile: true,
+    });
+    expect(obstacleVisual(4, 'pit')).toEqual({
+      sheet: DESERT,
+      rect: { x: 272, y: 112, width: 48, height: 48 },
+      tile: false,
+    });
+    expect(obstacleSheets(4)).toEqual([NATURE, DESERT]);
   });
 });

@@ -31,6 +31,7 @@ const NATURE = 'resources/art/tilesets/TilesetNature.png';
 const ELEMENT = 'resources/art/tilesets/TilesetElement.png';
 const VILLAGE = 'resources/art/tilesets/TilesetVillageAbandoned.png';
 const HOLE = 'resources/art/tilesets/TilesetHole.png';
+const DESERT = 'resources/art/tilesets/TilesetDesert.png';
 
 /** Pixel cell of a gid (1-based) in a sheet with `columns` columns. */
 export function tileRectFromGid(columns: number, gid: number): TileRect {
@@ -45,6 +46,7 @@ export function tileRectFromGid(columns: number, gid: number): TileRect {
 
 export const BOUNDS = {
   boulder: { x: 240, y: 224, width: 32, height: 32 },
+  sandstoneBoulder: { x: 240, y: 160, width: 32, height: 32 },
   smallRock: { x: 256, y: 192, width: 16, height: 16 },
   natureWall: { x: 272, y: 208, width: 16, height: 16 },
   crate: { x: 112, y: 0, width: 16, height: 16 },
@@ -59,6 +61,8 @@ export const BOUNDS = {
   villageColumn: { x: 32, y: 64, width: 16, height: 32 },
   /** TilesetHole 2×2 frame that reads as a pit. */
   holePit: { x: 0, y: 16, width: 32, height: 32 },
+  /** TilesetDesert 3×3 white-rimmed oasis pond: blocks walkers, lets bullets fly across. */
+  oasisPond: { x: 272, y: 112, width: 48, height: 48 },
 } as const satisfies Record<string, TileRect>;
 
 export const OBSTACLE_VISUALS: Readonly<
@@ -69,26 +73,30 @@ export const OBSTACLE_VISUALS: Readonly<
     pillarSmall: { sheet: ELEMENT, rect: BOUNDS.crate, tile: true },
     wall: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
     pit: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
+    edge: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
   },
   2: {
     pillar: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
     pillarSmall: { sheet: ELEMENT, rect: BOUNDS.crate, tile: true },
     wall: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
     pit: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
+    edge: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
   },
   3: {
     pillar: { sheet: VILLAGE, rect: BOUNDS.villageColumn, tile: false },
     pillarSmall: { sheet: VILLAGE, rect: BOUNDS.villageStone, tile: true },
     wall: { sheet: VILLAGE, rect: BOUNDS.villageBrokenStone, tile: true },
     pit: { sheet: HOLE, rect: BOUNDS.holePit, tile: false },
+    edge: { sheet: VILLAGE, rect: BOUNDS.villageBrokenStone, tile: true },
   },
-  // Chapter 4 — desert (#45): the grey nature boulder reads as a sandstone rock on sand, and the
-  // nature wall is the nearest "broken wall" the pack has; a pit is a 2×2 boulder pit like ch1.
+  // Chapter 4 — desert (#45, #67): warm sandstone boulders/walls from Nature, and the 3×3 white-rimmed
+  // oasis pond from TilesetDesert as the `pit` visual (blocks walkers, bullets fly cleanly over water).
   4: {
-    pillar: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
-    pillarSmall: { sheet: ELEMENT, rect: BOUNDS.crate, tile: true },
+    pillar: { sheet: NATURE, rect: BOUNDS.sandstoneBoulder, tile: false },
+    pillarSmall: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
     wall: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
-    pit: { sheet: NATURE, rect: BOUNDS.boulder, tile: false },
+    pit: { sheet: DESERT, rect: BOUNDS.oasisPond, tile: false },
+    edge: { sheet: NATURE, rect: BOUNDS.natureWall, tile: true },
   },
 };
 
