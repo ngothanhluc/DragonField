@@ -1,5 +1,5 @@
 /**
- * Pure HUD layout and safe-band geometry (M11 T4 + M12 T2).
+ * Pure HUD layout and safe-band geometry (M11 T4 + M12 T2 + M13 T1).
  *
  * The UI Canvas runs at a 512×288 design resolution (`ResolutionPolicy.SHOW_ALL`, origin `(0, 0)`
  * at screen centre, +x right, +y up). `WorldCamera` scales the world to integer multiples of
@@ -13,7 +13,7 @@
  * - Top-centre: Boss HP bar (`bossBar`) / Door hint (`doorHint`);
  * - Bottom-centre (M12): Event-driven XP bar + `LV X` badge (`xpBar` / `m12XpBar`);
  * - Bottom-right (M12): Wrapped 10×2 owned skill grid holding up to 20 distinct skills (`skillStrip`);
- * - Bottom-left (reserved for M13): Dash + Signature Active cooldown indicators (`m13DashActive`);
+ * - Bottom-left (M13): Event-driven Dash (`SPACE`) + Signature Active (`E`) cooldown widgets (`dashActive` / `m13DashActive`);
  * - Clamped off-screen enemy / door edge-arrow band (`arrowLimits`).
  *
  * Pure arithmetic — no `cc` import.
@@ -103,9 +103,25 @@ export const HUD_XP_LEVEL_LINE_HEIGHT = 11;
 export const HUD_XP_PROGRESS_FONT_SIZE = 9;
 export const HUD_XP_PROGRESS_LINE_HEIGHT = 10;
 
-/** M13 bottom-left Dash + Signature Active cooldown safe anchor reserve. */
-export const HUD_M13_DASH_ACTIVE_WIDTH_PX = 84;
+/** M13 bottom-left Dash (`SPACE`) + Signature Active (`E`) cooldown plate and internal geometry. */
+export const HUD_M13_DASH_ACTIVE_WIDTH_PX = 112;
 export const HUD_M13_DASH_ACTIVE_HEIGHT_PX = 32;
+export const HUD_ACTION_PLATE_PAD_X_PX = 5;
+export const HUD_ACTION_PLATE_PAD_Y_PX = 4;
+export const HUD_ACTION_ROW_HEIGHT_PX = 11;
+export const HUD_ACTION_ROW_GAP_PX = 2;
+export const HUD_ACTION_KEY_WIDTH_PX = 36;
+export const HUD_ACTION_KEY_HEIGHT_PX = 11;
+export const HUD_ACTION_KEY_GAP_PX = 4;
+export const HUD_ACTION_BAR_WIDTH_PX = 62;
+export const HUD_ACTION_BAR_HEIGHT_PX = 10;
+export const HUD_ACTION_BAR_INSET_PX = 1;
+export const HUD_ACTION_KEY_FONT_SIZE = 8;
+export const HUD_ACTION_KEY_LINE_HEIGHT = 9;
+export const HUD_ACTION_STATUS_FONT_SIZE = 8;
+export const HUD_ACTION_STATUS_LINE_HEIGHT = 9;
+export const HUD_DASH_KEY_TEXT = 'SPACE';
+export const HUD_ACTIVE_KEY_TEXT = 'E';
 
 /** Off-screen enemy / door arrow clamping insets inside the HUD design band. */
 export const HUD_ARROW_SIDE_INSET_PX = 14;
@@ -173,6 +189,27 @@ export interface HudXpBarLayout {
   readonly fillRatio: number;
 }
 
+export interface HudActionSlotLayout {
+  readonly row: HudRect;
+  readonly keyBadge: HudRect;
+  readonly barTrack: HudRect;
+  readonly barFillMax: HudRect;
+  /** Centered (`anchor = (0.5, 0.5)`) inside `keyBadge`. */
+  readonly keyLabel: Vec2;
+  /** Centered (`anchor = (0.5, 0.5)`) inside `barTrack`. */
+  readonly statusLabel: Vec2;
+  readonly keyText: string;
+  readonly statusText: string;
+  readonly readyRatio: number;
+  readonly isReady: boolean;
+}
+
+export interface HudDashActiveLayout {
+  readonly plate: HudRect;
+  readonly dash: HudActionSlotLayout;
+  readonly active: HudActionSlotLayout;
+}
+
 export interface HudSkillStripLayout {
   /** Maximum 20-slot (10×2) reservation on the bottom-right, used for non-overlap checks. */
   readonly maxPlate: HudRect;
@@ -203,6 +240,10 @@ export interface HudLayoutInput {
   readonly xpLevel?: number;
   readonly xpCurrent?: number;
   readonly xpRequired?: number;
+  readonly dashReadyRatio?: number;
+  readonly dashCooldownSec?: number;
+  readonly activeReadyRatio?: number;
+  readonly activeCooldownSec?: number;
 }
 
 export interface HudLayout {
@@ -217,7 +258,9 @@ export interface HudLayout {
   readonly xpBar: HudXpBarLayout;
   /** Bottom-centre XP bar + level badge bounding plate (`xpBar.plate`). */
   readonly m12XpBar: HudRect;
-  /** Reserved for M13: bottom-left Dash + Signature Active cooldown widgets. */
+  /** M13 bottom-left Dash + Signature Active detailed geometry (`dashActive.plate === m13DashActive`). */
+  readonly dashActive: HudDashActiveLayout;
+  /** Bottom-left Dash + Signature Active cooldown bounding plate (`dashActive.plate`). */
   readonly m13DashActive: HudRect;
   readonly arrowLimits: HudArrowLimits;
 }
@@ -300,7 +343,45 @@ export function formatHudXpProgressText(currentXp: number, requiredXp: number): 
   return `${safeCurrent}/${safeRequired}`;
 }
 
-/** Compute the complete HUD layout, M12 XP bar, 20-slot skill grid, and M13 reserve in design coordinates. */
+/** Clamp a Dash or Signature Active readiness ratio cleanly to `[0, 1]` (`0` on non-finite). */
+export function computeHudActionReadyRatio(readyRatio: number): number {
+  if (!Number.isFinite(readyRatio) || readyRatio <= 0) return 0;
+  return Math.min(1, Math.max(0, readyRatio));
+}
+
+/** Normalize a remaining cooldown in seconds (`0` when ready or non-finite). */
+export function normalizeHudCooldownSeconds(cooldownSec: number): number {
+  if (!Number.isFinite(cooldownSec) || cooldownSec <= 0) return 0;
+  return cooldownSec;
+}
+
+/** True when the action is fully ready (`readyRatio >= 1` and `cooldownSec <= 0`). */
+export function isHudActionReady(readyRatio: number, cooldownSec: number): boolean {
+  return (
+    computeHudActionReadyRatio(readyRatio) >= 1 && normalizeHudCooldownSeconds(cooldownSec) <= 0
+  );
+}
+
+/**
+ * Format compact status text inside a Dash or Signature Active cooldown track:
+ * `'READY'` when ready, tenths-of-a-second countdown (`'1.8s'`, `'9.4s'`) while cooling down,
+ * or integer percentage (`'50%'`) if a partial ratio is provided with `cooldownSec <= 0`.
+ */
+export function formatHudActionStatusText(readyRatio: number, cooldownSec: number): string {
+  const safeSec = normalizeHudCooldownSeconds(cooldownSec);
+  if (safeSec > 0) {
+    if (safeSec >= 100) {
+      return `${Math.min(999, Math.ceil(safeSec))}s`;
+    }
+    const tenths = Math.max(1, Math.ceil(safeSec * 10 - 1e-9));
+    return `${(tenths / 10).toFixed(1)}s`;
+  }
+  const safeRatio = computeHudActionReadyRatio(readyRatio);
+  if (safeRatio >= 1) return 'READY';
+  return `${Math.floor(safeRatio * 100)}%`;
+}
+
+/** Compute the complete HUD layout, M12 XP bar, 20-slot skill grid, and M13 Dash/Active widgets. */
 export function computeHudLayout(input: HudLayoutInput = {}): HudLayout {
   const designWidth = input.designWidth ?? HUD_DESIGN_WIDTH;
   const designHeight = input.designHeight ?? HUD_DESIGN_HEIGHT;
@@ -351,12 +432,15 @@ export function computeHudLayout(input: HudLayoutInput = {}): HudLayout {
     HUD_DOOR_HINT_HEIGHT_PX,
   );
 
-  const m13DashActive = makeHudRect(
+  const dashActive = computeDashActiveLayout(
     safeArea.left,
     safeArea.bottom,
-    HUD_M13_DASH_ACTIVE_WIDTH_PX,
-    HUD_M13_DASH_ACTIVE_HEIGHT_PX,
+    input.dashReadyRatio ?? 1,
+    input.dashCooldownSec ?? 0,
+    input.activeReadyRatio ?? 1,
+    input.activeCooldownSec ?? 0,
   );
+  const m13DashActive = dashActive.plate;
 
   const xpBar = computeXpBarLayout(
     safeArea.bottom,
@@ -394,8 +478,95 @@ export function computeHudLayout(input: HudLayoutInput = {}): HudLayout {
     skillStrip,
     xpBar,
     m12XpBar,
+    dashActive,
     m13DashActive,
     arrowLimits,
+  };
+}
+
+function computeActionSlotLayout(
+  contentLeft: number,
+  rowBottom: number,
+  contentWidth: number,
+  keyText: string,
+  rawReadyRatio: number,
+  rawCooldownSec: number,
+): HudActionSlotLayout {
+  const row = makeHudRect(contentLeft, rowBottom, contentWidth, HUD_ACTION_ROW_HEIGHT_PX);
+  const keyBadge = makeHudRect(
+    contentLeft,
+    row.centerY - HUD_ACTION_KEY_HEIGHT_PX / 2,
+    HUD_ACTION_KEY_WIDTH_PX,
+    HUD_ACTION_KEY_HEIGHT_PX,
+  );
+  const barTrack = makeHudRect(
+    keyBadge.right + HUD_ACTION_KEY_GAP_PX,
+    row.centerY - HUD_ACTION_BAR_HEIGHT_PX / 2,
+    HUD_ACTION_BAR_WIDTH_PX,
+    HUD_ACTION_BAR_HEIGHT_PX,
+  );
+  const barFillMax = makeHudRect(
+    barTrack.left + HUD_ACTION_BAR_INSET_PX,
+    barTrack.bottom + HUD_ACTION_BAR_INSET_PX,
+    barTrack.width - HUD_ACTION_BAR_INSET_PX * 2,
+    barTrack.height - HUD_ACTION_BAR_INSET_PX * 2,
+  );
+
+  const readyRatio = computeHudActionReadyRatio(rawReadyRatio);
+  const isReady = isHudActionReady(rawReadyRatio, rawCooldownSec);
+  const statusText = formatHudActionStatusText(rawReadyRatio, rawCooldownSec);
+
+  return {
+    row,
+    keyBadge,
+    barTrack,
+    barFillMax,
+    keyLabel: { x: keyBadge.centerX, y: keyBadge.centerY },
+    statusLabel: { x: barTrack.centerX, y: barTrack.centerY },
+    keyText,
+    statusText,
+    readyRatio,
+    isReady,
+  };
+}
+
+function computeDashActiveLayout(
+  left: number,
+  bottom: number,
+  dashReadyRatio: number,
+  dashCooldownSec: number,
+  activeReadyRatio: number,
+  activeCooldownSec: number,
+): HudDashActiveLayout {
+  const plate = makeHudRect(
+    left,
+    bottom,
+    HUD_M13_DASH_ACTIVE_WIDTH_PX,
+    HUD_M13_DASH_ACTIVE_HEIGHT_PX,
+  );
+  const contentLeft = plate.left + HUD_ACTION_PLATE_PAD_X_PX;
+  const contentWidth = plate.width - HUD_ACTION_PLATE_PAD_X_PX * 2;
+  const activeBottom = plate.bottom + HUD_ACTION_PLATE_PAD_Y_PX;
+  const dashBottom = activeBottom + HUD_ACTION_ROW_HEIGHT_PX + HUD_ACTION_ROW_GAP_PX;
+
+  return {
+    plate,
+    dash: computeActionSlotLayout(
+      contentLeft,
+      dashBottom,
+      contentWidth,
+      HUD_DASH_KEY_TEXT,
+      dashReadyRatio,
+      dashCooldownSec,
+    ),
+    active: computeActionSlotLayout(
+      contentLeft,
+      activeBottom,
+      contentWidth,
+      HUD_ACTIVE_KEY_TEXT,
+      activeReadyRatio,
+      activeCooldownSec,
+    ),
   };
 }
 
@@ -676,6 +847,14 @@ export interface HudXpSnapshot {
   readonly required: number;
 }
 
+/** Compact M13 Dash + Signature Active state carried in `CombatHudSnapshot` (optional until Wave 2). */
+export interface HudActionsSnapshot {
+  readonly dashReadyRatio: number;
+  readonly dashCooldownSec: number;
+  readonly activeReadyRatio: number;
+  readonly activeCooldownSec: number;
+}
+
 /** Snapshot of combat-driven HUD fields for event-driven diffing (`hud-sync.ts`). */
 export interface CombatHudSnapshot {
   readonly maxHearts: number;
@@ -689,6 +868,11 @@ export interface CombatHudSnapshot {
   readonly xpCurrent?: number;
   readonly xpRequired?: number;
   readonly xp?: HudXpSnapshot;
+  readonly dashReadyRatio?: number;
+  readonly dashCooldownSec?: number;
+  readonly activeReadyRatio?: number;
+  readonly activeCooldownSec?: number;
+  readonly actions?: HudActionsSnapshot;
 }
 
 export interface CombatHudDiff {
@@ -697,6 +881,7 @@ export interface CombatHudDiff {
   readonly enemiesLeftChanged: boolean;
   readonly bossChanged: boolean;
   readonly xpChanged: boolean;
+  readonly actionsChanged: boolean;
 }
 
 /** True when `snap` carries explicit XP fields (either scalar `xpLevel/Current/Required` or `xp`). */
@@ -721,6 +906,33 @@ export function snapshotXpRequired(snap: CombatHudSnapshot): number {
   return snap.xp?.required ?? snap.xpRequired ?? 0;
 }
 
+/** True when `snap` carries explicit M13 Dash/Active fields (either nested `actions` or scalars). */
+export function hasSnapshotActions(snap: CombatHudSnapshot): boolean {
+  return (
+    snap.actions !== undefined ||
+    snap.dashReadyRatio !== undefined ||
+    snap.dashCooldownSec !== undefined ||
+    snap.activeReadyRatio !== undefined ||
+    snap.activeCooldownSec !== undefined
+  );
+}
+
+export function snapshotDashReadyRatio(snap: CombatHudSnapshot): number {
+  return snap.actions?.dashReadyRatio ?? snap.dashReadyRatio ?? 1;
+}
+
+export function snapshotDashCooldownSec(snap: CombatHudSnapshot): number {
+  return snap.actions?.dashCooldownSec ?? snap.dashCooldownSec ?? 0;
+}
+
+export function snapshotActiveReadyRatio(snap: CombatHudSnapshot): number {
+  return snap.actions?.activeReadyRatio ?? snap.activeReadyRatio ?? 1;
+}
+
+export function snapshotActiveCooldownSec(snap: CombatHudSnapshot): number {
+  return snap.actions?.activeCooldownSec ?? snap.activeCooldownSec ?? 0;
+}
+
 /** Pure diff between two `CombatHudSnapshot`s so `hud-sync` only mutates HUD nodes on transitions. */
 export function diffCombatHudSnapshot(
   prev: CombatHudSnapshot | null,
@@ -733,6 +945,7 @@ export function diffCombatHudSnapshot(
       enemiesLeftChanged: true,
       bossChanged: true,
       xpChanged: hasSnapshotXp(next),
+      actionsChanged: hasSnapshotActions(next),
     };
   }
   const prevHasXp = hasSnapshotXp(prev);
@@ -744,6 +957,16 @@ export function diffCombatHudSnapshot(
         !Object.is(snapshotXpCurrent(prev), snapshotXpCurrent(next)) ||
         !Object.is(snapshotXpRequired(prev), snapshotXpRequired(next))));
 
+  const prevHasActions = hasSnapshotActions(prev);
+  const nextHasActions = hasSnapshotActions(next);
+  const actionsChanged =
+    prevHasActions !== nextHasActions ||
+    (nextHasActions &&
+      (!Object.is(snapshotDashReadyRatio(prev), snapshotDashReadyRatio(next)) ||
+        !Object.is(snapshotDashCooldownSec(prev), snapshotDashCooldownSec(next)) ||
+        !Object.is(snapshotActiveReadyRatio(prev), snapshotActiveReadyRatio(next)) ||
+        !Object.is(snapshotActiveCooldownSec(prev), snapshotActiveCooldownSec(next))));
+
   return {
     maxHeartsChanged: prev.maxHearts !== next.maxHearts,
     heartsChanged: prev.hearts !== next.hearts || prev.maxHearts !== next.maxHearts,
@@ -754,5 +977,6 @@ export function diffCombatHudSnapshot(
       prev.bossMaxHp !== next.bossMaxHp ||
       prev.bossPhase !== next.bossPhase,
     xpChanged,
+    actionsChanged,
   };
 }

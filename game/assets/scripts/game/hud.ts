@@ -1,8 +1,8 @@
 /**
- * In-game HUD (M11 T4 + M12 T2): high-contrast pixel backing plates + crisp pack icons, anchored
- * to the visible room band via `WorldCamera.hudScale`, with an event-driven bottom-centre XP bar +
- * `LV X` badge (`m12XpBar`), a 20-slot (10×2) bottom-right skill grid, and a clean bottom-left
- * reserve for M13 (Dash + Active).
+ * In-game HUD (M11 T4 + M12 T2 + M13 T1): high-contrast pixel backing plates + crisp pack icons,
+ * anchored to the visible room band via `WorldCamera.hudScale`, with an event-driven bottom-centre
+ * XP bar + `LV X` badge (`m12XpBar`), a 20-slot (10×2) bottom-right skill grid, and event-driven
+ * bottom-left Dash (`SPACE`) + Signature Active (`E`) cooldown widgets (`m13DashActive`).
  *
  * Real UI (`Canvas` + `UI_2D` camera), laid out in 512×288 design pixels via pure geometry in
  * `core/view/hud-layout.ts`.
@@ -26,6 +26,10 @@ import { skillAbbreviation } from '../core/skills/description';
 import type { Vec2 } from '../core/math/vec2';
 import type { DoorReward } from '../core/run/doors';
 import {
+  HUD_ACTION_KEY_FONT_SIZE,
+  HUD_ACTION_KEY_LINE_HEIGHT,
+  HUD_ACTION_STATUS_FONT_SIZE,
+  HUD_ACTION_STATUS_LINE_HEIGHT,
   HUD_BOSS_BAR_HEIGHT_PX,
   HUD_BOSS_BAR_WIDTH_PX,
   HUD_BOSS_TITLE_FONT_SIZE,
@@ -45,10 +49,14 @@ import {
   HUD_XP_LEVEL_LINE_HEIGHT,
   HUD_XP_PROGRESS_FONT_SIZE,
   HUD_XP_PROGRESS_LINE_HEIGHT,
+  computeHudActionReadyRatio,
   computeHudLayout,
   computeHudXpFillRatio,
+  formatHudActionStatusText,
   formatHudLevelText,
   formatHudXpProgressText,
+  isHudActionReady,
+  type HudActionSlotLayout,
   type HudArrowLimits,
   type HudLayout,
   type HudRect,
@@ -132,6 +140,30 @@ const XP_FILL_CYAN_COLOR = new CocosColor(68, 218, 255, 255);
 const XP_FILL_HIGHLIGHT_COLOR = new CocosColor(196, 248, 255, 235);
 const XP_FILL_FULL_GOLD_COLOR = new CocosColor(255, 214, 92, 255);
 
+/**
+ * M13 Dash (`SPACE`) & Signature Active (`E`) widget colours (strictly ONE `Graphics` node per
+ * colour, drawn once at `init` and toggled via `.active` / `setScale`).
+ */
+const ACTION_BADGE_BG_COLOR = new CocosColor(20, 22, 30, 242);
+const ACTION_BADGE_CD_BORDER_COLOR = new CocosColor(88, 98, 118, 215);
+const DASH_BADGE_READY_BORDER_COLOR = new CocosColor(92, 226, 255, 240);
+const ACTIVE_BADGE_READY_BORDER_COLOR = new CocosColor(216, 152, 255, 240);
+const ACTION_TRACK_BG_COLOR = new CocosColor(14, 18, 28, 245);
+const ACTION_TRACK_BORDER_COLOR = new CocosColor(72, 96, 124, 220);
+
+const DASH_FILL_CD_COLOR = new CocosColor(54, 164, 224, 240);
+const DASH_FILL_READY_COLOR = new CocosColor(84, 242, 228, 255);
+const DASH_FILL_SHINE_COLOR = new CocosColor(210, 255, 252, 235);
+
+const ACTIVE_FILL_CD_COLOR = new CocosColor(152, 92, 232, 240);
+const ACTIVE_FILL_READY_COLOR = new CocosColor(214, 126, 255, 255);
+const ACTIVE_FILL_SHINE_COLOR = new CocosColor(246, 220, 255, 235);
+
+const ACTION_KEY_CD_COLOR = new CocosColor(178, 190, 208, 255);
+const ACTION_STATUS_CD_COLOR = new CocosColor(214, 224, 238, 255);
+const DASH_READY_TEXT_COLOR = new CocosColor(224, 255, 252, 255);
+const ACTIVE_READY_TEXT_COLOR = new CocosColor(248, 228, 255, 255);
+
 /** Rarity colours shared by skill cards and the HUD skill row. */
 export const RARITY_COLORS = {
   common: new CocosColor(222, 222, 222, 255),
@@ -168,6 +200,21 @@ interface HudPlateHandle {
   readonly root: Node;
   setRect(rect: HudRect): void;
   setActive(active: boolean): void;
+}
+
+/** Pre-built nodes for one M13 cooldown row (`Dash` or `Signature Active`). */
+interface ActionWidgetSlot {
+  readonly keyReadyBorder: Node;
+  readonly keyCooldownBorder: Node;
+  readonly fillRoot: Node;
+  readonly fillReadyGroup: Node;
+  readonly fillCooldownNode: Node;
+  readonly keyLabel: Label;
+  readonly statusLabel: Label;
+  readonly readyTextColor: Color;
+  shownRatio: number;
+  shownReady: boolean | null;
+  shownStatusText: string;
 }
 
 const BOSS_FILL_COLOR = new CocosColor(232, 74, 74, 255);
@@ -254,6 +301,15 @@ export class Hud extends Component {
   private shownXpProgressText = '';
   private shownXpRatio = -1;
 
+  /** M13 bottom-left Dash (`SPACE`) + Signature Active (`E`) cooldown widgets. */
+  private actionsRoot: Node | null = null;
+  private dashSlot: ActionWidgetSlot | null = null;
+  private activeSlot: ActionWidgetSlot | null = null;
+  private shownDashReadyRatio = Number.NaN;
+  private shownDashCooldownSec = Number.NaN;
+  private shownActiveReadyRatio = Number.NaN;
+  private shownActiveCooldownSec = Number.NaN;
+
   /** HUD skill slots (up to 20 in a 10×2 grid): icon + stack, framed by rarity. */
   private readonly skillSlots: SkillSlot[] = [];
   private skillStripPlate: HudPlateHandle | null = null;
@@ -315,6 +371,7 @@ export class Hud extends Component {
 
     this.createTopLeftGroup(goldCoinFrame, plateFrame, maxHearts, layout);
     this.createTopRightGroup(roomIconFrame, enemyIconFrame, plateFrame, layout);
+    this.createDashActiveGroup(plateFrame, layout);
     this.createXpBar(plateFrame, layout);
     this.createSkillRow(plateFrame, layout);
     this.createBossBar(barFrame, plateFrame, layout);
@@ -327,6 +384,7 @@ export class Hud extends Component {
     this.setGold(0);
     this.setEnemiesLeft(null);
     this.setXp(1, 0, 0);
+    this.setActions(1, 0, 1, 0);
     this.setSkills([]);
   }
 
@@ -467,6 +525,63 @@ export class Hud extends Component {
         if (this.xpProgressLabel.node.active !== visible) {
           this.xpProgressLabel.node.active = visible;
         }
+      }
+    }
+  }
+
+  /** Current M13 Dash & Signature Active state displayed on the HUD (`hud-sync` coherence). */
+  get activeDashReadyRatio(): number {
+    return this.shownDashReadyRatio;
+  }
+
+  get activeDashCooldownSec(): number {
+    return this.shownDashCooldownSec;
+  }
+
+  get activeSkillReadyRatio(): number {
+    return this.shownActiveReadyRatio;
+  }
+
+  get activeSkillCooldownSec(): number {
+    return this.shownActiveCooldownSec;
+  }
+
+  /**
+   * Event-driven M13 Dash (`SPACE`) & Signature Active (`E`) cooldown setter.
+   *
+   * Skips updates whenever inputs match the previous call, scales left-anchored fill nodes without
+   * redrawing `Graphics`, and reassigns `Label.string` only when the formatted countdown tenths or
+   * `'READY'` state actually changes.
+   */
+  setActions(
+    dashReadyRatio: number,
+    dashCooldownSec: number,
+    activeReadyRatio: number,
+    activeCooldownSec: number,
+  ): void {
+    if (this.actionsRoot === null) return;
+
+    const dashSame =
+      Object.is(dashReadyRatio, this.shownDashReadyRatio) &&
+      Object.is(dashCooldownSec, this.shownDashCooldownSec);
+    const activeSame =
+      Object.is(activeReadyRatio, this.shownActiveReadyRatio) &&
+      Object.is(activeCooldownSec, this.shownActiveCooldownSec);
+    if (dashSame && activeSame) return;
+
+    if (!dashSame) {
+      this.shownDashReadyRatio = dashReadyRatio;
+      this.shownDashCooldownSec = dashCooldownSec;
+      if (this.dashSlot !== null) {
+        updateActionWidgetSlot(this.dashSlot, dashReadyRatio, dashCooldownSec);
+      }
+    }
+
+    if (!activeSame) {
+      this.shownActiveReadyRatio = activeReadyRatio;
+      this.shownActiveCooldownSec = activeCooldownSec;
+      if (this.activeSlot !== null) {
+        updateActionWidgetSlot(this.activeSlot, activeReadyRatio, activeCooldownSec);
       }
     }
   }
@@ -1030,6 +1145,38 @@ export class Hud extends Component {
   }
 
   /**
+   * M13 bottom-left Dash (`SPACE`) & Signature Active (`E`) cooldown widgets inside `m13DashActive`.
+   *
+   * Built with a sibling 9-slice dark plate + single-colour `Graphics` nodes (strictly one colour
+   * per `Graphics` node per `AGENTS.md`) so `setActions` only updates `setScale`, `.active`, and
+   * quantized countdown strings on state transitions.
+   */
+  private createDashActiveGroup(plateFrame: SpriteFrame, layout: HudLayout): void {
+    const group = new CocosNode('hud-dash-active');
+    group.layer = Layers.Enum.UI_2D;
+    group.parent = this.node;
+    this.actionsRoot = group;
+
+    createHudPlate(group, 'dash-active-plate', plateFrame, layout.dashActive.plate);
+
+    this.dashSlot = createActionWidgetSlot(group, 'dash', layout.dashActive.dash, {
+      readyBorderColor: DASH_BADGE_READY_BORDER_COLOR,
+      cooldownFillColor: DASH_FILL_CD_COLOR,
+      readyFillColor: DASH_FILL_READY_COLOR,
+      readyShineColor: DASH_FILL_SHINE_COLOR,
+      readyTextColor: DASH_READY_TEXT_COLOR,
+    });
+
+    this.activeSlot = createActionWidgetSlot(group, 'active', layout.dashActive.active, {
+      readyBorderColor: ACTIVE_BADGE_READY_BORDER_COLOR,
+      cooldownFillColor: ACTIVE_FILL_CD_COLOR,
+      readyFillColor: ACTIVE_FILL_READY_COLOR,
+      readyShineColor: ACTIVE_FILL_SHINE_COLOR,
+      readyTextColor: ACTIVE_READY_TEXT_COLOR,
+    });
+  }
+
+  /**
    * M12 bottom-centre XP bar + `LV X` badge inside `m12XpBar`.
    *
    * Built with sibling dark 9-slice plate + single-colour `Graphics` nodes (strictly one colour per
@@ -1253,6 +1400,145 @@ export class Hud extends Component {
       );
       this.heartNodes.push(node);
     }
+  }
+}
+
+/** Build one M13 cooldown row (`Dash` or `Signature Active`) with 1-colour-per-node `Graphics`. */
+function createActionWidgetSlot(
+  parent: Node,
+  prefix: string,
+  slotLayout: HudActionSlotLayout,
+  palette: {
+    readonly readyBorderColor: Color;
+    readonly cooldownFillColor: Color;
+    readonly readyFillColor: Color;
+    readonly readyShineColor: Color;
+    readonly readyTextColor: Color;
+  },
+): ActionWidgetSlot {
+  const { keyBadge, barTrack, barFillMax, keyLabel, statusLabel, keyText } = slotLayout;
+
+  createFilledRectNode(parent, `${prefix}-key-bg`, keyBadge, ACTION_BADGE_BG_COLOR);
+  const keyReadyBorder = createStrokedRectNode(
+    parent,
+    `${prefix}-key-border-ready`,
+    keyBadge,
+    palette.readyBorderColor,
+  );
+  const keyCooldownBorder = createStrokedRectNode(
+    parent,
+    `${prefix}-key-border-cd`,
+    keyBadge,
+    ACTION_BADGE_CD_BORDER_COLOR,
+  );
+  keyCooldownBorder.active = false;
+
+  createFilledRectNode(parent, `${prefix}-track-bg`, barTrack, ACTION_TRACK_BG_COLOR);
+  createStrokedRectNode(parent, `${prefix}-track-border`, barTrack, ACTION_TRACK_BORDER_COLOR);
+
+  const fillRoot = new CocosNode(`${prefix}-fill`);
+  fillRoot.layer = Layers.Enum.UI_2D;
+  fillRoot.parent = parent;
+  fillRoot.setPosition(barFillMax.left, barFillMax.centerY, 0);
+
+  const fillReadyGroup = new CocosNode(`${prefix}-fill-ready`);
+  fillReadyGroup.layer = Layers.Enum.UI_2D;
+  fillReadyGroup.parent = fillRoot;
+  createLeftAnchoredFillNode(
+    fillReadyGroup,
+    `${prefix}-fill-ready-main`,
+    barFillMax.width,
+    barFillMax.height,
+    0,
+    palette.readyFillColor,
+  );
+  const shineHeight = Math.min(2, barFillMax.height);
+  createLeftAnchoredFillNode(
+    fillReadyGroup,
+    `${prefix}-fill-ready-shine`,
+    barFillMax.width,
+    shineHeight,
+    (barFillMax.height - shineHeight) / 2,
+    palette.readyShineColor,
+  );
+
+  const fillCooldownNode = createLeftAnchoredFillNode(
+    fillRoot,
+    `${prefix}-fill-cd`,
+    barFillMax.width,
+    barFillMax.height,
+    0,
+    palette.cooldownFillColor,
+  );
+  fillCooldownNode.active = false;
+
+  const keyLbl = createStyledLabel(
+    parent,
+    `${prefix}-key-label`,
+    keyText,
+    HUD_ACTION_KEY_FONT_SIZE,
+    HUD_ACTION_KEY_LINE_HEIGHT,
+    palette.readyTextColor,
+  );
+  keyLbl.node.setPosition(keyLabel.x, keyLabel.y, 0);
+
+  const statusLbl = createStyledLabel(
+    parent,
+    `${prefix}-status-label`,
+    slotLayout.statusText,
+    HUD_ACTION_STATUS_FONT_SIZE,
+    HUD_ACTION_STATUS_LINE_HEIGHT,
+    TEXT_COLOR,
+  );
+  statusLbl.node.setPosition(statusLabel.x, statusLabel.y, 0);
+
+  return {
+    keyReadyBorder,
+    keyCooldownBorder,
+    fillRoot,
+    fillReadyGroup,
+    fillCooldownNode,
+    keyLabel: keyLbl,
+    statusLabel: statusLbl,
+    readyTextColor: palette.readyTextColor,
+    shownRatio: -1,
+    shownReady: null,
+    shownStatusText: '',
+  };
+}
+
+function updateActionWidgetSlot(
+  slot: ActionWidgetSlot,
+  rawReadyRatio: number,
+  rawCooldownSec: number,
+): void {
+  const ready = isHudActionReady(rawReadyRatio, rawCooldownSec);
+  const ratio = ready ? 1 : computeHudActionReadyRatio(rawReadyRatio);
+
+  if (ratio !== slot.shownRatio) {
+    slot.shownRatio = ratio;
+    if (ratio <= 0) {
+      if (slot.fillRoot.active) slot.fillRoot.active = false;
+    } else {
+      if (!slot.fillRoot.active) slot.fillRoot.active = true;
+      slot.fillRoot.setScale(ratio, 1, 1);
+    }
+  }
+
+  if (ready !== slot.shownReady) {
+    slot.shownReady = ready;
+    if (slot.keyReadyBorder.active !== ready) slot.keyReadyBorder.active = ready;
+    if (slot.keyCooldownBorder.active !== !ready) slot.keyCooldownBorder.active = !ready;
+    if (slot.fillReadyGroup.active !== ready) slot.fillReadyGroup.active = ready;
+    if (slot.fillCooldownNode.active !== !ready) slot.fillCooldownNode.active = !ready;
+    slot.keyLabel.color = ready ? slot.readyTextColor : ACTION_KEY_CD_COLOR;
+    slot.statusLabel.color = ready ? TEXT_COLOR : ACTION_STATUS_CD_COLOR;
+  }
+
+  const statusText = formatHudActionStatusText(rawReadyRatio, rawCooldownSec);
+  if (statusText !== slot.shownStatusText) {
+    slot.shownStatusText = statusText;
+    slot.statusLabel.string = statusText;
   }
 }
 

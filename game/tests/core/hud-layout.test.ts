@@ -3,7 +3,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  HUD_ACTION_KEY_FONT_SIZE,
+  HUD_ACTION_KEY_GAP_PX,
+  HUD_ACTION_KEY_LINE_HEIGHT,
+  HUD_ACTION_ROW_GAP_PX,
+  HUD_ACTION_STATUS_FONT_SIZE,
+  HUD_ACTION_STATUS_LINE_HEIGHT,
+  HUD_ACTIVE_KEY_TEXT,
   HUD_BOSS_TITLE_FONT_SIZE,
+  HUD_DASH_KEY_TEXT,
   HUD_DESIGN_HEIGHT,
   HUD_DESIGN_WIDTH,
   HUD_EDGE_MARGIN_PX,
@@ -31,10 +39,12 @@ import {
   HUD_XP_LEVEL_LINE_HEIGHT,
   HUD_XP_PROGRESS_FONT_SIZE,
   HUD_XP_PROGRESS_LINE_HEIGHT,
+  computeHudActionReadyRatio,
   computeHudLayout,
   computeHudXpFillRatio,
   diffCombatHudSnapshot,
   estimateHudLabelWidth,
+  formatHudActionStatusText,
   formatHudEnemiesText,
   formatHudGoldText,
   formatHudLevelText,
@@ -43,6 +53,7 @@ import {
   hudRectInside,
   hudRectOnCanvas,
   hudRectsOverlap,
+  isHudActionReady,
   makeHudRect,
   scaleHudRectToUi,
   type CombatHudSnapshot,
@@ -270,6 +281,92 @@ describe('HUD backing plates and internal element containment', () => {
         }
       }
     }
+  });
+
+  it('encloses M13 Dash (SPACE) and Signature Active (E) key badges, tracks, fills, and status text inside m13DashActive', () => {
+    for (const [dashReadyRatio, dashCooldownSec, activeReadyRatio, activeCooldownSec] of [
+      [1, 0, 1, 0],
+      [0, 1.8, 0, 10],
+      [0.45, 0.99, 0.62, 3.8],
+      [0.95, 0.05, 0.1, 125],
+      [0.5, 0, 0.75, 0],
+    ] as const) {
+      const layout = computeHudLayout({
+        dashReadyRatio,
+        dashCooldownSec,
+        activeReadyRatio,
+        activeCooldownSec,
+      });
+      const { dashActive, m13DashActive, safeArea } = layout;
+
+      expect(dashActive.plate).toEqual(m13DashActive);
+      expect(hudRectInside(dashActive.plate, safeArea)).toBe(true);
+      expect(dashActive.dash.keyText).toBe(HUD_DASH_KEY_TEXT);
+      expect(dashActive.active.keyText).toBe(HUD_ACTIVE_KEY_TEXT);
+      expect(hudRectsOverlap(dashActive.dash.row, dashActive.active.row, HUD_ACTION_ROW_GAP_PX)).toBe(
+        false,
+      );
+
+      for (const slot of [dashActive.dash, dashActive.active]) {
+        expect(hudRectInside(slot.row, dashActive.plate)).toBe(true);
+        expect(hudRectInside(slot.keyBadge, slot.row)).toBe(true);
+        expect(hudRectInside(slot.barTrack, slot.row)).toBe(true);
+        expect(hudRectInside(slot.barFillMax, slot.barTrack)).toBe(true);
+        expect(hudRectsOverlap(slot.keyBadge, slot.barTrack, HUD_ACTION_KEY_GAP_PX)).toBe(false);
+
+        const keyUiWidth = slot.keyText.length * HUD_ACTION_KEY_FONT_SIZE * 0.62;
+        const keyEstWidth = estimateHudLabelWidth(slot.keyText.length, HUD_ACTION_KEY_FONT_SIZE);
+        for (const width of [keyUiWidth, keyEstWidth]) {
+          const keyRect = makeHudRect(
+            slot.keyLabel.x - width / 2,
+            slot.keyLabel.y - HUD_ACTION_KEY_LINE_HEIGHT / 2,
+            width,
+            HUD_ACTION_KEY_LINE_HEIGHT,
+          );
+          expect(hudRectInside(keyRect, slot.keyBadge)).toBe(true);
+          expect(hudRectInside(keyRect, dashActive.plate)).toBe(true);
+        }
+
+        const statusUiWidth = slot.statusText.length * HUD_ACTION_STATUS_FONT_SIZE * 0.62;
+        const statusEstWidth = estimateHudLabelWidth(
+          slot.statusText.length,
+          HUD_ACTION_STATUS_FONT_SIZE,
+        );
+        for (const width of [statusUiWidth, statusEstWidth]) {
+          const statusRect = makeHudRect(
+            slot.statusLabel.x - width / 2,
+            slot.statusLabel.y - HUD_ACTION_STATUS_LINE_HEIGHT / 2,
+            width,
+            HUD_ACTION_STATUS_LINE_HEIGHT,
+          );
+          expect(hudRectInside(statusRect, slot.barTrack)).toBe(true);
+          expect(hudRectInside(statusRect, dashActive.plate)).toBe(true);
+        }
+      }
+    }
+  });
+});
+
+describe('M13 Dash & Signature Active ratio clamping and countdown formatting', () => {
+  it('clamps action ready ratios cleanly to [0, 1] and formats READY / tenths countdowns', () => {
+    expect(computeHudActionReadyRatio(1)).toBe(1);
+    expect(computeHudActionReadyRatio(0)).toBe(0);
+    expect(computeHudActionReadyRatio(0.45)).toBeCloseTo(0.45, 6);
+    expect(computeHudActionReadyRatio(-0.5)).toBe(0);
+    expect(computeHudActionReadyRatio(2.5)).toBe(1);
+    expect(computeHudActionReadyRatio(Number.NaN)).toBe(0);
+    expect(computeHudActionReadyRatio(Number.POSITIVE_INFINITY)).toBe(0);
+
+    expect(isHudActionReady(1, 0)).toBe(true);
+    expect(isHudActionReady(1, 0.2)).toBe(false);
+    expect(isHudActionReady(0.6, 0)).toBe(false);
+
+    expect(formatHudActionStatusText(1, 0)).toBe('READY');
+    expect(formatHudActionStatusText(0, 1.8)).toBe('1.8s');
+    expect(formatHudActionStatusText(0.95, 0.02)).toBe('0.1s');
+    expect(formatHudActionStatusText(0, 10)).toBe('10.0s');
+    expect(formatHudActionStatusText(0, 125)).toBe('125s');
+    expect(formatHudActionStatusText(0.5, 0)).toBe('50%');
   });
 });
 
@@ -570,12 +667,14 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
     readonly enemiesLeft: ReturnType<typeof vi.fn>;
     readonly bossState: ReturnType<typeof vi.fn>;
     readonly xp: ReturnType<typeof vi.fn>;
+    readonly actions: ReturnType<typeof vi.fn>;
   } {
     const maxHearts = vi.fn();
     const hearts = vi.fn();
     const enemiesLeft = vi.fn();
     const bossState = vi.fn();
     const xp = vi.fn();
+    const actions = vi.fn();
     return {
       target: {
         setMaxHearts: maxHearts,
@@ -583,12 +682,14 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
         setEnemiesLeft: enemiesLeft,
         setBossState: bossState,
         setXp: xp,
+        setActions: actions,
       },
       maxHearts,
       hearts,
       enemiesLeft,
       bossState,
       xp,
+      actions,
     };
   }
 
@@ -658,6 +759,7 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
       enemiesLeftChanged: false,
       bossChanged: false,
       xpChanged: true,
+      actionsChanged: false,
     });
     applyCombatHudSnapshot(mock.target, afterPickup);
     expect(mock.xp).toHaveBeenCalledTimes(2);
@@ -744,7 +846,81 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
       enemiesLeftChanged: false,
       bossChanged: true,
       xpChanged: false,
+      actionsChanged: false,
     });
+  });
+
+  it('updates only setActions when Dash or Signature Active cooldown changes, and skips ready/unchanged frames', () => {
+    const mock = makeMockHud();
+    const readySnap: CombatHudSnapshot = {
+      maxHearts: 6,
+      hearts: 6,
+      enemiesLeft: 20,
+      bossName: null,
+      bossHp: 0,
+      bossMaxHp: 0,
+      bossPhase: 0,
+      actions: {
+        dashReadyRatio: 1,
+        dashCooldownSec: 0,
+        activeReadyRatio: 1,
+        activeCooldownSec: 0,
+      },
+    };
+
+    applyCombatHudSnapshot(mock.target, readySnap);
+    expect(mock.actions).toHaveBeenCalledTimes(1);
+    expect(mock.actions).toHaveBeenLastCalledWith(1, 0, 1, 0);
+
+    // 120 identical frames with both actions READY → 0 calls across all HUD setters!
+    for (let frame = 0; frame < 120; frame += 1) {
+      applyCombatHudSnapshot(mock.target, {
+        ...readySnap,
+        actions: { ...readySnap.actions! },
+      });
+    }
+    expect(mock.actions).toHaveBeenCalledTimes(1);
+    expect(mock.hearts).toHaveBeenCalledTimes(1);
+    expect(mock.enemiesLeft).toHaveBeenCalledTimes(1);
+
+    // Dash triggered → ONLY `setActions` fires.
+    const dashStarted: CombatHudSnapshot = {
+      ...readySnap,
+      actions: {
+        dashReadyRatio: 0,
+        dashCooldownSec: 1.8,
+        activeReadyRatio: 1,
+        activeCooldownSec: 0,
+      },
+    };
+    expect(diffCombatHudSnapshot(readySnap, dashStarted)).toEqual({
+      maxHeartsChanged: false,
+      heartsChanged: false,
+      enemiesLeftChanged: false,
+      bossChanged: false,
+      xpChanged: false,
+      actionsChanged: true,
+    });
+    applyCombatHudSnapshot(mock.target, dashStarted);
+    expect(mock.actions).toHaveBeenCalledTimes(2);
+    expect(mock.actions).toHaveBeenLastCalledWith(0, 1.8, 1, 0);
+    expect(mock.hearts).toHaveBeenCalledTimes(1);
+
+    // Equivalent scalar representation with identical values produces `actionsChanged: false`.
+    applyCombatHudSnapshot(mock.target, {
+      maxHearts: 6,
+      hearts: 6,
+      enemiesLeft: 20,
+      bossName: null,
+      bossHp: 0,
+      bossMaxHp: 0,
+      bossPhase: 0,
+      dashReadyRatio: 0,
+      dashCooldownSec: 1.8,
+      activeReadyRatio: 1,
+      activeCooldownSec: 0,
+    });
+    expect(mock.actions).toHaveBeenCalledTimes(2);
   });
 
   it('re-syncs boss and XP state if Hud was modified directly between sync calls', () => {
@@ -752,6 +928,7 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
     let liveXpLevel = 1;
     let liveXpCurrent = 0;
     let liveXpRequired = 0;
+    let liveDashRatio = 1;
     const bossState = vi.fn((name: string | null) => {
       liveBoss = name;
     });
@@ -759,6 +936,9 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
       liveXpLevel = level;
       liveXpCurrent = current;
       liveXpRequired = required;
+    });
+    const setActions = vi.fn((dashRatio: number) => {
+      liveDashRatio = dashRatio;
     });
     const target: CombatHudTarget = {
       get activeBossName() {
@@ -773,11 +953,15 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
       get activeXpRequired() {
         return liveXpRequired;
       },
+      get activeDashReadyRatio() {
+        return liveDashRatio;
+      },
       setMaxHearts: vi.fn(),
       setHearts: vi.fn(),
       setEnemiesLeft: vi.fn(),
       setBossState: bossState,
       setXp,
+      setActions,
     };
 
     const snap: CombatHudSnapshot = {
@@ -791,12 +975,19 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
       xpLevel: 4,
       xpCurrent: 12,
       xpRequired: 40,
+      actions: {
+        dashReadyRatio: 0.5,
+        dashCooldownSec: 0.9,
+        activeReadyRatio: 1,
+        activeCooldownSec: 0,
+      },
     };
     applyCombatHudSnapshot(target, snap);
     expect(bossState).toHaveBeenCalledTimes(1);
     expect(setXp).toHaveBeenCalledTimes(1);
+    expect(setActions).toHaveBeenCalledTimes(1);
 
-    // Direct `hud.setBoss(null)` or `hud.setXp(1, 0, 0)` invalidates cached snapshot cleanly.
+    // Direct `hud.setBoss(null)` / `hud.setXp(...)` / `hud.setActions(...)` invalidates cached snapshot cleanly.
     liveBoss = null;
     applyCombatHudSnapshot(target, snap);
     expect(bossState).toHaveBeenCalledTimes(2);
@@ -804,6 +995,10 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
     liveXpCurrent = 0;
     applyCombatHudSnapshot(target, snap);
     expect(setXp).toHaveBeenCalledTimes(2);
+
+    liveDashRatio = 1;
+    applyCombatHudSnapshot(target, snap);
+    expect(setActions).toHaveBeenCalledTimes(2);
   });
 
   it('formats HUD text helpers deterministically', () => {
