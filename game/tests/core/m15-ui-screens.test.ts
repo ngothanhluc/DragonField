@@ -284,6 +284,7 @@ import {
   createDefaultSave,
   unlockChapterAscension,
   unlockNextChapter,
+  unlockedAscensionForChapter,
   type SaveData,
 } from '../../assets/scripts/core/save/save-data';
 import { DEFAULT_SETTINGS } from '../../assets/scripts/core/save/settings';
@@ -753,6 +754,120 @@ describe('M15 ScreenFlow — Ascension preservation, Pause music ducking & chann
     dispatchKey('Escape', 27);
     expect(status).toBe('playing');
     expect(onMusicDucked).toHaveBeenLastCalledWith(false);
+
+    flow.destroy();
+  });
+
+  it('preserves runSave on Pause -> Quit to Title (no double gold banking) and clears runSave on death/victory', async () => {
+    const uiRoot = new MockNode('canvas');
+    const primary = new MemorySaveStorage();
+    const backup = new MemorySaveStorage();
+    const repo = new SaveRepository(primary, backup);
+
+    let save: SaveData = { ...createDefaultSave(), gold: 100, chaptersUnlocked: 4 };
+    repo.save(save);
+
+    let activeRun: ActiveRunSave | null = makeActiveRun({
+      chapter: 4,
+      roomIndex: 6,
+      goldEarned: 55,
+      ascension: 0,
+    });
+    let status: DebugStatus = 'playing';
+    const onContinueRun = vi.fn();
+    const onContinueEndless = vi.fn();
+    const teardownCalls: Array<boolean | undefined> = [];
+
+    const flow = new ScreenFlow({
+      uiRoot: () => uiRoot as unknown as never,
+      save: () => save,
+      repository: () => repo,
+      setSave: (next) => {
+        save = next;
+      },
+      status: () => status,
+      setStatus: (next) => {
+        status = next;
+      },
+      chapterAvailable: () => true,
+      showMenuBackdrop: vi.fn(),
+      clearMenuBackdrop: vi.fn(),
+      startChapter: vi.fn(),
+      getActiveRunSave: () => activeRun,
+      onContinueRun,
+      onContinueEndless,
+      runSnapshot: () => ({
+        chapter: 4,
+        room: 9,
+        roomsTotal: 9,
+        durationMs: 180000,
+        goldEarned: 55,
+        kills: 90,
+        seed: 987654,
+        ascension: 0,
+        endlessLoop: 0,
+        characterId: 'archer',
+        deathCause: { kind: 'boss', bossId: 'samurai', phase: 3 },
+        ownedSkills: { multishot: 2, pierce: 1 },
+      }),
+      launchChapter: vi.fn(async () => {
+        status = 'playing';
+      }),
+      teardownRun: (clearRunSave) => {
+        teardownCalls.push(clearRunSave);
+        if (clearRunSave) activeRun = null;
+      },
+      setMusic: vi.fn(),
+      applyFeelSettings: vi.fn(),
+      fail: (err) => {
+        throw err;
+      },
+    });
+
+    // 1. Open Pause and select `Quit to title` (index 4: Resume, Restart, Music, SFX, Quit to title).
+    await flow.showPause();
+    dispatchKey('ArrowDown', 40);
+    dispatchKey('ArrowDown', 40);
+    dispatchKey('ArrowDown', 40);
+    dispatchKey('ArrowDown', 40);
+    dispatchKey('Enter', 13);
+    // Allow async quitToTitle -> showTitle to complete.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Safe-boundary runSave MUST survive Quit to Title, gold MUST NOT be double-banked,
+    // and Title MUST immediately show `Continue Run`.
+    expect(teardownCalls[0]).toBe(false);
+    expect(activeRun).not.toBeNull();
+    expect(save.gold).toBe(100);
+    let texts = collectLabels(uiRoot);
+    expect(texts).toContain('Continue Run');
+
+    // Pressing Enter on Title focus 0 invokes `onContinueRun(activeRun)`.
+    dispatchKey('Enter', 13);
+    expect(onContinueRun).toHaveBeenCalledTimes(1);
+    expect(onContinueRun).toHaveBeenCalledWith(activeRun);
+
+    // 2. Finish Chapter 4 victory -> clears runSave (`teardownRun(true)`), unlocks Ch4 Ascension 1,
+    //    banks gold once, and renders rich ResultScreen with `Continue Endless` + unlocks!
+    status = 'playing';
+    flow.finishRun(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(teardownCalls[teardownCalls.length - 1]).toBe(true);
+    expect(activeRun).toBeNull();
+    expect(save.gold).toBe(155);
+    expect(unlockedAscensionForChapter(save, 4)).toBe(1);
+
+    texts = collectLabels(uiRoot);
+    expect(texts).toContain('CHAPTER CLEAR');
+    expect(texts).toContain('Continue Endless');
+    expect(texts.some((t) => t.includes('Seed 987654'))).toBe(true);
+    expect(texts.some((t) => t.includes('Ch4 Ascension 1'))).toBe(true);
+
+    // Returning to Title after victory hides `Continue Run` because `activeRun` was cleared.
+    await flow.showTitle();
+    texts = collectLabels(uiRoot);
+    expect(texts).not.toContain('Continue Run');
 
     flow.destroy();
   });

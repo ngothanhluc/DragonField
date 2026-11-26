@@ -490,10 +490,18 @@ export class ScreenFlow {
       status: won ? 'won' : 'lost',
     });
 
+    const seed = overrides?.seed ?? run?.seed;
+    const ascension = overrides?.ascension ?? run?.ascension ?? this.selectedAscension;
+    const endlessLoop = overrides?.endlessLoop ?? run?.endlessLoop ?? 0;
+    const characterId = overrides?.characterId ?? run?.characterId;
+    const deathCause = overrides?.deathCause ?? run?.deathCause;
+    const ownedSkills = overrides?.ownedSkills ?? run?.ownedSkills;
+
     const save = this.host.save();
     const repo = this.host.repository();
     let goldTotal = overrides?.goldTotal ?? save?.gold ?? 0;
     let unlockedChapter = overrides?.unlockedChapter;
+    let committedUnlocks: RunUnlocksSummary | undefined;
 
     if (overrides?.goldTotal === undefined && save !== null && repo !== null) {
       try {
@@ -501,9 +509,12 @@ export class ScreenFlow {
           chapter,
           goldEarned,
           won,
+          ascension,
+          endlessLoop,
         });
         this.host.setSave(commit.save);
         goldTotal = commit.gold;
+        committedUnlocks = commit.unlocks;
         if (commit.unlocked) {
           unlockedChapter = chapter + 1;
           console.log(
@@ -515,17 +526,13 @@ export class ScreenFlow {
       }
     }
 
-    const seed = overrides?.seed ?? run?.seed;
-    const ascension = overrides?.ascension ?? run?.ascension ?? this.selectedAscension;
-    const endlessLoop = overrides?.endlessLoop ?? run?.endlessLoop;
-    const characterId = overrides?.characterId ?? run?.characterId;
-    const deathCause = overrides?.deathCause ?? run?.deathCause;
-    const ownedSkills = overrides?.ownedSkills ?? run?.ownedSkills;
-    const unlocks = overrides?.unlocks ?? run?.unlocks;
+    const unlocks = overrides?.unlocks ?? run?.unlocks ?? committedUnlocks;
     const canContinueEndless =
       overrides?.canContinueEndless ??
       run?.canContinueEndless ??
-      (canStartEndless(chapter, won) && this.host.onContinueEndless !== undefined);
+      (won &&
+        (canStartEndless(chapter, won) || endlessLoop >= 1) &&
+        this.host.onContinueEndless !== undefined);
 
     const data: RunResultData = {
       chapter,
@@ -539,7 +546,7 @@ export class ScreenFlow {
       ...(unlockedChapter !== undefined ? { unlockedChapter } : {}),
       ...(seed !== undefined ? { seed } : {}),
       ...(ascension > 0 ? { ascension } : {}),
-      ...(endlessLoop !== undefined && endlessLoop > 0 ? { endlessLoop } : {}),
+      ...(endlessLoop > 0 ? { endlessLoop } : {}),
       ...(characterId !== undefined ? { characterId } : {}),
       ...(deathCause !== undefined ? { deathCause } : {}),
       ...(ownedSkills !== undefined ? { ownedSkills } : {}),
@@ -555,7 +562,7 @@ export class ScreenFlow {
 
     this.currentScreen = 'result';
     this.host.setStatus(won ? 'won' : 'lost');
-    this.host.teardownRun();
+    this.host.teardownRun(true);
     void this.showResult(data).catch((error: unknown) => this.host.fail(error));
   }
 
@@ -846,9 +853,15 @@ export class ScreenFlow {
 
   private async quitToTitle(): Promise<void> {
     this.releasePauseDucking();
-    this.bankRunGold();
+    // Preserve the safe-boundary `runSave` (ADR-023) so Title shows `Continue Run` immediately
+    // without double-banking gold already stored in `runSave.goldEarned`. Only bank immediately
+    // when no resumable run save exists.
+    const hasResumableRun = (this.host.getActiveRunSave?.() ?? null) !== null;
+    if (!hasResumableRun) {
+      this.bankRunGold();
+    }
     this.clearMenu();
-    this.host.teardownRun(true);
+    this.host.teardownRun(false);
     this.host.setStatus('loading');
     await this.showTitle();
     console.log('[YokaiField] Quit to title.');

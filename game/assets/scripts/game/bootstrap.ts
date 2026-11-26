@@ -85,6 +85,7 @@ import {
   type RunDifficultyModifiers,
 } from '../core/run/endless';
 import { CHAPTERS_PER_RUN, RunState } from '../core/run/run-state';
+import { applyGold } from '../core/run/rewards';
 import type { DeathCause } from '../core/run/run-summary';
 import { drawRunRooms } from '../core/run/room-draw';
 import { RunRewards } from '../core/run/run-rewards';
@@ -117,7 +118,7 @@ import {
 } from '../core/save/run-save';
 import {
   MAX_ASCENSION_TIER,
-  unlockChapterAscension,
+  unlockedAscensionForChapter,
   withBest,
   withSelectedCharacter,
 } from '../core/save/save-data';
@@ -187,7 +188,7 @@ import { installDebugWiring } from './debug-wiring';
 import { MenuBackdrop } from './menu-backdrop';
 import {
   buildRichRunResult,
-  computeRunUnlocksSummary,
+  commitRunEnd,
   type RichRunResultData,
 } from './run-end';
 import { createRunSaveRepository, createSaveRepository } from './save-storage';
@@ -516,8 +517,10 @@ export class Bootstrap extends Component {
   /** Real frame time of the last N frames — the debug `fps()` reads from here. */
   private readonly fpsMeter = new FpsMeter();
   private status: BootstrapStatus = 'loading';
+  /** True while `ScreenFlow`'s Pause menu holds music ducking active (coordinated with `skill-pick`). */
+  private pauseMusicDucked = false;
 
-  /** All M5 routing/screens live here so bootstrap is only boot + run + render. */
+  /** All M5/M14/M15 routing/screens live here so bootstrap is only boot + run + render. */
   private readonly screens = new ScreenFlow({
     uiRoot: () => this.ensureUiRoot(),
     save: () => this.save,
@@ -537,17 +540,37 @@ export class Bootstrap extends Component {
     clearMenuBackdrop: () => {
       this.menuBackdrop?.clear();
     },
-    startChapter: (chapter) => {
-      void this.startChapter(chapter);
+    startChapter: (chapter, ascension) => {
+      void this.startChapter(chapter, ascension);
+    },
+    onStartChapter: (chapter, ascension) => {
+      void this.startChapter(chapter, ascension);
     },
     runSnapshot: () => this.runSnapshot(),
-    launchChapter: (chapter) => this.launchChapter(chapter),
-    teardownRun: () => this.teardownRun(true),
+    launchChapter: (chapter, seed, ascension) => this.launchChapter(chapter, seed, ascension),
+    teardownRun: (clearRunSave = false) => this.teardownRun(clearRunSave),
     setMusic: (id) => {
       if (id === null) this.audio?.stopMusic();
       else this.audio?.playMusic(id);
     },
     setVolume: (volume) => this.audio?.setVolume(volume),
+    onMusicVolume: (volume) => {
+      this.setMusicVolume(volume);
+    },
+    onSfxVolume: (volume) => {
+      this.setSfxVolume(volume);
+    },
+    onMusicDucked: (ducked) => {
+      this.pauseMusicDucked = Boolean(ducked);
+      this.syncMusicDucking();
+    },
+    getActiveRunSave: () => this.getActiveRunSave(),
+    onContinueRun: (run) => {
+      void this.resumeSavedRun(run).catch((error: unknown) => this.fail(error));
+    },
+    onContinueEndless: () => {
+      void this.continueEndless().catch((error: unknown) => this.fail(error));
+    },
     applyFeelSettings: (settings) => this.setFeelSettings(settings),
     onCharacterChanged: (character) => {
       this.menuBackdrop?.setCharacter(character, this.attachments);
@@ -758,9 +781,11 @@ export class Bootstrap extends Component {
     }, 1.4);
   }
 
-  /** Duck music smoothly while Pause or Level-up (`skill-pick`) is open; unduck otherwise. */
+  /** Duck music smoothly while Pause or Level-up (`skill-pick`) is open; unduck only when both close. */
   private syncMusicDucking(): void {
-    this.audio?.setMusicDucked(this.status === 'paused' || this.status === 'skill-pick');
+    this.audio?.setMusicDucked(
+      this.pauseMusicDucked || this.status === 'paused' || this.status === 'skill-pick',
+    );
   }
 
   /** Read the currently persisted `ActiveRunSave` (for Title `Continue Run` / debug). */
@@ -881,7 +906,7 @@ export class Bootstrap extends Component {
   }
 
   /** Load every `.tmx` of the chapter, then start the run at room 1. Menu entry only. */
-  private async startChapter(chapterNumber: number): Promise<void> {
+  private async startChapter(chapterNumber: number, ascensionArg?: number): Promise<void> {
     const save = this.save;
     if (save === null) return;
     if (this.status !== 'menu') return;
@@ -893,8 +918,15 @@ export class Bootstrap extends Component {
       return;
     }
 
+    const maxUnlocked = unlockedAscensionForChapter(save, chapterNumber);
+    const chosenAscension = Math.min(
+      clampAscension(ascensionArg ?? this.screens.ascension ?? this.pendingAscension),
+      maxUnlocked,
+    );
+    this.pendingAscension = chosenAscension;
+
     try {
-      await this.launchChapter(chapterNumber);
+      await this.launchChapter(chapterNumber, undefined, chosenAscension);
     } catch (error: unknown) {
       this.fail(error);
     }
@@ -923,13 +955,29 @@ export class Bootstrap extends Component {
     this.menuBackdrop?.clear();
     this.skills.destroy();
 
-    const save = this.save;
+    let save = this.save;
     if (save === null) throw new Error('Bootstrap: save not loaded');
+
+    // Starting a brand-new run abandons any paused safe-boundary `runSave`; bank its cleared-room
+    // gold first (GDD §7: gold you picked up is yours) before room 1 entry overwrites `runSave`.
+    const abandonedRun = this.runSaveRepo?.load() ?? null;
+    if (abandonedRun !== null && abandonedRun.goldEarned > 0 && this.saveRepo !== null) {
+      try {
+        const credited = applyGold(save, abandonedRun.goldEarned).save;
+        this.saveRepo.save(credited);
+        save = credited;
+        this.save = credited;
+      } catch (error: unknown) {
+        console.warn(`[YokaiField] Could not bank abandoned run gold: ${errorMessage(error)}`);
+      }
+    }
 
     const seed =
       seedArg ?? ((Date.now() ^ (chapterNumber * 0x9e3779b1)) >>> 0);
     this.runSeed = seed;
     this.runAscension = clampAscension(ascensionArg ?? this.pendingAscension);
+    this.pendingAscension = this.runAscension;
+    this.screens.setAscension(this.runAscension);
     this.runEndlessLoop = 0;
     this.difficulty = combinedDifficultyModifiers(this.runAscension, this.runEndlessLoop);
     this.runUtility = utilityStatsFromSave(save);
@@ -3003,8 +3051,25 @@ export class Bootstrap extends Component {
     const cause = this.lastDeathCause ?? this.combat?.deathCause ?? { kind: 'unknown' };
     this.lastDeathCause = cause;
     const characterId = this.runCharacter?.id ?? this.screens.selectedCharacter().id;
-    const goldTotalAfter = (this.save?.gold ?? 0) + this.rewards.goldEarned;
-    this.lastRunResult = buildRichRunResult({
+
+    let goldTotalAfter = (this.save?.gold ?? 0) + this.rewards.goldEarned;
+    if (this.save !== null && this.saveRepo !== null) {
+      try {
+        const commit = commitRunEnd(this.save, this.saveRepo, {
+          chapter: run.chapter,
+          goldEarned: this.rewards.goldEarned,
+          won: false,
+          ascension: this.runAscension,
+          endlessLoop: this.runEndlessLoop,
+        });
+        this.save = commit.save;
+        goldTotalAfter = commit.gold;
+      } catch (error: unknown) {
+        console.warn(`[YokaiField] Could not write the run loss result: ${errorMessage(error)}`);
+      }
+    }
+
+    const rich = buildRichRunResult({
       chapter: run.chapter,
       roomReached: run.room,
       roomsTotal: run.roomsTotal,
@@ -3021,12 +3086,14 @@ export class Bootstrap extends Component {
       ownedSkills: this.skills.snapshot(),
       unlocks: {},
     });
+    this.lastRunResult = rich;
 
     run.markLost();
+    this.pauseMusicDucked = false;
     this.audio?.stopMusic();
     this.audio?.setMusicDucked(false);
     console.log(`[YokaiField] Lost in room ${run.roomLabel} (0 hearts).`);
-    this.screens.finishRun(false);
+    this.screens.finishRun(false, rich);
   }
 
   private finishWin(): void {
@@ -3037,44 +3104,36 @@ export class Bootstrap extends Component {
     // Wipe active run save on victory; clicking `Continue Endless` writes a fresh run save on room 1.
     this.runSaveRepo?.clear();
     const canEndless = canStartEndless(run.chapter, true) || this.runEndlessLoop >= 1;
-    // Gold earned this chapter will be banked into `save.gold` by `ScreenFlow.finishRun(true)`.
+    // Gold earned this chapter is banked into `save.gold` right below so Endless carryover starts at 0.
     this.endlessCarryover = canEndless ? this.captureLiveEndlessCarryover(true) : null;
 
-    const prevSave = this.save;
-    const repo = this.saveRepo;
+    let goldTotalAfter = (this.save?.gold ?? 0) + this.rewards.goldEarned;
     let unlocksSummary = {};
-    if (prevSave !== null && repo !== null) {
-      let predictedAfter = prevSave;
-      if (this.runEndlessLoop === 0) {
-        try {
-          const withAsc = unlockChapterAscension(prevSave, run.chapter, this.runAscension);
-          if (withAsc !== prevSave) {
-            repo.save(withAsc);
-            this.save = withAsc;
-          }
-          predictedAfter = withAsc;
-        } catch (error: unknown) {
-          console.warn(`[YokaiField] Could not advance Ascension unlock: ${errorMessage(error)}`);
+    if (this.save !== null && this.saveRepo !== null) {
+      try {
+        const commit = commitRunEnd(this.save, this.saveRepo, {
+          chapter: run.chapter,
+          goldEarned: this.rewards.goldEarned,
+          won: true,
+          ascension: this.runAscension,
+          endlessLoop: this.runEndlessLoop,
+        });
+        this.save = commit.save;
+        goldTotalAfter = commit.gold;
+        unlocksSummary = commit.unlocks;
+        if (commit.unlocked) {
+          console.log(
+            `[YokaiField] Chapter ${run.chapter} clear → unlocked chapter ${commit.chaptersUnlocked}.`,
+          );
         }
+      } catch (error: unknown) {
+        console.warn(`[YokaiField] Could not write the run victory result: ${errorMessage(error)}`);
       }
-      const nextChapterCap = Math.min(
-        CHAPTERS_PER_RUN,
-        Math.max(predictedAfter.chaptersUnlocked, run.chapter + 1),
-      );
-      const predictedFinal: SaveData = { ...predictedAfter, chaptersUnlocked: nextChapterCap };
-      unlocksSummary = computeRunUnlocksSummary(
-        prevSave,
-        predictedFinal,
-        run.chapter,
-        true,
-        this.runEndlessLoop,
-      ).unlocks;
     }
 
     const characterId = this.runCharacter?.id ?? this.screens.selectedCharacter().id;
-    const goldTotalAfter = (this.save?.gold ?? 0) + this.rewards.goldEarned;
     this.lastDeathCause = { kind: 'victory' };
-    this.lastRunResult = buildRichRunResult({
+    const rich = buildRichRunResult({
       chapter: run.chapter,
       roomReached: run.room,
       roomsTotal: run.roomsTotal,
@@ -3091,14 +3150,16 @@ export class Bootstrap extends Component {
       ownedSkills: this.skills.snapshot(),
       unlocks: unlocksSummary,
     });
+    this.lastRunResult = rich;
 
-    // GDD §2: winning a chapter unlocks the next; `commitRunEnd` writes both gold and unlocks.
+    // GDD §2: winning a chapter unlocks the next; `commitRunEnd` wrote gold, chapter & Ascension unlocks.
     run.markWon();
+    this.pauseMusicDucked = false;
     this.audio?.stopMusic();
     this.audio?.setMusicDucked(false);
     playSfx('chapter-clear');
     console.log(`[YokaiField] CHAPTER CLEAR — chapter ${run.chapter}, room ${run.roomLabel}.`);
-    this.screens.finishRun(true);
+    this.screens.finishRun(true, rich);
   }
 
   /** Credit gold and drop a pooled XP orb at the kill spot (`splitling` yields 0 XP → no orb). */
@@ -3167,6 +3228,13 @@ export class Bootstrap extends Component {
   private runSnapshot(): RunSnapshot | null {
     const run = this.run;
     if (run === null) return null;
+    const characterId = this.runCharacter?.id ?? this.screens.selectedCharacter().id;
+    const deathCause: DeathCause =
+      run.status === 'won'
+        ? { kind: 'victory' }
+        : (this.lastDeathCause ?? this.combat?.deathCause ?? { kind: 'unknown' });
+    const canEndless =
+      run.status === 'won' && (canStartEndless(run.chapter, true) || this.runEndlessLoop >= 1);
     return {
       chapter: run.chapter,
       room: run.room,
@@ -3174,6 +3242,14 @@ export class Bootstrap extends Component {
       durationMs: this.runElapsedMs(),
       goldEarned: this.rewards.goldEarned,
       kills: this.rewards.killCount,
+      seed: this.runSeed,
+      ascension: this.runAscension,
+      endlessLoop: this.runEndlessLoop,
+      characterId,
+      deathCause,
+      ownedSkills: this.skills.snapshot(),
+      ...(this.lastRunResult !== null ? { unlocks: this.lastRunResult.unlocks } : {}),
+      canContinueEndless: canEndless,
     };
   }
   /**
@@ -3185,6 +3261,7 @@ export class Bootstrap extends Component {
     if (clearSavedRun) {
       this.runSaveRepo?.clear();
     }
+    this.pauseMusicDucked = false;
     this.audio?.setMusicDucked(false);
     this.skills.destroy();
     this.xpPool.clear();
@@ -3413,6 +3490,7 @@ export class Bootstrap extends Component {
   private debugSetAscension(tier: number): number {
     const clamped = clampAscension(tier);
     this.pendingAscension = clamped;
+    this.screens.setAscension(clamped);
     if (this.run !== null) {
       this.runAscension = clamped;
       this.difficulty = combinedDifficultyModifiers(this.runAscension, this.runEndlessLoop);
