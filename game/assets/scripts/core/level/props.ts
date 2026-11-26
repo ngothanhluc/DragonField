@@ -244,10 +244,22 @@ const NATURE_PROPS: readonly PropDef[] = [
     rect: { x: 112, y: 0, width: 16, height: 16 },
     collider: { x: 0, y: 8, width: 16, height: 8 },
   }),
+  solid('crate-stack', {
+    kind: 'structure',
+    sheet: ELEMENT,
+    rect: { x: 64, y: 48, width: 32, height: 32 },
+    collider: { x: 2, y: 18, width: 28, height: 14 },
+  }),
   solid('cart', {
     kind: 'structure',
     sheet: ELEMENT,
     rect: { x: 0, y: 48, width: 32, height: 32 },
+    collider: { x: 2, y: 18, width: 28, height: 12 },
+  }),
+  solid('cart-loaded', {
+    kind: 'structure',
+    sheet: ELEMENT,
+    rect: { x: 32, y: 48, width: 32, height: 32 },
     collider: { x: 2, y: 18, width: 28, height: 12 },
   }),
   solid('totem', {

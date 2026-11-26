@@ -42,6 +42,13 @@ import type {
 import { WALK_OVER_KEYS, propCollider, propDef, type PropDef } from '../../assets/scripts/core/level/props';
 import { parseTmxLevel } from '../../assets/scripts/core/level/tmx';
 import type { WaterArea } from '../../assets/scripts/core/level/water-layout';
+import {
+  CH3_BORDER_MASSES,
+  CH3_BORDER_TREES,
+  composeClusteredSetPieces,
+  paintTexturedFloor,
+  planClusteredDetails,
+} from './room-clusters';
 
 /** One screen: the camera view, and the tile of every generated room is a grid of these. */
 export const SCREEN_COLS = 32;
@@ -190,25 +197,21 @@ const NATURE_MASSES: readonly BorderStamp[] = [
   sheetStamp('nature', 24, 48, 288, 48, 48),
 ];
 
-/** Mossy trees (2×2) and clusters (4×3) of `TilesetVillageAbandoned.png` (20 columns), ch3. */
-const VILLAGE_TREES: readonly BorderStamp[] = [
-  sheetStamp('village', 20, 64, 96, 32, 32),
-  sheetStamp('village', 20, 64, 144, 32, 32),
-];
-const VILLAGE_MASSES: readonly BorderStamp[] = [
-  sheetStamp('village', 20, 0, 96, 64, 48),
-  sheetStamp('village', 20, 0, 144, 64, 48),
-];
-
 /**
- * The tree line of a chapter's room edge (ch4 rings the room with its sand cliff instead). ch3
- * mixes the abandoned-village trees with dark/dead forest trees (no pink cherry-blossom trees).
+ * The tree line of a chapter's room edge (ch4 rings the room with its sand cliff instead; ch3
+ * uses `CH3_BORDER_TREES` / `CH3_BORDER_MASSES` from `room-clusters.ts`).
  */
 function borderArt(chapter: number): { readonly trees: readonly BorderStamp[]; readonly masses: readonly BorderStamp[] } {
+  if (chapter === 1) {
+    return {
+      trees: NATURE_TREES.filter((_, index) => index !== 2 && index !== 4),
+      masses: NATURE_MASSES.filter((_, index) => index !== 3),
+    };
+  }
   if (chapter === 3) {
     return {
-      trees: [...VILLAGE_TREES, ...NATURE_TREES.filter((_, index) => index === 0 || index === 2 || index === 5 || index === 6)],
-      masses: [...VILLAGE_MASSES, ...NATURE_MASSES.filter((_, index) => index !== 3)],
+      trees: CH3_BORDER_TREES,
+      masses: CH3_BORDER_MASSES,
     };
   }
   return { trees: NATURE_TREES, masses: NATURE_MASSES };
@@ -413,13 +416,13 @@ const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
     landmarks: ['house-orange', 'house-beige', 'house-green', 'hut', 'tent'],
     trees: ['tree-green', 'tree-pine', 'tree-round', 'tree-big-green', 'tree-small'],
     solids: [
-      'tree-green', 'tree-pine', 'tree-dead', 'tree-pink', 'tree-round', 'tree-small',
+      'tree-green', 'tree-pine', 'tree-round', 'tree-small',
       'tree-cluster-green', 'tree-cluster-pines', 'rock-boulder', 'rock-small', 'stump-big',
-      'stump', 'bush-blue', 'crate', 'totem', 'logs',
+      'stump', 'bush-blue', 'crate', 'logs',
     ],
-    furniture: ['crate', 'logs', 'stump', 'stump-big', 'cart', 'totem', 'rock-small'],
+    furniture: ['crate', 'crate-stack', 'logs', 'stump', 'stump-big', 'cart', 'cart-loaded', 'totem', 'rock-small'],
     fences: ['fence', 'fence', 'fence-post'],
-    walkOvers: WALK_OVER_KEYS,
+    walkOvers: ['bush-light', 'bush-green', 'bush-dark', 'grass-tall'],
   },
   2: {
     landmarks: ['house-red', 'house-beige', 'house-orange', 'house-green'],
@@ -461,6 +464,8 @@ const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
       'cart-ruined',
       'barrel-mossy',
       'barrel-open-mossy',
+      'crate',
+      'crate-stack',
       'pillar-broken',
       'pillar-stump',
       'ruined-statue-tall',
@@ -479,7 +484,6 @@ const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
       'rock-sandstone',
       'rock-sandstone-small',
       'desert-tree-scrub',
-      'desert-skull',
       'desert-well',
       'camp-well',
       'camp-barrel',
@@ -497,10 +501,9 @@ const PROP_THEMES: Readonly<Record<number, PropTheme>> = {
       'camp-bench',
       'camp-signpost',
       'camp-barrel',
-      'desert-skull',
     ],
     fences: ['desert-wall-segment'],
-    walkOvers: ['desert-agave', 'desert-bush-dry', 'desert-fish-bones', 'desert-shell', 'desert-potted-palm'],
+    walkOvers: ['desert-agave', 'desert-bush-dry', 'desert-potted-palm'],
   },
 };
 
@@ -1508,69 +1511,6 @@ function planGeometry(args: GeometryArgs): GeometryResult {
     return false;
   };
 
-  // -- Set piece: chapter 3 village ruins courtyard (watchtower / broken walls / pillars / pads) --
-  const placeRuins = (): boolean => {
-    const anchors = [
-      'watchtower-ruined',
-      'ruined-wall-cross',
-      'broken-wall-arch',
-      'big-pillar-ruined',
-      'house-ruined',
-      'ruined-house-orange',
-    ];
-    const remnants = [
-      'pillar-broken',
-      'pillar-stump',
-      'barrel-mossy',
-      'barrel-open-mossy',
-      'stump-mossy',
-      'low-broken-wall',
-      'cart-ruined',
-      'frog-statue',
-      'moss-tower-ruined',
-      'stone-tower-ruined',
-    ];
-    const propsBefore = props.length;
-    const rectsBefore = book.rects.length;
-    for (let attempt = 0; attempt < 48; attempt += 1) {
-      const anchorKey = anchors[int(rng, anchors.length)] ?? 'watchtower-ruined';
-      const def = propDef(chapter, anchorKey);
-      if (def === undefined) continue;
-      const width = Math.ceil(def.rect.width / TILE);
-      const height = Math.ceil(def.rect.height / TILE);
-      const x = 6 + int(rng, Math.max(1, COLS - 12 - width));
-      const upper = rng() < 0.65;
-      const y = upper ? 4 + int(rng, 5) : Math.max(24, ROWS - 5 - height - int(rng, 3));
-      if (!placeHouseAt(anchorKey, x, y, MIN_OBSTACLE_GAP)) continue;
-      const anchorRect = spriteRect(def, x, y);
-
-      let placedRemnants = 0;
-      for (const key of shuffle(rng, remnants)) {
-        if (placedRemnants >= 3) break;
-        if (placeNearHouse(anchorRect, key)) placedRemnants += 1;
-      }
-      if (placedRemnants < 3) {
-        props.length = propsBefore;
-        book.rects.length = rectsBefore;
-        continue;
-      }
-
-      const screen = screenOf({ x: x + width / 2, y: y + height / 2 });
-      villageScreens.add(`${screen.sx},${screen.sy}`);
-      const padOffsets: readonly (readonly [number, number])[] = [
-        [Math.round(anchorRect.x), Math.round(anchorRect.y + anchorRect.height) + 1],
-        [Math.round(anchorRect.x + anchorRect.width) + 1, Math.round(anchorRect.y + anchorRect.height) - 1],
-        [Math.round(anchorRect.x) - 3, Math.round(anchorRect.y + anchorRect.height) - 1],
-      ];
-      for (const [px, py] of padOffsets) {
-        const pad = pick(rng, CH3_STONE_PADS);
-        decorStamps.push({ ...pad, x: px, y: py });
-      }
-      return true;
-    }
-    return false;
-  };
-
   // -- Set piece: chapter 4 desert oasis pond (3×3 pond pit + clustered palms + shore puddles) ---
   const placeOasis = (): boolean => {
     const pondSize = 3;
@@ -1694,29 +1634,44 @@ function planGeometry(args: GeometryArgs): GeometryResult {
   };
 
   // Compose set pieces per chapter theme while keeping one clear focus per screen so kiting stays open:
-  // - Ch1/Ch2: grove in odd rooms, village in even rooms.
-  // - Ch3 (village ruins): ruined village street in even rooms; mossy grove + compact ruins shrine in
-  //   odd rooms, so every Ch3 room has multi-piece ruins without crowding the 0-skill kiting path.
-  // - Ch4 (desert): oasis pond + clustered palms in odd rooms; walled desert village + sand cliff
-  //   plateau in even rooms.
-  const village = room % 2 === 0 ? placeVillage() : false;
+  // - Ch1/Ch3/Ch4: cohesive cluster composition via `composeClusteredSetPieces` (`room-clusters.ts`).
+  // - Ch2: keeps existing river/grove/village flow (owned by `rivers`).
+  let village = false;
   let oasis = false;
   let ruins = false;
-  if (chapter === 4) {
-    if (room % 2 === 1) {
-      oasis = placeOasis();
-    } else {
-      placeCliff();
-    }
+  if (chapter === 2) {
+    village = room % 2 === 0 ? placeVillage() : false;
+    if (room % 2 === 1) placeGrove();
   } else {
-    if (room % 2 === 1) {
-      placeGrove();
-      if (chapter === 3) ruins = placeRuins();
-    }
+    const composed = composeClusteredSetPieces({
+      chapter,
+      room,
+      rng,
+      playerStart,
+      doors,
+      blocked,
+      street,
+      borderRects,
+      colliderBook: book.rects,
+      props,
+      decorStamps,
+      villageScreens,
+      colliderFits,
+      clearOfPoints,
+      coversBlocked: (rect) => coversBlocked(blocked, rect),
+      placeAt,
+      placeHouseAt,
+      placeNearHouse,
+      placeOasis,
+      placeCliff,
+    });
+    village = composed.village;
+    ruins = composed.ruins;
+    oasis = composed.oasis;
   }
 
   // A landmark only in the entrance screen (the entrance): the room keeps one focus, not a town.
-  if (room % 3 === 1 && room % 2 === 0) {
+  if (chapter === 2 && room % 3 === 1 && room % 2 === 0) {
     for (const key of shuffle(rng, theme.landmarks)) {
       if (placePropInScreen(0, ROOM_SCREENS - 1, key)) break;
     }
@@ -1785,7 +1740,7 @@ function planGeometry(args: GeometryArgs): GeometryResult {
         if (placePropInScreen(sx, sy, key)) placed += 1;
       }
 
-      const walkTarget = 3 + int(rng, 2);
+      const walkTarget = chapter === 2 ? 3 + int(rng, 2) : 1 + int(rng, 2);
       for (let index = 0; index < walkTarget; index += 1) {
         placeWalkOver(sx, sy, pick(rng, theme.walkOvers));
       }
@@ -2291,6 +2246,11 @@ export function generateRoom(chapter: number, room: number, saltOverride?: numbe
         return { name: layer.name, tiles };
       });
 
+      const floorTiles =
+        chapter === 2
+          ? new Array<number>(COLS * ROWS).fill(baseFloor)
+          : paintTexturedFloor(chapter, rng, baseFloor, gid);
+
       const partial: RoomPlan = {
         chapter,
         room,
@@ -2299,7 +2259,7 @@ export function generateRoom(chapter: number, room: number, saltOverride?: numbe
         obstacles: [...border.obstacles, ...obstacles],
         props,
         water,
-        floor: new Array<number>(COLS * ROWS).fill(baseFloor),
+        floor: floorTiles,
         ground: paintGround(chapter, new Set([...patches.cells, ...plateauSurface])),
         path: path.tiles,
         borders,
@@ -2307,13 +2267,24 @@ export function generateRoom(chapter: number, room: number, saltOverride?: numbe
         spawns,
       };
 
-      const decor = planDetails(
-        chapter,
-        mulberry32((chapter * 31 + room * 17 + attempt) >>> 0),
-        solidReservedCells(partial),
-        path.cells,
-        decorStamps,
-      );
+      const decor =
+        chapter === 2
+          ? planDetails(
+              chapter,
+              mulberry32((chapter * 31 + room * 17 + attempt) >>> 0),
+              solidReservedCells(partial),
+              path.cells,
+              decorStamps,
+            )
+          : planClusteredDetails(
+              chapter,
+              mulberry32((chapter * 31 + room * 17 + attempt) >>> 0),
+              solidReservedCells(partial),
+              path.cells,
+              decorStamps,
+              TUNING.roomArt.detailDensity,
+              gid,
+            );
       const plan: RoomPlan = { ...partial, decor };
 
       // An even room of a village chapter is a village room (R5): a room that could not fit its

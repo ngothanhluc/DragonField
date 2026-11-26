@@ -83,10 +83,10 @@ describe('GROUND_TERRAINS', () => {
     expect(tiles[12]).toBe(at(2, 2)); // 13 SE corner
   });
 
-  it('gives chapter 3 a weathered ruins earth terrain distinct from ch1/ch2 grass, with matching baked fringes', () => {
-    expect(GROUND_TERRAINS[3]?.plain).toBe(430);
+  it('gives chapter 3 a mossy olive grass terrain distinct from ch1/ch2 grass, with matching baked fringes', () => {
+    expect(GROUND_TERRAINS[3]?.plain).toBe(265);
     expect(GROUND_TERRAINS[3]?.plain).not.toBe(GROUND_TERRAINS[1]?.plain);
-    expect(GROUND_TERRAINS[3]?.tiles).toEqual(floorBlockTiles(11, 14));
+    expect(GROUND_TERRAINS[3]?.tiles).toEqual(floorBlockTiles(0, 7));
 
     const here = dirname(fileURLToPath(import.meta.url));
     const sheet = readPng(join(here, '../../assets/resources/art/tilesets/TilesetFloor.png'));

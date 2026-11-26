@@ -114,20 +114,36 @@ function writeChapter(chapter: number): RoomPlan[] {
   return plans;
 }
 
+function parseChapters(argv: readonly string[]): number[] {
+  const flagIndex = argv.indexOf('--chapters');
+  if (flagIndex < 0) return [2, 1, 3, 4];
+  const raw = argv[flagIndex + 1] ?? '';
+  const parsed = raw
+    .split(',')
+    .map((part) => Number(part.trim()))
+    .filter((n) => [1, 2, 3, 4].includes(n));
+  if (parsed.length === 0) throw new Error(`invalid --chapters value "${raw}"`);
+  return parsed;
+}
+
 function main(): void {
+  const chapters = parseChapters(process.argv.slice(2));
+  const includeTwo = chapters.includes(2);
   // Read chapter 2's boss room + its water before the pool replaces the hand-dressed rooms.
-  const chapterTwoBoss = chapterFiles(2).find((file) => file.isBossRoom);
+  const chapterTwoBoss = includeTwo ? chapterFiles(2).find((file) => file.isBossRoom) : undefined;
   const bossWater = chapterTwoBoss === undefined ? [] : readBossWater(chapterTwoBoss.room);
 
-  const chapterTwo = writeChapter(2);
-  writeChapter(1);
-  writeChapter(3);
-  // Chapter 4 — desert (#45): same pool, desert+camp theme, boss room authored as room 17.
-  writeChapter(4);
+  let chapterTwo: RoomPlan[] = [];
+  for (const chapter of chapters) {
+    const plans = writeChapter(chapter);
+    if (chapter === 2) chapterTwo = plans;
+  }
 
-  const layout = waterLayoutFor(chapterTwo, BOSS_ROOM, bossWater);
-  writeFileSync(WATER_PATH, `${JSON.stringify({ version: 1, rooms: { '2': layout } }, null, 2)}\n`);
-  console.log(`water-layout.json: ${Object.keys(layout).length} chapter-2 rooms with water`);
+  if (includeTwo) {
+    const layout = waterLayoutFor(chapterTwo, BOSS_ROOM, bossWater);
+    writeFileSync(WATER_PATH, `${JSON.stringify({ version: 1, rooms: { '2': layout } }, null, 2)}\n`);
+    console.log(`water-layout.json: ${Object.keys(layout).length} chapter-2 rooms with water`);
+  }
 }
 
 main();
