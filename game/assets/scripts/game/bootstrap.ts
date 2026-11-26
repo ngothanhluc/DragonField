@@ -1975,7 +1975,7 @@ export class Bootstrap extends Component {
     if (run === null || level === null || parent === null) return;
 
     const offers: readonly DoorReward[] =
-      run.room >= run.roomsTotal - 1 ? ['boss'] : ['skill'];
+      run.room >= run.roomsTotal - 1 ? ['boss'] : ['xp'];
     const spots: DoorSpot[] = offers.map((reward, index) => ({
       reward,
       at: this.doorPosition(level, index),

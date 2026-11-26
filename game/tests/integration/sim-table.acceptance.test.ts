@@ -25,11 +25,11 @@ const CHAPTERS = [1, 2, 3, 4] as const;
 const SEEDS_PER_BOSS = 2;
 
 describe('typical door choice', () => {
-  it('takes heal first, then skill, else the first door', () => {
-    expect(typicalDoorChoice(['skill', 'heal'])).toBe(1);
+  it('takes heal first, then xp, else the first door', () => {
+    expect(typicalDoorChoice(['xp', 'heal'])).toBe(1);
     expect(typicalDoorChoice(['heal', 'gold'])).toBe(0);
-    expect(typicalDoorChoice(['gold', 'skill'])).toBe(1);
-    expect(typicalDoorChoice(['skill', 'gold'])).toBe(0);
+    expect(typicalDoorChoice(['gold', 'xp'])).toBe(1);
+    expect(typicalDoorChoice(['xp', 'gold'])).toBe(0);
     expect(typicalDoorChoice(['gold', 'chest'])).toBe(0);
     expect(typicalDoorChoice(['shop', 'gold'])).toBe(0);
   });

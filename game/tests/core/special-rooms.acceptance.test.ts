@@ -74,7 +74,7 @@ describe('chest', () => {
 describe('doors offer the special rooms now', () => {
   it('the flag is on and heal/shop/chest doors come up', () => {
     expect(tuning.doors.specialRoomsEnabled).toBe(true);
-    const enabled: DoorReward[] = ['skill', 'gold', 'heal', 'shop', 'chest'];
+    const enabled: DoorReward[] = ['xp', 'gold', 'heal', 'shop', 'chest'];
     const seen = new Set<DoorReward>();
     for (let seed = 1; seed <= 100; seed += 1) for (let room = 1; room <= 7; room += 1) for (const r of doorOffers(seed, room, 8, enabled)) seen.add(r);
     for (const special of ['heal', 'shop', 'chest'] as const) expect(seen.has(special)).toBe(true);

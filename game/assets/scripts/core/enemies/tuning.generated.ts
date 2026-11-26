@@ -232,10 +232,13 @@ export const TUNING_DATA = {
   },
   doors: {
     goldBonus: 15,
+    xpBonus: 80,
+    xpRoomXpMultiplier: 1.25,
+    xpRoomExtraElites: 2,
     specialRoomsEnabled: true,
     hintMs: 2000,
     weights: {
-      skill: 40,
+      xp: 40,
       gold: 30,
       heal: 12,
       shop: 10,
@@ -266,5 +269,48 @@ export const TUNING_DATA = {
       140,
       170,
     ],
+  },
+  xp: {
+    curve: {
+      baseThreshold: 70,
+      linearStep: 15,
+      quadraticStep: 1.1,
+      chapterMultipliers: [
+        1,
+        1.48,
+        2.22,
+        2.52,
+      ],
+    },
+    roles: {
+      chaser: 10,
+      caster: 12,
+      tank: 20,
+      sniper: 15,
+      splitter: 16,
+      splitling: 0,
+    },
+    eliteMultiplier: 2.5,
+    orbs: {
+      poolCapacity: 256,
+      scatterSpeedTilesPerSecond: 3.5,
+      scatterDurationMs: 220,
+      magnetRadiusTiles: 4.5,
+      pickupRadiusTiles: 0.65,
+      magnetAccelTilesPerSecondSq: 28,
+      magnetMaxSpeedTilesPerSecond: 15,
+      vacuumAccelTilesPerSecondSq: 48,
+      vacuumMaxSpeedTilesPerSecond: 24,
+    },
+    reroll: {
+      baseCost: 10,
+      costStep: 10,
+    },
+    levelUpWave: {
+      knockbackRadiusTiles: 5.5,
+      knockbackDistanceTiles: 3,
+      knockbackDurationMs: 220,
+      resumeInvulnerabilityMs: 600,
+    },
   },
 } as const;

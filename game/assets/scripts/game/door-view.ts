@@ -65,7 +65,7 @@ export interface IconSpec {
  * Exported for the HUD's door arrows (#63): an arrow must show the same icon its door shows.
  */
 export const ICONS: Readonly<Record<DoorReward, IconSpec>> = {
-  skill: { sheet: 'resources/art/ui/skill-icons/AttackUpgrade.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
+  xp: { sheet: 'resources/art/ui/skill-icons/AttackUpgrade.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
   gold: { sheet: 'resources/art/ui/coin/Coin2.png', x: 0, y: 0, width: 10, height: 10, tiles: 1.5 },
   heal: { sheet: 'resources/art/ui/skill-icons/Heal.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
   shop: { sheet: 'resources/art/ui/skill-icons/Alchemy.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
@@ -74,7 +74,7 @@ export const ICONS: Readonly<Record<DoorReward, IconSpec>> = {
 };
 
 const TINTS: Readonly<Record<DoorReward, Color>> = {
-  skill: new CocosColor(120, 190, 255, 255),
+  xp: new CocosColor(120, 190, 255, 255),
   gold: new CocosColor(255, 214, 90, 255),
   heal: new CocosColor(255, 120, 130, 255),
   shop: new CocosColor(120, 230, 150, 255),

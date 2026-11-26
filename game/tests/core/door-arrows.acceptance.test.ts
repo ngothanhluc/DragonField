@@ -14,10 +14,10 @@ describe('door arrows after a clear', () => {
   it('both doors off screen: one arrow per door, each with its reward kind, nearest first', () => {
     const doors = [
       { at: { x: 64, y: 71 }, reward: 'gold' as const },
-      { at: { x: 64, y: 0.5 }, reward: 'skill' as const },
+      { at: { x: 64, y: 0.5 }, reward: 'xp' as const },
     ];
     expect(doorArrowTargets(player, view, doors)).toEqual([
-      { x: 64, y: 0.5, reward: 'skill' },
+      { x: 64, y: 0.5, reward: 'xp' },
       { x: 64, y: 71, reward: 'gold' },
     ]);
   });
@@ -32,7 +32,7 @@ describe('door arrows after a clear', () => {
 
   it('both doors on screen: no arrows at all', () => {
     const doors = [
-      { at: { x: 45, y: 25 }, reward: 'skill' as const },
+      { at: { x: 45, y: 25 }, reward: 'xp' as const },
       { at: { x: 70, y: 36 }, reward: 'chest' as const },
     ];
     expect(doorArrowTargets(player, view, doors)).toEqual([]);

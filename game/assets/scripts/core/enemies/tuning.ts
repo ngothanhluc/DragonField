@@ -43,6 +43,7 @@ import {
   type SpecialRoomsTuning,
   type TuningConfig,
   type WavesTuning,
+  type XpTuning,
 } from './tuning-schema';
 
 export * from './tuning-schema';
@@ -88,3 +89,6 @@ export const SPECIAL_ROOMS_TUNING: SpecialRoomsTuning = TUNING.specialRooms;
 
 /** Boss entrance grace and chapter HP scaling (M11 T6) — `core/boss/` reads them. */
 export const BOSS_TUNING: BossTuning = TUNING.boss;
+
+/** XP curve, orb magnet/vacuum, reroll cost, and level-up wave (M12, ADR-021) — `core/xp/` reads them. */
+export const XP_TUNING: XpTuning = TUNING.xp;

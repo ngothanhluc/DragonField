@@ -1,5 +1,26 @@
-import type { SeededRng } from '../rng';
+import { SeededRng } from '../rng';
 import { RARITIES, SKILLS, luckPoints, type Rarity, type SkillDef } from './pool';
+
+/** Salt isolating the skill-roll RNG stream from combat/door/room RNG streams (ADR-021). */
+const SKILL_ROLL_SEED_SALT = 0x517cc1b7;
+const SKILL_ROLL_MIX_PRIME = 0x9e3779b1;
+
+/**
+ * Deterministic uint32 sub-seed for a run's skill rolls and rerolls (ADR-021).
+ *
+ * Keeping skill rolls on their own sub-seed decouples level-up card offers from combat RNG
+ * (crit rolls, lifesteal, boss patterns), so two runs with the same seed see consistent skill
+ * offers regardless of combat variance.
+ */
+export function skillRollSeed(runSeed: number): number {
+  const base = Number.isFinite(runSeed) ? Math.trunc(runSeed) >>> 0 : 0;
+  return Math.imul(base ^ SKILL_ROLL_SEED_SALT, SKILL_ROLL_MIX_PRIME) >>> 0;
+}
+
+/** Create the dedicated deterministic `SeededRng` stream for skill rolls and rerolls (ADR-021). */
+export function createSkillRollRng(runSeed: number): SeededRng {
+  return new SeededRng(skillRollSeed(runSeed));
+}
 
 /** Base rarity weights from GDD §6: common 70 / rare 25 / epic 5 (sum 100). */
 export const BASE_RARITY_WEIGHTS: Readonly<Record<Rarity, number>> = {
@@ -45,6 +66,47 @@ export interface RollChoicesArgs {
   readonly owned: ReadonlyMap<string, number>;
   /** How many cards to roll, 3 by default. */
   readonly count?: number;
+  /**
+   * Optional skill ids from a previous offer to avoid repeating on a reroll.
+   * When enough fresh skills remain, none of these are offered; when the pool is tight,
+   * fresh skills are drawn first so a reroll never repeats the exact same hand if any fresh
+   * choice exists.
+   */
+  readonly avoidIds?: readonly string[];
+}
+
+export interface RerollChoicesArgs {
+  readonly rng: SeededRng;
+  readonly owned: ReadonlyMap<string, number>;
+  /** Previously offered cards or skill ids to avoid repeating. */
+  readonly previous: readonly (SkillDef | string)[];
+  readonly count?: number;
+}
+
+/** Draw `target` rarity-weighted cards from `pool` (mutating `pool` to prevent duplicates). */
+function drawWeightedFrom(
+  rng: SeededRng,
+  pool: SkillDef[],
+  weights: Readonly<Record<Rarity, number>>,
+  target: number,
+  out: SkillDef[],
+): void {
+  const goal = Math.min(target, pool.length);
+  for (let i = 0; i < goal; i += 1) {
+    const byRarity: Record<Rarity, SkillDef[]> = { common: [], rare: [], epic: [] };
+    for (const skill of pool) byRarity[skill.rarity].push(skill);
+
+    const availableRarities = RARITIES.filter((rarity) => byRarity[rarity].length > 0);
+    const rarityIndex = rng.weightedIndex(availableRarities.map((rarity) => weights[rarity]));
+    const rarity = availableRarities[rarityIndex];
+    if (rarity === undefined) {
+      throw new Error('rollChoices: no rarity could be picked although the pool has cards');
+    }
+
+    const skill = rng.pick(byRarity[rarity]);
+    out.push(skill);
+    pool.splice(pool.indexOf(skill), 1);
+  }
 }
 
 /**
@@ -61,30 +123,41 @@ export function rollChoices(args: RollChoicesArgs): SkillDef[] {
     throw new Error(`rollChoices needs count to be an integer >= 0, got ${count}`);
   }
 
-  const candidates = SKILLS.filter(
+  const eligible = SKILLS.filter(
     (skill) => (args.owned.get(skill.id) ?? 0) < skill.maxStacks,
   );
-  const chosen: SkillDef[] = [];
-  const target = Math.min(count, candidates.length);
+  const target = Math.min(count, eligible.length);
+  if (target === 0) return [];
+
   const weights = rarityWeights(luckPoints(args.owned));
+  const chosen: SkillDef[] = [];
 
-  while (chosen.length < target) {
-    const byRarity: Record<Rarity, SkillDef[]> = { common: [], rare: [], epic: [] };
-    for (const skill of candidates) byRarity[skill.rarity].push(skill);
+  if (args.avoidIds !== undefined && args.avoidIds.length > 0) {
+    const avoid = new Set(args.avoidIds);
+    const fresh = eligible.filter((skill) => !avoid.has(skill.id));
+    const deferred = eligible.filter((skill) => avoid.has(skill.id));
 
-    const availableRarities = RARITIES.filter((rarity) => byRarity[rarity].length > 0);
-    const rarityIndex = args.rng.weightedIndex(
-      availableRarities.map((rarity) => weights[rarity]),
-    );
-    const rarity = availableRarities[rarityIndex];
-    if (rarity === undefined) {
-      throw new Error('rollChoices: no rarity could be picked although the pool has cards');
+    drawWeightedFrom(args.rng, fresh, weights, target, chosen);
+    if (chosen.length < target) {
+      drawWeightedFrom(args.rng, deferred, weights, target - chosen.length, chosen);
     }
-
-    const skill = args.rng.pick(byRarity[rarity]);
-    chosen.push(skill);
-    candidates.splice(candidates.indexOf(skill), 1);
+    return chosen;
   }
 
+  drawWeightedFrom(args.rng, eligible, weights, target, chosen);
   return chosen;
+}
+
+/**
+ * Convenience reroll helper: rolls a fresh hand avoiding `previous` cards whenever enough
+ * eligible skills remain (ADR-021).
+ */
+export function rerollChoices(args: RerollChoicesArgs): SkillDef[] {
+  const avoidIds = args.previous.map((entry) => (typeof entry === 'string' ? entry : entry.id));
+  return rollChoices({
+    rng: args.rng,
+    owned: args.owned,
+    count: args.count,
+    avoidIds,
+  });
 }

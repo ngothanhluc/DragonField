@@ -102,7 +102,7 @@ describe('special door detection and room data', () => {
     expect(isSpecialDoor('heal')).toBe(true);
     expect(isSpecialDoor('shop')).toBe(true);
     expect(isSpecialDoor('chest')).toBe(true);
-    expect(isSpecialDoor('skill')).toBe(false);
+    expect(isSpecialDoor('xp')).toBe(false);
     expect(isSpecialDoor('gold')).toBe(false);
     expect(isSpecialDoor('boss')).toBe(false);
   });

@@ -40,14 +40,14 @@ export const TYPICAL_LOADOUT: ReadonlyMap<string, number> = new Map([
 const standStill: InputPolicy = () => ({ up: false, down: false, left: false, right: false });
 
 /**
- * Which door a typical player takes: heal when offered (survivability first), else the skill,
+ * Which door a typical player takes: heal when offered (survivability first), else the xp door,
  * else the first door (`chooseDoor` for `simulateRun`).
  */
 export function typicalDoorChoice(offers: readonly DoorReward[]): number {
   const heal = offers.indexOf('heal');
   if (heal !== -1) return heal;
-  const skill = offers.indexOf('skill');
-  if (skill !== -1) return skill;
+  const xp = offers.indexOf('xp');
+  if (xp !== -1) return xp;
   return 0;
 }
 

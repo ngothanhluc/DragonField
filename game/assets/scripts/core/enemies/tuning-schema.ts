@@ -226,6 +226,74 @@ export interface TuningConfig {
   readonly roomArt: RoomArtTuning;
   /** Boss entrance grace window and per-chapter max health (M11 T6). */
   readonly boss: BossTuning;
+  /** XP curve, orb magnet/vacuum physics, gold reroll pricing, and level-up safety wave (M12, ADR-021). */
+  readonly xp: XpTuning;
+}
+
+/** XP level-up threshold curve: `round((baseThreshold + linearStep·i + quadraticStep·i²) · chapterMultiplier)`. */
+export interface XpCurveTuning {
+  /** Base XP required for level 1 → 2 before chapter scaling. */
+  readonly baseThreshold: number;
+  /** Linear XP increase added per subsequent level. */
+  readonly linearStep: number;
+  /** Quadratic XP term per level index squared so early levels arrive quickly and late levels stay paced. */
+  readonly quadraticStep: number;
+  /** Per-chapter threshold multiplier (index 0 = chapter 1) matching chapter enemy volume. */
+  readonly chapterMultipliers: readonly number[];
+}
+
+/** Pooled XP orb scatter, magnet acceleration, pickup, and room-clear full-room vacuum physics. */
+export interface XpOrbsTuning {
+  /** Hard pre-allocated pool capacity (zero `new` per drop). */
+  readonly poolCapacity: number;
+  /** Outward scatter speed on drop, tiles/second. */
+  readonly scatterSpeedTilesPerSecond: number;
+  /** Duration of the initial scatter glide before settling, ms. */
+  readonly scatterDurationMs: number;
+  /** Radius within which orbs accelerate toward the player, tiles. */
+  readonly magnetRadiusTiles: number;
+  /** Radius within which an orb is collected, tiles (`<= magnetRadiusTiles`). */
+  readonly pickupRadiusTiles: number;
+  /** Acceleration toward player while inside magnet radius, tiles/s². */
+  readonly magnetAccelTilesPerSecondSq: number;
+  /** Top speed while pulled by magnet radius, tiles/s. */
+  readonly magnetMaxSpeedTilesPerSecond: number;
+  /** Acceleration across the whole room once `roomCleared` triggers auto-vacuum, tiles/s². */
+  readonly vacuumAccelTilesPerSecondSq: number;
+  /** Top speed during room-clear auto-vacuum, tiles/s. */
+  readonly vacuumMaxSpeedTilesPerSecond: number;
+}
+
+/** Escalating gold cost to reroll a 1-of-3 level-up skill offer. */
+export interface XpRerollTuning {
+  /** Gold cost of the first reroll (`rerollsUsed = 0`). */
+  readonly baseCost: number;
+  /** Additional gold added for each subsequent reroll. */
+  readonly costStep: number;
+}
+
+/** Safety wave emitted when closing the mid-combat level-up modal (ADR-021). */
+export interface LevelUpWaveTuning {
+  /** Radial reach around the player within which enemies are pushed back, tiles. */
+  readonly knockbackRadiusTiles: number;
+  /** Knockback distance applied to pushed enemies, tiles. */
+  readonly knockbackDistanceTiles: number;
+  /** Knockback duration applied to pushed enemies, ms. */
+  readonly knockbackDurationMs: number;
+  /** Player invulnerability window upon resuming from the level-up modal, ms (ADR-021: 600). */
+  readonly resumeInvulnerabilityMs: number;
+}
+
+/** Every XP & level-up tuning number (M12, ADR-021). */
+export interface XpTuning {
+  readonly curve: XpCurveTuning;
+  /** Base XP dropped by each enemy role (`splitling` = 0 to prevent splitter farming). */
+  readonly roles: Readonly<Record<EnemyRole, number>>;
+  /** XP multiplier for elite enemies (>= 1). */
+  readonly eliteMultiplier: number;
+  readonly orbs: XpOrbsTuning;
+  readonly reroll: XpRerollTuning;
+  readonly levelUpWave: LevelUpWaveTuning;
 }
 
 /**
@@ -252,9 +320,9 @@ export interface RoomArtTuning {
   readonly pathStoneDensity: number;
 }
 
-/** One weight per door reward (skills and gold are the two fights). */
+/** One weight per door reward (`xp` and `gold` are the two combat rooms). */
 export interface DoorWeightsTuning {
-  readonly skill: number;
+  readonly xp: number;
   readonly gold: number;
   readonly heal: number;
   readonly shop: number;
@@ -262,12 +330,18 @@ export interface DoorWeightsTuning {
 }
 
 /**
- * Door-choice numbers (#39): the gold a `gold` door pays on the next room's clear, the flag that
- * enables the special rooms (#40), and how often each reward comes up in an offer.
+ * Door-choice numbers (#39, M12 ADR-021): the gold a `gold` door pays, the XP/elite bonuses of
+ * an `xp` challenge door, the flag that enables special rooms (#40), and relative weights.
  */
 export interface DoorsTuning {
-  /** Extra gold paid when a room's clear reward is `gold` instead of a skill pick. */
+  /** Extra gold paid when a room's clear reward is `gold`. */
   readonly goldBonus: number;
+  /** Base bonus XP chest awarded on clearing an `xp` / Elite challenge room (scaled by chapter). */
+  readonly xpBonus: number;
+  /** Kill XP multiplier inside an `xp` / Elite challenge room (>= 1). */
+  readonly xpRoomXpMultiplier: number;
+  /** Extra elite spawns added to an `xp` / Elite challenge room (>= 0 integer). */
+  readonly xpRoomExtraElites: number;
   /** Heal/shop/chest doors exist in the offer logic; #40 ships the rooms behind them. */
   readonly specialRoomsEnabled: boolean;
   /** How long the "choose a door" hint stays up after the doors open, ms (#63). */
@@ -538,9 +612,17 @@ const CAMERA_FIELDS = [
 
 const COVER_FIELDS = ['overlayAlpha', 'actorInCoverAlpha', 'fadeRate'] as const;
 
-const DOORS_FIELDS = ['goldBonus', 'specialRoomsEnabled', 'hintMs', 'weights'] as const;
+const DOORS_FIELDS = [
+  'goldBonus',
+  'xpBonus',
+  'xpRoomXpMultiplier',
+  'xpRoomExtraElites',
+  'specialRoomsEnabled',
+  'hintMs',
+  'weights',
+] as const;
 
-const DOOR_WEIGHT_FIELDS = ['skill', 'gold', 'heal', 'shop', 'chest'] as const;
+const DOOR_WEIGHT_FIELDS = ['xp', 'gold', 'heal', 'shop', 'chest'] as const;
 
 const SPECIAL_ROOMS_FIELDS = ['healHearts', 'chestGold', 'shop'] as const;
 
@@ -549,6 +631,36 @@ const SHOP_FIELDS = ['heartRefill', 'skillPrices'] as const;
 const ROOM_ART_FIELDS = ['detailDensity', 'pathStoneDensity'] as const;
 
 const BOSS_FIELDS = ['introGraceMs', 'healthByChapter'] as const;
+
+const XP_FIELDS = ['curve', 'roles', 'eliteMultiplier', 'orbs', 'reroll', 'levelUpWave'] as const;
+
+const XP_CURVE_FIELDS = [
+  'baseThreshold',
+  'linearStep',
+  'quadraticStep',
+  'chapterMultipliers',
+] as const;
+
+const XP_ORBS_FIELDS = [
+  'poolCapacity',
+  'scatterSpeedTilesPerSecond',
+  'scatterDurationMs',
+  'magnetRadiusTiles',
+  'pickupRadiusTiles',
+  'magnetAccelTilesPerSecondSq',
+  'magnetMaxSpeedTilesPerSecond',
+  'vacuumAccelTilesPerSecondSq',
+  'vacuumMaxSpeedTilesPerSecond',
+] as const;
+
+const XP_REROLL_FIELDS = ['baseCost', 'costStep'] as const;
+
+const LEVEL_UP_WAVE_FIELDS = [
+  'knockbackRadiusTiles',
+  'knockbackDistanceTiles',
+  'knockbackDurationMs',
+  'resumeInvulnerabilityMs',
+] as const;
 
 const SHOP_PRICE_FIELDS = ['common', 'rare', 'epic'] as const;
 
@@ -1383,9 +1495,12 @@ function readBoolean(
 function zeroDoors(): DoorsTuning {
   return {
     goldBonus: 1,
+    xpBonus: 1,
+    xpRoomXpMultiplier: 1,
+    xpRoomExtraElites: 0,
     specialRoomsEnabled: false,
     hintMs: 2000,
-    weights: { skill: 1, gold: 1, heal: 0, shop: 0, chest: 0 },
+    weights: { xp: 1, gold: 1, heal: 0, shop: 0, chest: 0 },
   };
 }
 
@@ -1397,16 +1512,27 @@ function parseDoors(raw: Record<string, unknown>, problems: ProblemList): DoorsT
   const weightsSource = readObject(source, 'weights', path, problems, DOOR_WEIGHT_FIELDS) ?? {};
 
   const weights: DoorWeightsTuning = {
-    skill: readNumber(weightsSource, 'skill', `${path}.weights`, problems) ?? 0,
+    xp: readNumber(weightsSource, 'xp', `${path}.weights`, problems) ?? 0,
     gold: readNumber(weightsSource, 'gold', `${path}.weights`, problems) ?? 0,
     heal: readNumber(weightsSource, 'heal', `${path}.weights`, problems) ?? 0,
     shop: readNumber(weightsSource, 'shop', `${path}.weights`, problems) ?? 0,
     chest: readNumber(weightsSource, 'chest', `${path}.weights`, problems) ?? 0,
   };
 
+  const xpRoomXpMultiplier =
+    readNumber(source, 'xpRoomXpMultiplier', path, problems, { positive: true }) ?? 1;
+  if (xpRoomXpMultiplier < 1) {
+    problems.add(`${path}.xpRoomXpMultiplier`, `must be >= 1, got ${xpRoomXpMultiplier}`);
+  }
+
   return {
     goldBonus:
       readNumber(source, 'goldBonus', path, problems, { positive: true }) ?? 1,
+    xpBonus:
+      readNumber(source, 'xpBonus', path, problems, { integer: true, positive: true }) ?? 1,
+    xpRoomXpMultiplier,
+    xpRoomExtraElites:
+      readNumber(source, 'xpRoomExtraElites', path, problems, { integer: true }) ?? 0,
     specialRoomsEnabled: readBoolean(
       source,
       'specialRoomsEnabled',
@@ -1520,6 +1646,157 @@ function parseBoss(raw: Record<string, unknown>, problems: ProblemList): BossTun
   };
 }
 
+function zeroXpRoles(): Record<EnemyRole, number> {
+  const roles = {} as Record<EnemyRole, number>;
+  for (const role of ENEMY_ROLES) roles[role] = 0;
+  return roles;
+}
+
+function zeroXp(): XpTuning {
+  return {
+    curve: {
+      baseThreshold: 1,
+      linearStep: 0,
+      quadraticStep: 0,
+      chapterMultipliers: CHAPTERS_PER_RUN_MULTIPLIERS,
+    },
+    roles: zeroXpRoles(),
+    eliteMultiplier: 1,
+    orbs: {
+      poolCapacity: 1,
+      scatterSpeedTilesPerSecond: 0,
+      scatterDurationMs: 0,
+      magnetRadiusTiles: 1,
+      pickupRadiusTiles: 0.5,
+      magnetAccelTilesPerSecondSq: 1,
+      magnetMaxSpeedTilesPerSecond: 1,
+      vacuumAccelTilesPerSecondSq: 1,
+      vacuumMaxSpeedTilesPerSecond: 1,
+    },
+    reroll: {
+      baseCost: 0,
+      costStep: 0,
+    },
+    levelUpWave: {
+      knockbackRadiusTiles: 1,
+      knockbackDistanceTiles: 1,
+      knockbackDurationMs: 1,
+      resumeInvulnerabilityMs: 0,
+    },
+  };
+}
+
+function parseXp(raw: Record<string, unknown>, problems: ProblemList): XpTuning {
+  const source = readObject(raw, 'xp', '', problems, XP_FIELDS);
+  if (source === undefined) return zeroXp();
+
+  const path = 'xp';
+  const curveSource = readObject(source, 'curve', path, problems, XP_CURVE_FIELDS) ?? {};
+  const rolesSource = readObject(source, 'roles', path, problems, ENEMY_ROLES) ?? {};
+  const orbsSource = readObject(source, 'orbs', path, problems, XP_ORBS_FIELDS) ?? {};
+  const rerollSource = readObject(source, 'reroll', path, problems, XP_REROLL_FIELDS) ?? {};
+  const waveSource =
+    readObject(source, 'levelUpWave', path, problems, LEVEL_UP_WAVE_FIELDS) ?? {};
+
+  const curve: XpCurveTuning = {
+    baseThreshold:
+      readNumber(curveSource, 'baseThreshold', `${path}.curve`, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    linearStep: readNumber(curveSource, 'linearStep', `${path}.curve`, problems) ?? 0,
+    quadraticStep: readNumber(curveSource, 'quadraticStep', `${path}.curve`, problems) ?? 0,
+    chapterMultipliers: readMultiplierArray(
+      curveSource,
+      'chapterMultipliers',
+      `${path}.curve`,
+      problems,
+    ),
+  };
+
+  const roles = {} as Record<EnemyRole, number>;
+  for (const role of ENEMY_ROLES) {
+    roles[role] =
+      readNumber(rolesSource, role, `${path}.roles`, problems, { integer: true }) ?? 0;
+  }
+
+  const eliteMultiplier =
+    readNumber(source, 'eliteMultiplier', path, problems, { positive: true }) ?? 1;
+  if (eliteMultiplier < 1) {
+    problems.add(`${path}.eliteMultiplier`, `must be >= 1, got ${eliteMultiplier}`);
+  }
+
+  const magnetRadiusTiles =
+    readNumber(orbsSource, 'magnetRadiusTiles', `${path}.orbs`, problems, { positive: true }) ?? 1;
+  const pickupRadiusTiles =
+    readNumber(orbsSource, 'pickupRadiusTiles', `${path}.orbs`, problems, { positive: true }) ??
+    0.5;
+  if (pickupRadiusTiles > magnetRadiusTiles) {
+    problems.add(
+      `${path}.orbs.pickupRadiusTiles`,
+      `must be <= magnetRadiusTiles (${magnetRadiusTiles}), got ${pickupRadiusTiles}`,
+    );
+  }
+
+  const orbs: XpOrbsTuning = {
+    poolCapacity:
+      readNumber(orbsSource, 'poolCapacity', `${path}.orbs`, problems, {
+        integer: true,
+        positive: true,
+      }) ?? 1,
+    scatterSpeedTilesPerSecond:
+      readNumber(orbsSource, 'scatterSpeedTilesPerSecond', `${path}.orbs`, problems) ?? 0,
+    scatterDurationMs:
+      readNumber(orbsSource, 'scatterDurationMs', `${path}.orbs`, problems) ?? 0,
+    magnetRadiusTiles,
+    pickupRadiusTiles,
+    magnetAccelTilesPerSecondSq:
+      readNumber(orbsSource, 'magnetAccelTilesPerSecondSq', `${path}.orbs`, problems, {
+        positive: true,
+      }) ?? 1,
+    magnetMaxSpeedTilesPerSecond:
+      readNumber(orbsSource, 'magnetMaxSpeedTilesPerSecond', `${path}.orbs`, problems, {
+        positive: true,
+      }) ?? 1,
+    vacuumAccelTilesPerSecondSq:
+      readNumber(orbsSource, 'vacuumAccelTilesPerSecondSq', `${path}.orbs`, problems, {
+        positive: true,
+      }) ?? 1,
+    vacuumMaxSpeedTilesPerSecond:
+      readNumber(orbsSource, 'vacuumMaxSpeedTilesPerSecond', `${path}.orbs`, problems, {
+        positive: true,
+      }) ?? 1,
+  };
+
+  const reroll: XpRerollTuning = {
+    baseCost:
+      readNumber(rerollSource, 'baseCost', `${path}.reroll`, problems, { integer: true }) ?? 0,
+    costStep:
+      readNumber(rerollSource, 'costStep', `${path}.reroll`, problems, { integer: true }) ?? 0,
+  };
+
+  const levelUpWave: LevelUpWaveTuning = {
+    knockbackRadiusTiles:
+      readNumber(waveSource, 'knockbackRadiusTiles', `${path}.levelUpWave`, problems, {
+        positive: true,
+      }) ?? 1,
+    knockbackDistanceTiles:
+      readNumber(waveSource, 'knockbackDistanceTiles', `${path}.levelUpWave`, problems, {
+        positive: true,
+      }) ?? 1,
+    knockbackDurationMs:
+      readNumber(waveSource, 'knockbackDurationMs', `${path}.levelUpWave`, problems, {
+        positive: true,
+      }) ?? 1,
+    resumeInvulnerabilityMs:
+      readNumber(waveSource, 'resumeInvulnerabilityMs', `${path}.levelUpWave`, problems, {
+        integer: true,
+      }) ?? 0,
+  };
+
+  return { curve, roles, eliteMultiplier, orbs, reroll, levelUpWave };
+}
+
 function zeroCover(): CoverTuning {
   return { overlayAlpha: 1, actorInCoverAlpha: 1, fadeRate: 1 };
 }
@@ -1589,6 +1866,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     specialRooms: parseSpecialRooms(raw, problems),
     roomArt: parseRoomArt(raw, problems),
     boss: parseBoss(raw, problems),
+    xp: parseXp(raw, problems),
   };
 
   problems.throwIfAny();

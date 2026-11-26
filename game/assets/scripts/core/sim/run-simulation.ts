@@ -836,10 +836,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         });
 
         // One door out: the boss door when the special is the last normal slot, otherwise a
-        // plain exit (its room keeps the default `skill` clear reward — there is no choice).
+        // plain exit (its room keeps the default `xp` clear reward — there is no choice).
         const exitOffers: readonly DoorReward[] =
-          specialSlot >= normalRoomCount ? ['boss'] : ['skill'];
-        const exitChosen = exitOffers[0] ?? 'skill';
+          specialSlot >= normalRoomCount ? ['boss'] : ['xp'];
+        const exitChosen = exitOffers[0] ?? 'xp';
         events.push({
           kind: 'door',
           nowMs: durationMs,
@@ -907,7 +907,7 @@ function chooseDoorFrom(
   offers: readonly DoorReward[],
   room: number,
 ): DoorReward {
-  const fallback = offers[0] ?? 'skill';
+  const fallback = offers[0] ?? 'xp';
   if (offers.length <= 1) return fallback;
   const index = choose?.(offers, room) ?? 0;
   if (!Number.isInteger(index) || index < 0 || index >= offers.length) return fallback;

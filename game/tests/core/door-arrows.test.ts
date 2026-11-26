@@ -11,7 +11,7 @@ describe('doorArrowTargets — limits', () => {
   const view = { x: 0, y: 0, width: 32, height: 18 };
   const player = { x: 16, y: 9 };
   const offScreen: DoorArrowSource[] = [
-    { at: { x: 16, y: 40 }, reward: 'skill' },
+    { at: { x: 16, y: 40 }, reward: 'xp' },
     { at: { x: 16, y: -20 }, reward: 'gold' },
     { at: { x: -10, y: 9 }, reward: 'heal' },
     { at: { x: 50, y: 9 }, reward: 'chest' },
