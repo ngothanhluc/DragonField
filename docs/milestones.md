@@ -214,10 +214,119 @@ Design: GDD §14. The art side (unarmed bodies, separate attachments, rig data) 
 
 ---
 
+## M11 — Visual overhaul: map, weather & UI
+
+Agreed in the 2026-11-26 grill session (see GDD §15.1, ADR-019, ADR-020; detailed ticket breakdown in `docs/plans/2026-11-m11-visual-overhaul.md`). Branch `m11-visual-overhaul`. Skills used: `game-ui-ux`, `level-design`, `game-feel`, `performance-optimization`.
+
+**Work.**
+1. **Weather & atmosphere rebuild (ADR-019).** Remove `raylight`, `fog`, `vignette`, and `heat-haze` completely from `atmosphere.json`, `core/atmosphere/`, and `atmosphere-view.ts`. Stage Ninja Adventure `FX/Particle/` sheets (`Leaf.png`, `LeafPink.png`, `Rain.png`, `RainOnFloor.png`, `Snow.png`, `Clouds.png`) at **1:1 pixel scale** (`ACTOR_SCALE`) and crisp full opacity with diagonal wind motion (matching the Ninja Adventure demo GIFs):
+   - Ch1 (Grassland/Forest): green leaves (`Leaf`) + pink blossoms (`LeafPink`) drifting diagonally + soft drifting ground cloud shadows (`under-actors`).
+   - Ch2 (River/Waterfall): fast diagonal rain streaks (`Rain`) + ground splash rings (`RainOnFloor`) + water ripples.
+   - Ch3 (Abandoned Village): crisp 1:1 ash/dry leaves + animated smoking campfires.
+   - Ch4 (Desert): crisp 1:1 wind-driven sand gusts + soft drifting desert cloud shadows (`under-actors`).
+   - Still respects `Effects: Full / Reduced` and never obscures bullets or telegraphs.
+2. **Map composition & real Ch2 rivers (ADR-020).** Upgrade room generation (`scripts/lib/room-pool.ts`, `scripts/dress-rooms.ts`, `game/room-water.ts`):
+   - Replace scattered salt-and-pepper floor noise with intentional clusters: dense multi-tree forest borders, cohesive village yards (houses + fences + crates/carts tucked together), desert oasis & outpost clusters.
+   - **Chapter 2 real rivers:** replace flat T-bar water rectangles with natural river/waterfall banks (grass/stone shoreline tiles) and **impassable deep water (`kind: "pit"` obstacles: blocks walkers, bullets fly over)** crossed by **wooden/stone bridges**. Verify every Ch2 room passes spawn→door traversability, flow-field stuck checks, and `run-simulation`.
+   - **Chapter 3 abandoned village palette:** replace flat gray-brown dirt ground with **mossy olive grass + worn dirt paths** + clustered mossy ruins, watchtowers, fences, and overgrown trees (matching the pack's abandoned village demo).
+3. **HUD & menu visual polish (`game-ui-ux`).**
+   - **In-game HUD:** add compact high-contrast wooden/dark pixel backing plates + icons (`GoldCoin`, room/enemy icons) so hearts, gold, room counter, and enemy count stay readable over bright Ch4 sand and never collide with roofs/props; reserve clean layout slots for M12's XP bar and M13's Dash/Active indicators.
+   - **Menus:** upgrade `screens/menu.ts` and Title / Chapter Select / Shop / Settings / Pause / Result / Skill Pick with crisp `Theme Wood` 9-slice depth, cleaner button padding & subtitle hierarchy, and cleaner framing of the living room backdrop.
+4. **Enemy difficulty retune — Tier 1 & boss entrance bugfix.**
+   - **Boss room entrance fix:** fix `initialBossState` starting with `stepStartedMs = 0` against accumulated `CombatLoop.nowMs` (causing bosses to skip step 0 and lunge/attack on frame 1), add a ~1.0 s boss entrance grace window, and enforce **≥ 10 tiles** initial separation between `playerStart` and `bossStart` across all 4 `room-17.tmx` arenas.
+   - **Undo `#66` over-nerf:** re-tune `game/config/tuning.json` (`bun run gen`) to eliminate the post-`#66` 0-hit cakewalk (19/24 sim rows at 0 hits): raise Tank charge speed above the player's 5 tiles/s walk speed, tighten Chaser/Splitling closing speeds and Caster/Tank/Sniper cooldowns, increase opening wave pressure (`aliveCapStart`), replace flat chapter health scaling (`[1, 1.05, 1.05, 1.1]`) with a meaningful Ch1 → Ch4 curve + higher Elite presence, and adjust Boss HP/pressure. Target: **challenging roguelite** — a fresh 0-Meta player can die in Ch1–Ch2 on sloppy dodging, Ch3–Ch4 demand strong movement + build, and `run-simulation` dodge+loadout wins under real hit/pressure (validated by `bun run sim:table`).
+
+**Acceptance.**
+- `bun run check` green; `atmosphere` tests confirm `raylight`/`fog`/`vignette`/`heat-haze` are gone and every chapter's particle layers are 1:1 pixel scale (`ACTOR_SCALE`); boss entrance tests confirm `initialBossState` honors `nowMs`, intro grace holds, and every boss arena separates `playerStart` and `bossStart` by ≥ 10 tiles.
+- Every generated room across all 4 chapters (including bridged Ch2 river rooms) passes traversability (`spawn → every door`), solid-prop/obstacle parity, and 0-stuck flow-field checks.
+- `bun run sim:table` green across all 4 chapters with before/after numbers saved to `docs/research/2026-11-m11-sim-table.md` (standing still loses Room 1 rapidly; 0-skill runs face genuine danger; dodge+loadout wins 9/9 across all 4 chapters under real pressure).
+- Browser screenshots at 1920×1080 and 1280×720 across Title, Chapter Select, and Ch1–Ch4 gameplay: 0 clipped/overflow labels (`uiText()`), HUD readable over Ch4 sand, weather crisp at 1:1 scale, `stress()` 60 fps at 1920×1080 with Effects Full, 0 console errors.
+
+---
+
+## M12 — XP & level-up
+
+Agreed in the 2026-11-26 grill session (see GDD §15.2, ADR-021). Branch `m12-xp-levelup`. Skills used: `roguelike`, `game-feel`, `game-ui-ux`, `audio-design`.
+
+**Work.**
+1. **XP orbs & magnet pickup.** Enemies drop pooled XP orbs on death (value scaled by role/elite; splitlings tuned so splitters cannot be farmed). Orbs accelerate toward the player within the magnet pickup radius and **auto-vacuum across the entire room on room clear**.
+2. **Unified skill acquisition via XP (ADR-021).** Remove the free end-of-room skill pick; replace the `skill` door with an **`xp` / Elite challenge door** (higher XP yield / XP chest on clear). All skill picks now flow through XP level-ups.
+3. **Level-up curve & balance.** Curve in `tuning.json` targeting **12–16 level-ups per full chapter run** (~1.5–2/room), verified by `run-simulation` across all 4 chapters.
+4. **Mid-combat level-up & safety.** Reaching the XP threshold pauses simulation cleanly and opens the 1-of-3 skill modal with a **gold Reroll button** (escalating cost from shared gold) driven by a **dedicated skill-roll sub-seed** (decoupled from combat RNG per `roguelike` skill). Closing the modal fires a **radial enemy knockback wave + 0.6 s i-frame** (enemy bullets remain intact to preserve bullet-hell tension), paired with a LevelUp jingle and visual burst.
+5. **Event-driven HUD.** Add an event-driven XP bar + level badge (`hudScale`) and expand the HUD skill strip so 12–16 picks display cleanly without silent truncation.
+
+**Acceptance.**
+- Tests (`core/`): XP curve determinism, orb magnet + room-clear vacuum, dedicated skill-roll sub-seed independence from combat RNG, Reroll gold deduction & blocking, `xp` door offers, radial knockback + resume i-frame.
+- `bun run sim:table` green across all 4 chapters with the new 12–16 level-up economy.
+- Browser proof at 1920×1080: level-up mid-wave pauses cleanly, Reroll deducts gold, resume knocks nearby enemies back with 0.6 s i-frame, 60 fps `stress()`, 0 console errors.
+
+---
+
+## M13 — Build & combat depth
+
+Agreed in the 2026-11-26 grill session (see GDD §15.3, ADR-022). Branch `m13-build-combat`. Skills used: `input-systems`, `game-ai`, `game-feel`, `roguelike`, `performance-optimization`.
+
+**Work.**
+1. **Active controls + action buffer (ADR-022, amends ADR-008).**
+   - **Dash (`Space`):** cooldown + brief i-frame + **150 ms game-time action buffer** (`input-systems`). Ninja uses its pack `Roll` 4-direction animation.
+   - **Signature Active Skill (`E` / Right-Click):** 150 ms action buffer; recharges via **base time cooldown (~10 s) plus faster cooldown reduction on hit/kill** (works equally well in wave rooms and single-boss arenas). Basic firing stays **100% auto-fire**. Ship Ninja's signature skill (*Shadow Barrage*) immediately so the active framework works end-to-end.
+   - Add compact Dash & Active cooldown indicators to the HUD slot reserved in M11.
+2. **Pure-combat skill pool rebuild.** Remove all economy/luck skills (`Greed`, `Luck`; no XP/Gold cards). Rebuild the pool to **~24–28 pure-combat skills** organized into 4 pillars — *Weapon/Offense*, *Elemental/Status*, *Defense/Survival*, and *Mobility/Dash & Active* — mapped to the pack's 62 `24×24` skill icons (unique icon per skill, tested).
+3. **Legendary Evolutions (6–8).** When a player owns a prerequisite skill pair at its threshold, the corresponding **Evolution** card enters the level-up roll pool with a distinct gold frame and visual/combat upgrade. Skill pick cards show pairing hints so players can plan builds intentionally.
+4. **Enemy AI & combat escalation — Tier 2 (`game-ai`).** Escalate enemy and boss threat to counter Dash, Active Skills, and Evolutions: add smarter enemy behaviors (predictive lead shots / multi-shot bursts on late-chapter casters, flanking steering on chasers), 1–2 new enemy roles (e.g. Bomber / Summoner-Buffer from unused pack monsters), and boss patterns with wide sweeps/zones that reward or force Dash timing.
+
+**Acceptance.**
+- Tests (`core/`): 150 ms game-time action buffer (freezes during pause/hitstop, expires cleanly, fires once), Dash i-frame/cooldown, Active Skill time+hit/kill recharge, zero non-combat skills in pool, Evolution unlock predicates & deterministic rolls, duplicate icon check, predictive aim & new enemy role AI tests.
+- `bun run sim:table` green across all 4 chapters with the rebuilt pool, Dash, Active Skill, and Tier-2 enemy AI.
+- Browser proof at 1920×1080: Dash, Active Skill, new enemy AI/roles, and at least one Evolution triggered live; 60 fps `stress()`; 0 console errors.
+
+---
+
+## M14 — Playable characters & weapons
+
+Agreed in the 2026-11-26 grill session (see GDD §14, §15.4). Branch `m14-characters`. Skills used: `create-game-assets`, `roguelike`, `game-feel`, `game-ui-ux`.
+
+**Work.**
+1. **Complete 4-class roster (GDD §14).** Cover all 3 weapon forms (`projectile`, `hand`, `back`):
+   - **Ninja** *(unlocked from start)* — `projectile` shuriken/kunai, Signature: *Shadow Barrage*.
+   - **Archer** *(unlocks on Ch1 clear OR early Meta gold purchase)* — `hand` bow, Signature: *Piercing Volley*.
+   - **Mage** *(unlocks on Ch2 clear OR early Meta gold purchase)* — `hand` staff, Signature: *Arcane Nova*.
+   - **Cultivator** *(unlocks on Ch3 clear OR early Meta gold purchase)* — `back` sword, Signature: *Ten Thousand Swords* (hides `sword-back` while flying blades are active); retire the `settings.cultivatorEnabled` feature flag once full animations pass acceptance.
+2. **Three-layer class identity.** Each character differs in (a) base stats & auto-fire projectile feel, (b) 1 starting Passive, and (c) 1 Signature Active Skill (`E`), while sharing the M13 pure-combat skill pool & Evolutions.
+3. **Art & rig completion.** Author missing Cultivator clips (`walk`, `attack`, `hit`, `dead`, `dash`) and full animation sets + weapon attachments (`bow`, `staff`) for Archer & Mage via `create-game-assets`, staged into `animations.json` and `attachments.json`.
+4. **Character select & unlock UX.** Show lock status, chapter unlock milestone, early-buy option, and class summary (auto-fire, passive, signature) on Character Select / Meta Shop.
+
+**Acceptance.**
+- Tests (`core/`): roster unlock logic (chapter clear OR gold buy), per-character base stat/passive/signature derivation, attachment placement/bob/hide across all rigged characters, save migration.
+- `bun run sim:table` expanded to cover **all 4 classes × 4 chapters** and green on every row.
+- Browser proof at 1920×1080: all 4 characters playable through rooms + boss, hand/back draw order & Cultivator sword hide/show verified in all 4 directions, `placeholders()` empty, 0 console errors.
+
+---
+
+## M15 — Replayability, meta & QoL
+
+Agreed in the 2026-11-26 grill session (see GDD §15.5, ADR-023). Branch `m15-replayability`. Skills used: `save-systems`, `roguelike`, `audio-design`, `game-ui-ux`.
+
+**Work.**
+1. **Save & Resume mid-run (ADR-023, revises ADR-012).** Split storage into `profileSave` (permanent, with backup key fallback on corrupt JSON) and `runSave` (plain data only: seed, chapter, room index, chosen doors, character, HP/XP/level, skills/evolutions, gold earned, elapsed time, ascension/endless loop). **Autosave at safe boundaries** (room entry / after door choice) → `Continue Run` button on Title. Reloading mid-room resumes from the start of that room; **death deletes `runSave` immediately** (strict permadeath).
+2. **Ascension Ladder (1–5) & Continue Endless.**
+   - Unlockable stacking Ascension tiers 1–5 per chapter (progressive modifiers: more elites, faster/tougher enemies & bosses, denser enemy bullets, higher shop prices + Gold% reward bonus).
+   - After defeating the Chapter 4 Boss, offer **Continue Endless** to loop Chapters 1–4 with continuous scaling until death.
+3. **Expanded Meta Shop.** Keep the 3 existing stat tracks (`Hearts`, `Damage`, `Fire Rate`), add **3 Utility tracks** (*XP Magnet*, *Gold Bonus* replacing old Greed, *Free Rerolls* 1–3/run; **no Revive**), plus early **Character Unlocks** (Archer, Mage, Cultivator).
+4. **QoL & Audio polish.**
+   - **Rich Results / Death screen (`roguelike`):** show run seed, chapter/room depth (and Ascension/Endless loop), cause of death, full skill + Evolution build summary, and unlocks earned.
+   - **Audio mixing (`audio-design`):** split `Master` into separate **Music** and **SFX** sliders (squared gain curve) + smooth music ducking while Level-up or Pause is open.
+
+**Acceptance.**
+- Tests (`core/`): `profileSave` + `.bak` fallback round-trip, `runSave` serialize/deserialize + death wipe + version migration chain, Ascension 1–5 modifier stacking, Endless loop scaling, Meta Shop Utility tracks & character early-buy, squared audio gain curve.
+- Browser proof: start run → clear room 1 → pick door → reload page → `Continue Run` restores exact build/gold/room → die → `Continue Run` disappears and Results shows seed/cause/build; Music/SFX sliders & ducking verified; 0 console errors.
+
+---
+
 ## Dependencies
 
 ```text
-M0 → M1 → M1.5 → M2 → M3 → M4 → M5 → M6 → M7 → M8 → M9 → M10
+M0 → M1 → M1.5 → M2 → M3 → M4 → M5 → M6 → M7 → M8 → M9 → M10 → M11 → M12 → M13 → M14 → M15
 ```
 
 No milestone starts before the previous one meets acceptance. Exception: downloading the Update #8 pack and building the dungeon tile set can run in parallel with M0–M1.

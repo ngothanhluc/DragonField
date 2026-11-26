@@ -215,3 +215,53 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 
 **Update 2026-11-22 (#66).** Normal rooms are **64×36** tiles (2×2 screens) instead of 128×72: the walk between fights was too long and enemies could spread too thin. Enemy counts per room, the alive cap and the follow camera rules above are unchanged; the player's base speed rises 4 → 5 tiles/s. Boss arenas stay 32×18. The decision above otherwise stands.
 
+---
+
+## ADR-019 — Weather particles at 1:1 pixel scale; drop full-screen overlays (M11)
+
+**Decision.** Remove `raylight`, `fog`, `vignette`, and `heat-haze` from `atmosphere.json` and `atmosphere-view.ts`. Render all chapter weather particles (`Leaf`, `LeafPink`, `Rain`, `RainOnFloor`, ash/sand) at **1:1 pixel scale** (`ACTOR_SCALE` = 1/16 tile per texture pixel) and crisp full opacity with diagonal wind motion, optionally paired with soft drifting ground cloud shadows (`Clouds.png`, `under-actors`). Keep ADR-017's no-shader rule and `Effects: Full / Reduced` toggle.
+
+**Rationale.** Visual inspection of live M10/#67 screenshots against the Ninja Adventure demo GIFs showed that oversized low-alpha `Raylight`/`Fog` sprites and `Graphics`-drawn `vignette`/`heat-haze` strips looked artificial and washed out the terrain, while 0.45-tile / 0.38-alpha leaves broke pixel consistency and nearly vanished.
+
+**Consequences.** `ATMOSPHERE_LAYER_KINDS` in `core/atmosphere/atmosphere.ts` drops the four removed kinds and adds `rain`, `rain-splash`, `blossoms`, and `cloud-shadows`. All particles remain pooled under one component clock to hold 60 fps at 1920×1080.
+
+---
+
+## ADR-020 — Impassable rivers with bridges in Chapter 2 (M11)
+
+**Decision.** Chapter 2 rivers are rendered with natural grass/stone shoreline banks and backed by `kind: "pit"` obstacles (blocking player and enemy movement while allowing projectiles to pass over, per GDD §8), crossed via explicit wooden/stone bridges whose tiles are clear of `pit` obstacles.
+
+**Rationale.** The M6/M9 shallow-river rectangles looked like flat blue tape pasted over grass. Making water truly impassable with bridges gives Chapter 2 genuine visual grounding and tactical positioning without inventing a new obstacle kind.
+
+**Consequences.** Room generation in `scripts/lib/room-pool.ts` must guarantee bridge placement connects `playerStart`, all enemy spawn zones, and every door; existing traversability, flow-field stuck tests, and `run-simulation` validate every Ch2 room.
+
+---
+
+## ADR-021 — Unified XP level-up skill acquisition with dedicated sub-seed (M12)
+
+**Decision.** Skill picks trigger solely from XP level-ups (orbs dropped by enemies with magnetic pickup + room-clear auto-vacuum) rather than room clears; the `skill` door becomes an `xp` / Elite door. Skill rolls and gold Rerolls use a dedicated per-run skill-roll sub-seed, decoupled from combat RNG (crit/lifesteal/boss patterns).
+
+**Rationale.** With 24–72 enemies per 64×36 room, a single skill pick at room end felt slow and disconnected from combat. Separating the skill-roll RNG stream eliminates the M4 debt where combat randomness shifted future card offers (per `.claude/skills/roguelike`).
+
+**Consequences.** `tuning.json` gains an `xp` block targeting 12–16 level-ups/run; `core/run/doors.ts` replaces `'skill'` with `'xp'`; mid-combat resume applies a radial enemy knockback wave + 0.6 s i-frame (bullets stay live).
+
+---
+
+## ADR-022 — Active controls (Dash + Signature Skill) and pure-combat skill rebuild (M13)
+
+**Decision.** Amend ADR-008: keep basic firing **100% auto-fire**, and add two discrete player actions routed through a **150 ms game-time action buffer** (`core/movement/` or `core/input/`): **Dash (`Space`)** with cooldown + brief i-frame, and **Signature Active Skill (`E` / Right-Click)** recharging via time cooldown accelerated by hits/kills. Rebuild `core/skills/pool.ts` into ~24–28 pure-combat skills (removing `Greed`, `Luck`, and all economy/XP/gold cards) plus 6–8 Legendary Evolutions unlocked by skill pairs.
+
+**Rationale.** Active defensive/offensive windows deepen bullet-hell expression and give M14's four classes unmistakable identity (e.g. Cultivator's *Ten Thousand Swords*), while keeping every level-up card impactful in combat. Economy/magnet upgrades move cleanly to Meta Shop (M15).
+
+**Consequences.** `core/skills/` expands with Evolution definitions and pairing metadata; `core/sim/run-simulation.ts` models Dash, Active Skill, and the rebuilt pool; all existing `Greed`/`Luck` references move out of the combat skill pool.
+
+---
+
+## ADR-023 — Split profile and active-run saves with safe-boundary autosave (M15)
+
+**Decision.** Revise ADR-012: persist two separate `localStorage` keys — **Profile Save** (meta progression, unlocks, settings, bests, with a `.bak` backup key for corruption fallback) and **Active Run Save** (plain JSON data: seed, chapter, room index, door choice, character, HP/XP/level, skills/evolutions, gold earned, elapsed time, ascension/endless loop). Autosave the active run **only at safe boundaries** (room entry / after door choice). Death deletes the Active Run Save immediately (strict permadeath).
+
+**Rationale.** M9's 64×36 rooms extended runs to 30–60 minutes, making accidental tab closes punishing. Splitting profile vs run saves and avoiding mid-frame combat serialization prevents corruption while preserving permadeath (per `.claude/skills/save-systems` and `.claude/skills/roguelike`).
+
+**Consequences.** Reloading mid-room restores the player at the start of that room; Title adds a `Continue Run` button whenever a valid `runSave` exists; `runSave` uses its own schema `version` + migration chain and stores zero engine node references.
+

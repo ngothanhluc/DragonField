@@ -289,3 +289,44 @@ Boss pool: ch1 Tengu / GiantFrog · ch2 Squid / GiantSlime · ch3 Samurai / Gian
 
 **Data.** `assets/resources/data/attachments.json` holds, per character, its frame size, `hand`/`back` points (output-frame pixels) and the per-animation, per-direction bob, and, per item, its slot, sprite key, frame size, grip point and optional `behind` list. A pure module (`core/art/attachments.ts`) validates it and computes an item's offset and draw order for a given body frame; the game-side node work is M10.
 
+---
+
+## 15. Next expansion roadmap (M11–M15)
+
+Agreed in the 2026-11-26 grill session. Each milestone ships and locks simulation balance before the next starts (detailed acceptance in `docs/milestones.md`, architectural records in ADR-019…023).
+
+### 15.1 Visual overhaul: map, weather & UI (M11)
+
+- **Weather (ADR-019):** remove `raylight`, `fog`, `vignette`, and `heat-haze` completely. Replace with crisp **1:1 pixel-scale** full-opacity particles from `FX/Particle/` matching the Ninja Adventure demo scenes:
+  - Ch1: green leaves (`Leaf.png`) + pink blossoms (`LeafPink.png`) drifting diagonally + soft ground cloud shadows (`under-actors`).
+  - Ch2: diagonal rain (`Rain.png`) + ground splash rings (`RainOnFloor.png`) + water ripples.
+  - Ch3: crisp 1:1 ash/dry leaves + smoking campfires.
+  - Ch4: crisp 1:1 wind-driven sand gusts + soft desert cloud shadows (`under-actors`).
+- **Maps (ADR-020):** replace scattered single-tile floor noise with cohesive clusters (dense tree borders, village yards with houses + fences + carts/crates, desert oases & outposts). Upgrade **Ch2 rivers** to bordered, **impassable water (`pit`: blocks walkers, bullets fly over) crossed via wooden/stone bridges**. Re-palette **Ch3** ground to mossy olive grass + worn dirt paths matching the pack's abandoned village demo.
+- **UI & HUD:** high-contrast HUD plates + icons (readable over bright Ch4 sand, reserving space for M12 XP bar and M13 Dash/Active widgets) and a full `Theme Wood` menu refresh.
+- **Enemy difficulty retune — Tier 1:** reverse the `#66` over-nerf in `tuning.json` (Tank charge faster than player walk speed, faster Chasers/Splitlings, shorter Caster/Sniper/Tank cooldowns, stronger opening wave pressure, steeper Ch1 → Ch4 enemy HP & Elite scaling) targeting a **challenging roguelite** feel where 0-Meta runs face real risk of death in Ch1–Ch2 and heavy pressure in Ch3–Ch4 (validated by `bun run sim:table`).
+
+### 15.2 XP & level-up (M12)
+
+- Enemies drop **XP orbs** collected via magnetic pickup radius, with **room-clear auto-vacuum** so nothing is left behind.
+- **Unified skill path (ADR-021):** remove end-of-room free skill picks; convert the `skill` door into an **`xp` / Elite door**. Target **12–16 level-ups per full chapter run** (`tuning.json` + `run-simulation`).
+- Mid-combat level-up pauses simulation for 1-of-3 choice + **gold Reroll** (using a dedicated **skill-roll sub-seed**); closing the modal emits a **radial enemy knockback wave + 0.6 s i-frame** (bullets remain live).
+
+### 15.3 Build & combat depth (M13)
+
+- **Active controls (ADR-022, amends §3 / ADR-008):** add **Dash (`Space`)** with cooldown, short i-frame, and 150 ms action buffer, plus **1 Signature Active Skill (`E` / Right-Click)** recharging via **base cooldown (~10 s) accelerated by hits/kills** (150 ms action buffer). Basic shots stay **100% auto-fire**.
+- **Pure-combat skill pool rebuild (replaces §6):** remove `Greed`, `Luck`, and all XP/Gold cards. Rebuild into **~24–28 pure-combat skills** across 4 pillars (Weapon/Offense, Elemental/Status, Defense/Survival, Mobility/Dash & Active) + **6–8 Legendary Evolutions** unlocked into the roll pool when prerequisite pairs are owned.
+- **Enemy AI & threat escalation — Tier 2:** upgrade enemy AI (predictive lead shots / bursts, flanking chasers), add 1–2 new enemy roles (e.g. Bomber / Summoner-Buffer), and update boss patterns with Dash-pressuring attacks so combat stays tense once players have Dash, Active Skills, and Evolutions.
+
+### 15.4 Playable characters & weapons (M14)
+
+- Complete the 4 classes from §14 across all 3 weapon forms: **Ninja** (unlocked from start, `projectile`, *Shadow Barrage*), **Archer** (Ch1 clear or Meta gold, `hand` bow, *Piercing Volley*), **Mage** (Ch2 clear or Meta gold, `hand` staff, *Arcane Nova*), and **Cultivator** (Ch3 clear or Meta gold, `back` sword, *Ten Thousand Swords* hiding the back sword; retires `cultivatorEnabled`).
+- Each class differs across **3 layers**: base stats & auto-fire feel, 1 starting Passive, and 1 Signature Active Skill, sharing the M13 skill pool & Evolutions.
+
+### 15.5 Replayability, meta & QoL (M15)
+
+- **Mid-run Save & Resume (ADR-023, revises §10 / ADR-012):** separate `profileSave` (+ backup key) and `runSave`, autosaved on room entry / door choice, resumed via `Continue Run` on Title; death immediately deletes `runSave`.
+- **Endgame:** **Ascension Ladder (1–5)** per chapter (stacking modifiers + Gold% bonus) and **Continue Endless** looping Ch1–4 after beating the Chapter 4 Boss.
+- **Meta Shop (extends §7):** add 3 Utility tracks (**XP Magnet**, **Gold Bonus**, **Free Rerolls**; no Revive) alongside the 3 stat tracks + early character unlocks.
+- **QoL:** detailed Results/Death screen (seed, depth, cause of death, build + Evolutions, unlocks) and separate **Music / SFX** volume sliders (squared curve) with level-up/pause music ducking.
+
