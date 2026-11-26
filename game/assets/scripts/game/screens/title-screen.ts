@@ -51,7 +51,7 @@ export function formatCharacterLabel(character: CharacterDef): string {
 }
 
 export function formatCharacterDetail(character: CharacterDef, availableCount: number): string {
-  if (availableCount <= 1) return 'Default ninja (Settings to unlock)';
+  if (availableCount <= 1) return 'Clear chapters or Shop to unlock';
   return `${character.subtitle} (←/→)`;
 }
 

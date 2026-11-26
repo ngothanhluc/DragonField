@@ -1,27 +1,27 @@
 /**
- * Data-driven playable character roster (GDD §14, M10).
+ * Data-driven 4-class playable character roster (GDD §14, §15.4, M14).
  *
- * Pure TS — no `cc` import, testable with vitest.
+ * Pure TS — zero `cc` imports, testable with vitest.
  *
- * Each entry describes a playable body sheet and its default visual weapon loadout:
- * - **Ninja** (`ninja`, default): existing NinjaGreen sheet (`player.*`), projectile weapons only
- *   (`attachmentItemId: null` — projectile weapons never create an attachment node).
- * - **Cultivator** (`cultivator`): unarmed body (`cultivator.*`) + worn `back` sword
- *   (`sword-back` in `attachments.json`), gated behind `settings.cultivatorEnabled` until
- *   acceptance is complete (M10 work item 5).
+ * Covers all 4 classes across all 3 weapon forms (`projectile`, `hand`, `back`):
+ * - **Ninja** (`ninja`, unlocked from start): `projectile` shuriken/kunai, *Shadow Agility*, *Shadow Barrage*.
+ * - **Archer** (`archer`, Ch1 clear OR early gold): `hand` bow (`bow-hand`), *Keen Sight*, *Piercing Volley*.
+ * - **Mage** (`mage`, Ch2 clear OR early gold): `hand` staff (`staff-hand`), *Arcane Attunement*, *Arcane Nova*.
+ * - **Cultivator** (`cultivator`, Ch3 clear OR early gold): `back` sword (`sword-back`), *Sword Heart*, *Ten Thousand Swords*.
  *
- * **No balance stat overrides:** a different body must not change hitbox, damage, fire rate,
- * movement speed, or spawn numbers (`tuning.json` stays untouched).
+ * Unlock milestones and early-buy gold prices are read from `CHARACTERS_TUNING` (`config/tuning.json`).
  */
 import type { AnimationManifest, Direction } from '../art/manifest';
+import { CHARACTERS_TUNING } from '../enemies/tuning';
+import type { SignatureSkillId } from '../input/active-skill';
 
 /** Playable character identifiers in roster display order. */
-export const CHARACTER_IDS = ['ninja', 'cultivator'] as const;
+export const CHARACTER_IDS = ['ninja', 'archer', 'mage', 'cultivator'] as const;
 
 /** Union of all known playable character IDs. */
 export type CharacterId = (typeof CHARACTER_IDS)[number];
 
-/** Default playable character (NinjaGreen stays default until migrated characters pass acceptance). */
+/** Default playable character (always unlocked from the start). */
 export const DEFAULT_CHARACTER_ID: CharacterId = 'ninja';
 
 /**
@@ -31,10 +31,7 @@ export const DEFAULT_CHARACTER_ID: CharacterId = 'ninja';
  */
 export type WeaponForm = 'projectile' | 'attachment';
 
-/**
- * Default visual weapon loadout for a playable character.
- * Intentionally carries no combat stat modifiers.
- */
+/** Default visual weapon loadout for a playable character. */
 export interface CharacterLoadout {
   readonly weaponForm: WeaponForm;
   /**
@@ -51,14 +48,6 @@ export interface CharacterLoadout {
   readonly attachmentSkillId: string | null;
 }
 
-/** Settings/data flags controlling gated roster entries. */
-export interface CharacterFeatureFlags {
-  readonly cultivatorEnabled: boolean;
-}
-
-/** Key of `CharacterFeatureFlags` that gates a character. */
-export type CharacterFeatureFlag = keyof CharacterFeatureFlags;
-
 /** Logical player animation clips requested by the player controller. */
 export type CharacterAnimKind = 'idle' | 'walk' | 'attack' | 'hit' | 'dead' | 'dash';
 
@@ -68,12 +57,12 @@ export interface CharacterAnimKeys {
   readonly fallback: string;
 }
 
-/** Data-driven definition of one playable character. */
+/** Data-driven definition of one playable character with full 3-layer class identity. */
 export interface CharacterDef {
   readonly id: CharacterId;
   readonly name: string;
   readonly subtitle: string;
-  /** Prefix in `animations.json` (`'player'` for NinjaGreen, `'cultivator'` for Cultivator). */
+  /** Prefix in `animations.json` (`'player'` for NinjaGreen, `'archer'`, `'mage'`, `'cultivator'`). */
   readonly animPrefix: string;
   /**
    * Character id in `attachments.json` (`characters[rigId]`), or `null` when the character
@@ -82,19 +71,41 @@ export interface CharacterDef {
   readonly rigId: string | null;
   readonly defaultLoadout: CharacterLoadout;
   /**
-   * Optional settings flag required to unlock/select this character.
-   * `null` means always available.
+   * Chapter clear milestone required for free unlock:
+   * - `0`: unlocked by default (`ninja`)
+   * - `1`: clear Ch1 (`chaptersUnlocked >= 2`)
+   * - `2`: clear Ch2 (`chaptersUnlocked >= 3`)
+   * - `3`: clear Ch3 (`chaptersUnlocked >= 4`)
    */
-  readonly featureFlag: CharacterFeatureFlag | null;
+  readonly unlockChapter: number;
+  /** Early Meta gold purchase cost (`0` for Ninja). */
+  readonly unlockGoldCost: number;
+  /** Layer 1 summary: auto-fire weapon & base stat identity. */
+  readonly weaponSummary: string;
+  /** Layer 2 starting passive name. */
+  readonly passiveName: string;
+  /** Layer 2 starting passive effect summary. */
+  readonly passiveSummary: string;
+  /** Layer 3 Signature Active skill identifier. */
+  readonly signatureSkillId: SignatureSkillId;
+  /** Layer 3 Signature Active display name. */
+  readonly signatureName: string;
+  /** Layer 3 Signature Active effect summary. */
+  readonly signatureSummary: string;
 }
 
-/** Minimal save-like shape accepted by `resolveSelectedCharacter` (avoids circular imports). */
-export interface CharacterSelectionSource {
+/** Minimal save-like shape accepted by unlock helpers (avoids circular imports with `save-data.ts`). */
+export interface CharacterUnlockSource {
+  readonly chaptersUnlocked?: number;
+  readonly unlockedCharacters?: readonly string[];
+}
+
+/** Minimal save-like shape accepted by `resolveSelectedCharacter`. */
+export interface CharacterSelectionSource extends CharacterUnlockSource {
   readonly selectedCharacter?: unknown;
-  readonly settings?: Partial<CharacterFeatureFlags>;
 }
 
-/** Ordered data-driven roster of all playable characters. */
+/** Ordered data-driven roster of all 4 playable characters. */
 export const CHARACTER_ROSTER: readonly CharacterDef[] = [
   {
     id: 'ninja',
@@ -108,28 +119,86 @@ export const CHARACTER_ROSTER: readonly CharacterDef[] = [
       defaultProjectileKey: 'fx.shuriken',
       attachmentSkillId: null,
     },
-    featureFlag: null,
+    unlockChapter: CHARACTERS_TUNING.ninja.unlockChapter,
+    unlockGoldCost: CHARACTERS_TUNING.ninja.unlockGoldCost,
+    weaponSummary: 'Balanced shuriken auto-fire (6 hearts)',
+    passiveName: 'Shadow Agility',
+    passiveSummary: '+10% move speed & -15% Dash cooldown',
+    signatureSkillId: 'shadow-barrage',
+    signatureName: 'Shadow Barrage',
+    signatureSummary: '10 piercing homing shadow shurikens in a fan',
+  },
+  {
+    id: 'archer',
+    name: 'Archer',
+    subtitle: 'Hand bow · keen sight',
+    animPrefix: 'archer',
+    rigId: 'archer',
+    defaultLoadout: {
+      weaponForm: 'attachment',
+      attachmentItemId: 'bow-hand',
+      defaultProjectileKey: 'fx.arrow',
+      attachmentSkillId: null,
+    },
+    unlockChapter: CHARACTERS_TUNING.archer.unlockChapter,
+    unlockGoldCost: CHARACTERS_TUNING.archer.unlockGoldCost,
+    weaponSummary: 'Fast long-range arrows (5 hearts)',
+    passiveName: 'Keen Sight',
+    passiveSummary: '+1 pierce & +12% crit chance',
+    signatureSkillId: 'piercing-volley',
+    signatureName: 'Piercing Volley',
+    signatureSummary: '7 high-speed piercing arrows in a focused fan',
+  },
+  {
+    id: 'mage',
+    name: 'Mage',
+    subtitle: 'Hand staff · arcane nova',
+    animPrefix: 'mage',
+    rigId: 'mage',
+    defaultLoadout: {
+      weaponForm: 'attachment',
+      attachmentItemId: 'staff-hand',
+      defaultProjectileKey: 'fx.arcane-bolt',
+      attachmentSkillId: null,
+    },
+    unlockChapter: CHARACTERS_TUNING.mage.unlockChapter,
+    unlockGoldCost: CHARACTERS_TUNING.mage.unlockGoldCost,
+    weaponSummary: 'Heavy long-range arcane bolts (5 hearts)',
+    passiveName: 'Arcane Attunement',
+    passiveSummary: '-20% Active cooldown & +25% AoE/Active power',
+    signatureSkillId: 'arcane-nova',
+    signatureName: 'Arcane Nova',
+    signatureSummary: 'Freezing radial arcane ring + 8 outward bolts',
   },
   {
     id: 'cultivator',
     name: 'Cultivator',
-    subtitle: 'Unarmed body · back sword',
+    subtitle: 'Back sword · sword heart',
     animPrefix: 'cultivator',
     rigId: 'cultivator',
     defaultLoadout: {
       weaponForm: 'attachment',
       attachmentItemId: 'sword-back',
-      defaultProjectileKey: 'fx.kunai',
+      defaultProjectileKey: 'fx.spirit-sword',
       attachmentSkillId: 'ten-thousand-swords',
     },
-    featureFlag: 'cultivatorEnabled',
+    unlockChapter: CHARACTERS_TUNING.cultivator.unlockChapter,
+    unlockGoldCost: CHARACTERS_TUNING.cultivator.unlockGoldCost,
+    weaponSummary: 'Swift spirit blades & sturdy body (7 hearts)',
+    passiveName: 'Sword Heart',
+    passiveSummary: '+15% damage & +10% execute bonus (<30% HP)',
+    signatureSkillId: 'ten-thousand-swords',
+    signatureName: 'Ten Thousand Swords',
+    signatureSummary: '14 sweeping homing spirit blades (hides back sword)',
   },
 ];
 
 /** Indexed lookup table from `CharacterId` to its `CharacterDef`. */
 export const CHARACTERS: Readonly<Record<CharacterId, CharacterDef>> = {
   ninja: CHARACTER_ROSTER[0]!,
-  cultivator: CHARACTER_ROSTER[1]!,
+  archer: CHARACTER_ROSTER[1]!,
+  mage: CHARACTER_ROSTER[2]!,
+  cultivator: CHARACTER_ROSTER[3]!,
 };
 
 const CHARACTER_ID_SET: ReadonlySet<string> = new Set(CHARACTER_IDS);
@@ -146,32 +215,58 @@ export function getCharacter(id: string): CharacterDef | undefined {
   return isCharacterId(id) ? CHARACTERS[id] : undefined;
 }
 
-/** Whether a character id exists in the roster and passes its feature-flag gate. */
-export function isCharacterAvailable(
-  id: string,
-  flags: Partial<CharacterFeatureFlags> = {},
-): boolean {
-  const def = getCharacter(id);
-  if (def === undefined) return false;
-  if (def.featureFlag === null) return true;
-  return flags[def.featureFlag] === true;
+function isUnlockedByChapter(def: CharacterDef, save: CharacterUnlockSource): boolean {
+  if (def.unlockChapter <= 0) return true;
+  const chaptersUnlocked = save.chaptersUnlocked;
+  if (typeof chaptersUnlocked !== 'number' || !Number.isFinite(chaptersUnlocked)) return false;
+  return chaptersUnlocked >= def.unlockChapter + 1;
 }
 
-/** Return the ordered list of playable characters unlocked under `flags`. */
-export function getAvailableCharacters(
-  flags: Partial<CharacterFeatureFlags> = {},
+function isUnlockedByPurchase(def: CharacterDef, save: CharacterUnlockSource): boolean {
+  return Array.isArray(save.unlockedCharacters) && save.unlockedCharacters.includes(def.id);
+}
+
+/**
+ * Whether a character id is unlocked under `save`:
+ * - Default (`unlockChapter === 0`, Ninja): always unlocked;
+ * - Chapter clear milestone (`chaptersUnlocked >= unlockChapter + 1`);
+ * - OR early Meta gold purchase (`save.unlockedCharacters.includes(id)`).
+ */
+export function isCharacterUnlocked(id: string, save: CharacterUnlockSource = {}): boolean {
+  const def = getCharacter(id);
+  if (def === undefined) return false;
+  return isUnlockedByChapter(def, save) || isUnlockedByPurchase(def, save);
+}
+
+/** Human-readable unlock status or requirement for Character Select & Meta Shop UI. */
+export function characterUnlockReason(id: string, save: CharacterUnlockSource = {}): string {
+  const def = getCharacter(id);
+  if (def === undefined) return 'Unknown character';
+  if (def.unlockChapter <= 0) return 'Unlocked by default';
+  if (isUnlockedByChapter(def, save)) {
+    return `Unlocked (Chapter ${def.unlockChapter} cleared)`;
+  }
+  if (isUnlockedByPurchase(def, save)) {
+    return 'Unlocked (Purchased)';
+  }
+  return `Clear Chapter ${def.unlockChapter} or buy for ${def.unlockGoldCost} gold`;
+}
+
+/** Return the ordered list of playable characters unlocked under `save`. */
+export function getUnlockedCharacters(
+  save: CharacterUnlockSource = {},
 ): readonly CharacterDef[] {
-  return CHARACTER_ROSTER.filter((entry) => isCharacterAvailable(entry.id, flags));
+  return CHARACTER_ROSTER.filter((entry) => isCharacterUnlocked(entry.id, save));
 }
 
 /**
  * Resolve the active character for a save.
  * Falls back cleanly to `DEFAULT_CHARACTER_ID` (`ninja`) if `selectedCharacter` is missing,
- * unknown, corrupt, or gated off by its feature flag.
+ * unknown, corrupt, or still locked.
  */
-export function resolveSelectedCharacter(save: CharacterSelectionSource): CharacterDef {
+export function resolveSelectedCharacter(save: CharacterSelectionSource = {}): CharacterDef {
   const candidate = save.selectedCharacter;
-  if (isCharacterId(candidate) && isCharacterAvailable(candidate, save.settings)) {
+  if (isCharacterId(candidate) && isCharacterUnlocked(candidate, save)) {
     return CHARACTERS[candidate];
   }
   return CHARACTERS[DEFAULT_CHARACTER_ID];
@@ -179,8 +274,6 @@ export function resolveSelectedCharacter(save: CharacterSelectionSource): Charac
 
 /**
  * Build the primary manifest key and safe fallback key for a character's logical animation clip.
- * Characters that only have `idle` staged so far (like Cultivator) fall back to their own
- * directional `idle` clip rather than breaking or morphing into another character's sprite.
  */
 export function characterAnimationKeys(
   character: CharacterDef,

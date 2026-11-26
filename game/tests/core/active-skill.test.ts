@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { BulletPool } from '../../assets/scripts/core/combat/bullets';
 import {
+  ARCANE_NOVA,
   DEFAULT_ACTIVE_SKILL_CONFIG,
+  PIERCING_VOLLEY,
   SHADOW_BARRAGE,
+  SIGNATURE_SKILL_IDS,
+  SIGNATURE_SPECS,
+  TEN_THOUSAND_SWORDS,
   activeCooldownSeconds,
   activeReadyRatio,
+  activeSkillConfigFor,
+  computeArcaneNovaSpec,
+  computePiercingVolley,
   computeShadowBarrageVolley,
+  computeTenThousandSwordsVolley,
   createActiveSkillState,
+  getSignatureSpec,
   isActiveSkillReady,
   onActiveHit,
   onActiveKill,
@@ -87,6 +97,23 @@ describe('ActiveSkill recharge — base time + hit CDR + kill CDR', () => {
     expect(() => stepActiveSkill(cooling, -16)).toThrow();
     expect(() => stepActiveSkill(cooling, Number.NaN)).toThrow();
   });
+
+  it('exposes all 4 Signature Active specs and per-signature recharge configs', () => {
+    expect(SIGNATURE_SKILL_IDS).toEqual([
+      'shadow-barrage',
+      'piercing-volley',
+      'arcane-nova',
+      'ten-thousand-swords',
+    ]);
+    for (const id of SIGNATURE_SKILL_IDS) {
+      const spec = getSignatureSpec(id);
+      expect(spec).toBe(SIGNATURE_SPECS[id]);
+      const cfg = activeSkillConfigFor(id);
+      expect(cfg.cooldownMs).toBe(spec.cooldownMs);
+      expect(cfg.hitCooldownReductionMs).toBe(spec.hitCooldownReductionMs);
+      expect(cfg.killCooldownReductionMs).toBe(spec.killCooldownReductionMs);
+    }
+  });
 });
 
 describe('Ninja Signature Active — SHADOW_BARRAGE & computeShadowBarrageVolley', () => {
@@ -155,5 +182,132 @@ describe('Ninja Signature Active — SHADOW_BARRAGE & computeShadowBarrageVolley
       expect(Number.isFinite(blade.velocity.x)).toBe(true);
       expect(Number.isFinite(blade.velocity.y)).toBe(true);
     }
+  });
+});
+
+describe('Archer Signature Active — PIERCING_VOLLEY & computePiercingVolley', () => {
+  it('plans a focused 7-arrow high-speed high-pierce fan compatible with BulletPool', () => {
+    expect(PIERCING_VOLLEY.id).toBe('piercing-volley');
+    expect(PIERCING_VOLLEY.projectileCount).toBe(7);
+    expect(PIERCING_VOLLEY.pierceCount).toBeGreaterThanOrEqual(5);
+    expect(PIERCING_VOLLEY.speedTilesPerSecond).toBeGreaterThan(SHADOW_BARRAGE.speedTilesPerSecond);
+    expect(PIERCING_VOLLEY.fanArcRadians).toBeLessThan(SHADOW_BARRAGE.fanArcRadians);
+    expect(PIERCING_VOLLEY.homing).toBe(false);
+
+    const volley = computePiercingVolley({ x: 12, y: 8 }, { x: 1, y: 0 }, 1, { baseDamage: 1.5 });
+    expect(volley).toHaveLength(7);
+
+    // Centre arrow aligns exactly with aimDir (index 3 of 7).
+    expect(volley[3]!.angleOffsetRadians).toBeCloseTo(0, 9);
+    expect(volley[0]!.angleOffsetRadians + volley[6]!.angleOffsetRadians).toBeCloseTo(0, 9);
+
+    const pool = new BulletPool();
+    for (const arrow of volley) {
+      expect(arrow.owner).toBe('player');
+      expect(arrow.homing).toBe(false);
+      expect(arrow.pierceRemaining).toBe(PIERCING_VOLLEY.pierceCount);
+      expect(arrow.damage).toBeCloseTo(1.5 * PIERCING_VOLLEY.damageMultiplier, 6);
+      expect(Math.hypot(arrow.velocity.x, arrow.velocity.y)).toBeCloseTo(
+        PIERCING_VOLLEY.speedTilesPerSecond,
+        6,
+      );
+      pool.spawn(arrow);
+    }
+    expect(pool.size).toBe(7);
+
+    // Empowered cast scales arrow count up to maxProjectileCount (9) and increases damage.
+    const empowered = computePiercingVolley({ x: 12, y: 8 }, { x: 1, y: 0 }, 1.5, {
+      baseDamage: 1.5,
+    });
+    expect(empowered).toHaveLength(9);
+    expect(empowered[0]!.damage).toBeCloseTo(volley[0]!.damage * 1.5, 6);
+  });
+});
+
+describe('Mage Signature Active — ARCANE_NOVA & computeArcaneNovaSpec', () => {
+  it('plans a radial freezing AoE ring plus evenly spaced 360° outward arcane bolts', () => {
+    expect(ARCANE_NOVA.id).toBe('arcane-nova');
+    expect(ARCANE_NOVA.radiusTilesNova).toBeGreaterThanOrEqual(4);
+    expect(ARCANE_NOVA.slowFactor).toBeGreaterThan(0);
+    expect(ARCANE_NOVA.slowFactor).toBeLessThan(1);
+    expect(ARCANE_NOVA.slowDurationMs).toBeGreaterThanOrEqual(2000);
+
+    const nova = computeArcaneNovaSpec({ x: 15, y: 10 }, 1, { baseDamage: 2 });
+    expect(nova.id).toBe('arcane-nova');
+    expect(nova.origin).toEqual({ x: 15, y: 10 });
+    expect(nova.radiusTiles).toBeCloseTo(ARCANE_NOVA.radiusTilesNova, 6);
+    expect(nova.damage).toBeCloseTo(2 * ARCANE_NOVA.novaDamageMultiplier, 6);
+    expect(nova.slowFactor).toBe(ARCANE_NOVA.slowFactor);
+    expect(nova.slowDurationMs).toBe(ARCANE_NOVA.slowDurationMs);
+    expect(nova.bolts).toHaveLength(ARCANE_NOVA.projectileCount);
+
+    // Outward bolts cover full 360° symmetrically (sum of direction vectors ~= 0).
+    let sumX = 0;
+    let sumY = 0;
+    const pool = new BulletPool();
+    for (const bolt of nova.bolts) {
+      sumX += bolt.direction.x;
+      sumY += bolt.direction.y;
+      expect(bolt.owner).toBe('player');
+      expect(bolt.damage).toBeCloseTo(2 * ARCANE_NOVA.damageMultiplier, 6);
+      pool.spawn(bolt);
+    }
+    expect(sumX).toBeCloseTo(0, 6);
+    expect(sumY).toBeCloseTo(0, 6);
+    expect(pool.size).toBe(ARCANE_NOVA.projectileCount);
+
+    // Mage's Arcane Attunement (powerMult 1.25 + aoePowerMult 1.25) scales radius, damage, and bolt count.
+    const attuned = computeArcaneNovaSpec({ x: 15, y: 10 }, 1.25, {
+      baseDamage: 2,
+      aoePowerMult: 1.25,
+    });
+    expect(attuned.radiusTiles).toBeGreaterThan(nova.radiusTiles);
+    expect(attuned.damage).toBeCloseTo(nova.damage * 1.25, 6);
+    expect(attuned.bolts.length).toBeGreaterThan(nova.bolts.length);
+  });
+});
+
+describe('Cultivator Signature Active — TEN_THOUSAND_SWORDS & computeTenThousandSwordsVolley', () => {
+  it('plans 14-16 sweeping homing spirit blades and returns hideAttachmentMs: 1200 for sword-back', () => {
+    expect(TEN_THOUSAND_SWORDS.id).toBe('ten-thousand-swords');
+    expect(TEN_THOUSAND_SWORDS.projectileCount).toBe(14);
+    expect(TEN_THOUSAND_SWORDS.maxProjectileCount).toBe(16);
+    expect(TEN_THOUSAND_SWORDS.homing).toBe(true);
+    expect(TEN_THOUSAND_SWORDS.hideAttachmentMs).toBe(1200);
+    expect(TEN_THOUSAND_SWORDS.attachmentSkillId).toBe('ten-thousand-swords');
+
+    const cast = computeTenThousandSwordsVolley({ x: 20, y: 12 }, { x: 0, y: 1 }, 1, {
+      baseDamage: 1.25,
+    });
+    expect(cast.id).toBe('ten-thousand-swords');
+    expect(cast.hideAttachmentMs).toBe(1200);
+    expect(cast.attachmentSkillId).toBe('ten-thousand-swords');
+    expect(cast.projectiles).toHaveLength(14);
+
+    // Wide sweeping symmetric fan around aimDir.
+    const first = cast.projectiles[0]!;
+    const last = cast.projectiles[cast.projectiles.length - 1]!;
+    expect(first.angleOffsetRadians + last.angleOffsetRadians).toBeCloseTo(0, 9);
+    expect(last.angleOffsetRadians - first.angleOffsetRadians).toBeCloseTo(
+      TEN_THOUSAND_SWORDS.fanArcRadians,
+      9,
+    );
+
+    const pool = new BulletPool();
+    for (const blade of cast.projectiles) {
+      expect(blade.owner).toBe('player');
+      expect(blade.homing).toBe(true);
+      expect(blade.pierceRemaining).toBe(TEN_THOUSAND_SWORDS.pierceCount);
+      expect(blade.damage).toBeCloseTo(1.25 * TEN_THOUSAND_SWORDS.damageMultiplier, 6);
+      pool.spawn(blade);
+    }
+    expect(pool.size).toBe(14);
+
+    // Empowered cast scales up to 16 homing blades while preserving hideAttachmentMs.
+    const empowered = computeTenThousandSwordsVolley({ x: 20, y: 12 }, { x: 0, y: 1 }, 1.5, {
+      baseDamage: 1.25,
+    });
+    expect(empowered.projectiles).toHaveLength(16);
+    expect(empowered.hideAttachmentMs).toBe(1200);
   });
 });

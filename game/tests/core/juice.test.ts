@@ -215,7 +215,6 @@ describe('Settings — screenShake / damageNumbers', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
-      cultivatorEnabled: false,
     });
   });
 

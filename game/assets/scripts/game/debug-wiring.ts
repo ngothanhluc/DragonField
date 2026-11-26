@@ -77,7 +77,6 @@ export interface DebugWiringHost {
   readonly useSpecial: () => boolean;
   readonly character: () => DebugCharacterSnapshot;
   readonly selectCharacter: (id: string) => boolean;
-  readonly setCultivatorEnabled: (enabled: boolean) => boolean;
   readonly playerAttachment: () => DebugPlayerAttachmentSnapshot | null;
   readonly setAttachmentHidden: (hidden: boolean) => boolean;
   readonly hideAttachmentForSkill: (skillId: string) => boolean;
@@ -159,7 +158,6 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     useSpecial: host.useSpecial,
     character: host.character,
     selectCharacter: host.selectCharacter,
-    setCultivatorEnabled: host.setCultivatorEnabled,
     playerAttachment: host.playerAttachment,
     setAttachmentHidden: host.setAttachmentHidden,
     hideAttachmentForSkill: host.hideAttachmentForSkill,

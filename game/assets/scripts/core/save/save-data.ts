@@ -1,6 +1,7 @@
 /**
- * 1-slot save schema (GDD §10, ADR-012). **Meta only**: gold, upgrades, unlocked
- * chapters, best, settings. The current run is never saved — closing the tab loses the run.
+ * 1-slot save schema (GDD §10, §15.4, ADR-012). **Meta only**: gold, upgrades, unlocked
+ * chapters, best, settings, selected character, and purchased character unlocks.
+ * The current run is never saved — closing the tab loses the run.
  *
  * Three entry points:
  * - `parseSaveData` — strict validation, collecting **every** problem into one `Error`.
@@ -8,9 +9,11 @@
  * - `serializeSave` — canonical JSON, fixed key order so diffs are readable.
  */
 import {
+  CHARACTERS,
   CHARACTER_IDS,
   DEFAULT_CHARACTER_ID,
   isCharacterId,
+  isCharacterUnlocked,
 } from '../characters/roster';
 import type { CharacterId } from '../characters/roster';
 import { UPGRADE_TRACKS, createDefaultUpgrades, maxLevelFor } from '../meta/upgrades';
@@ -20,15 +23,13 @@ import { DEFAULT_SETTINGS, applySettings } from './settings';
 import type { Settings } from './settings';
 
 /**
- * v2 (#45): chapter 4 exists. The schema itself is unchanged — v1 already held every field —
- * but a v1 save cannot record that chapter 3's boss was beaten (the old cap was 3 unlocked
- * chapters), so migration keeps `chaptersUnlocked` as it was: ch4 opens when ch3 is cleared again.
- *
- * v3 (M10): adds `selectedCharacter` (default `'ninja'`) and `settings.cultivatorEnabled`
- * (default `false`). v1 and v2 saves migrate forward cleanly while keeping all existing progress;
- * unknown or corrupt `selectedCharacter` values fall back to `'ninja'` during migration.
+ * v2 (#45): chapter 4 exists.
+ * v3 (M10): added `selectedCharacter` and temporary `settings.cultivatorEnabled`.
+ * v4 (M14): adds `unlockedCharacters: readonly CharacterId[]` (default `['ninja']`) for early Meta
+ * gold character purchases and retires legacy `settings.cultivatorEnabled` (dropped gracefully during
+ * v1/v2/v3 → v4 migration without error).
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /** Furthest record reached. `chapter`/`room` = 0 means never played. */
 export interface BestProgress {
@@ -45,8 +46,10 @@ export interface SaveData {
   readonly chaptersUnlocked: number;
   readonly best: BestProgress;
   readonly settings: Settings;
-  /** Active playable character selected for new runs (M10). */
+  /** Active playable character selected for new runs (M10/M14). */
   readonly selectedCharacter: CharacterId;
+  /** Characters permanently unlocked via default start or early Meta gold purchase (M14). */
+  readonly unlockedCharacters: readonly CharacterId[];
 }
 
 /** Collect every problem then throw a single `Error`, instead of stopping at the first one. */
@@ -139,6 +142,12 @@ function readEffects(
   return undefined;
 }
 
+function normalizeUnlockedList(ids: readonly CharacterId[]): CharacterId[] {
+  const unique = new Set<CharacterId>([DEFAULT_CHARACTER_ID]);
+  for (const id of ids) unique.add(id);
+  return Array.from(unique);
+}
+
 export function createDefaultSave(): SaveData {
   return {
     version: SAVE_VERSION,
@@ -148,6 +157,7 @@ export function createDefaultSave(): SaveData {
     best: { chapter: 0, room: 0 },
     settings: { ...DEFAULT_SETTINGS },
     selectedCharacter: DEFAULT_CHARACTER_ID,
+    unlockedCharacters: [DEFAULT_CHARACTER_ID],
   };
 }
 
@@ -225,7 +235,7 @@ export function parseSaveData(raw: unknown): SaveData {
   if (!isRecord(rawSettings)) {
     problems.add(
       'settings',
-      `must be an object { volume, fullscreen, screenShake, damageNumbers, effects, cultivatorEnabled }, got ${describeValue(rawSettings)}`,
+      `must be an object { volume, fullscreen, screenShake, damageNumbers, effects }, got ${describeValue(rawSettings)}`,
     );
   } else {
     const volume = rawSettings.volume;
@@ -246,7 +256,6 @@ export function parseSaveData(raw: unknown): SaveData {
     const screenShake = readFlag(rawSettings, 'screenShake', problems);
     const damageNumbers = readFlag(rawSettings, 'damageNumbers', problems);
     const effects = readEffects(rawSettings, problems);
-    const cultivatorEnabled = readFlag(rawSettings, 'cultivatorEnabled', problems);
 
     // Only use the read value when the field is valid; otherwise keep the default.
     settings = applySettings({
@@ -255,7 +264,6 @@ export function parseSaveData(raw: unknown): SaveData {
       ...(screenShake !== undefined ? { screenShake } : {}),
       ...(damageNumbers !== undefined ? { damageNumbers } : {}),
       ...(effects !== undefined ? { effects } : {}),
-      ...(cultivatorEnabled !== undefined ? { cultivatorEnabled } : {}),
     });
   }
 
@@ -269,6 +277,35 @@ export function parseSaveData(raw: unknown): SaveData {
     );
   }
 
+  let unlockedCharacters: CharacterId[] = [DEFAULT_CHARACTER_ID];
+  const rawUnlocked = raw.unlockedCharacters;
+  if (!Array.isArray(rawUnlocked)) {
+    problems.add(
+      'unlockedCharacters',
+      `must be an array of character ids (${CHARACTER_IDS.join('/')}), got ${describeValue(rawUnlocked)}`,
+    );
+  } else {
+    const validIds: CharacterId[] = [];
+    for (let index = 0; index < rawUnlocked.length; index += 1) {
+      const entry = rawUnlocked[index];
+      if (!isCharacterId(entry)) {
+        problems.add(
+          `unlockedCharacters[${index}]`,
+          `must be one of ${CHARACTER_IDS.join('/')}, got ${describeValue(entry)}`,
+        );
+      } else {
+        validIds.push(entry);
+      }
+    }
+    if (!validIds.includes(DEFAULT_CHARACTER_ID)) {
+      problems.add(
+        'unlockedCharacters',
+        `must include default character ${JSON.stringify(DEFAULT_CHARACTER_ID)}`,
+      );
+    }
+    unlockedCharacters = normalizeUnlockedList(validIds);
+  }
+
   problems.throwIfAny('Invalid SaveData');
 
   return {
@@ -279,12 +316,13 @@ export function parseSaveData(raw: unknown): SaveData {
     best: { chapter: bestChapter, room: bestRoom },
     settings,
     selectedCharacter,
+    unlockedCharacters,
   };
 }
 
 /**
- * Canonical JSON: fixed key order per GDD §10 (extended in M10 with `selectedCharacter`),
- * containing only validated fields.
+ * Canonical JSON: fixed key order per GDD §10 (extended in M10/M14 with `selectedCharacter`
+ * and `unlockedCharacters`), containing only validated fields.
  * Throws when `data` is invalid — better to lose one save than write garbage into the slot.
  */
 export function serializeSave(data: SaveData): string {
@@ -306,9 +344,9 @@ export function serializeSave(data: SaveData): string {
       screenShake: valid.settings.screenShake,
       damageNumbers: valid.settings.damageNumbers,
       effects: valid.settings.effects,
-      cultivatorEnabled: valid.settings.cultivatorEnabled,
     },
     selectedCharacter: valid.selectedCharacter,
+    unlockedCharacters: [...valid.unlockedCharacters],
   });
 }
 
@@ -362,7 +400,7 @@ export function unlockNextChapter(save: SaveData, clearedChapter: number): SaveD
 }
 
 /**
- * Return a new save with `selectedCharacter` set to `characterId` (M10).
+ * Return a new save with `selectedCharacter` set to `characterId` (M10/M14).
  *
  * Returns a **new** save without modifying the input; throws on an invalid save or unknown
  * character id (never write garbage into the slot).
@@ -376,6 +414,50 @@ export function withSelectedCharacter(save: SaveData, characterId: CharacterId):
   }
   if (valid.selectedCharacter === characterId) return valid;
   return { ...valid, selectedCharacter: characterId };
+}
+
+/**
+ * Whether `id` can be purchased early with Meta gold under `save`.
+ * Returns `false` when unknown, already unlocked (by default, chapter clear, or prior purchase),
+ * or when `save.gold < unlockGoldCost`. Never throws.
+ */
+export function canBuyCharacter(save: SaveData, id: CharacterId): boolean {
+  if (!isCharacterId(id)) return false;
+  if (isCharacterUnlocked(id, save)) return false;
+  const cost = CHARACTERS[id].unlockGoldCost;
+  if (!Number.isFinite(save.gold) || save.gold < cost) return false;
+  return true;
+}
+
+/**
+ * Purchase early unlock for playable character `id` using Meta gold (M14).
+ *
+ * Deducts `CHARACTERS[id].unlockGoldCost`, appends `id` to `unlockedCharacters`, and returns
+ * a **new** `SaveData` without mutating the input. Throws when the save is invalid, `id` is
+ * unknown, the character is already unlocked, or gold is short.
+ */
+export function buyCharacter(save: SaveData, id: CharacterId): SaveData {
+  const valid = parseSaveData(save);
+  if (!isCharacterId(id)) {
+    throw new Error(
+      `buyCharacter: id must be one of ${CHARACTER_IDS.join('/')}, got ${describeValue(id)}`,
+    );
+  }
+  if (isCharacterUnlocked(id, valid)) {
+    throw new Error(`buyCharacter: character '${id}' is already unlocked`);
+  }
+  const cost = CHARACTERS[id].unlockGoldCost;
+  if (valid.gold < cost) {
+    throw new Error(
+      `Not enough gold to buy character '${id}': need ${cost}, have ${valid.gold}`,
+    );
+  }
+
+  return {
+    ...valid,
+    gold: valid.gold - cost,
+    unlockedCharacters: normalizeUnlockedList([...valid.unlockedCharacters, id]),
+  };
 }
 
 /**
@@ -419,6 +501,10 @@ function migrateBest(raw: unknown, fallback: BestProgress): unknown {
   };
 }
 
+/**
+ * Migrate settings forward to v4, gracefully dropping legacy `settings.cultivatorEnabled`
+ * without error (retired in M14).
+ */
 function migrateSettings(raw: unknown, fallback: Settings): unknown {
   if (raw === undefined) return fallback;
   if (!isRecord(raw)) return raw;
@@ -429,7 +515,6 @@ function migrateSettings(raw: unknown, fallback: Settings): unknown {
     screenShake: pick(raw, 'screenShake', fallback.screenShake),
     damageNumbers: pick(raw, 'damageNumbers', fallback.damageNumbers),
     effects: pick(raw, 'effects', fallback.effects),
-    cultivatorEnabled: pick(raw, 'cultivatorEnabled', fallback.cultivatorEnabled),
   };
 }
 
@@ -442,11 +527,27 @@ function migrateSelectedCharacter(raw: unknown, fallback: CharacterId): Characte
 }
 
 /**
+ * Migrate `unlockedCharacters`: keep valid character ids, deduplicate, drop invalid entries,
+ * and always guarantee `DEFAULT_CHARACTER_ID` (`'ninja'`) is present.
+ */
+function migrateUnlockedCharacters(raw: unknown): CharacterId[] {
+  const validIds: CharacterId[] = [DEFAULT_CHARACTER_ID];
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (isCharacterId(entry)) validIds.push(entry);
+    }
+  }
+  return normalizeUnlockedList(validIds);
+}
+
+/**
  * Upgrade an old save to `SAVE_VERSION`.
  *
  * - missing `version` → treated as 0 (a save from before versioning).
  * - missing field → default; wrong type → left for `parseSaveData` to report
- *   (except `selectedCharacter`, where unknown/corrupt values fall back cleanly to default `'ninja'`).
+ *   (except `selectedCharacter` and `unlockedCharacters`, where unknown/corrupt entries are
+ *   sanitized so an outdated roster id never wipes the rest of the player's save).
+ * - legacy `settings.cultivatorEnabled` (v3) is dropped gracefully without error.
  * - `version` newer than the game → throw a clear error, **never** guess and overwrite the
  *   save of a newer game version (that would lose data).
  */
@@ -469,9 +570,10 @@ export function migrate(raw: unknown): SaveData {
 
   const defaults = createDefaultSave();
 
-  // v1 → v2 (#45): chapter 4 exists; `chaptersUnlocked` stays unchanged so ch4 opens after ch3 clear.
-  // v2 → v3 (M10): adds `selectedCharacter` (defaults to `'ninja'`, unknown/corrupt values fall back)
-  // and `settings.cultivatorEnabled` (defaults to `false`). `parseSaveData` stays the single validator.
+  // v1 → v2 (#45): chapter 4 exists; `chaptersUnlocked` stays unchanged.
+  // v2 → v3 (M10): added `selectedCharacter` and temporary `settings.cultivatorEnabled`.
+  // v3 → v4 (M14): adds `unlockedCharacters` (deduplicated, always keeping `'ninja'`) and
+  // retires `settings.cultivatorEnabled` cleanly. `parseSaveData` remains the single validator.
   const migrated = {
     version: SAVE_VERSION,
     gold: pick(raw, 'gold', defaults.gold),
@@ -483,6 +585,7 @@ export function migrate(raw: unknown): SaveData {
       raw.selectedCharacter,
       defaults.selectedCharacter,
     ),
+    unlockedCharacters: migrateUnlockedCharacters(raw.unlockedCharacters),
   };
 
   return parseSaveData(migrated);

@@ -34,6 +34,12 @@ export interface DerivedStats {
   readonly activeCooldownMult: number;
   /** Signature Active power/damage multiplier (>= 1, 1 = base). */
   readonly activePowerMult: number;
+  /** AoE radius / blast power multiplier (>= 1, 1 = base; boosted by Mage's Arcane Attunement). */
+  readonly aoePowerMult: number;
+  /** Auto-fire projectile speed, tiles/second (scaled by class Layer 1 stats). */
+  readonly projectileSpeedTilesPerSecond: number;
+  /** Auto-aim targeting range, tiles (scaled by class Layer 1 stats). */
+  readonly targetingRangeTiles: number;
   /** Shield recharge cooldown multiplier (< 1 = faster recharge, 1 = base). */
   readonly shieldCooldownMult: number;
   /** Chance (0..0.6) to ward off incoming hit damage (`Iron Skin`). */
@@ -124,6 +130,28 @@ export interface StatsBaseline {
   readonly playerMaxHearts: number;
   readonly invulnerabilityMs: number;
   readonly moveSpeedTilesPerSecond: number;
+  /** Optional class Layer 1 projectile speed override (defaults to `DEFAULT_COMBAT`). */
+  readonly projectileSpeedTilesPerSecond?: number;
+  /** Optional class Layer 1 targeting range override (defaults to `DEFAULT_COMBAT`). */
+  readonly targetingRangeTiles?: number;
+  /** Optional class Layer 2 starting pierce count (defaults to `0`). */
+  readonly pierce?: number;
+  /** Optional class Layer 2 starting crit chance in `0..1` (defaults to `0`). */
+  readonly critChance?: number;
+  /** Optional class Layer 2 starting crit multiplier `>= 1` (defaults to `1`). */
+  readonly critMultiplier?: number;
+  /** Optional class Layer 2 starting execute threshold in `0..1` (defaults to `0`). */
+  readonly executeThreshold?: number;
+  /** Optional class Layer 2 starting execute bonus ratio (defaults to `0`). */
+  readonly executeBonus?: number;
+  /** Optional class Layer 2 starting Dash cooldown multiplier (defaults to `1`). */
+  readonly dashCooldownMult?: number;
+  /** Optional class Layer 2 starting Signature Active cooldown multiplier (defaults to `1`). */
+  readonly activeCooldownMult?: number;
+  /** Optional class Layer 2 starting Signature Active power multiplier (defaults to `1`). */
+  readonly activePowerMult?: number;
+  /** Optional class Layer 2 starting AoE power multiplier (defaults to `1`). */
+  readonly aoePowerMult?: number;
 }
 
 /**
@@ -142,15 +170,15 @@ export function computeDerivedStats(
   let damageAdd = 0;
   let fireRateAdd = 0;
   let projectileAdd = 0;
-  let pierce = 0;
-  let critChance = 0;
-  let critMultiplier = 1;
+  let pierce = sanitize(base.pierce ?? 0);
+  let critChance = clamp01(sanitize(base.critChance ?? 0));
+  let critMultiplier = Math.max(1, sanitize(base.critMultiplier ?? 1));
   let heartsAdd = 0;
   let moveSpeedAdd = 0;
   let iframeMultiplier = 1;
   let lifestealPercent = 0;
-  let executeThreshold = 0;
-  let executeBonus = 0;
+  let executeThreshold = clamp01(sanitize(base.executeThreshold ?? 0));
+  let executeBonus = sanitize(base.executeBonus ?? 0);
   let ricochetBounces = 0;
   let homing = false;
   let explosiveRadius = 0;
@@ -171,14 +199,17 @@ export function computeDerivedStats(
   let thornsDamage = 0;
   let healPerRoom = 0;
   let damageReductionChance = 0;
-  let dashCooldownMult = 1;
+  let dashCooldownMult = base.dashCooldownMult !== undefined ? sanitize(base.dashCooldownMult) : 1;
   let dashSpeedAdd = 0;
   let dashNovaRadius = 0;
   let dashNovaDamage = 0;
   let postDashFireBonus = 0;
   let postDashFireDurationMs = 0;
-  let activeCooldownMult = 1;
+  let activeCooldownMult =
+    base.activeCooldownMult !== undefined ? sanitize(base.activeCooldownMult) : 1;
+  const activePowerBase = base.activePowerMult !== undefined ? sanitize(base.activePowerMult) : 1;
   let activePowerAdd = 0;
+  const aoePowerMult = Math.max(1, sanitize(base.aoePowerMult ?? 1));
 
   const applyTag = (tag: SkillTag, stacks: number): void => {
     switch (tag.kind) {
@@ -311,7 +342,12 @@ export function computeDerivedStats(
     dashCooldownMult: clampMin(sanitize(dashCooldownMult), 0.25),
     dashSpeedMult: sanitize(1 + dashSpeedAdd),
     activeCooldownMult: clampMin(sanitize(activeCooldownMult), 0.25),
-    activePowerMult: sanitize(1 + activePowerAdd),
+    activePowerMult: sanitize(activePowerBase + activePowerAdd),
+    aoePowerMult,
+    projectileSpeedTilesPerSecond: sanitize(
+      base.projectileSpeedTilesPerSecond ?? DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
+    ),
+    targetingRangeTiles: sanitize(base.targetingRangeTiles ?? DEFAULT_COMBAT.targetingRangeTiles),
     shieldCooldownMult: safeShieldMult,
     damageReductionChance: Math.min(0.6, sanitize(damageReductionChance)),
     statusDamageBonus: sanitize(statusDamageBonus),

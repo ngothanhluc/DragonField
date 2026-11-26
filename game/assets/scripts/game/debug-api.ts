@@ -151,11 +151,10 @@ export interface DebugSpecialSnapshot {
   readonly finished: boolean;
 }
 
-/** Selected/active playable character state and roster availability (M10). */
+/** Selected/active playable character state and roster availability (M10/M14). */
 export interface DebugCharacterSnapshot {
   readonly id: string;
   readonly name: string;
-  readonly cultivatorEnabled: boolean;
   readonly available: string[];
 }
 
@@ -276,12 +275,10 @@ export interface DebugProvider {
   readonly special: () => DebugSpecialSnapshot;
   /** Debug: teleport onto the special room's NPC/chest and use it; `false` when not in one. */
   readonly useSpecial: () => boolean;
-  /** M10: active/selected character and cultivator migration flag state. */
+  /** M10/M14: active/selected character and unlocked roster state. */
   readonly character?: () => DebugCharacterSnapshot;
-  /** M10: select a playable character by id when not mid-run; returns `false` if unavailable/mid-run. */
+  /** M10/M14: select a playable character by id when not mid-run; returns `false` if locked/mid-run. */
   readonly selectCharacter?: (id: string) => boolean;
-  /** M10: toggle the cultivator migration flag; returns `true` when persisted. */
-  readonly setCultivatorEnabled?: (enabled: boolean) => boolean;
   /** M10: live player attachment child-node state; `null` outside a run. */
   readonly playerAttachment?: () => DebugPlayerAttachmentSnapshot | null;
   /** M10: toggle manual hide on the player's attachment node. */
@@ -319,7 +316,6 @@ export type YokaiDebugApi = Omit<
   | 'roomTotal'
   | 'character'
   | 'selectCharacter'
-  | 'setCultivatorEnabled'
   | 'playerAttachment'
   | 'setAttachmentHidden'
   | 'hideAttachmentForSkill'
@@ -341,7 +337,6 @@ export type YokaiDebugApi = Omit<
   readonly roomTotal: number;
   readonly character: () => DebugCharacterSnapshot;
   readonly selectCharacter: (id: string) => boolean;
-  readonly setCultivatorEnabled: (enabled: boolean) => boolean;
   readonly playerAttachment: () => DebugPlayerAttachmentSnapshot | null;
   readonly setAttachmentHidden: (hidden: boolean) => boolean;
   readonly hideAttachmentForSkill: (skillId: string) => boolean;
@@ -359,7 +354,6 @@ export type YokaiDebugApi = Omit<
 const DEFAULT_CHARACTER_SNAPSHOT: DebugCharacterSnapshot = {
   id: 'ninja',
   name: 'Ninja',
-  cultivatorEnabled: false,
   available: ['ninja'],
 };
 
@@ -397,7 +391,6 @@ export function installDebugApi(provider: DebugProvider): boolean {
 
   const character = provider.character ?? ((): DebugCharacterSnapshot => DEFAULT_CHARACTER_SNAPSHOT);
   const selectCharacter = provider.selectCharacter ?? ((): boolean => false);
-  const setCultivatorEnabled = provider.setCultivatorEnabled ?? ((): boolean => false);
   const playerAttachment =
     provider.playerAttachment ?? ((): DebugPlayerAttachmentSnapshot | null => null);
   const setAttachmentHidden = provider.setAttachmentHidden ?? ((): boolean => false);
@@ -453,7 +446,6 @@ export function installDebugApi(provider: DebugProvider): boolean {
     useSpecial: { value: provider.useSpecial, enumerable: true },
     character: { value: character, enumerable: true },
     selectCharacter: { value: selectCharacter, enumerable: true },
-    setCultivatorEnabled: { value: setCultivatorEnabled, enumerable: true },
     playerAttachment: { value: playerAttachment, enumerable: true },
     setAttachmentHidden: { value: setAttachmentHidden, enumerable: true },
     hideAttachmentForSkill: { value: hideAttachmentForSkill, enumerable: true },
@@ -476,7 +468,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, loadRoom, ' +
       'screen, save, setGold, markChapterCleared, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
       'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, ' +
-      'character, selectCharacter, setCultivatorEnabled, playerAttachment, setAttachmentHidden, ' +
+      'character, selectCharacter, playerAttachment, setAttachmentHidden, ' +
       'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, ' +
       'dash, activeSkill, actions, triggerEvolution, keyLog).',
   );

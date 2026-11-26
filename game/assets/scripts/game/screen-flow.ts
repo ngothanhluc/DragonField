@@ -13,9 +13,9 @@ import type { Node as CocosNode } from 'cc';
 import {
   CHARACTERS,
   DEFAULT_CHARACTER_ID,
-  getAvailableCharacters,
-  isCharacterAvailable,
+  getUnlockedCharacters,
   isCharacterId,
+  isCharacterUnlocked,
   resolveSelectedCharacter,
   type CharacterDef,
 } from '../core/characters/roster';
@@ -171,7 +171,7 @@ export class ScreenFlow {
     if (save === null) throw new Error('ScreenFlow: save not loaded');
 
     const selected = resolveSelectedCharacter(save);
-    const available = getAvailableCharacters(save.settings);
+    const available = getUnlockedCharacters(save);
     const token = this.nextMenuToken();
     const built = await buildTitleScreen({
       parent: this.host.uiRoot(),
@@ -443,10 +443,6 @@ export class ScreenFlow {
           effects: current.effects === 'full' ? 'reduced' : 'full',
         });
       },
-      onToggleCultivator: () => {
-        const current = this.currentSettings(save.settings);
-        this.persistSettings({ ...current, cultivatorEnabled: !current.cultivatorEnabled });
-      },
       onBack: backTo,
     });
 
@@ -584,8 +580,7 @@ export class ScreenFlow {
       normalized.fullscreen === save.settings.fullscreen &&
       normalized.screenShake === save.settings.screenShake &&
       normalized.damageNumbers === save.settings.damageNumbers &&
-      normalized.effects === save.settings.effects &&
-      normalized.cultivatorEnabled === save.settings.cultivatorEnabled
+      normalized.effects === save.settings.effects
     ) {
       return;
     }
@@ -601,10 +596,7 @@ export class ScreenFlow {
       this.host.setSave(next);
       if (normalized.volume !== save.settings.volume) this.host.setVolume(normalized.volume);
       this.host.applyFeelSettings(normalized);
-      if (
-        normalized.cultivatorEnabled !== save.settings.cultivatorEnabled ||
-        nextCharacter.id !== prevCharacter.id
-      ) {
+      if (nextCharacter.id !== prevCharacter.id) {
         this.host.onCharacterChanged?.(nextCharacter);
       }
     } catch (error: unknown) {
@@ -612,27 +604,26 @@ export class ScreenFlow {
     }
   }
 
-  /** Resolved character for the next run (falls back to Ninja if gated off). */
+  /** Resolved character for the next run (falls back to Ninja if locked). */
   selectedCharacter(): CharacterDef {
     const save = this.host.save();
     return save === null ? CHARACTERS[DEFAULT_CHARACTER_ID] : resolveSelectedCharacter(save);
   }
 
-  /** Roster + flag snapshot for `window.__yokai.character()`. */
+  /** Roster + unlock snapshot for `window.__yokai.character()`. */
   characterSnapshot(): DebugCharacterSnapshot {
     const save = this.host.save();
     const selected = this.selectedCharacter();
     return {
       id: selected.id,
       name: selected.name,
-      cultivatorEnabled: save?.settings.cultivatorEnabled ?? false,
-      available: getAvailableCharacters(save?.settings).map((entry) => entry.id),
+      available: getUnlockedCharacters(save ?? {}).map((entry) => entry.id),
     };
   }
 
   /**
    * Select a playable character for new runs (`withSelectedCharacter` + save + UI/backdrop refresh).
-   * Refuses mid-run swaps (`runSnapshot() !== null` or active run status) and disabled characters.
+   * Refuses mid-run swaps (`runSnapshot() !== null` or active run status) and locked characters.
    */
   selectCharacter(id: string): boolean {
     const status = this.host.status();
@@ -646,8 +637,8 @@ export class ScreenFlow {
     const save = this.host.save();
     const repo = this.host.repository();
     if (save === null || repo === null) return false;
-    if (!isCharacterId(id) || !isCharacterAvailable(id, save.settings)) {
-      console.warn(`[YokaiField] Character '${id}' is unavailable or unknown.`);
+    if (!isCharacterId(id) || !isCharacterUnlocked(id, save)) {
+      console.warn(`[YokaiField] Character '${id}' is locked or unknown.`);
       return false;
     }
 
@@ -658,7 +649,7 @@ export class ScreenFlow {
         this.host.setSave(next);
       }
       const character = CHARACTERS[id];
-      const available = getAvailableCharacters(next.settings);
+      const available = getUnlockedCharacters(next);
       if (this.currentScreen === 'title' && this.titleScreen !== null) {
         this.titleScreen.setCharacter(character, available);
       }
@@ -669,37 +660,6 @@ export class ScreenFlow {
       console.warn(`[YokaiField] Could not select character '${id}': ${errorMessage(error)}`);
       return false;
     }
-  }
-
-  /**
-   * Toggle the M10 Cultivator migration flag through the same save path as Settings.
-   * Disabling it while Cultivator is selected automatically resolves back to Ninja.
-   */
-  setCultivatorEnabled(enabled: boolean): boolean {
-    if (typeof enabled !== 'boolean') return false;
-    const status = this.host.status();
-    if (
-      this.host.runSnapshot() !== null ||
-      (status !== 'menu' && status !== 'won' && status !== 'lost')
-    ) {
-      console.warn(`[YokaiField] Cannot toggle cultivator flag mid-run (status ${status}).`);
-      return false;
-    }
-    const save = this.host.save();
-    if (save === null || this.host.repository() === null) return false;
-
-    this.persistSettings({ ...save.settings, cultivatorEnabled: enabled });
-    if (this.currentScreen === 'settings') {
-      const back =
-        this.settingsBack ??
-        (() => {
-          void this.showTitle().catch((error: unknown) => this.host.fail(error));
-        });
-      void this.showSettings(back).catch((error: unknown) => this.host.fail(error));
-    } else if (this.currentScreen === 'title') {
-      void this.showTitle().catch((error: unknown) => this.host.fail(error));
-    }
-    return true;
   }
 
   /** Real fullscreen through the DOM; headless/unsupported keeps the old state + warns. */

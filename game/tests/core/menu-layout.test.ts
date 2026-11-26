@@ -207,7 +207,7 @@ describe('computeMenuButtonTextLayout — internal padding and subtitle fit', ()
       labels: ['Play', 'Character: Cultivator', 'Meta shop', 'Settings', 'Credits'],
       details: [
         'Choose a chapter',
-        'Default ninja (Settings to unlock)',
+        'Clear chapters or Shop to unlock',
         ...CHARACTER_ROSTER.map((c) => `${c.subtitle} (←/→)`),
         'Spend gold on upgrades',
         'Volume, fullscreen, keys',

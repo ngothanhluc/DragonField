@@ -15,9 +15,11 @@ import {
   type EnemyState,
 } from '../../assets/scripts/core/enemies/behaviours';
 import {
+  CHARACTERS_TUNING,
   COMBAT_TUNING,
   ENEMY_TUNING,
   TUNING,
+  TUNING_CHARACTER_IDS,
   TUNING_SOURCE,
   parseTuning,
   type EnemiesTuning,
@@ -363,5 +365,50 @@ describe('tuning — M11: boss intro grace & chapter HP', () => {
     const missingBoss = cloneSource();
     delete missingBoss.boss;
     expect(() => parseTuning(missingBoss)).toThrowError(/boss.*must be an object/);
+  });
+});
+
+describe('tuning — M14: 4-class characters block', () => {
+  it('characters tuning matches config/tuning.json for all 4 classes', () => {
+    const rawChars = cloneSource().characters as Record<string, unknown>;
+    expect(CHARACTERS_TUNING).toBe(TUNING.characters);
+    for (const id of TUNING_CHARACTER_IDS) {
+      expect(CHARACTERS_TUNING[id]).toEqual(rawChars[id]);
+    }
+    expect(CHARACTERS_TUNING.ninja.unlockChapter).toBe(0);
+    expect(CHARACTERS_TUNING.ninja.unlockGoldCost).toBe(0);
+    expect(CHARACTERS_TUNING.archer.unlockChapter).toBe(1);
+    expect(CHARACTERS_TUNING.mage.unlockChapter).toBe(2);
+    expect(CHARACTERS_TUNING.cultivator.unlockChapter).toBe(3);
+    expect(CHARACTERS_TUNING.cultivator.signature.hideAttachmentMs).toBe(1200);
+  });
+
+  it('rejects invalid characters tuning fields with exact paths', () => {
+    const missingChars = cloneSource();
+    delete missingChars.characters;
+    expect(() => parseTuning(missingChars)).toThrowError(/characters.*must be an object/);
+
+    const badChapter = cloneSource();
+    ((badChapter.characters as Record<string, Record<string, unknown>>).archer!).unlockChapter = 9;
+    expect(() => parseTuning(badChapter)).toThrowError(/characters\.archer\.unlockChapter/);
+
+    const badDelta = cloneSource();
+    (
+      ((badDelta.characters as Record<string, Record<string, unknown>>).mage!).baseStats as Record<
+        string,
+        unknown
+      >
+    ).maxHeartsDelta = 1.5;
+    expect(() => parseTuning(badDelta)).toThrowError(/characters\.mage\.baseStats\.maxHeartsDelta/);
+
+    const invertedProjectiles = cloneSource();
+    (
+      (
+        (invertedProjectiles.characters as Record<string, Record<string, unknown>>).cultivator!
+      ).signature as Record<string, unknown>
+    ).maxProjectileCount = 2;
+    expect(() => parseTuning(invertedProjectiles)).toThrowError(
+      /characters\.cultivator\.signature\.maxProjectileCount/,
+    );
   });
 });

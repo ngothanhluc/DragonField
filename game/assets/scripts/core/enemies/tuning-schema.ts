@@ -298,7 +298,91 @@ export interface TuningConfig {
   readonly dash: DashTuning;
   /** Signature Active Skill action buffer, base + hit/kill cooldown reduction, and barrage stats (M13, ADR-022). */
   readonly activeSkill: ActiveSkillTuning;
+  /** Playable 4-class unlock milestones, gold costs, base stats, passives, and signature active parameters (M14). */
+  readonly characters: CharactersTuning;
 }
+
+/** Playable character IDs validated in `config/tuning.json` (M14). */
+export const TUNING_CHARACTER_IDS = ['ninja', 'archer', 'mage', 'cultivator'] as const;
+
+export type TuningCharacterId = (typeof TUNING_CHARACTER_IDS)[number];
+
+/** Layer 1 per-class base stat deltas & multipliers relative to `combat` baseline (M14). */
+export interface CharacterBaseStatsTuning {
+  /** Signed integer heart delta added to `combat.playerMaxHearts` (e.g. -1, 0, +1). */
+  readonly maxHeartsDelta: number;
+  readonly damageMult: number;
+  readonly fireRateMult: number;
+  readonly moveSpeedMult: number;
+  readonly projectileSpeedMult: number;
+  readonly targetingRangeMult: number;
+}
+
+/** Layer 2 per-class starting passive parameters (M14). */
+export interface CharacterPassiveTuning {
+  /** Additive move-speed bonus ratio (e.g. `0.1` = +10% move speed). */
+  readonly moveSpeedBonus: number;
+  /** Multiplicative Dash cooldown factor (e.g. `0.85` = -15% Dash cooldown). */
+  readonly dashCooldownMult: number;
+  /** Additive base pierce count (e.g. `1` for Archer's Keen Sight). */
+  readonly pierceAdd: number;
+  /** Additive crit chance in `0..1` (e.g. `0.12` for Archer's Keen Sight). */
+  readonly critChanceAdd: number;
+  /** Minimum crit multiplier applied when crit chance > 0 (`>= 1`). */
+  readonly critMultiplier: number;
+  /** Multiplicative Signature Active cooldown factor (e.g. `0.8` = -20% for Mage). */
+  readonly activeCooldownMult: number;
+  /** Additive Signature Active power bonus (e.g. `0.25` = +25% for Mage). */
+  readonly activePowerBonus: number;
+  /** Additive AoE power bonus (e.g. `0.25` = +25% for Mage). */
+  readonly aoePowerBonus: number;
+  /** Multiplicative base damage bonus ratio (e.g. `0.15` = +15% for Cultivator's Sword Heart). */
+  readonly damageBonus: number;
+  /** Execute threshold in `0..1` (`0` = disabled; e.g. `0.3` = enemies below 30% HP). */
+  readonly executeThreshold: number;
+  /** Additive execute damage bonus ratio (e.g. `0.1` = +10% for Cultivator). */
+  readonly executeBonus: number;
+}
+
+/** Layer 3 per-class Signature Active parameters (M14). */
+export interface CharacterSignatureTuning {
+  readonly cooldownMs: number;
+  readonly hitCooldownReductionMs: number;
+  readonly killCooldownReductionMs: number;
+  readonly projectileCount: number;
+  readonly maxProjectileCount: number;
+  readonly fanArcDegrees: number;
+  readonly speedTilesPerSecond: number;
+  readonly radiusTiles: number;
+  readonly ttlMs: number;
+  readonly damageMultiplier: number;
+  readonly pierceCount: number;
+  readonly homing: boolean;
+  /** Radial AoE nova radius in tiles (`0` when the signature has no radial nova). */
+  readonly novaRadiusTiles: number;
+  /** Radial AoE nova damage multiplier (`0` when the signature has no radial nova). */
+  readonly novaDamageMultiplier: number;
+  /** Radial AoE slow/freeze speed factor in `0..1` (`1` = no slow). */
+  readonly novaSlowFactor: number;
+  /** Radial AoE slow/freeze duration in ms (`0` = no slow). */
+  readonly novaSlowDurationMs: number;
+  /** Duration in ms to hide worn back attachment during the signature (`0` = do not hide). */
+  readonly hideAttachmentMs: number;
+}
+
+/** Complete M14 tuning block for one playable character class. */
+export interface CharacterTuning {
+  /** Chapter clear milestone for free unlock (`0` = unlocked from start, `1..3` = clear Ch1..Ch3). */
+  readonly unlockChapter: number;
+  /** Meta gold cost for early unlock (`0` for default unlocked classes). */
+  readonly unlockGoldCost: number;
+  readonly baseStats: CharacterBaseStatsTuning;
+  readonly passive: CharacterPassiveTuning;
+  readonly signature: CharacterSignatureTuning;
+}
+
+/** All 4 playable character tuning blocks keyed by character id (M14). */
+export type CharactersTuning = Readonly<Record<TuningCharacterId, CharacterTuning>>;
 
 /** Player Dash tuning (M13, ADR-022). */
 export interface DashTuning {
@@ -714,6 +798,57 @@ const ACTIVE_SKILL_FIELDS = [
   'barrageDamageMultiplier',
 ] as const;
 
+const CHARACTER_FIELDS = [
+  'unlockChapter',
+  'unlockGoldCost',
+  'baseStats',
+  'passive',
+  'signature',
+] as const;
+
+const CHARACTER_BASE_STATS_FIELDS = [
+  'maxHeartsDelta',
+  'damageMult',
+  'fireRateMult',
+  'moveSpeedMult',
+  'projectileSpeedMult',
+  'targetingRangeMult',
+] as const;
+
+const CHARACTER_PASSIVE_FIELDS = [
+  'moveSpeedBonus',
+  'dashCooldownMult',
+  'pierceAdd',
+  'critChanceAdd',
+  'critMultiplier',
+  'activeCooldownMult',
+  'activePowerBonus',
+  'aoePowerBonus',
+  'damageBonus',
+  'executeThreshold',
+  'executeBonus',
+] as const;
+
+const CHARACTER_SIGNATURE_FIELDS = [
+  'cooldownMs',
+  'hitCooldownReductionMs',
+  'killCooldownReductionMs',
+  'projectileCount',
+  'maxProjectileCount',
+  'fanArcDegrees',
+  'speedTilesPerSecond',
+  'radiusTiles',
+  'ttlMs',
+  'damageMultiplier',
+  'pierceCount',
+  'homing',
+  'novaRadiusTiles',
+  'novaDamageMultiplier',
+  'novaSlowFactor',
+  'novaSlowDurationMs',
+  'hideAttachmentMs',
+] as const;
+
 const ROLE_FIELDS = [
   'health',
   'speedTilesPerSecond',
@@ -919,6 +1054,34 @@ function readNumber(
   if (options.integer === true && !Number.isInteger(value)) {
     problems.add(fieldPath, `must be an integer, got ${value}`);
     return undefined;
+  }
+  return value;
+}
+
+/** Read a signed integer within `[min, max]` (used for signed deltas like `maxHeartsDelta`). */
+function readSignedInteger(
+  source: Record<string, unknown>,
+  field: string,
+  path: string,
+  problems: ProblemList,
+  min: number,
+  max: number,
+  fallback = 0,
+): number {
+  const value = source[field];
+  const fieldPath = joinPath(path, field);
+
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    problems.add(fieldPath, `must be a finite number, got ${describe(value)}`);
+    return fallback;
+  }
+  if (!Number.isInteger(value)) {
+    problems.add(fieldPath, `must be an integer, got ${value}`);
+    return fallback;
+  }
+  if (value < min || value > max) {
+    problems.add(fieldPath, `must be within ${min}..${max}, got ${value}`);
+    return fallback;
   }
   return value;
 }
@@ -2167,6 +2330,191 @@ function parseActiveSkill(raw: Record<string, unknown>, problems: ProblemList): 
   };
 }
 
+function zeroCharacter(): CharacterTuning {
+  return {
+    unlockChapter: 0,
+    unlockGoldCost: 0,
+    baseStats: {
+      maxHeartsDelta: 0,
+      damageMult: 1,
+      fireRateMult: 1,
+      moveSpeedMult: 1,
+      projectileSpeedMult: 1,
+      targetingRangeMult: 1,
+    },
+    passive: {
+      moveSpeedBonus: 0,
+      dashCooldownMult: 1,
+      pierceAdd: 0,
+      critChanceAdd: 0,
+      critMultiplier: 1,
+      activeCooldownMult: 1,
+      activePowerBonus: 0,
+      aoePowerBonus: 0,
+      damageBonus: 0,
+      executeThreshold: 0,
+      executeBonus: 0,
+    },
+    signature: {
+      cooldownMs: 10000,
+      hitCooldownReductionMs: 200,
+      killCooldownReductionMs: 650,
+      projectileCount: 1,
+      maxProjectileCount: 1,
+      fanArcDegrees: 0,
+      speedTilesPerSecond: 12,
+      radiusTiles: 0.18,
+      ttlMs: 1200,
+      damageMultiplier: 1,
+      pierceCount: 0,
+      homing: false,
+      novaRadiusTiles: 0,
+      novaDamageMultiplier: 0,
+      novaSlowFactor: 1,
+      novaSlowDurationMs: 0,
+      hideAttachmentMs: 0,
+    },
+  };
+}
+
+function zeroCharacters(): CharactersTuning {
+  const result = {} as Record<TuningCharacterId, CharacterTuning>;
+  for (const id of TUNING_CHARACTER_IDS) result[id] = zeroCharacter();
+  return result;
+}
+
+function parseCharacterEntry(
+  source: Record<string, unknown>,
+  id: TuningCharacterId,
+  problems: ProblemList,
+): CharacterTuning {
+  const entry = readObject(source, id, 'characters', problems, CHARACTER_FIELDS);
+  if (entry === undefined) return zeroCharacter();
+
+  const path = `characters.${id}`;
+  const unlockChapter = readSignedInteger(
+    entry,
+    'unlockChapter',
+    path,
+    problems,
+    0,
+    CHAPTERS_PER_RUN - 1,
+    0,
+  );
+  const unlockGoldCost =
+    readNumber(entry, 'unlockGoldCost', path, problems, { integer: true }) ?? 0;
+
+  const baseSource = readObject(entry, 'baseStats', path, problems, CHARACTER_BASE_STATS_FIELDS) ?? {};
+  const basePath = `${path}.baseStats`;
+  const baseStats: CharacterBaseStatsTuning = {
+    maxHeartsDelta: readSignedInteger(baseSource, 'maxHeartsDelta', basePath, problems, -5, 10, 0),
+    damageMult: readNumber(baseSource, 'damageMult', basePath, problems, { positive: true }) ?? 1,
+    fireRateMult:
+      readNumber(baseSource, 'fireRateMult', basePath, problems, { positive: true }) ?? 1,
+    moveSpeedMult:
+      readNumber(baseSource, 'moveSpeedMult', basePath, problems, { positive: true }) ?? 1,
+    projectileSpeedMult:
+      readNumber(baseSource, 'projectileSpeedMult', basePath, problems, { positive: true }) ?? 1,
+    targetingRangeMult:
+      readNumber(baseSource, 'targetingRangeMult', basePath, problems, { positive: true }) ?? 1,
+  };
+
+  const passiveSource = readObject(entry, 'passive', path, problems, CHARACTER_PASSIVE_FIELDS) ?? {};
+  const passivePath = `${path}.passive`;
+  const critMultiplier =
+    readNumber(passiveSource, 'critMultiplier', passivePath, problems, { positive: true }) ?? 1;
+  if (critMultiplier < 1) {
+    problems.add(`${passivePath}.critMultiplier`, `must be >= 1, got ${critMultiplier}`);
+  }
+  const passive: CharacterPassiveTuning = {
+    moveSpeedBonus: readNumber(passiveSource, 'moveSpeedBonus', passivePath, problems) ?? 0,
+    dashCooldownMult:
+      readNumber(passiveSource, 'dashCooldownMult', passivePath, problems, { positive: true }) ?? 1,
+    pierceAdd:
+      readNumber(passiveSource, 'pierceAdd', passivePath, problems, { integer: true }) ?? 0,
+    critChanceAdd: readRatio(passiveSource, 'critChanceAdd', passivePath, problems),
+    critMultiplier: Math.max(1, critMultiplier),
+    activeCooldownMult:
+      readNumber(passiveSource, 'activeCooldownMult', passivePath, problems, { positive: true }) ??
+      1,
+    activePowerBonus: readNumber(passiveSource, 'activePowerBonus', passivePath, problems) ?? 0,
+    aoePowerBonus: readNumber(passiveSource, 'aoePowerBonus', passivePath, problems) ?? 0,
+    damageBonus: readNumber(passiveSource, 'damageBonus', passivePath, problems) ?? 0,
+    executeThreshold: readRatio(passiveSource, 'executeThreshold', passivePath, problems),
+    executeBonus: readNumber(passiveSource, 'executeBonus', passivePath, problems) ?? 0,
+  };
+
+  const sigSource =
+    readObject(entry, 'signature', path, problems, CHARACTER_SIGNATURE_FIELDS) ?? {};
+  const sigPath = `${path}.signature`;
+  const projectileCount =
+    readNumber(sigSource, 'projectileCount', sigPath, problems, {
+      integer: true,
+      positive: true,
+    }) ?? 1;
+  const maxProjectileCount =
+    readNumber(sigSource, 'maxProjectileCount', sigPath, problems, {
+      integer: true,
+      positive: true,
+    }) ?? projectileCount;
+  if (maxProjectileCount < projectileCount) {
+    problems.add(
+      `${sigPath}.maxProjectileCount`,
+      `must be >= projectileCount (${projectileCount}), got ${maxProjectileCount}`,
+    );
+  }
+  const fanArcDegrees = readNumber(sigSource, 'fanArcDegrees', sigPath, problems) ?? 0;
+  if (fanArcDegrees > 360) {
+    problems.add(`${sigPath}.fanArcDegrees`, `must be within 0..360, got ${fanArcDegrees}`);
+  }
+  const signature: CharacterSignatureTuning = {
+    cooldownMs:
+      readNumber(sigSource, 'cooldownMs', sigPath, problems, { integer: true, positive: true }) ??
+      10000,
+    hitCooldownReductionMs:
+      readNumber(sigSource, 'hitCooldownReductionMs', sigPath, problems, { integer: true }) ?? 0,
+    killCooldownReductionMs:
+      readNumber(sigSource, 'killCooldownReductionMs', sigPath, problems, { integer: true }) ?? 0,
+    projectileCount,
+    maxProjectileCount,
+    fanArcDegrees,
+    speedTilesPerSecond:
+      readNumber(sigSource, 'speedTilesPerSecond', sigPath, problems, { positive: true }) ?? 12,
+    radiusTiles: readNumber(sigSource, 'radiusTiles', sigPath, problems, { positive: true }) ?? 0.18,
+    ttlMs: readNumber(sigSource, 'ttlMs', sigPath, problems, { integer: true, positive: true }) ?? 1000,
+    damageMultiplier:
+      readNumber(sigSource, 'damageMultiplier', sigPath, problems, { positive: true }) ?? 1,
+    pierceCount: readNumber(sigSource, 'pierceCount', sigPath, problems, { integer: true }) ?? 0,
+    homing: readBoolean(sigSource, 'homing', sigPath, problems, false),
+    novaRadiusTiles: readNumber(sigSource, 'novaRadiusTiles', sigPath, problems) ?? 0,
+    novaDamageMultiplier: readNumber(sigSource, 'novaDamageMultiplier', sigPath, problems) ?? 0,
+    novaSlowFactor: readRatio(sigSource, 'novaSlowFactor', sigPath, problems),
+    novaSlowDurationMs:
+      readNumber(sigSource, 'novaSlowDurationMs', sigPath, problems, { integer: true }) ?? 0,
+    hideAttachmentMs:
+      readNumber(sigSource, 'hideAttachmentMs', sigPath, problems, { integer: true }) ?? 0,
+  };
+
+  return {
+    unlockChapter,
+    unlockGoldCost,
+    baseStats,
+    passive,
+    signature,
+  };
+}
+
+function parseCharacters(raw: Record<string, unknown>, problems: ProblemList): CharactersTuning {
+  const source = readObject(raw, 'characters', '', problems, TUNING_CHARACTER_IDS);
+  if (source === undefined) return zeroCharacters();
+
+  const result = {} as Record<TuningCharacterId, CharacterTuning>;
+  for (const id of TUNING_CHARACTER_IDS) {
+    result[id] = parseCharacterEntry(source, id, problems);
+  }
+  return result;
+}
+
 function zeroCover(): CoverTuning {
   return { overlayAlpha: 1, actorInCoverAlpha: 1, fadeRate: 1 };
 }
@@ -2239,6 +2587,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     xp: parseXp(raw, problems),
     dash: parseDash(raw, problems),
     activeSkill: parseActiveSkill(raw, problems),
+    characters: parseCharacters(raw, problems),
   };
 
   problems.throwIfAny();

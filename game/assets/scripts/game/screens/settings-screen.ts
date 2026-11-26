@@ -1,6 +1,6 @@
 /**
  * Settings (GDD §9): volume, fullscreen, accessibility (shake, damage numbers), Effects
- * Full/Reduced, Cultivator toggle, and read-only keybinds.
+ * Full/Reduced, and read-only keybinds.
  *
  * Volume steps by 10% and is written to the save immediately (`onVolume`), so reopening after
  * a reload shows the right value. Accessibility and effects toggles apply immediately.
@@ -17,7 +17,6 @@ export interface SettingsScreenOptions {
   readonly onToggleScreenShake: () => void;
   readonly onToggleDamageNumbers: () => void;
   readonly onToggleEffects: () => void;
-  readonly onToggleCultivator?: () => void;
   readonly onBack: () => void;
 }
 
@@ -67,12 +66,6 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     screen?.updateItem(4, formatEffects(current.effects));
   };
 
-  const toggleCultivator = (): void => {
-    current = { ...current, cultivatorEnabled: !current.cultivatorEnabled };
-    options.onToggleCultivator?.();
-    screen?.updateItem(5, formatToggle('Cultivator', current.cultivatorEnabled));
-  };
-
   const items: MenuItem[] = [
     {
       label: formatVolume(current.volume),
@@ -93,10 +86,6 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     {
       label: formatEffects(current.effects),
       activate: () => toggleEffects(),
-    },
-    {
-      label: formatToggle('Cultivator', current.cultivatorEnabled),
-      activate: () => toggleCultivator(),
     },
     { label: 'Back', activate: options.onBack },
   ];

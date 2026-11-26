@@ -1064,7 +1064,8 @@ export class Bootstrap extends Component {
     for (const character of CHARACTER_ROSTER) {
       for (const kind of CHARACTER_ANIM_KINDS) {
         const key = resolveCharacterAnimKey(manifest, character, kind, 'down');
-        sheets.add(resolve(manifest, key).sheet);
+        const entry = manifest.sprites[key];
+        if (entry !== undefined) sheets.add(entry.sheet);
       }
       if (
         character.defaultLoadout.weaponForm === 'attachment' &&
@@ -2600,7 +2601,6 @@ export class Bootstrap extends Component {
         return active === null ? snap : { ...snap, id: active.id, name: active.name };
       },
       selectCharacter: (id) => this.screens.selectCharacter(id),
-      setCultivatorEnabled: (enabled) => this.screens.setCultivatorEnabled(enabled),
       playerAttachment: () => this.player?.getAttachmentSnapshot() ?? null,
       setAttachmentHidden: (hidden) => {
         if (this.player === null) return false;

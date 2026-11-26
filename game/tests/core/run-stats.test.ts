@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
-import { applyUpgradesToBaseline, metaBaseline } from '../../assets/scripts/core/meta/run-stats';
+import { CHARACTERS_TUNING } from '../../assets/scripts/core/enemies/tuning';
+import {
+  applyCharacterBaseStats,
+  applyCharacterPassive,
+  applyUpgradesToBaseline,
+  derivedStatsForRun,
+  metaBaseline,
+  statsForRun,
+} from '../../assets/scripts/core/meta/run-stats';
 import { createDefaultUpgrades } from '../../assets/scripts/core/meta/upgrades';
+import { createDefaultSave } from '../../assets/scripts/core/save/save-data';
 import { computeDerivedStats } from '../../assets/scripts/core/skills/derived-stats';
 
 describe('applyUpgradesToBaseline', () => {
@@ -76,5 +85,126 @@ describe('applyUpgradesToBaseline', () => {
     expect(base.damage).toBe(DEFAULT_COMBAT.damage);
     expect(base.fireRatePerSecond).toBe(DEFAULT_COMBAT.fireRatePerSecond);
     expect(base.playerMaxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts);
+  });
+});
+
+describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
+  it('Ninja Layer 1 matches DEFAULT_COMBAT identically and Layer 2 Shadow Agility grants +10% speed & -15% Dash cooldown', () => {
+    const ninjaBase = applyCharacterBaseStats(DEFAULT_COMBAT, 'ninja');
+    expect(ninjaBase.playerMaxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts);
+    expect(ninjaBase.damage).toBe(DEFAULT_COMBAT.damage);
+    expect(ninjaBase.fireRatePerSecond).toBe(DEFAULT_COMBAT.fireRatePerSecond);
+    expect(ninjaBase.moveSpeedTilesPerSecond).toBe(DEFAULT_COMBAT.moveSpeedTilesPerSecond);
+    expect(ninjaBase.projectileSpeedTilesPerSecond).toBe(
+      DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
+    );
+    expect(ninjaBase.targetingRangeTiles).toBe(DEFAULT_COMBAT.targetingRangeTiles);
+
+    const save = createDefaultSave();
+    const derived = derivedStatsForRun(save, new Map(), 'ninja');
+    expect(derived.maxHearts).toBe(6);
+    expect(derived.damage).toBe(1);
+    expect(derived.fireRatePerSecond).toBe(2);
+    expect(derived.moveSpeedTilesPerSecond).toBeCloseTo(DEFAULT_COMBAT.moveSpeedTilesPerSecond * 1.1, 6);
+    expect(derived.dashCooldownMult).toBeCloseTo(0.85, 6);
+    expect(derived.pierce).toBe(0);
+    expect(derived.critChance).toBe(0);
+  });
+
+  it('Archer has fast long-range arrows and Keen Sight (+1 pierce, +12% crit at 2x)', () => {
+    const save = createDefaultSave();
+    const derived = derivedStatsForRun(save, new Map(), 'archer');
+    const tuning = CHARACTERS_TUNING.archer;
+
+    expect(derived.maxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts + tuning.baseStats.maxHeartsDelta);
+    expect(derived.damage).toBeCloseTo(DEFAULT_COMBAT.damage * tuning.baseStats.damageMult, 4);
+    expect(derived.fireRatePerSecond).toBeCloseTo(
+      DEFAULT_COMBAT.fireRatePerSecond * tuning.baseStats.fireRateMult,
+      4,
+    );
+    expect(derived.projectileSpeedTilesPerSecond).toBeGreaterThan(
+      DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
+    );
+    expect(derived.targetingRangeTiles).toBeGreaterThan(DEFAULT_COMBAT.targetingRangeTiles);
+    expect(derived.pierce).toBe(1);
+    expect(derived.critChance).toBeCloseTo(0.12, 6);
+    expect(derived.critMultiplier).toBe(2);
+
+    // Skills stack cleanly on top of Keen Sight (Piercing +1 -> 2, Crit Eye +15% -> 27%).
+    const stacked = derivedStatsForRun(
+      save,
+      new Map([
+        ['piercing', 1],
+        ['crit-eye', 1],
+      ]),
+      'archer',
+    );
+    expect(stacked.pierce).toBe(2);
+    expect(stacked.critChance).toBeCloseTo(0.27, 6);
+  });
+
+  it('Mage has heavier bolts and Arcane Attunement (-20% Active cooldown, +25% Active/AoE power)', () => {
+    const save = createDefaultSave();
+    const derived = derivedStatsForRun(save, new Map(), 'mage');
+    const tuning = CHARACTERS_TUNING.mage;
+
+    expect(derived.maxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts + tuning.baseStats.maxHeartsDelta);
+    expect(derived.damage).toBeCloseTo(DEFAULT_COMBAT.damage * tuning.baseStats.damageMult, 4);
+    expect(derived.activeCooldownMult).toBeCloseTo(0.8, 6);
+    expect(derived.activePowerMult).toBeCloseTo(1.25, 6);
+    expect(derived.aoePowerMult).toBeCloseTo(1.25, 6);
+
+    // Shadow Conduit (×0.82) and Arcane Surge (+0.35) stack multiplicatively/additively on top.
+    const stacked = derivedStatsForRun(
+      save,
+      new Map([
+        ['shadow-conduit', 1],
+        ['arcane-surge', 1],
+      ]),
+      'mage',
+    );
+    expect(stacked.activeCooldownMult).toBeCloseTo(0.8 * 0.82, 6);
+    expect(stacked.activePowerMult).toBeCloseTo(1.25 + 0.35, 6);
+  });
+
+  it('Cultivator has sturdy 7 hearts and Sword Heart (+15% damage, +10% execute bonus <30% HP)', () => {
+    const save = createDefaultSave();
+    const derived = derivedStatsForRun(save, new Map(), 'cultivator');
+    const tuning = CHARACTERS_TUNING.cultivator;
+
+    expect(derived.maxHearts).toBe(7);
+    expect(derived.damage).toBeCloseTo(
+      DEFAULT_COMBAT.damage * tuning.baseStats.damageMult * (1 + tuning.passive.damageBonus),
+      4,
+    );
+    expect(derived.executeThreshold).toBeCloseTo(0.3, 6);
+    expect(derived.executeBonus).toBeCloseTo(0.1, 6);
+
+    // Executioner stacks its +50% execute bonus on top of Sword Heart's +10% -> +60%.
+    const stacked = derivedStatsForRun(save, new Map([['executioner', 1]]), 'cultivator');
+    expect(stacked.executeThreshold).toBeCloseTo(0.3, 6);
+    expect(stacked.executeBonus).toBeCloseTo(0.6, 6);
+  });
+
+  it('statsForRun composes Layer 1 -> Meta upgrades -> Layer 2 without mutating inputs', () => {
+    const save = {
+      ...createDefaultSave(),
+      upgrades: { hearts: 2, damage: 4, fireRate: 5 },
+      chaptersUnlocked: 4,
+      selectedCharacter: 'cultivator' as const,
+    };
+    const snapshot = structuredClone(DEFAULT_COMBAT);
+    const runBase = statsForRun(save);
+
+    // Cultivator: 6 + 1 (class) + 2 (meta) = 9 hearts.
+    expect(runBase.playerMaxHearts).toBe(9);
+    // Damage: 1 * 1.1 (class) * 1.2 (meta) * 1.15 (Sword Heart passive) = 1.518.
+    expect(runBase.damage).toBeCloseTo(1.1 * 1.2 * 1.15, 4);
+    expect(DEFAULT_COMBAT).toEqual(snapshot);
+
+    // applyCharacterPassive is pure and composable directly.
+    const manual = applyCharacterPassive(DEFAULT_COMBAT, 'archer');
+    expect(manual.pierce).toBe(1);
+    expect(manual.critChance).toBeCloseTo(0.12, 6);
   });
 });

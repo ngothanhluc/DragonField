@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CHARACTERS } from '../../assets/scripts/core/characters/roster';
 import {
   MAX_HEARTS_TRACK,
   MAX_LEVEL,
@@ -14,10 +15,13 @@ import {
 import type { UpgradeState, UpgradeTrack } from '../../assets/scripts/core/meta/upgrades';
 import {
   SAVE_VERSION,
+  buyCharacter,
+  canBuyCharacter,
   createDefaultSave,
   migrate,
   parseSaveData,
   serializeSave,
+  unlockNextChapter,
   withBest,
   withSelectedCharacter,
 } from '../../assets/scripts/core/save/save-data';
@@ -58,10 +62,10 @@ function increasingPairs(costs: readonly number[]): Array<[number, number]> {
 }
 
 describe('SaveData — defaults', () => {
-  it('the default save is valid and round-trips through serialize/parse', () => {
+  it('the default v4 save is valid and round-trips through serialize/parse', () => {
     const defaults = createDefaultSave();
 
-    expect(SAVE_VERSION).toBe(3);
+    expect(SAVE_VERSION).toBe(4);
     expect(defaults.version).toBe(SAVE_VERSION);
     expect(defaults.gold).toBe(0);
     expect(defaults.upgrades).toEqual({ hearts: 0, damage: 0, fireRate: 0 });
@@ -73,16 +77,17 @@ describe('SaveData — defaults', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
-      cultivatorEnabled: false,
     });
     expect(defaults.selectedCharacter).toBe('ninja');
+    expect(defaults.unlockedCharacters).toEqual(['ninja']);
 
     expect(parseSaveData(defaults)).toEqual(defaults);
     expect(parseSaveData(JSON.parse(serializeSave(defaults)))).toEqual(defaults);
   });
 
-  it('serialize follows the exact GDD §10 key order', () => {
-    expect(JSON.parse(serializeSave(createDefaultSave()))).toEqual({
+  it('serialize follows canonical v4 key order without retired cultivatorEnabled', () => {
+    const parsed = JSON.parse(serializeSave(createDefaultSave())) as Record<string, unknown>;
+    expect(parsed).toEqual({
       version: SAVE_VERSION,
       gold: 0,
       upgrades: { hearts: 0, damage: 0, fireRate: 0 },
@@ -94,10 +99,20 @@ describe('SaveData — defaults', () => {
         screenShake: true,
         damageNumbers: false,
         effects: 'full',
-        cultivatorEnabled: false,
       },
       selectedCharacter: 'ninja',
+      unlockedCharacters: ['ninja'],
     });
+    expect(Object.keys(parsed)).toEqual([
+      'version',
+      'gold',
+      'upgrades',
+      'chaptersUnlocked',
+      'best',
+      'settings',
+      'selectedCharacter',
+      'unlockedCharacters',
+    ]);
   });
 
   it('serialize rejects an invalid save instead of writing garbage', () => {
@@ -105,7 +120,7 @@ describe('SaveData — defaults', () => {
   });
 });
 
-describe('SaveData — migrate', () => {
+describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
   it('an empty object becomes the default save', () => {
     expect(migrate({})).toEqual(createDefaultSave());
   });
@@ -115,15 +130,16 @@ describe('SaveData — migrate', () => {
     expect(migrate({ version: undefined })).toEqual(createDefaultSave());
   });
 
-  it('keeps valid fields of a save at the same version', () => {
+  it('keeps valid fields of a v4 save and deduplicates unlockedCharacters', () => {
     const migrated = migrate({
       version: SAVE_VERSION,
       gold: 120,
       upgrades: { hearts: 2, damage: 1, fireRate: 3 },
       chaptersUnlocked: 2,
       best: { chapter: 1, room: 4 },
-      settings: { volume: 0.5, fullscreen: true, cultivatorEnabled: true },
-      selectedCharacter: 'cultivator',
+      settings: { volume: 0.5, fullscreen: true },
+      selectedCharacter: 'archer',
+      unlockedCharacters: ['archer', 'ninja', 'archer', 'invalid', 99],
     });
 
     expect(migrated).toEqual({
@@ -138,13 +154,13 @@ describe('SaveData — migrate', () => {
         screenShake: true,
         damageNumbers: false,
         effects: 'full',
-        cultivatorEnabled: true,
       },
-      selectedCharacter: 'cultivator',
+      selectedCharacter: 'archer',
+      unlockedCharacters: ['ninja', 'archer'],
     });
   });
 
-  it('migrates v1 and v2 saves forward to v3 preserving every field and initializing M10 defaults', () => {
+  it('migrates v1, v2, and v3 saves forward to v4 preserving progress and dropping legacy settings.cultivatorEnabled', () => {
     const v1 = {
       version: 1,
       gold: 250,
@@ -159,8 +175,7 @@ describe('SaveData — migrate', () => {
         effects: 'reduced',
       },
     };
-    const fromV1 = migrate(v1);
-    expect(fromV1).toEqual({
+    expect(migrate(v1)).toEqual({
       version: SAVE_VERSION,
       gold: 250,
       upgrades: { hearts: 2, damage: 4, fireRate: 1 },
@@ -172,9 +187,9 @@ describe('SaveData — migrate', () => {
         screenShake: false,
         damageNumbers: true,
         effects: 'reduced',
-        cultivatorEnabled: false,
       },
       selectedCharacter: 'ninja',
+      unlockedCharacters: ['ninja'],
     });
 
     const v2 = {
@@ -191,8 +206,7 @@ describe('SaveData — migrate', () => {
         effects: 'full',
       },
     };
-    const fromV2 = migrate(v2);
-    expect(fromV2).toEqual({
+    expect(migrate(v2)).toEqual({
       version: SAVE_VERSION,
       gold: 980,
       upgrades: { hearts: 5, damage: 7, fireRate: 6 },
@@ -204,14 +218,61 @@ describe('SaveData — migrate', () => {
         screenShake: true,
         damageNumbers: true,
         effects: 'full',
-        cultivatorEnabled: false,
       },
       selectedCharacter: 'ninja',
+      unlockedCharacters: ['ninja'],
     });
+
+    // Legacy v3 save with `settings.cultivatorEnabled: true` (or even corrupt legacy value) drops it cleanly.
+    const v3 = {
+      version: 3,
+      gold: 410,
+      upgrades: { hearts: 3, damage: 2, fireRate: 2 },
+      chaptersUnlocked: 4,
+      best: { chapter: 3, room: 9 },
+      settings: {
+        volume: 0.7,
+        fullscreen: false,
+        screenShake: true,
+        damageNumbers: false,
+        effects: 'full',
+        cultivatorEnabled: true,
+      },
+      selectedCharacter: 'cultivator',
+    };
+    const fromV3 = migrate(v3);
+    expect(fromV3).toEqual({
+      version: SAVE_VERSION,
+      gold: 410,
+      upgrades: { hearts: 3, damage: 2, fireRate: 2 },
+      chaptersUnlocked: 4,
+      best: { chapter: 3, room: 9 },
+      settings: {
+        volume: 0.7,
+        fullscreen: false,
+        screenShake: true,
+        damageNumbers: false,
+        effects: 'full',
+      },
+      selectedCharacter: 'cultivator',
+      unlockedCharacters: ['ninja'],
+    });
+    expect('cultivatorEnabled' in fromV3.settings).toBe(false);
+  });
+
+  it('always keeps ninja in unlockedCharacters even when missing or corrupt during migration', () => {
+    expect(migrate({ version: 4, unlockedCharacters: ['mage'] }).unlockedCharacters).toEqual([
+      'ninja',
+      'mage',
+    ]);
+    expect(migrate({ version: 4, unlockedCharacters: [] }).unlockedCharacters).toEqual(['ninja']);
+    expect(migrate({ version: 4, unlockedCharacters: 'corrupt' }).unlockedCharacters).toEqual([
+      'ninja',
+    ]);
   });
 
   it('falls back cleanly to default ninja when selectedCharacter is unknown or corrupt', () => {
-    for (const badId of ['archer', 'unknown', '', null, 42, { id: 'ninja' }]) {
+    for (const badId of ['samurai', 'unknown', '', null, 42, { id: 'ninja' }]) {
       const migrated = migrate({
         version: SAVE_VERSION,
         gold: 75,
@@ -242,9 +303,9 @@ describe('SaveData — migrate', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
-      cultivatorEnabled: false,
     });
     expect(migrated.selectedCharacter).toBe('ninja');
+    expect(migrated.unlockedCharacters).toEqual(['ninja']);
   });
 
   it('reads the old key names from the GDD §10 draft (hp, firerate)', () => {
@@ -277,6 +338,7 @@ describe('SaveData — validate', () => {
       best: { chapter: 0, room: 0 },
       settings: { volume: 2, fullscreen: 'có' }, // i18n-allow: sample bad data
       selectedCharacter: 'ninja',
+      unlockedCharacters: ['ninja'],
     };
 
     const message = errorMessage(() => parseSaveData(broken));
@@ -289,17 +351,18 @@ describe('SaveData — validate', () => {
     expect(message).toMatch(/5 problem/);
   });
 
-  it('rejects unknown selectedCharacter and mistyped settings.cultivatorEnabled', () => {
+  it('rejects unknown selectedCharacter and invalid unlockedCharacters entries', () => {
     const message = errorMessage(() =>
       parseSaveData({
         ...createDefaultSave(),
-        settings: { ...createDefaultSave().settings, cultivatorEnabled: 'yes' },
-        selectedCharacter: 'archer',
+        selectedCharacter: 'samurai',
+        unlockedCharacters: ['archer', 'bogus'],
       }),
     );
 
-    expect(message).toContain('settings.cultivatorEnabled');
     expect(message).toContain('selectedCharacter');
+    expect(message).toContain('unlockedCharacters[1]');
+    expect(message).toContain('must include default character "ninja"');
   });
 
   it('reports nested problems (upgrades + best) too', () => {
@@ -318,6 +381,7 @@ describe('SaveData — validate', () => {
 
   it('parseSaveData demands the exact version, old saves must go through migrate', () => {
     expect(() => parseSaveData({ ...createDefaultSave(), version: 0 })).toThrow(/version/);
+    expect(() => parseSaveData({ ...createDefaultSave(), version: 3 })).toThrow(/version/);
     expect(() => parseSaveData({ ...createDefaultSave(), version: '1' })).toThrow(/version/);
   });
 
@@ -361,7 +425,7 @@ describe('SaveData — withBest', () => {
   });
 });
 
-describe('SaveData — withSelectedCharacter', () => {
+describe('SaveData — withSelectedCharacter, canBuyCharacter & buyCharacter', () => {
   it('updates selectedCharacter on a new save without mutating the input and round-trips through storage', () => {
     const base = createDefaultSave();
     const next = withSelectedCharacter(base, 'cultivator');
@@ -371,24 +435,66 @@ describe('SaveData — withSelectedCharacter', () => {
     expect(withSelectedCharacter(next, 'cultivator')).toEqual(next);
 
     const storage = new MemorySaveStorage();
-    const saveWithFlag = {
-      ...next,
-      settings: { ...next.settings, cultivatorEnabled: true },
-    };
-    new SaveRepository(storage).save(saveWithFlag);
+    const bought = buyCharacter({ ...next, gold: 500 }, 'cultivator');
+    new SaveRepository(storage).save(bought);
     const loaded = new SaveRepository(storage).load();
 
-    expect(loaded).toEqual(saveWithFlag);
+    expect(loaded).toEqual(bought);
     expect(loaded.selectedCharacter).toBe('cultivator');
-    expect(loaded.settings.cultivatorEnabled).toBe(true);
+    expect(loaded.unlockedCharacters).toEqual(['ninja', 'cultivator']);
   });
 
   it('rejects an unknown character id or invalid save', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately invalid id
-    expect(() => withSelectedCharacter(createDefaultSave(), 'archer' as any)).toThrow(
+    expect(() => withSelectedCharacter(createDefaultSave(), 'samurai' as any)).toThrow(
       /withSelectedCharacter/,
     );
     expect(() => withSelectedCharacter(saveWith({ gold: -1 }), 'cultivator')).toThrow(/gold/);
+  });
+
+  it('canBuyCharacter & buyCharacter deduct gold, append to unlockedCharacters, and block illegal buys', () => {
+    const archerCost = CHARACTERS.archer.unlockGoldCost;
+    const mageCost = CHARACTERS.mage.unlockGoldCost;
+    const cultivatorCost = CHARACTERS.cultivator.unlockGoldCost;
+
+    // Ninja is already unlocked by default.
+    const poor = createDefaultSave();
+    expect(canBuyCharacter(poor, 'ninja')).toBe(false);
+    expect(() => buyCharacter(poor, 'ninja')).toThrow(/already unlocked/);
+
+    // Short on gold -> blocked cleanly.
+    const shortForArcher = saveWith({ gold: archerCost - 1 });
+    expect(canBuyCharacter(shortForArcher, 'archer')).toBe(false);
+    expect(() => buyCharacter(shortForArcher, 'archer')).toThrow(/Not enough gold/);
+
+    // Exact gold -> purchase succeeds without mutating input save.
+    const exactForArcher = saveWith({ gold: archerCost });
+    expect(canBuyCharacter(exactForArcher, 'archer')).toBe(true);
+    const boughtArcher = buyCharacter(exactForArcher, 'archer');
+    expect(boughtArcher.gold).toBe(0);
+    expect(boughtArcher.unlockedCharacters).toEqual(['ninja', 'archer']);
+    expect(exactForArcher.gold).toBe(archerCost);
+    expect(exactForArcher.unlockedCharacters).toEqual(['ninja']);
+
+    // Already purchased -> blocked even with plenty of gold.
+    const richBoughtArcher = { ...boughtArcher, gold: 999 };
+    expect(canBuyCharacter(richBoughtArcher, 'archer')).toBe(false);
+    expect(() => buyCharacter(richBoughtArcher, 'archer')).toThrow(/already unlocked/);
+
+    // Already unlocked by chapter clear -> blocked from spending gold unnecessarily.
+    const ch1Cleared = { ...unlockNextChapter(createDefaultSave(), 1), gold: 999 };
+    expect(canBuyCharacter(ch1Cleared, 'archer')).toBe(false);
+    expect(() => buyCharacter(ch1Cleared, 'archer')).toThrow(/already unlocked/);
+    expect(canBuyCharacter(ch1Cleared, 'mage')).toBe(true);
+
+    // Chained purchases of Mage and Cultivator deduct exact prices.
+    const boughtMage = buyCharacter(ch1Cleared, 'mage');
+    expect(boughtMage.gold).toBe(999 - mageCost);
+    expect(boughtMage.unlockedCharacters).toEqual(['ninja', 'mage']);
+
+    const boughtCultivator = buyCharacter(boughtMage, 'cultivator');
+    expect(boughtCultivator.gold).toBe(999 - mageCost - cultivatorCost);
+    expect(boughtCultivator.unlockedCharacters).toEqual(['ninja', 'mage', 'cultivator']);
   });
 });
 
@@ -548,6 +654,7 @@ describe('SaveRepository', () => {
       upgrades: { hearts: 2, damage: 1, fireRate: 0 },
       chaptersUnlocked: 2,
       best: { chapter: 1, room: 4 },
+      unlockedCharacters: ['ninja', 'mage'],
     });
 
     new SaveRepository(storage).save(custom);
@@ -565,6 +672,7 @@ describe('SaveRepository', () => {
 
     expect(loaded.gold).toBe(77);
     expect(loaded.version).toBe(SAVE_VERSION);
+    expect(loaded.unlockedCharacters).toEqual(['ninja']);
     expect(new SaveRepository(storage).lastLoadError).toBeNull();
   });
 
@@ -626,28 +734,25 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
-      cultivatorEnabled: false,
     });
     expect(input.volume).toBe(2);
 
-    expect(applySettings({ volume: -1, fullscreen: false, cultivatorEnabled: true })).toEqual({
+    expect(applySettings({ volume: -1, fullscreen: false, effects: 'reduced' })).toEqual({
       volume: 0,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
-      effects: 'full',
-      cultivatorEnabled: true,
+      effects: 'reduced',
     });
   });
 
-  it('applySettings fills missing fields with defaults', () => {
+  it('applySettings fills missing fields with defaults (5 canonical keys)', () => {
     expect(applySettings()).toEqual({
       volume: DEFAULT_VOLUME,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
-      cultivatorEnabled: false,
     });
     expect(applySettings({ volume: Number.NaN })).toEqual({
       volume: DEFAULT_VOLUME,
@@ -655,16 +760,14 @@ describe('Settings', () => {
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
-      cultivatorEnabled: false,
     });
-    // Plain object: all 6 own keys, JSON.stringify emits every field.
+    // Plain object: all 5 own keys, JSON.stringify emits every field.
     expect(Object.keys(applySettings())).toEqual([
       'volume',
       'fullscreen',
       'screenShake',
       'damageNumbers',
       'effects',
-      'cultivatorEnabled',
     ]);
   });
 });
