@@ -296,3 +296,71 @@ describe('M11 weather particle & campfire art files (ADR-019)', () => {
     }
   });
 });
+
+describe('M16 FX slicing audit (no mid-frame rectangular cuts)', () => {
+  it('fx.explosion matches the 360×40 sheet as 9 square 40×40 frames at 14 fps', () => {
+    const entry = manifest.sprites['fx.explosion'];
+    expect(entry).toBeDefined();
+    if (entry === undefined) return;
+    expect(entry.frameWidth).toBe(40);
+    expect(entry.frameHeight).toBe(40);
+    expect(entry.frames).toBe(9);
+    expect(entry.fps).toBe(14);
+    expect(entry.loop).toBe(false);
+    const png = readPng(sheetPath(entry));
+    expect([png.width, png.height]).toEqual([360, 40]);
+  });
+
+  it('audited FX strips have zero inter-frame art cuts across frame boundaries', () => {
+    // Full-cell-width tiles/rings (`fx.ripple`, `fx.shield`, `fx.smoke-circular`, `fx.coin`,
+    // `fx.big-energy-ball`, `fx.plant-spike`, `fx.big-shuriken`, `fx.rain-splash`,
+    // `fx.arcane-bolt`, `fx.spirit-sword`) legitimately touch their cell borders on peak frames.
+    // Every other multi-frame FX strip must have clean transparent boundaries between frames.
+    const EDGE_TOUCHING_FX: ReadonlySet<string> = new Set([
+      'fx.ripple',
+      'fx.shield',
+      'fx.smoke-circular',
+      'fx.coin',
+      'fx.big-energy-ball',
+      'fx.plant-spike',
+      'fx.big-shuriken',
+      'fx.rain-splash',
+      'fx.arcane-bolt',
+      'fx.spirit-sword',
+    ]);
+
+    for (const [key, entry] of entries) {
+      if (!key.startsWith('fx.') || entry.frames <= 1 || EDGE_TOUCHING_FX.has(key)) continue;
+      const png = readPng(sheetPath(entry));
+      for (let frame = 1; frame < entry.frames; frame += 1) {
+        const boundaryX = frame * entry.frameWidth;
+        let sharedOpaqueRows = 0;
+        for (let y = 0; y < png.height; y += 1) {
+          const leftAlpha = png.data[(y * png.width + (boundaryX - 1)) * 4 + 3]!;
+          const rightAlpha = png.data[(y * png.width + boundaryX) * 4 + 3]!;
+          if (leftAlpha > 0 && rightAlpha > 0) sharedOpaqueRows += 1;
+        }
+        expect(
+          sharedOpaqueRows,
+          `${key} slices through ${sharedOpaqueRows} opaque row(s) at x=${boundaryX} (frameWidth=${entry.frameWidth})`,
+        ).toBe(0);
+      }
+    }
+  });
+
+  it('audited M16 FX entries match their verified frame geometry', () => {
+    const expected: ReadonlyArray<readonly [string, number, number, number]> = [
+      ['fx.explosion', 40, 40, 9],
+      ['fx.shuriken', 69, 54, 10],
+      ['fx.impact', 27, 35, 10],
+      ['fx.ice', 32, 32, 10],
+      ['fx.poison', 30, 28, 8],
+      ['fx.smoke-circular', 30, 14, 8],
+    ];
+    for (const [key, fw, fh, frames] of expected) {
+      const entry = manifest.sprites[key];
+      expect(entry, `${key} missing`).toBeDefined();
+      expect([entry?.frameWidth, entry?.frameHeight, entry?.frames], key).toEqual([fw, fh, frames]);
+    }
+  });
+});

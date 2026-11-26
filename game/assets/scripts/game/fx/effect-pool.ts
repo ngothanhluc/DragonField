@@ -59,18 +59,18 @@ interface FxStyle {
 }
 
 const STYLES: Readonly<Record<FxKey, FxStyle>> = {
-  'fx.impact': { drawUnits: 1.6, lifetimeMs: 320, frameMaxPx: 45 },
-  'fx.explosion': { drawUnits: 2.6, lifetimeMs: 900, frameMaxPx: 40 },
-  'fx.smoke': { drawUnits: 1.8, lifetimeMs: 700, frameMaxPx: 32 },
+  'fx.impact': { drawUnits: 1.6, lifetimeMs: 420, frameMaxPx: 35 },
+  'fx.explosion': { drawUnits: 2.6, lifetimeMs: 650, frameMaxPx: 40 },
+  'fx.smoke': { drawUnits: 1.8, lifetimeMs: 620, frameMaxPx: 32 },
   'fx.shield': { drawUnits: 2.2, lifetimeMs: 450, frameMaxPx: 26 },
-  'fx.ice': { drawUnits: 1.5, lifetimeMs: 500, frameMaxPx: 40 },
-  'fx.poison': { drawUnits: 1.5, lifetimeMs: 500, frameMaxPx: 40 },
+  'fx.ice': { drawUnits: 1.5, lifetimeMs: 630, frameMaxPx: 32 },
+  'fx.poison': { drawUnits: 1.5, lifetimeMs: 580, frameMaxPx: 30 },
   // Ticket #3. `fx.aura` has no lifetime: it is driven by `setAura`, not by `spawn`.
-  'fx.spark': { drawUnits: 0.5, lifetimeMs: 240, frameMaxPx: 10 },
+  'fx.spark': { drawUnits: 0.5, lifetimeMs: 390, frameMaxPx: 10 },
   'fx.cut': { drawUnits: 1.1, lifetimeMs: 260, frameMaxPx: 32 },
-  'fx.slash-arc': { drawUnits: 1.8, lifetimeMs: 380, frameMaxPx: 38 },
-  'fx.boost': { drawUnits: 2.4, lifetimeMs: 850, frameMaxPx: 53 },
-  'fx.smoke-circular': { drawUnits: 2.0, lifetimeMs: 900, frameMaxPx: 15 },
+  'fx.slash-arc': { drawUnits: 1.8, lifetimeMs: 350, frameMaxPx: 38 },
+  'fx.boost': { drawUnits: 2.4, lifetimeMs: 820, frameMaxPx: 53 },
+  'fx.smoke-circular': { drawUnits: 2.0, lifetimeMs: 580, frameMaxPx: 30 },
   'fx.aura': { drawUnits: 2.2, lifetimeMs: 0, frameMaxPx: 25 },
   'fx.bubble': { drawUnits: 0.5, lifetimeMs: 420, frameMaxPx: 16 },
 };
@@ -103,6 +103,8 @@ interface Slot {
   readonly sprite: Sprite;
   frames: readonly SpriteFrame[];
   fps: number;
+  loop: boolean;
+  elapsedMs: number;
   frameIndex: number;
   remainingMs: number;
   active: boolean;
@@ -169,8 +171,10 @@ export class FxPool {
   private readonly slots: Slot[] = [];
   private readonly lineSlots: LineSlot[] = [];
   private readonly ringSlots: ShockwaveSlot[] = [];
-  private readonly framesByKey = new Map<FxKey, { frames: readonly SpriteFrame[]; fps: number }>();
-  private elapsedMs = 0;
+  private readonly framesByKey = new Map<
+    FxKey,
+    { frames: readonly SpriteFrame[]; fps: number; loop: boolean }
+  >();
   /** Round-robin cursor: picking a free slot must not scan from 0 on every spawn. */
   private slotCursor = 0;
 
@@ -193,7 +197,7 @@ export class FxPool {
       const frames = await Promise.all(
         Array.from({ length: entry.frames }, (_, index) => getFrame(entry, 'down', index)),
       );
-      this.framesByKey.set(key, { frames, fps: entry.fps });
+      this.framesByKey.set(key, { frames, fps: entry.fps, loop: entry.loop });
     }
 
     for (let index = 0; index < POOL_SIZE; index += 1) {
@@ -231,6 +235,8 @@ export class FxPool {
     slot.active = true;
     slot.frames = data.frames;
     slot.fps = data.fps;
+    slot.loop = data.loop;
+    slot.elapsedMs = 0;
     slot.frameIndex = 0;
     slot.remainingMs = options.lifetimeMs ?? style.lifetimeMs;
     slot.node.active = true;
@@ -437,10 +443,10 @@ export class FxPool {
   }
 
   update(deltaMs: number): void {
-    this.elapsedMs += Math.max(0, deltaMs);
+    const stepMs = Math.max(0, deltaMs);
     for (const slot of this.slots) {
       if (!slot.active) continue;
-      slot.remainingMs -= deltaMs;
+      slot.remainingMs -= stepMs;
       if (slot.remainingMs <= 0) {
         slot.active = false;
         slot.node.active = false;
@@ -448,8 +454,9 @@ export class FxPool {
         continue;
       }
 
+      slot.elapsedMs += stepMs;
       if (slot.move !== null) {
-        slot.move.elapsedMs += deltaMs;
+        slot.move.elapsedMs += stepMs;
         const t = Math.min(1, slot.move.elapsedMs / slot.move.durationMs);
         slot.node.setPosition(
           slot.move.fromX + (slot.move.toX - slot.move.fromX) * t,
@@ -458,7 +465,10 @@ export class FxPool {
         );
       }
 
-      const index = Math.floor((this.elapsedMs * slot.fps) / 1000) % slot.frames.length;
+      const rawIndex = Math.floor((slot.elapsedMs * slot.fps) / 1000);
+      const index = slot.loop
+        ? rawIndex % slot.frames.length
+        : Math.min(slot.frames.length - 1, rawIndex);
       if (index !== slot.frameIndex) {
         slot.frameIndex = index;
         const frame = slot.frames[index];
@@ -552,6 +562,8 @@ export class FxPool {
       sprite,
       frames: [],
       fps: 10,
+      loop: false,
+      elapsedMs: 0,
       frameIndex: 0,
       remainingMs: 0,
       active: false,
