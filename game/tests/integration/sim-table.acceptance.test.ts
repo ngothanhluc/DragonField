@@ -1,15 +1,16 @@
 /**
- * Balance sim table acceptance (ADR-013, `docs/milestones.md` §M9 / §M12, ADR-021).
+ * Balance sim table acceptance (ADR-013, `docs/milestones.md` §M9 / §M12 / §M13, ADR-021, ADR-022).
  *
  * Across all 4 chapters and both chapter bosses:
- * - Standing still loses Room 1 (`0/9`).
- * - Dodging from a **0-skill start** with XP-earned skills (`XpOrbPool` + `XpTracker` +
- *   dedicated `createSkillRollRng` sub-seed + `typicalSkillChoice` + `typicalRerollPolicy` +
- *   `typicalDoorChoice`) lands cleanly inside **12–16 level-ups/run** and wins `9/9`.
+ * - Standing still (no Dash, no Active, no skills) loses Room 1 (`0/9`).
+ * - Dodging from a **0-skill start** with the full M13 kit (Dash + Signature Active *Shadow
+ *   Barrage* + XP-earned pure-combat skills & Legendary Evolutions + `typicalDoorChoice`) lands
+ *   cleanly inside **12–16 level-ups/run**, genuinely exercises Dash, Active, and Evolutions
+ *   against Tier-2 enemy AI, and wins `9/9`.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { BOSS_POOLS, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
-import { getEvolution } from '../../assets/scripts/core/skills/evolutions';
+import { getEvolution, isEvolutionId } from '../../assets/scripts/core/skills/evolutions';
 import { getSkill } from '../../assets/scripts/core/skills/pool';
 import {
   LEVEL_UP_TARGET_MAX,
@@ -83,9 +84,18 @@ describe('typical XP skill & reroll policies', () => {
         healthy,
       ),
     ).toBe(1);
+    // Completing an unlocked Evolution pair gets prioritized over lower filler cards.
+    expect(
+      typicalSkillChoice(
+        [getSkill('rapid-fire'), getSkill('shadow-conduit'), getSkill('swift')],
+        new Map([['rapid-fire', 2]]),
+        7,
+        healthy,
+      ),
+    ).toBe(1);
   });
 
-  it('only rerolls weak hands within the cost cap', () => {
+  it('only rerolls weak hands within the cost cap and keeps Evolution pair completers', () => {
     const empty = new Map<string, number>();
     expect(
       typicalRerollPolicy(
@@ -96,6 +106,15 @@ describe('typical XP skill & reroll policies', () => {
         0,
       ),
     ).toBe(true);
+    expect(
+      typicalRerollPolicy(
+        [getSkill('afterimage'), getSkill('iron-skin'), getSkill('thorns')],
+        new Map([['shield', 1]]),
+        50,
+        10,
+        0,
+      ),
+    ).toBe(false);
     expect(
       typicalRerollPolicy(
         [getSkill('afterimage'), getSkill('sharpen'), getSkill('thorns')],
@@ -142,11 +161,11 @@ describe('balance seeds', () => {
   });
 });
 
-describe('M12 sim table (unified XP level-up economy)', () => {
+describe('M13 sim table (Dash, Active Skill, Evolutions & Tier-2 AI)', () => {
   const rowsByChapter = new Map<number, SimTableRow[]>();
 
   for (const chapter of CHAPTERS) {
-    it(`chapter ${chapter}: stand still loses room 1, dodge + XP skills wins 9/9 with 12–16 level-ups`, () => {
+    it(`chapter ${chapter}: stand still loses room 1, dodge + M13 kit wins 9/9 with 12–16 level-ups, Dash & Active`, () => {
       const rows = simTableRows({ chapters: [chapter], seedsPerBoss: SEEDS_PER_BOSS });
       rowsByChapter.set(chapter, rows);
 
@@ -160,13 +179,21 @@ describe('M12 sim table (unified XP level-up economy)', () => {
 
         expect(row.standStill.status, `${label} stand still`).toBe('lost');
         expect(row.standStill.roomsCleared, `${label} stand still`).toBe(0);
+        expect(row.standStill.dashesUsed, `${label} stand still dashes`).toBe(0);
+        expect(row.standStill.activeSkillsUsed, `${label} stand still actives`).toBe(0);
+        expect(row.standStill.evolutions, `${label} stand still evolutions`).toEqual([]);
 
-        expect(row.loadout.status, `${label} dodge + XP skills`).toBe('won');
-        expect(row.loadout.roomsCleared, `${label} dodge + XP skills`).toBe(9);
+        expect(row.loadout.status, `${label} dodge + M13 kit`).toBe('won');
+        expect(row.loadout.roomsCleared, `${label} dodge + M13 kit`).toBe(9);
         expect(row.loadout.levelUps, `${label} levelUps`).toBeGreaterThanOrEqual(LEVEL_UP_TARGET_MIN);
         expect(row.loadout.levelUps, `${label} levelUps`).toBeLessThanOrEqual(LEVEL_UP_TARGET_MAX);
         expect(row.loadout.finalLevel, `${label} finalLevel`).toBe(row.loadout.levelUps + 1);
         expect(row.loadout.xpEarned, `${label} xpEarned`).toBeGreaterThan(0);
+        expect(row.loadout.dashesUsed, `${label} dashesUsed`).toBeGreaterThan(0);
+        expect(row.loadout.activeSkillsUsed, `${label} activeSkillsUsed`).toBeGreaterThan(0);
+        for (const evoId of row.loadout.evolutions) {
+          expect(isEvolutionId(evoId), `${label} evolution ${evoId}`).toBe(true);
+        }
         // Door choice is modelled: the 7 normal-slot doors before the boss door are recorded.
         expect(row.loadout.doors.length, `${label} doors`).toBeGreaterThanOrEqual(7);
         expect(row.loadout.durationMs, label).toBeGreaterThan(row.standStill.durationMs);
@@ -175,12 +202,17 @@ describe('M12 sim table (unified XP level-up economy)', () => {
     }, 300_000);
   }
 
-  it('formats one Markdown row per sim row under a header including level-ups', () => {
+  it('unlocks Legendary Evolutions across runs and formats M13 Markdown table columns', () => {
     const rows = CHAPTERS.flatMap((chapter) => rowsByChapter.get(chapter) ?? []);
     expect(rows).toHaveLength(CHAPTERS.length * 2 * SEEDS_PER_BOSS);
 
+    const rowsWithEvolution = rows.filter((row) => row.loadout.evolutions.length > 0);
+    expect(rowsWithEvolution.length).toBeGreaterThanOrEqual(Math.ceil(rows.length / 2));
+
     const lines = formatSimTable(rows).trim().split('\n');
-    expect(lines[0]).toMatch(/^\|.*chapter.*\|.*seed.*\|.*boss.*\|.*level-ups.*\|/i);
+    expect(lines[0]).toMatch(
+      /^\|.*chapter.*\|.*seed.*\|.*boss.*\|.*level-ups.*\|.*dashes.*\|.*actives.*\|.*evolutions.*\|/i,
+    );
     expect(lines[1]).toMatch(/^\|[\s:|-]+\|$/);
     expect(lines.slice(2)).toHaveLength(rows.length);
     for (const [index, row] of rows.entries()) {
@@ -189,6 +221,7 @@ describe('M12 sim table (unified XP level-up economy)', () => {
       expect(line).toContain(`| ${row.seed} |`);
       expect(line).toContain(row.boss);
       expect(line).toContain(`${row.loadout.levelUps} (Lv ${row.loadout.finalLevel})`);
+      expect(line).toContain(`| ${row.loadout.dashesUsed} | ${row.loadout.activeSkillsUsed} |`);
     }
   });
 });

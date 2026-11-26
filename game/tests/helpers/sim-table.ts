@@ -16,10 +16,13 @@ import type { BossId } from '../../assets/scripts/core/boss/boss-defs';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import type { ChapterData } from '../../assets/scripts/core/level/level-data';
 import type { DoorReward } from '../../assets/scripts/core/run/doors';
+import { evolutionHintsForSkill } from '../../assets/scripts/core/skills/evolutions';
 import type { SkillDef } from '../../assets/scripts/core/skills/pool';
 import {
   SIM_DEFAULT_MAX_DURATION_MS,
   simulateRun,
+  smartActiveSkillPolicy,
+  smartDashPolicy,
   type InputPolicy,
   type SimulationStatus,
   type SkillPickPolicy,
@@ -120,6 +123,12 @@ const TYPICAL_REROLL_MAX_COST = 40;
  */
 const SHARPEN_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('second-wind') + 0.5;
 const RAPID_FIRE_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('explosive') + 0.5;
+const EVOLUTION_PAIR_READY_RANK = SKILL_PRIORITY.indexOf('second-wind') + 0.25;
+
+function completesEvolutionPair(skill: SkillDef, owned: ReadonlyMap<string, number>): boolean {
+  if (skill.rarity === 'legendary') return false;
+  return evolutionHintsForSkill(skill.id, owned).some((hint) => hint.ready);
+}
 
 export const typicalSkillChoice: SkillPickPolicy = (
   offers: readonly SkillDef[],
@@ -144,6 +153,9 @@ export const typicalSkillChoice: SkillPickPolicy = (
     if (skill.id === 'rapid-fire' && rapidFireStacks >= 2) {
       effectiveRank = RAPID_FIRE_CAP_AFTER_RANK;
     }
+    if (!lowHearts && completesEvolutionPair(skill, owned)) {
+      effectiveRank = Math.min(effectiveRank, EVOLUTION_PAIR_READY_RANK);
+    }
     if (lowHearts) {
       if (skill.id === 'second-wind') effectiveRank = -3;
       else if (skill.id === 'vitality') effectiveRank = -2;
@@ -160,7 +172,8 @@ export const typicalSkillChoice: SkillPickPolicy = (
 
 /**
  * Competent-player gold reroll policy: spend run gold (up to 40g/reroll) when a level-up hand
- * offers zero non-saturated core combat/survival cards (`CORE_COMBAT_SKILLS`).
+ * offers zero non-saturated core combat/survival cards (`CORE_COMBAT_SKILLS`) or Evolution pair
+ * completers.
  */
 export const typicalRerollPolicy: SkillRerollPolicy = (
   offers: readonly SkillDef[],
@@ -170,6 +183,7 @@ export const typicalRerollPolicy: SkillRerollPolicy = (
 ): boolean => {
   if (nextCost > TYPICAL_REROLL_MAX_COST) return false;
   return !offers.some((skill) => {
+    if (completesEvolutionPair(skill, owned)) return true;
     if (!CORE_COMBAT_SKILLS.has(skill.id)) return false;
     if ((skill.id === 'sharpen' || skill.id === 'rapid-fire') && (owned.get(skill.id) ?? 0) >= 2) {
       return false;
@@ -234,6 +248,12 @@ export interface SimOutcome {
   readonly finalLevel: number;
   /** Cumulative XP collected during the run. */
   readonly xpEarned: number;
+  /** Total Dash activations used across the run (M13, ADR-022). */
+  readonly dashesUsed: number;
+  /** Total Signature Active (*Shadow Barrage*) casts used across the run (M13, ADR-022). */
+  readonly activeSkillsUsed: number;
+  /** Legendary Evolution ids unlocked and acquired during the run (M13, ADR-022). */
+  readonly evolutions: readonly string[];
 }
 
 export interface SimTableRow {
@@ -242,7 +262,7 @@ export interface SimTableRow {
   /** The boss this seed meets (`pickBoss`), i.e. the one the run must beat. */
   readonly boss: BossId;
   readonly standStill: SimOutcome;
-  /** The dodge + XP-earned skills run, plus the door picks it made before the boss door. */
+  /** The dodge + M13 kit + XP-earned skills run, plus the door picks it made before the boss door. */
   readonly loadout: SimOutcome & { readonly doors: DoorReward[] };
 }
 
@@ -255,6 +275,9 @@ function outcomeOf(result: ReturnType<typeof simulateRun>): SimOutcome {
     levelUps: result.levelUps,
     finalLevel: result.finalLevel,
     xpEarned: result.xpEarned,
+    dashesUsed: result.dashesUsed,
+    activeSkillsUsed: result.activeSkillsUsed,
+    evolutions: result.evolutions,
   };
 }
 
@@ -263,9 +286,8 @@ function chapterLevels(chapter: number): ChapterData {
 }
 
 /**
- * One row per (chapter, seed): the standing-still run and the dodge + XP-earned skills run.
- * Both use the default `maxDurationMs`; doors follow `typicalDoorChoice` and level-up skill picks
- * flow through `typicalSkillChoice` on the dedicated skill-roll sub-seed (ADR-021).
+ * One row per (chapter, seed): the standing-still run (no Dash/Active/skills) and the dodge +
+ * M13 kit (Dash + Shadow Barrage + XP-earned skills & Evolutions) run.
  */
 export function simTableRows(options: {
   readonly chapters: readonly number[];
@@ -287,6 +309,8 @@ export function simTableRows(options: {
         seed,
         level,
         policy: makeDodgePolicy(),
+        chooseDash: smartDashPolicy,
+        chooseActive: smartActiveSkillPolicy,
         chooseSkill: typicalSkillChoice,
         shouldReroll: typicalRerollPolicy,
         chooseDoor: typicalDoorChoice,
@@ -340,20 +364,22 @@ function formatHits(hits: number): string {
 /**
  * The Markdown table for the PR: one line per row, in the order given.
  *
- * `| chapter | seed | boss | stand still | dodge + XP skills | level-ups | doors |`
+ * `| chapter | seed | boss | stand still | dodge + M13 kit | level-ups | dashes | actives | evolutions | doors |`
  */
 export function formatSimTable(rows: readonly SimTableRow[]): string {
   const lines = [
-    '| chapter | seed | boss | stand still | dodge + XP skills | level-ups | doors |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
+    '| chapter | seed | boss | stand still | dodge + M13 kit | level-ups | dashes | actives | evolutions | doors |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
 
   for (const row of rows) {
     const doors = row.loadout.doors.join(', ') || '—';
+    const evolutions = row.loadout.evolutions.join(', ') || '—';
     lines.push(
       `| ${row.chapter} | ${row.seed} | ${row.boss} | ${formatOutcome(row.standStill)} | ` +
         `${formatOutcome(row.loadout)}, ${formatHits(row.loadout.hits)} | ` +
-        `${row.loadout.levelUps} (Lv ${row.loadout.finalLevel}) | ${doors} |`,
+        `${row.loadout.levelUps} (Lv ${row.loadout.finalLevel}) | ` +
+        `${row.loadout.dashesUsed} | ${row.loadout.activeSkillsUsed} | ${evolutions} | ${doors} |`,
     );
   }
 

@@ -25,9 +25,9 @@ export const TUNING_DATA = {
   chapters: {
     enemyHealthMultipliers: [
       1,
-      1.06,
-      1.11,
-      1.16,
+      1.1,
+      1.18,
+      1.28,
     ],
     enemyDamageMultipliers: [
       1,
@@ -70,9 +70,9 @@ export const TUNING_DATA = {
     },
     ai: {
       predictiveMinChapter: 3,
-      predictiveLeadFactor: 0.45,
-      elitePredictiveLeadFactor: 0.65,
-      predictiveMaxLeadTiles: 2.4,
+      predictiveLeadFactor: 0.52,
+      elitePredictiveLeadFactor: 0.72,
+      predictiveMaxLeadTiles: 2.6,
       casterBurstMinChapter: 3,
       casterBurstShots: 2,
       casterBurstSpreadRadians: 0.22,
@@ -160,8 +160,8 @@ export const TUNING_DATA = {
       },
       bomber: {
         health: 7,
-        speedTilesPerSecond: 2.3,
-        attackCooldownMs: 2800,
+        speedTilesPerSecond: 2.55,
+        attackCooldownMs: 2400,
         telegraphMs: 900,
         preferredRangeMinTiles: 0,
         preferredRangeMaxTiles: 2.4,
@@ -169,13 +169,13 @@ export const TUNING_DATA = {
         chargeSpeedTilesPerSecond: 0,
         chargeDurationMs: 0,
         scale: 1.1,
-        blastRadiusTiles: 2.4,
+        blastRadiusTiles: 2.6,
         blastDamage: 1,
       },
       buffer: {
         health: 6,
         speedTilesPerSecond: 1.45,
-        attackCooldownMs: 4200,
+        attackCooldownMs: 3500,
         telegraphMs: 700,
         preferredRangeMinTiles: 4.5,
         preferredRangeMaxTiles: 6.8,
@@ -185,7 +185,7 @@ export const TUNING_DATA = {
         scale: 1.05,
         projectileSpeedTilesPerSecond: 3.2,
         buffRadiusTiles: 6,
-        buffSpeedMultiplier: 1.3,
+        buffSpeedMultiplier: 1.35,
         buffDurationMs: 3500,
       },
     },
@@ -320,10 +320,10 @@ export const TUNING_DATA = {
   boss: {
     introGraceMs: 1000,
     healthByChapter: [
-      80,
-      110,
-      140,
-      170,
+      95,
+      135,
+      175,
+      220,
     ],
   },
   xp: {

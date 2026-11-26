@@ -10,7 +10,11 @@ import {
   typicalSkillChoice,
 } from '../helpers/sim-table';
 import { CHASER_CONTACT_RANGE_TILES } from '../../assets/scripts/core/enemies/behaviours';
-import { DOORS_TUNING } from '../../assets/scripts/core/enemies/tuning';
+import {
+  ACTIVE_SKILL_TUNING,
+  DASH_TUNING,
+  DOORS_TUNING,
+} from '../../assets/scripts/core/enemies/tuning';
 import { parseLevelData, type ChapterData, type LevelData } from '../../assets/scripts/core/level/level-data';
 import { ROOMS_PER_CHAPTER } from '../../assets/scripts/core/run/run-state';
 import {
@@ -21,9 +25,13 @@ import {
 } from '../../assets/scripts/core/run/rewards';
 import { createDefaultSave } from '../../assets/scripts/core/save/save-data';
 import { MemorySaveStorage, SaveRepository } from '../../assets/scripts/core/save/storage';
+import { isEvolutionId } from '../../assets/scripts/core/skills/evolutions';
+import { simulateBossRun } from '../../assets/scripts/core/sim/boss-run';
 import {
   SIM_DEFAULT_MAX_DURATION_MS,
   simulateRun,
+  smartActiveSkillPolicy,
+  smartDashPolicy,
   type InputPolicy,
 } from '../../assets/scripts/core/sim/run-simulation';
 import { xpDoorClearBonus, xpForKill, xpForNextLevel } from '../../assets/scripts/core/xp/xp-curve';
@@ -737,5 +745,382 @@ describe('simulateRun — M12 unified XP level-up economy (ADR-021)', () => {
     }, 0);
     expect(result.goldEarned).toBe(earnedFromEvents);
     expect(DOORS_TUNING.xpRoomXpMultiplier).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', () => {
+  it('Dash honors cooldown scaling (phantom-dash), fires Dash Nova burst, and grants i-frames', () => {
+    const novaRoom: LevelData = parseLevelData({
+      id: 'm13-dash-nova-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 9 },
+      waves: [
+        {
+          enemies: [
+            // 2 HP splitling inside Dash Nova radius (2.2 tiles) dies immediately on dash start.
+            { role: 'splitling', at: { x: 17.5, y: 9 }, elite: false },
+            // Distant tank keeps the room alive long enough to observe multiple dash cooldowns.
+            { role: 'tank', at: { x: 28, y: 9 }, elite: true },
+          ],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+
+    const spamDash = () => ({ x: -1, y: 0 });
+    const baseDash = simulateRun({
+      seed: 3,
+      level: { chapter: 1, rooms: [novaRoom] },
+      policy: standStill,
+      chooseDash: spamDash,
+      godMode: true,
+      maxDurationMs: 6000,
+    });
+    const fastDash = simulateRun({
+      seed: 3,
+      level: { chapter: 1, rooms: [novaRoom] },
+      policy: standStill,
+      chooseDash: spamDash,
+      skills: new Map([
+        ['phantom-dash', 3],
+        ['dash-nova', 1],
+      ]),
+      godMode: true,
+      maxDurationMs: 6000,
+    });
+
+    expect(baseDash.dashesUsed).toBeGreaterThanOrEqual(2);
+    expect(fastDash.dashesUsed).toBeGreaterThan(baseDash.dashesUsed);
+
+    const baseDashTimes = baseDash.events.flatMap((event) =>
+      event.kind === 'dash' ? [event.nowMs] : [],
+    );
+    expect(baseDashTimes.length).toBeGreaterThanOrEqual(2);
+    const firstGap = (baseDashTimes[1] ?? 0) - (baseDashTimes[0] ?? 0);
+    expect(firstGap).toBeGreaterThanOrEqual(DASH_TUNING.cooldownMs);
+
+    // Dash Nova kills the nearby splitling on the exact opening dash frame (16 ms).
+    const firstSplitlingKill = fastDash.events.find(
+      (event) => event.kind === 'kill' && event.role === 'splitling',
+    );
+    expect(firstSplitlingKill?.nowMs).toBeLessThanOrEqual(64);
+  });
+
+  it('Signature Active (Shadow Barrage) casts volley, scales with Arcane Surge, and accelerates via hits/kills', () => {
+    const activeRoom: LevelData = parseLevelData({
+      id: 'm13-active-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 9 },
+      waves: [
+        {
+          enemies: [
+            { role: 'tank', at: { x: 22, y: 8 }, elite: true },
+            { role: 'tank', at: { x: 22, y: 10 }, elite: true },
+            { role: 'tank', at: { x: 23, y: 9 }, elite: true },
+            { role: 'tank', at: { x: 24, y: 9 }, elite: true },
+          ],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+
+    const baseActive = simulateRun({
+      seed: 5,
+      level: { chapter: 1, rooms: [activeRoom] },
+      policy: standStill,
+      chooseActive: smartActiveSkillPolicy,
+      godMode: true,
+      maxDurationMs: 30_000,
+    });
+    const surgedActive = simulateRun({
+      seed: 5,
+      level: { chapter: 1, rooms: [activeRoom] },
+      policy: standStill,
+      chooseActive: smartActiveSkillPolicy,
+      skills: new Map([
+        ['arcane-surge', 2],
+        ['shadow-conduit', 2],
+      ]),
+      godMode: true,
+      maxDurationMs: 30_000,
+    });
+
+    expect(baseActive.status).toBe('won');
+    expect(baseActive.activeSkillsUsed).toBeGreaterThanOrEqual(2);
+    const activeEvents = baseActive.events.flatMap((event) =>
+      event.kind === 'active-skill' ? [event] : [],
+    );
+    expect(activeEvents[0]?.skillId).toBe('shadow-barrage');
+    expect(activeEvents[0]?.projectiles).toBe(ACTIVE_SKILL_TUNING.barrageProjectiles);
+    // Hit + kill CDR brings the second cast well below the 10 s base cooldown.
+    const castGapMs = (activeEvents[1]?.nowMs ?? 0) - (activeEvents[0]?.nowMs ?? 0);
+    expect(castGapMs).toBeLessThan(ACTIVE_SKILL_TUNING.cooldownMs);
+
+    const surgedCast = surgedActive.events.find((event) => event.kind === 'active-skill');
+    expect(
+      surgedCast?.kind === 'active-skill' ? surgedCast.projectiles : 0,
+    ).toBeGreaterThan(ACTIVE_SKILL_TUNING.barrageProjectiles);
+    expect(surgedActive.durationMs).toBeLessThan(baseActive.durationMs);
+  });
+
+  it('Burn DoT (ignite), Chain Lightning (chain-lightning), Status Amp (corrosive), and Iron Skin ward work in combat', () => {
+    const clusterRoom: LevelData = parseLevelData({
+      id: 'm13-elemental-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 10, y: 9 },
+      waves: [
+        {
+          enemies: [
+            { role: 'tank', at: { x: 15, y: 9 }, elite: true },
+            { role: 'tank', at: { x: 16.5, y: 8 }, elite: true },
+            { role: 'tank', at: { x: 16.5, y: 10 }, elite: true },
+          ],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+
+    const plain = simulateRun({
+      seed: 9,
+      level: { chapter: 1, rooms: [clusterRoom] },
+      policy: standStill,
+      godMode: true,
+    });
+    const burn = simulateRun({
+      seed: 9,
+      level: { chapter: 1, rooms: [clusterRoom] },
+      policy: standStill,
+      skills: new Map([['ignite', 2]]),
+      godMode: true,
+    });
+    const burnCorrosive = simulateRun({
+      seed: 9,
+      level: { chapter: 1, rooms: [clusterRoom] },
+      policy: standStill,
+      skills: new Map([
+        ['ignite', 2],
+        ['corrosive', 2],
+      ]),
+      godMode: true,
+    });
+    const shock = simulateRun({
+      seed: 9,
+      level: { chapter: 1, rooms: [clusterRoom] },
+      policy: standStill,
+      skills: new Map([['chain-lightning', 2]]),
+      godMode: true,
+    });
+
+    expect(burn.durationMs).toBeLessThan(plain.durationMs);
+    expect(burnCorrosive.durationMs).toBeLessThan(burn.durationMs);
+    expect(shock.durationMs).toBeLessThan(plain.durationMs);
+
+    const warded = simulateRun({
+      seed: 1,
+      level: meleeChapter,
+      policy: standStill,
+      skills: new Map([
+        ['iron-skin', 3],
+        ['vitality', 5],
+      ]),
+    });
+    expect(warded.events.some((event) => event.kind === 'ward-block')).toBe(true);
+  });
+
+  it('acquires Legendary Evolutions and exercises Dash + Active during a full Chapter 1 run', () => {
+    const result = simulateRun({
+      seed: 1,
+      level: chapterOne,
+      policy: makeDodgePolicy(),
+      chooseDash: smartDashPolicy,
+      chooseActive: smartActiveSkillPolicy,
+      chooseSkill: typicalSkillChoice,
+      shouldReroll: typicalRerollPolicy,
+      chooseDoor: typicalDoorChoice,
+      maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
+    });
+
+    expect(result.status).toBe('won');
+    expect(result.roomsCleared).toBe(ROOMS_PER_CHAPTER);
+    expect(result.dashesUsed).toBeGreaterThan(0);
+    expect(result.activeSkillsUsed).toBeGreaterThan(0);
+    expect(result.evolutions.length).toBeGreaterThan(0);
+    for (const evoId of result.evolutions) {
+      expect(isEvolutionId(evoId)).toBe(true);
+      expect(result.acquiredSkills.get(evoId)).toBe(1);
+    }
+  });
+
+  it('Bomber fuse blasts threaten standing players (evadable via Dash) and Buffer hastes allies', () => {
+    const bomberRoom: LevelData = parseLevelData({
+      id: 'm13-bomber-room',
+      chapter: 2,
+      room: 2,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 9 },
+      waves: [
+        {
+          enemies: [{ role: 'bomber', at: { x: 17.5, y: 9 }, elite: true }],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+
+    const bomberStanding = simulateRun({
+      seed: 1,
+      level: { chapter: 2, rooms: [bomberRoom] },
+      policy: standStill,
+      maxDurationMs: 5000,
+    });
+    const bomberHits = bomberStanding.events.filter((event) => event.kind === 'player-hit');
+    expect(bomberHits.length).toBeGreaterThanOrEqual(1);
+
+    const bomberDashed = simulateRun({
+      seed: 1,
+      level: { chapter: 2, rooms: [bomberRoom] },
+      policy: standStill,
+      chooseDash: smartDashPolicy,
+      maxDurationMs: 5000,
+    });
+    expect(bomberDashed.dashesUsed).toBeGreaterThanOrEqual(1);
+    expect(bomberDashed.events.filter((event) => event.kind === 'player-hit').length).toBeLessThan(
+      bomberHits.length,
+    );
+
+    // Buffer haste aura genuinely accelerates a nearby melee ally to reach contact sooner.
+    const makeBufferTestRoom = (includeBuffer: boolean): LevelData =>
+      parseLevelData({
+        id: includeBuffer ? 'm13-buffer-on' : 'm13-buffer-off',
+        chapter: 2,
+        room: 2,
+        isBossRoom: false,
+        size: { cols: 32, rows: 18 },
+        tileSizePx: 16,
+        playerStart: { x: 26, y: 9 },
+        waves: [
+          {
+            enemies: [
+              // Closer than the buffer on frame 1 so auto-aim stays locked on the 16 HP elite
+              // splitter while the elite buffer stands inside [4.5, 6.8] and fires its haste aura.
+              { role: 'splitter', at: { x: 19.4, y: 9 }, elite: true },
+              ...(includeBuffer
+                ? [{ role: 'buffer' as const, at: { x: 19.4, y: 10.4 }, elite: true }]
+                : []),
+            ],
+          },
+        ],
+        obstacles: [],
+        doors: [],
+      });
+
+    const withoutBuffer = simulateRun({
+      seed: 4,
+      level: { chapter: 2, rooms: [makeBufferTestRoom(false)] },
+      policy: standStill,
+      maxDurationMs: 12_000,
+    });
+    const withBuffer = simulateRun({
+      seed: 4,
+      level: { chapter: 2, rooms: [makeBufferTestRoom(true)] },
+      policy: standStill,
+      maxDurationMs: 12_000,
+    });
+    const firstContactWithout = withoutBuffer.events.find(
+      (event) => event.kind === 'player-hit' && event.source === 'contact',
+    );
+    const firstContactWith = withBuffer.events.find(
+      (event) => event.kind === 'player-hit' && event.source === 'contact',
+    );
+    expect(firstContactWithout).toBeDefined();
+    expect(firstContactWith).toBeDefined();
+    expect(firstContactWith!.nowMs).toBeLessThan(firstContactWithout!.nowMs);
+  });
+
+  it('Boss Phase 2/3 wide sweeps fire >= 9 bullets and exercise Dash + Shadow Barrage in boss arenas', () => {
+    const bossResult = simulateBossRun({
+      bossId: 'redtengu',
+      seed: 2,
+      skills: new Map([
+        ['sharpen', 2],
+        ['rapid-fire', 1],
+        ['twin-shot', 1],
+      ]),
+      chooseDash: (world) =>
+        smartDashPolicy({
+          nowMs: world.nowMs,
+          room: 17,
+          wave: 0,
+          player: world.player,
+          hearts: world.hearts,
+          shieldCharges: 0,
+          enemies: [
+            {
+              id: 'boss',
+              role: 'chaser',
+              elite: false,
+              position: world.boss,
+              health: world.bossHealth,
+              maxHealth: 1,
+              action: { kind: 'idle' },
+              actionStartedMs: world.nowMs,
+            },
+          ],
+          bullets: world.bullets,
+          moveDir: world.moveDir,
+          dashState: world.dashState,
+          pendingBlasts: [],
+        }),
+      chooseActive: (world) =>
+        smartActiveSkillPolicy({
+          nowMs: world.nowMs,
+          room: 17,
+          wave: 0,
+          player: world.player,
+          hearts: world.hearts,
+          shieldCharges: 0,
+          enemies: [
+            {
+              id: 'boss',
+              role: 'chaser',
+              elite: false,
+              position: world.boss,
+              health: world.bossHealth,
+              maxHealth: 1,
+              action: { kind: 'idle' },
+              actionStartedMs: world.nowMs,
+            },
+          ],
+          bullets: world.bullets,
+          activeState: world.activeState,
+        }),
+      godMode: true,
+    });
+
+    expect(bossResult.outcome).toBe('won');
+    expect(bossResult.phaseChanges).toEqual([2, 3]);
+    expect(bossResult.dashesUsed).toBeGreaterThan(0);
+    expect(bossResult.activeSkillsUsed).toBeGreaterThan(0);
+    // Red Tengu Phase 2/3 includes dense wide sweep / ring volleys (>= 9 projectiles in one volley).
+    expect(
+      bossResult.events.some((event) => event.kind === 'boss-shoot' && event.bullets >= 9),
+    ).toBe(true);
   });
 });
