@@ -42,6 +42,7 @@ import type {
 import { WALK_OVER_KEYS, propCollider, propDef, type PropDef } from '../../assets/scripts/core/level/props';
 import { parseTmxLevel } from '../../assets/scripts/core/level/tmx';
 import type { WaterArea } from '../../assets/scripts/core/level/water-layout';
+import { planChapterTwoRiver, type Ch2RiverLayer, type Ch2RiverPlan } from './ch2-river';
 import {
   CH3_BORDER_MASSES,
   CH3_BORDER_TREES,
@@ -66,7 +67,7 @@ export const NORMAL_ROOMS = 16;
  */
 const CHAPTER_SEED_SALT: Readonly<Record<number, number>> = {
   1: 27,
-  2: 27,
+  2: 41,
   3: 5,
   4: 27,
 };
@@ -617,6 +618,8 @@ export interface RoomPlan {
   readonly floor: readonly number[];
   readonly ground: readonly number[];
   readonly path: readonly number[];
+  /** Optional chapter-2 river & bridge tile layers drawn after `path` and before `decor`. */
+  readonly riverLayers?: readonly Ch2RiverLayer[];
   readonly decor: readonly number[];
   /** Dense border ring (foliage / cliffs), one grid per art layer, back to front. */
   readonly borders: readonly BorderArtLayer[];
@@ -716,22 +719,6 @@ function waterGap(water: readonly WaterArea[], point: Vec2): number {
 
 function overlapsWater(water: readonly WaterArea[], rect: Rect): boolean {
   return water.some((area) => overlap(rect, { x: area.x, y: area.y, width: area.width, height: area.height }));
-}
-
-/**
- * Chapter 2's river: a shallow 2-tile band across the room, above the player's start rows so the
- * entrance is on dry land, plus a waterfall running down to it in some rooms.
- */
-function planRiver(rng: Rng): WaterArea[] {
-  const width = 24 + int(rng, 12);
-  const x = 2 + int(rng, COLS - width - 4);
-  const y = 8 + int(rng, 8);
-  const water: WaterArea[] = [{ kind: 'river', x, y, width, height: 2 }];
-  if (rng() < 0.6) {
-    const fallX = x + 2 + int(rng, Math.max(1, width - 6));
-    water.push({ kind: 'waterfall', x: fallX, y: 0, width: 2, height: y });
-  }
-  return water;
 }
 
 /** A player start inside the bottom-left screen; room 1 sits clear of the menu panel. */
@@ -879,7 +866,12 @@ interface PatchPlan {
  * within 1 tile of `pathCells` are dropped before `normalizePatchMask`, so `path` (layer 3) and
  * `ground` (layer 2) never overlap and never stamp conflicting baked-floor fringes.
  */
-function planPatches(rng: Rng, water: readonly WaterArea[], pathCells: ReadonlySet<string>): PatchPlan {
+function planPatches(
+  rng: Rng,
+  water: readonly WaterArea[],
+  pathCells: ReadonlySet<string>,
+  riverReserved?: ReadonlySet<string>,
+): PatchPlan {
   const nearPath = new Array<boolean>(COLS * ROWS).fill(false);
   for (const key of pathCells) {
     const parts = key.split(',');
@@ -901,6 +893,7 @@ function planPatches(rng: Rng, water: readonly WaterArea[], pathCells: ReadonlyS
       if (nearPath[index] === true) continue;
       const x = index % COLS;
       const y = Math.floor(index / COLS);
+      if (riverReserved !== undefined && riverReserved.has(`${x},${y}`)) continue;
       const point = { x: x + 0.5, y: y + 0.5 };
       if (water.length > 0 && waterGap(water, point) < 0.5) continue;
       candidates.push(index);
@@ -996,6 +989,7 @@ function planPath(
   playerStart: Vec2,
   water: readonly WaterArea[],
   villageRoom: boolean,
+  ch2River: Ch2RiverPlan | null = null,
 ): PathPlan {
   const bottom = doors.find((door) => door.y > ROWS / 2);
   const top = doors.find((door) => door.y <= ROWS / 2);
@@ -1011,27 +1005,65 @@ function planPath(
     if (x < 1 || y < 0 || x >= COLS - 1 || y >= ROWS) return;
     raw[y * COLS + x] = true;
   };
+  const stamp2x2 = (x: number, y: number): void => {
+    add(x, y);
+    add(x + 1, y);
+    add(x, y + 1);
+    add(x + 1, y + 1);
+  };
   // The trail lives inside the room: rows 2..ROWS-3 keep it out of the solid border band while
   // its ends stay within 3 tiles of each door.
   const first = 2;
   const last = ROWS - 3;
-  let previous = endX;
-  for (let y = first; y < last; y += 1) {
-    const t = (y - first) / (last - first); // 0 at the exit, 1 at the bottom door
-    const base = endX + (startX - endX) * t;
-    // The wander fades to nothing at both doors, so the trail's ends sit on the door tiles.
-    const envelope = Math.sin((Math.PI * (y - first)) / (last - first));
-    const wobble = (Math.sin(t * Math.PI * 2.2 + phase) * amplitude + (rng() - 0.5) * 1.5) * envelope;
-    const wanted = Math.round(Math.max(3, Math.min(COLS - 6, base + wobble)));
-    // Two tiles of drift per row at most (still cell-to-cell connected for the door check), and
-    // every row stamps a full 2×2 block: the trail is two tiles wide *and* holds the 2×2 blocks
-    // the 13-piece autotile needs.
-    const centre = Math.max(previous - 2, Math.min(previous + 2, wanted));
-    previous = centre;
-    add(centre, y);
-    add(centre + 1, y);
-    add(centre, y + 1);
-    add(centre + 1, y + 1);
+
+  if (ch2River !== null) {
+    // Chapter 2 (ADR-020): route the dirt road cleanly across the primary wooden bridge so no
+    // path cell ever falls onto an impassable water `pit`.
+    const bridge = ch2River.primaryBridge;
+    const bridgeX = bridge.x + Math.floor((bridge.width - 2) / 2);
+    const northRoadY = Math.max(first, Math.min(2, bridge.y - 2));
+
+    // North bank: straight down from top door to `northRoadY`, horizontally to the bridge, then onto it.
+    for (let y = first; y <= northRoadY; y += 1) stamp2x2(endX, y);
+    const northLo = Math.min(endX, bridgeX);
+    const northHi = Math.max(endX, bridgeX);
+    for (let x = northLo; x <= northHi; x += 1) stamp2x2(x, northRoadY);
+    for (let y = northRoadY; y < bridge.y + bridge.height; y += 1) stamp2x2(bridgeX, y);
+
+    // South bank: organic sine wander from the bridge exit down to the bottom door.
+    const southStart = bridge.y + bridge.height;
+    let previous = bridgeX;
+    for (let y = southStart; y < last; y += 1) {
+      const denom = Math.max(1, last - southStart);
+      const t = (y - southStart) / denom;
+      const base = bridgeX + (startX - bridgeX) * t;
+      const envelope = Math.sin(Math.PI * t);
+      const wobble = (Math.sin(t * Math.PI * 2.0 + phase) * amplitude + (rng() - 0.5) * 1.5) * envelope;
+      const wanted = Math.round(Math.max(3, Math.min(COLS - 6, base + wobble)));
+      const centre = Math.max(previous - 2, Math.min(previous + 2, wanted));
+      previous = centre;
+      stamp2x2(centre, y);
+    }
+    // Guarantee the bottom end meets `startX` even if the bridge was horizontally far from the door.
+    const southLo = Math.min(previous, startX);
+    const southHi = Math.max(previous, startX);
+    for (let x = southLo; x <= southHi; x += 1) stamp2x2(x, last - 1);
+  } else {
+    let previous = endX;
+    for (let y = first; y < last; y += 1) {
+      const t = (y - first) / (last - first); // 0 at the exit, 1 at the bottom door
+      const base = endX + (startX - endX) * t;
+      // The wander fades to nothing at both doors, so the trail's ends sit on the door tiles.
+      const envelope = Math.sin((Math.PI * (y - first)) / (last - first));
+      const wobble = (Math.sin(t * Math.PI * 2.2 + phase) * amplitude + (rng() - 0.5) * 1.5) * envelope;
+      const wanted = Math.round(Math.max(3, Math.min(COLS - 6, base + wobble)));
+      // Two tiles of drift per row at most (still cell-to-cell connected for the door check), and
+      // every row stamps a full 2×2 block: the trail is two tiles wide *and* holds the 2×2 blocks
+      // the 13-piece autotile needs.
+      const centre = Math.max(previous - 2, Math.min(previous + 2, wanted));
+      previous = centre;
+      stamp2x2(centre, y);
+    }
   }
 
   // A village street: a straight horizontal run joined to the trail, with clear ground for the
@@ -1039,7 +1071,7 @@ function planPath(
   // really passes the doors instead of happening to end up near them.
   // `planStreet` always runs (it owns a fixed slice of the room seed); only a village room grows
   // the street, so a grove room keeps one clean trail with no dead-end arm.
-  const planned = planStreet(rng, raw, doors, playerStart, water);
+  const planned = planStreet(rng, raw, doors, playerStart, water, ch2River?.reservedCells);
   const street = villageRoom ? planned : null;
   if (street !== null) {
     for (let y = street.y; y <= street.y + 1; y += 1) {
@@ -1082,6 +1114,7 @@ function planStreet(
   doors: readonly Vec2[],
   playerStart: Vec2,
   water: readonly WaterArea[],
+  riverReserved?: ReadonlySet<string>,
 ): StreetPlan | null {
   const free = (x: number, y: number): boolean =>
     x >= 0 && y >= 0 && x < COLS && y < ROWS && trail[y * COLS + x] === true;
@@ -1122,6 +1155,7 @@ function planStreet(
     }
     if (blockedYard) continue;
     if (water.length > 0 && overlapsWater(water, footprint)) continue;
+    if (riverReserved !== undefined && coversBlocked(riverReserved, footprint)) continue;
     if (gapToPoint(footprint, playerStart) < SET_PIECE_CLEARANCE) continue;
     if (doors.some((door) => gapToPoint(footprint, door) < 3)) continue;
     return { x, y, width: STREET_WIDTH };
@@ -1173,10 +1207,10 @@ const AUTHORED_SHAPES: Readonly<Record<number, readonly { kind: Exclude<Obstacle
     { kind: 'wall', width: 3, height: 1 },
     { kind: 'wall', width: 1, height: 3 },
   ],
+  // Chapter 2 (M11 ADR-020): `pit` obstacles belong exclusively to impassable river & waterfall tiles.
   2: [
     { kind: 'pillar', width: 2, height: 2 },
     { kind: 'pillar', width: 1, height: 1 },
-    { kind: 'pit', width: 2, height: 2 },
     { kind: 'wall', width: 3, height: 1 },
     { kind: 'wall', width: 1, height: 3 },
   ],
@@ -1235,6 +1269,8 @@ interface GeometryArgs {
   readonly street: StreetPlan | null;
   /** The border's solid rects: interior blobs keep `MIN_OBSTACLE_GAP` clear of them. */
   readonly borderRects: readonly Rect[];
+  /** Chapter 2 river `pit` rects: interior solids keep >= 2 tiles clear so tanks never wedge. */
+  readonly riverPits?: readonly Rect[];
 }
 
 interface GeometryResult {
@@ -1265,7 +1301,7 @@ function spriteRect(def: PropDef, x: number, y: number): Rect {
  * and the border, and `validatePlan` proves the room still plays.
  */
 function planGeometry(args: GeometryArgs): GeometryResult {
-  const { chapter, room, rng, playerStart, doors, water, blocked, street, borderRects } = args;
+  const { chapter, room, rng, playerStart, doors, water, blocked, street, borderRects, riverPits = [] } = args;
   const theme = PROP_THEMES[chapter];
   if (theme === undefined) throw new Error(`chapter ${chapter} has no prop theme`);
 
@@ -1292,6 +1328,7 @@ function planGeometry(args: GeometryArgs): GeometryResult {
     if (water.length > 0 && overlapsWater(water, blockedCheck)) return false;
     if (coversBlocked(blocked, blockedCheck)) return false;
     if (borderRects.some((other) => gapBetween(collider, other) < 1)) return false;
+    if (riverPits.some((other) => gapBetween(collider, other) < 2)) return false;
     return book.rects.every((other) => gapBetween(collider, other) >= minGap);
   };
 
@@ -1352,6 +1389,10 @@ function planGeometry(args: GeometryArgs): GeometryResult {
           break;
         }
         if (water.length > 0 && overlapsWater(water, sprite)) {
+          ok = false;
+          break;
+        }
+        if (riverPits.some((other) => gapBetween(collider, other) < 2)) {
           ok = false;
           break;
         }
@@ -1776,6 +1817,7 @@ function planSpawns(
   doors: readonly Vec2[],
   colliders: readonly Rect[],
   water: readonly WaterArea[],
+  losColliders: readonly Rect[] = colliders,
 ): PlannedSpawn[] {
   const template = SPAWN_TEMPLATES[chapter];
   if (template === undefined) throw new Error(`chapter ${chapter} has no spawn template`);
@@ -1824,8 +1866,8 @@ function planSpawns(
       const toStart = Math.hypot(point.x - playerStart.x, point.y - playerStart.y);
       if (toStart < near || toStart > far) continue;
       if (!free(point, 1.2)) continue;
-      // A caster opens fire from its band, so it must see the player from where it stands.
-      if (role === 'caster' && !lineClear(point, playerStart, colliders)) continue;
+      // A caster opens fire from its band, so it must see the player from where it stands (pits do not block shots).
+      if (role === 'caster' && !lineClear(point, playerStart, losColliders)) continue;
       if (doors.some((door) => Math.hypot(point.x - door.x, point.y - door.y) < 2)) continue;
       if (placed.some((other) => Math.hypot(point.x - other.x, point.y - other.y) < 2)) continue;
       return { x: Math.round(point.x * 2) / 2, y: Math.round(point.y * 2) / 2 };
@@ -1993,11 +2035,21 @@ function planDetails(
   solidReserved: ReadonlySet<string>,
   pathCells: ReadonlySet<string>,
   stamps: readonly DecorStamp[],
+  extraDecor: readonly { readonly index: number; readonly gid: number }[] = [],
 ): number[] {
   const data = new Array<number>(COLS * ROWS).fill(0);
   const used = new Set<string>();
   const tiles = DETAIL_TILES[chapter] ?? DETAIL_TILES[1] ?? [33];
   const pathTiles = PATH_STONE_TILES[chapter] ?? [10];
+
+  for (const cell of extraDecor) {
+    const x = cell.index % COLS;
+    const y = Math.floor(cell.index / COLS);
+    const key = cellKey(x, y);
+    if (pathCells.has(key) || used.has(key) || inBorderBand(x, y)) continue;
+    data[cell.index] = cell.gid;
+    used.add(key);
+  }
 
   const stampFree = (x: number, y: number): boolean => {
     if (x < BORDER_TILES || y < BORDER_TILES || x >= COLS - BORDER_TILES || y >= ROWS - BORDER_TILES) return false;
@@ -2162,7 +2214,10 @@ export function roomTmx(plan: RoomPlan): string {
     property('isBossRoom', 'false', 'bool'),
   ].join('\n');
 
-  const objectLayerId = 5 + plan.borders.length;
+  const riverLayers = plan.riverLayers ?? [];
+  const decorLayerId = 4 + riverLayers.length;
+  const firstBorderLayerId = decorLayerId + 1;
+  const objectLayerId = firstBorderLayerId + plan.borders.length;
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" ` +
@@ -2175,8 +2230,9 @@ export function roomTmx(plan: RoomPlan): string {
     layerXml(1, 'floor', plan.floor),
     layerXml(2, 'ground', plan.ground),
     layerXml(3, 'path', plan.path),
-    layerXml(4, 'decor', plan.decor),
-    ...plan.borders.map((border, index) => layerXml(5 + index, border.name, border.tiles)),
+    ...riverLayers.map((layer, index) => layerXml(4 + index, layer.name, layer.tiles)),
+    layerXml(decorLayerId, 'decor', plan.decor),
+    ...plan.borders.map((border, index) => layerXml(firstBorderLayerId + index, border.name, border.tiles)),
     ` <objectgroup id="${objectLayerId}" name="objects">`,
     ...objects,
     ' </objectgroup>',
@@ -2208,13 +2264,33 @@ export function generateRoom(chapter: number, room: number, saltOverride?: numbe
         { x: playerStart.x, y: ROWS - 0.5 },
         { x: 4 + int(rng, COLS - 8) + 0.5, y: 0.5 },
       ];
-      const water = chapter === 2 ? planRiver(rng) : [];
+      const ch2River =
+        chapter === 2
+          ? planChapterTwoRiver({
+              rng,
+              cols: COLS,
+              rows: ROWS,
+              borderTiles: BORDER_TILES,
+              playerStart,
+              doors,
+              gid: (set, local) => gid(chapter, set, local),
+            })
+          : null;
+      const water = ch2River !== null ? ch2River.waterAreas : [];
+      const riverPitObstacles: AuthoredObstacle[] =
+        ch2River === null
+          ? []
+          : ch2River.pitObstacles.map((rect) => ({ kind: 'pit', ...rect }));
 
       const border = planBorder(chapter, rng, doors);
-      const path = planPath(chapter, rng, doors, playerStart, water, room % 2 === 0);
-      const patches = planPatches(rng, water, path.cells);
+      const path = planPath(chapter, rng, doors, playerStart, water, room % 2 === 0, ch2River);
+      const patches = planPatches(rng, water, path.cells, ch2River?.reservedCells);
 
-      const blocked = new Set<string>([...border.blocked, ...path.blocked]);
+      const blocked = new Set<string>([
+        ...border.blocked,
+        ...path.blocked,
+        ...(ch2River?.reservedCells ?? []),
+      ]);
       const { obstacles, props, village, ruins, oasis, plateauSurface, plateauFace, decorStamps } = planGeometry({
         chapter,
         room,
@@ -2225,18 +2301,26 @@ export function generateRoom(chapter: number, room: number, saltOverride?: numbe
         blocked,
         street: path.street,
         borderRects: border.rects,
+        ...(ch2River !== null ? { riverPits: ch2River.pitObstacles } : {}),
       });
 
+      const propColliders: Rect[] = props.flatMap((prop) => {
+        const def = propDef(chapter, prop.key);
+        const collider = def === undefined ? null : propCollider(prop, def);
+        return collider === null ? [] : [collider];
+      });
       const colliders: Rect[] = [
         ...border.rects,
+        ...riverPitObstacles,
         ...obstacles,
-        ...props.flatMap((prop) => {
-          const def = propDef(chapter, prop.key);
-          const collider = def === undefined ? null : propCollider(prop, def);
-          return collider === null ? [] : [collider];
-        }),
+        ...propColliders,
       ];
-      const spawns = planSpawns(chapter, room, rng, playerStart, doors, colliders, water);
+      const losColliders: Rect[] = [
+        ...border.rects,
+        ...obstacles.filter((obstacle) => obstacle.kind !== 'pit'),
+        ...propColliders,
+      ];
+      const spawns = planSpawns(chapter, room, rng, playerStart, doors, colliders, water, losColliders);
 
       // The front border layer also carries the desert plateau's cliff face.
       const borders = border.layers.map((layer, index) => {
@@ -2256,30 +2340,43 @@ export function generateRoom(chapter: number, room: number, saltOverride?: numbe
         room,
         playerStart,
         doors,
-        obstacles: [...border.obstacles, ...obstacles],
+        obstacles: [...border.obstacles, ...riverPitObstacles, ...obstacles],
         props,
         water,
         floor: floorTiles,
         ground: paintGround(chapter, new Set([...patches.cells, ...plateauSurface])),
         path: path.tiles,
+        ...(ch2River !== null ? { riverLayers: ch2River.layers } : {}),
         borders,
         decor: [],
         spawns,
       };
 
+      const decorReserved = solidReservedCells(partial);
+      if (ch2River !== null) {
+        for (const cell of ch2River.waterCells) decorReserved.add(cell);
+        for (const bridge of ch2River.bridges) {
+          for (let y = bridge.y; y < bridge.y + bridge.height; y += 1) {
+            for (let x = bridge.x; x < bridge.x + bridge.width; x += 1) {
+              decorReserved.add(cellKey(x, y));
+            }
+          }
+        }
+      }
       const decor =
         chapter === 2
           ? planDetails(
               chapter,
               mulberry32((chapter * 31 + room * 17 + attempt) >>> 0),
-              solidReservedCells(partial),
+              decorReserved,
               path.cells,
               decorStamps,
+              ch2River?.bankDecor ?? [],
             )
           : planClusteredDetails(
               chapter,
               mulberry32((chapter * 31 + room * 17 + attempt) >>> 0),
-              solidReservedCells(partial),
+              decorReserved,
               path.cells,
               decorStamps,
               TUNING.roomArt.detailDensity,

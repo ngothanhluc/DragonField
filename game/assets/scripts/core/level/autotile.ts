@@ -147,7 +147,8 @@ export function floorBlockTiles(blockCol: number, blockRow: number): readonly nu
  * The patch terrain of each chapter, chosen so its baked fringe matches that chapter's base floor
  * (R8 of the #67 review: a block drawn over the wrong floor shows its baked background as a hard
  * square box around every patch and path edge):
- * - ch1/ch2: brown dirt `9c6546` on the dark forest grass `74a334` (`tilefloor` 276),
+ * - ch1: brown dirt `9c6546` on the dark forest grass `74a334` (`tilefloor` 276),
+ * - ch2: lush river-valley meadow `adbc3a` (`tilefloor` 265) matching `TilesetWater` grass banks,
  * - ch3: worn brown dirt `bd7959` on the mossy olive grass `adbc3a` (`tilefloor` 265), matching
  *   the Ninja Adventure abandoned village demo,
  * - ch4: pale sand `ffcb8d` on the warm desert sand `ffad5d` (`tilefloor` 111).
@@ -157,7 +158,7 @@ export function floorBlockTiles(blockCol: number, blockRow: number): readonly nu
  */
 export const GROUND_TERRAINS: Readonly<Record<number, GroundTerrain>> = {
   1: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 7), plain: 276 },
-  2: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(11, 7), plain: 276 },
+  2: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(0, 7), plain: 265 },
   3: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(0, 7), plain: 265 },
   4: { tileset: 'tilefloor.tsx', tiles: floorBlockTiles(0, 0), plain: 111 },
 };

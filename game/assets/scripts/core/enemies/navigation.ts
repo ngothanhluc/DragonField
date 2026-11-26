@@ -301,6 +301,61 @@ export function hasLineOfSight(level: LevelData, from: Vec2, to: Vec2): boolean 
 }
 
 /**
+ * Minimum pit span (tiles) that forces walkers onto the flow field immediately instead of trying
+ * to slide around it on a straight line. Small pits (2×2 holes, 3×3 ponds) are easily rounded via
+ * collision sliding, whereas a wide river/chasm barrier (`>= 4` tiles) requires routing over a
+ * bridge so walkers on the far bank never oscillate against the shoreline.
+ */
+const WIDE_PIT_SPAN_TILES = 4;
+
+/**
+ * True when the straight segment from `from` to `to` crosses no solid wall/pillar AND no wide
+ * `pit` barrier (`>= 4` tiles). Keeps small-obstacle steering unchanged while ensuring walkers
+ * across a Chapter 2 river immediately follow the flow field over a bridge.
+ */
+function hasWalkLineOfSight(level: LevelData, from: Vec2, to: Vec2): boolean {
+  if (!hasLineOfSight(level, from, to)) return false;
+
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+
+  for (const obstacle of level.obstacles) {
+    if (obstacle.kind !== 'pit') continue;
+    if (Math.max(obstacle.width, obstacle.height) < WIDE_PIT_SPAN_TILES) continue;
+
+    let enter = 0;
+    let exit = 1;
+    const minX = obstacle.x;
+    const maxX = obstacle.x + obstacle.width;
+    const minY = obstacle.y;
+    const maxY = obstacle.y + obstacle.height;
+
+    if (Math.abs(dx) < 1e-12) {
+      if (from.x < minX || from.x > maxX) continue;
+    } else {
+      const t1 = (minX - from.x) / dx;
+      const t2 = (maxX - from.x) / dx;
+      enter = Math.max(enter, Math.min(t1, t2));
+      exit = Math.min(exit, Math.max(t1, t2));
+      if (enter > exit) continue;
+    }
+
+    if (Math.abs(dy) < 1e-12) {
+      if (from.y < minY || from.y > maxY) continue;
+    } else {
+      const t1 = (minY - from.y) / dy;
+      const t2 = (maxY - from.y) / dy;
+      enter = Math.max(enter, Math.min(t1, t2));
+      exit = Math.min(exit, Math.max(t1, t2));
+      if (enter > exit) continue;
+    }
+
+    return false;
+  }
+  return true;
+}
+
+/**
  * Keeps one flow field toward the player and rebuilds it only when the player changes tile and at
  * least `minRebuildMs` has passed since the last rebuild.
  */
@@ -424,7 +479,10 @@ export function walkTowards(args: WalkStepArgs): Vec2 {
   );
 
   const progress = (straight.x - position.x) * unitX + (straight.y - position.y) * unitY;
-  if (hasLineOfSight(level, position, target) && progress >= BLOCKED_STEP_RATIO * step) {
+  if (
+    hasWalkLineOfSight(level, position, target) &&
+    progress >= BLOCKED_STEP_RATIO * step
+  ) {
     return straight;
   }
 

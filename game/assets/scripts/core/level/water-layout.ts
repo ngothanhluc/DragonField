@@ -112,3 +112,101 @@ export function waterAreasFor(
 export function areaContains(area: WaterArea, x: number, y: number): boolean {
   return x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height;
 }
+
+/** One staggered animated water ripple inside a `river` area (pure, no `cc`). */
+export interface RipplePlacement {
+  readonly tileX: number;
+  readonly tileY: number;
+  /** Sub-tile position jitter (tiles), clamped so the sprite stays strictly inside the water area. */
+  readonly offsetX: number;
+  readonly offsetY: number;
+  /** Continuous phase offset in animation frames (breaks grid lockstep). */
+  readonly phase: number;
+  /** Gentle per-tile animation speed (fps). */
+  readonly fps: number;
+}
+
+export type WaterfallPart = 'top' | 'mid' | 'bottom';
+
+/** One animated waterfall cell inside a `waterfall` area. */
+export interface WaterfallTilePlacement {
+  readonly tileX: number;
+  readonly tileY: number;
+  readonly part: WaterfallPart;
+  readonly phase: number;
+  readonly fps: number;
+}
+
+const RIPPLE_FRAMES = 4;
+const RIPPLE_FPS_MIN = 5.5;
+const RIPPLE_FPS_SPAN = 2.2;
+const RIPPLE_MAX_JITTER = 0.16;
+const WATERFALL_FPS = 10;
+
+/** Deterministic [0, 1) hash of integer cell coordinates + salt (pure, zero RNG state). */
+function cellHash(x: number, y: number, salt: number): number {
+  let h = (Math.imul(x + 37, 0x27d4eb2d) ^ Math.imul(y + 91, 0x165667b1) ^ Math.imul(salt + 13, 0x9e3779b1)) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * Plan sparse, staggered water ripples across a `river` area so neighbouring tiles never pulse
+ * in a uniform grid checkerboard. Sub-tile jitter is clamped strictly inside `area` so ripples
+ * never bleed onto shoreline banks or bridges.
+ */
+export function planRiverRipples(area: WaterArea): readonly RipplePlacement[] {
+  if (area.kind !== 'river') return [];
+  const placements: RipplePlacement[] = [];
+
+  const make = (x: number, y: number): RipplePlacement => {
+    // Only jitter along an axis when the cell has interior room on that side, so the 1×1 sprite
+    // never pokes outside `[area.x, area.x + area.width] × [area.y, area.y + area.height]`.
+    const minDx = x > area.x ? -RIPPLE_MAX_JITTER : 0;
+    const maxDx = x < area.x + area.width - 1 ? RIPPLE_MAX_JITTER : 0;
+    const minDy = y > area.y ? -RIPPLE_MAX_JITTER : 0;
+    const maxDy = y < area.y + area.height - 1 ? RIPPLE_MAX_JITTER : 0;
+    const offsetX = minDx + cellHash(x, y, 2) * (maxDx - minDx);
+    const offsetY = minDy + cellHash(x, y, 3) * (maxDy - minDy);
+    const phase = cellHash(x, y, 4) * RIPPLE_FRAMES;
+    const fps = RIPPLE_FPS_MIN + cellHash(x, y, 5) * RIPPLE_FPS_SPAN;
+    return { tileX: x, tileY: y, offsetX, offsetY, phase, fps };
+  };
+
+  for (let y = area.y; y < area.y + area.height; y += 1) {
+    for (let x = area.x; x < area.x + area.width; x += 1) {
+      // ~50% sparse organic selection, avoiding uniform checkerboard parity.
+      if (cellHash(x, y, 1) < 0.52) {
+        placements.push(make(x, y));
+      }
+    }
+  }
+
+  // Guarantee even a small river segment carries at least one animated ripple.
+  if (placements.length === 0) {
+    placements.push(make(area.x + Math.floor(area.width / 2), area.y + Math.floor(area.height / 2)));
+  }
+
+  return placements;
+}
+
+/**
+ * Plan animated waterfall tiles (`top` lip, `mid` cascade, `bottom` splash foam) with staggered
+ * column phases so twin waterfall columns cascade organically into the plunge pool.
+ */
+export function planWaterfallTiles(area: WaterArea): readonly WaterfallTilePlacement[] {
+  if (area.kind !== 'waterfall') return [];
+  const tiles: WaterfallTilePlacement[] = [];
+  for (let x = area.x; x < area.x + area.width; x += 1) {
+    for (let y = area.y; y < area.y + area.height; y += 1) {
+      const fromTop = y - area.y;
+      const atBottom = y === area.y + area.height - 1;
+      const part: WaterfallPart = atBottom ? 'bottom' : fromTop === 0 ? 'top' : 'mid';
+      const frameCount = atBottom ? 3 : 5;
+      const phase = ((x - area.x) * 1.7 + fromTop * 0.35 + cellHash(x, y, 7) * 0.8) % frameCount;
+      tiles.push({ tileX: x, tileY: y, part, phase, fps: WATERFALL_FPS });
+    }
+  }
+  return tiles;
+}

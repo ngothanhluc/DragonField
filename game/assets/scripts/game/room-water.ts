@@ -1,13 +1,14 @@
 /**
- * Chapter 2's animated water: river (ripple) + 3-part waterfall, using the pack's animated
- * sheets (`Backgrounds/Animated/Waterfall`, `Water Ripples`).
+ * Chapter 2's animated water: staggered river ripples + 3-part waterfall cascades, using the
+ * pack's animated sheets (`Backgrounds/Animated/Waterfall`, `Water Ripples`).
  *
- * Water is a decorative layer **below actors** and **above the tile map**: the node is inserted
- * at sibling index 1 of the room root (after the map, before obstacles). There is no collision —
- * the river is shallow, so player/enemies walk through it.
+ * Water sits **below actors** and **above the tile map** (`siblingIndex = 1` under the room root).
+ * In Chapter 2 normal rooms (M11 ADR-020), deep water cells carry `kind: "pit"` obstacles (blocking
+ * walkers while bullets pass over) and the TMX `water`/`bridge` layers draw the grass-bordered banks,
+ * lily pads, and wooden bridges; `WaterView` animates sparse staggered ripples strictly inside the
+ * open-water interiors and aligns waterfall splash foam cleanly on the north plunge-pool waterline.
  *
- * Animation shares one clock for the whole room: 60 water sprites need no 60 separate
- * `update` components.
+ * Animation shares one clock for the whole room: dozens of water sprites need only one `update`.
  */
 import {
   _decorator,
@@ -19,8 +20,12 @@ import {
   UITransform as CocosUITransform,
   warn,
 } from 'cc';
-import type { WaterArea } from '../core/level/water-layout';
-import { TILE_SIZE_PX } from '../core/level/level-data';
+import {
+  planRiverRipples,
+  planWaterfallTiles,
+  type WaterArea,
+} from '../core/level/water-layout';
+import { ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import { loadTexture } from './assets/texture-cache';
 import { sliceFrame } from './level-view';
 
@@ -38,8 +43,6 @@ const BOTTOM_SHEET = 'resources/art/fx/water/waterfall-bottom.png';
 const RIPPLE_SHEET = 'resources/art/fx/water/ripple.png';
 
 const FRAME_PX = 16;
-const RIPPLE_FPS = 8;
-const FALL_FPS = 10;
 
 interface AnimatedTile {
   readonly sprite: Sprite;
@@ -54,7 +57,7 @@ export class WaterView extends Component {
   private readonly tiles: AnimatedTile[] = [];
   private elapsedMs = 0;
   /** Room height (tiles): tile y (down) → world y (up) flip. */
-  private rows = 18;
+  private rows = ROOM_ROWS;
 
   init(areas: readonly WaterArea[], rows: number): void {
     this.rows = rows;
@@ -94,40 +97,47 @@ export class WaterView extends Component {
     const bottom = framesOf(bottomTex, 3);
     const ripple = framesOf(rippleTex, 4);
 
+    // Multi-screen Ch2 normal rooms already paint `#71ddee` deep water + lily pads/fish in the
+    // TMX `water` layer; only single-screen legacy rooms (boss arena room-17) need a Graphics base
+    // for river rectangles. Waterfalls always composite after rivers so splash foam sits on top.
+    const needsRiverBase = this.rows <= ROOM_ROWS;
+
     for (const area of areas) {
-      // Solid blue base: the ripple/waterfall sheets are transparent overlays, not opaque water.
-      this.addBase(area);
-
-      if (area.kind === 'river') {
-        for (let y = area.y; y < area.y + area.height; y += 1) {
-          for (let x = area.x; x < area.x + area.width; x += 1) {
-            this.addTile(x, y, ripple, RIPPLE_FPS, (x * 3 + y) % ripple.length, 1);
-          }
-        }
-        continue;
+      if (area.kind !== 'river') continue;
+      if (needsRiverBase) this.addBase(area);
+      for (const placement of planRiverRipples(area)) {
+        this.addTile(
+          placement.tileX + placement.offsetX,
+          placement.tileY + placement.offsetY,
+          ripple,
+          placement.fps,
+          placement.phase,
+          1,
+        );
       }
+    }
 
-      for (let x = area.x; x < area.x + area.width; x += 1) {
-        for (let y = area.y; y < area.y + area.height; y += 1) {
-          const fromTop = y - area.y;
-          const atBottom = y === area.y + area.height - 1;
-          const frames = atBottom ? bottom : fromTop === 0 ? top : mid;
-          this.addTile(x, y, frames, FALL_FPS, x % frames.length, 1);
-        }
+    for (const area of areas) {
+      if (area.kind !== 'waterfall') continue;
+      this.addBase(area);
+      for (const tile of planWaterfallTiles(area)) {
+        const frames = tile.part === 'bottom' ? bottom : tile.part === 'top' ? top : mid;
+        this.addTile(tile.tileX, tile.tileY, frames, tile.fps, tile.phase, 1);
       }
     }
   }
 
   /**
-   * Flat water base under the ripple/waterfall sprites (Graphics, no texture needed).
+   * Flat water base under waterfall sprites and legacy single-screen river areas. Uses `#71ddee`
+   * (`113, 221, 238`) to match `TilesetWater` deep water and `ripple.png` pixel-for-pixel.
    * Chunked into ≤4-tile segments so `world-culler` (`CULL_MARGIN_TILES = 2`) never hides a
    * wide river's base while one end of the river is still on screen.
    */
   private addBase(area: WaterArea): void {
     const color =
       area.kind === 'river'
-        ? new CocosColor(58, 156, 202, 255)
-        : new CocosColor(92, 190, 224, 255);
+        ? new CocosColor(113, 221, 238, 255)
+        : new CocosColor(114, 196, 230, 255);
     const step = 4;
     for (let dx = 0; dx < area.width; dx += step) {
       const width = Math.min(step, area.width - dx);
@@ -155,13 +165,14 @@ export class WaterView extends Component {
     opacity: number,
   ): void {
     if (frames.length === 0) return;
-    const node = new CocosNode(`water-${tileX}-${tileY}`);
+    const initialIndex = Math.floor(offset) % frames.length;
+    const node = new CocosNode(`water-${Math.round(tileX * 10)}-${Math.round(tileY * 10)}`);
     node.parent = this.node;
 
     const sprite: Sprite = node.addComponent(CocosSprite);
     sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     sprite.trim = false;
-    sprite.spriteFrame = frames[0]!;
+    sprite.spriteFrame = frames[initialIndex]!;
     sprite.color = new CocosColor(255, 255, 255, Math.round(255 * opacity));
 
     const transform: UITransform | null = node.getComponent(CocosUITransform);
@@ -169,7 +180,7 @@ export class WaterView extends Component {
 
     node.setScale(1 / TILE_SIZE_PX, 1 / TILE_SIZE_PX, 1);
     node.setPosition(tileX + 0.5, this.rows - tileY - 0.5, 0);
-    this.tiles.push({ sprite, frames, fps, offset, index: 0 });
+    this.tiles.push({ sprite, frames, fps, offset, index: initialIndex });
   }
 }
 

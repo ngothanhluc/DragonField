@@ -115,7 +115,7 @@ function writeChapter(chapter: number): RoomPlan[] {
 }
 
 function parseChapters(argv: readonly string[]): number[] {
-  const flagIndex = argv.indexOf('--chapters');
+  const flagIndex = argv.findIndex((arg) => arg === '--chapters' || arg === '--chapter');
   if (flagIndex < 0) return [2, 1, 3, 4];
   const raw = argv[flagIndex + 1] ?? '';
   const parsed = raw

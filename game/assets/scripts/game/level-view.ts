@@ -316,7 +316,14 @@ async function buildObstacles(root: Node, level: LevelData): Promise<void> {
   // or crate on top of the tree/house. The prop itself is drawn by `buildProps`.
   // `edge` (#67) is the room's solid border ring: its art is the `border-*` tile layers (a tree
   // line or the sand-cliff band), so a tiled sprite here would bury that art.
-  const drawable = level.obstacles.filter((obstacle) => obstacle.kind !== 'prop' && obstacle.kind !== 'edge');
+  // Chapter 2 `pit` obstacles (M11 ADR-020) are impassable river/waterfall deep-water tiles whose
+  // art comes from the TMX `water` layer + `WaterView`, never stretched boulder sprites.
+  const drawable = level.obstacles.filter(
+    (obstacle) =>
+      obstacle.kind !== 'prop' &&
+      obstacle.kind !== 'edge' &&
+      !(level.chapter === 2 && obstacle.kind === 'pit'),
+  );
   if (drawable.length === 0) return;
 
   const sheets = obstacleSheetsCore(level.chapter);
