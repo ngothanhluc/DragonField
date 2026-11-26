@@ -30,7 +30,11 @@ export function buildCreditsScreen(options: CreditsScreenOptions): Promise<MenuS
       { label: 'Back', activate: options.onBack },
     ],
     onBack: options.onBack,
-    buttonHeight: 34,
+    panelWidth: 412,
+    buttonWidth: 280,
+    buttonHeight: 30,
+    buttonGap: 6,
+    buttonFontSize: 11,
   });
 }
 

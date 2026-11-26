@@ -1,5 +1,5 @@
 /**
- * Pause (GDD §9): Resume, Restart run, Quit to title, volume.
+ * Pause (GDD §9): Resume, Restart run, Volume, Quit to title.
  *
  * It stops nothing itself — bootstrap switches `status` to `paused` before building this
  * screen, and `update()` only runs while `status === 'playing'`, so enemies, bullets,
@@ -50,8 +50,12 @@ export function buildPauseScreen(options: PauseScreenOptions): Promise<MenuScree
       if (index === 2) changeVolume(delta);
     },
     hint: '↑/↓ select · ←/→ adjust volume · Esc resume',
-    buttonHeight: 38,
-    buttonGap: 8,
+    backdropAlpha: 184,
+    panelWidth: 364,
+    buttonWidth: 312,
+    buttonHeight: 36,
+    buttonGap: 6,
+    buttonFontSize: 12,
   }).then((built) => {
     screen = built;
     return built;

@@ -1,12 +1,12 @@
 /**
- * Title screen (GDD §9): Play, Shop, Settings, Credits.
+ * Title screen (GDD §9): Play, Character, Meta shop, Settings, Credits.
  *
- * Built in code, no `.scene` edits. All layout/navigation lives in `screens/menu.ts`;
- * this file only decides the content and action order.
+ * Built in code, no `.scene` edits. All `Theme Wood` 9-slice framing, padding, and navigation live
+ * in `screens/menu.ts`; this file decides the content and action order.
  *
- * Since #8 the title draws a real chapter-1 room behind it: a narrow opaque column with a light
- * dim (94 alpha) instead of the near-opaque backdrop, so the living room stays visible on both
- * sides while every label/button keeps its wooden panel.
+ * Since #8 (refined in M11 T5) the title draws a cleanly framed 32×18 window of chapter 1 behind
+ * a centred `Theme Wood` column with a gentle dim, leaving the living room and 1:1 weather visible
+ * on both flanks.
  */
 import {
   CHARACTERS,
@@ -41,9 +41,9 @@ export interface TitleScreen extends MenuScreen {
   setCharacter(character: CharacterDef, available?: readonly CharacterDef[]): void;
 }
 
-/** A light dim over the living room; the panel itself stays opaque (alpha 255). */
-const TITLE_BACKDROP_ALPHA = 96;
-const TITLE_BUTTON_WIDTH = MENU_COLUMN_WIDTH - 24;
+/** Gentle dim over the living room; the `Theme Wood` column itself stays opaque. */
+const TITLE_BACKDROP_ALPHA = 84;
+const TITLE_BUTTON_WIDTH = MENU_COLUMN_WIDTH - 28;
 const CHARACTER_ITEM_INDEX = 1;
 
 export function formatCharacterLabel(character: CharacterDef): string {
@@ -89,7 +89,6 @@ export function buildTitleScreen(options: TitleScreenOptions): Promise<TitleScre
     name: 'title',
     title: 'YOKAI FIELD',
     subtitle: 'Dodge. Auto-fire. Clear.',
-    // Two short lines instead of one long one: the column is only 240 design px wide.
     info: [`Gold ${options.gold}`, formatBest(options.best)],
     items: [
       { label: 'Play', detail: 'Choose a chapter', activate: options.onPlay },
@@ -108,9 +107,8 @@ export function buildTitleScreen(options: TitleScreenOptions): Promise<TitleScre
     },
     ...(options.initialFocus !== undefined ? { initialFocus: options.initialFocus } : {}),
     hint: '↑/↓ select · ←/→ switch · Enter confirm',
-    // 5 rows inside 288px design height: 28×5 + 5×4 = 160px, leaving clear margin above hint.
     buttonWidth: TITLE_BUTTON_WIDTH,
-    buttonHeight: 28,
+    buttonHeight: 31,
     buttonGap: 5,
     buttonFontSize: 11,
     backdropAlpha: TITLE_BACKDROP_ALPHA,

@@ -1,17 +1,13 @@
 /**
- * Living menu backdrop (#8), engine side: the title and chapter select draw a real chapter room
- * behind the panel — tiles, water, the #6 atmosphere layer, wandering critters and an idle
- * NinjaGreen — dimmed by the screen's own backdrop so the menu stays readable.
+ * Living menu backdrop (#8, refined in M11 T5), engine side: Title and Chapter Select draw a
+ * cleanly framed 32×18 window of the chapter's room 1 behind the `Theme Wood` column — tiles,
+ * water, 1:1 weather particles, wandering critters, and the idle playable character — dimmed
+ * lightly so the menu stays readable without hiding the living world.
  *
- * Nothing here is a copy of the run renderer: the room is `buildRoom`, water is `attachRoomWater`,
- * atmosphere + decor come from the shared `attachRoomAtmosphere` (same as `bootstrap`), and the
- * ninja is a plain `Sprite` + `SpriteAnimator` (`player.idle.down`), not a `PlayerController`
- * (no input, no firing). Which chapter is shown and where the ninja stands are decided in the
- * pure `core/view/menu-backdrop.ts`.
- *
- * All nodes live on the world layers bootstrap already owns: the room tree under `room-layer`,
- * the ninja under `actor-layer`, the over-actors atmosphere on `atmosphere-layer`. `clear()`
- * destroys every one of them (the over-actors node is **not** under the room root).
+ * Nothing here duplicates the run renderer: the room is `buildRoom`, water is `attachRoomWater`,
+ * atmosphere + decor come from the shared `attachRoomAtmosphere`, and the character is a plain
+ * `Sprite` + `SpriteAnimator` (`idle.down`), not a `PlayerController` (no input, no firing).
+ * Framing and character placement live in the pure `core/view/menu-backdrop.ts`.
  */
 import {
   JsonAsset as CocosJsonAsset,
@@ -38,7 +34,8 @@ import { waterAreasFor, type WaterLayout } from '../core/level/water-layout';
 import type { Vec2 } from '../core/math/vec2';
 import {
   MENU_BACKDROP_ROOM,
-  menuPlayerSpot,
+  menuBackdropFrame,
+  menuFramedPlayerSpot,
   type TileRect,
 } from '../core/view/menu-backdrop';
 import type { EffectsMode } from '../core/vfx/weapon-vfx';
@@ -52,10 +49,10 @@ import {
   ACTOR_SCALE,
   buildRoom,
   obstacleSheets,
-  tileToWorld,
 } from './level-view';
 import { attachRoomWater } from './room-water';
 import { MENU_COLUMN_WIDTH } from './screens/menu';
+import { cullWorld } from './world-culler';
 
 /** `cc` is an any module: types must be derived from the import value. */
 type JsonAsset = InstanceType<typeof CocosJsonAsset>;
@@ -91,11 +88,12 @@ export interface MenuBackdropHost {
 }
 
 /**
- * Panel footprint in room tiles (top-left origin, y down), rounded **outward**.
+ * Panel footprint in view tiles (`0..ROOM_COLS × 0..ROOM_ROWS`, top-left origin, y down),
+ * rounded **outward**.
  *
  * The panel is a centred column of `panelWidthPx` design px; one room tile is
- * `TILE_SIZE_PX * worldScale` UI px (the world camera is scaled down to whole texels while the
- * UI band keeps the design size), so a narrow panel covers more tiles when the room is small.
+ * `TILE_SIZE_PX * worldScale` UI px (the world camera is scaled to whole texels while the UI band
+ * keeps design size), so the narrow column covers slightly more tiles when `worldScale < 1`.
  */
 export function menuBackdropKeepOut(
   worldScale: number,
@@ -357,17 +355,40 @@ export class MenuBackdrop {
     }
     if (!roomLayer.isValid || !actorLayer.isValid) return;
 
-    const spot = menuPlayerSpot(level, menuBackdropKeepOut(this.host.worldScale()));
-    const world = tileToWorld(spot);
     const water = this.host.waterLayout();
     const areas = water === null ? [] : waterAreasFor(water, level.chapter, level.room);
+    const localKeepOut = menuBackdropKeepOut(this.host.worldScale());
+    const frame = menuBackdropFrame(level, {
+      waterAreas: areas,
+      columnWidthTiles: Math.max(20, localKeepOut.width),
+    });
+    const spot = menuFramedPlayerSpot(level, frame, localKeepOut, areas);
 
+    // Build the room first so `roomRows` matches `level.size.rows`, then translate `container` so
+    // `frame` maps onto the static world camera's `[0..32] × [0..18]` viewport.
     const container = new CocosNode('menu-room');
     container.parent = roomLayer;
+    const worldBottomY = level.size.rows - frame.y - frame.height;
+    container.setPosition(-frame.x, -worldBottomY, 0);
+
     const roomRoot = buildRoom(container, level, asset);
     attachRoomWater(roomRoot, areas, level.size.rows);
+    if (level.size.cols > ROOM_COLS || level.size.rows > ROOM_ROWS) {
+      cullWorld(roomRoot, {
+        x: frame.x,
+        y: worldBottomY,
+        width: frame.width,
+        height: frame.height,
+      });
+    }
 
-    const actor = this.createActor(actorLayer, world, manifest, character, attachments, token);
+    // `actorLayer` stays at the world origin (`[0..32] × [0..18]`): convert `spot` relative to `frame`.
+    const actorWorld: Vec2 = {
+      x: spot.x - frame.x,
+      y: frame.y + frame.height - spot.y,
+    };
+    const actor = this.createActor(actorLayer, actorWorld, manifest, character, attachments, token);
+
     const atmosphere = attachRoomAtmosphere({
       roomRoot,
       overLayer: this.host.atmosphereLayer(),
@@ -377,7 +398,7 @@ export class MenuBackdrop {
       effects: this.host.effects(),
       seed: menuBackdropSeed(chapter),
       rippleAreas: areas,
-      playerOf: () => this.playerSpot,
+      playerOf: () => spot,
     });
 
     // The new room exists: only now drop the previous one, so a focus change never flashes empty.
@@ -481,7 +502,7 @@ export class MenuBackdrop {
 
   private destroyNodes(): void {
     // The over-actors atmosphere lives on `atmosphere-layer`, not under the room: destroy the
-    // handles explicitly or chapter 1 shafts stay drawn over the next chapter and the menus.
+    // handles explicitly or chapter 1 leaves/blossoms stay drawn over the next chapter and menus.
     this.atmosphere?.destroy();
     this.atmosphere = null;
     if (this.actor !== null && this.actor.isValid) this.actor.destroy();

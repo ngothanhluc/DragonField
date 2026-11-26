@@ -71,7 +71,7 @@ export function buildShopScreen(options: ShopScreenOptions): Promise<MenuScreen>
     };
   });
 
-  items.push({ label: 'Back', activate: options.onBack });
+  items.push({ label: 'Back', height: 28, activate: options.onBack });
 
   return buildMenuScreen({
     parent: options.parent,
@@ -84,8 +84,11 @@ export function buildShopScreen(options: ShopScreenOptions): Promise<MenuScreen>
     ],
     items,
     onBack: options.onBack,
-    buttonHeight: 40,
-    buttonGap: 6,
+    panelWidth: 396,
+    buttonWidth: 344,
+    buttonHeight: 37,
+    buttonGap: 5,
+    buttonFontSize: 12,
     ...(options.initialFocus !== undefined ? { initialFocus: options.initialFocus } : {}),
     hint: '↑/↓ select · Enter buy · Esc back',
   });

@@ -1,10 +1,9 @@
 /**
  * Settings (GDD §9): volume, fullscreen, accessibility (shake, damage numbers), Effects
- * Full/Reduced, read-only keybinds.
+ * Full/Reduced, Cultivator toggle, and read-only keybinds.
  *
  * Volume steps by 10% and is written to the save immediately (`onVolume`), so reopening after
- * a reload shows the right value. The two ticket #2 flags and the ticket #3 effects mode apply
- * **immediately** on click (no run restart needed).
+ * a reload shows the right value. Accessibility and effects toggles apply immediately.
  */
 import { stepVolume, type Settings } from '../../core/save/settings';
 import { buildMenuScreen, type MenuItem, type MenuScreen } from './menu';
@@ -106,9 +105,8 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     parent: options.parent,
     name: 'settings',
     title: 'SETTINGS',
+    titleFontSize: 20,
     subtitle: 'Saved to this browser',
-    // Compact: 7 single-line rows inside [-144, +144] above hint (y = -132). With h=22, gap=3,
-    // Back ends at y = -120 and each font-10 label (~15.1 px) stays strictly inside [-11, +11].
     info: ['Keybinds fixed: WASD/arrows move · Esc/P pause · Enter/Space menus'],
     items,
     onBack: options.onBack,
@@ -116,8 +114,10 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
       if (index === 0) changeVolume(delta);
     },
     hint: '↑/↓ select · ←/→ adjust volume · Esc back',
+    panelWidth: 452,
+    buttonWidth: 316,
     buttonHeight: 22,
-    buttonGap: 3,
+    buttonGap: 4,
     buttonFontSize: 10,
   });
 

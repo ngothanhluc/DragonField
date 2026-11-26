@@ -5,7 +5,7 @@
  * Bootstrap measures `RunResultData` before tearing the run down, so this screen never reads
  * live state and cannot show `0/0` after combat is destroyed.
  */
-import { buildMenuScreen, type MenuScreen } from './menu';
+import { MENU_DANGER, MENU_TITLE_COLOR, buildMenuScreen, type MenuScreen } from './menu';
 import type { TitleScreenOptions } from './title-screen';
 
 export interface RunResultData {
@@ -52,6 +52,7 @@ export function buildResultScreen(options: ResultScreenOptions): Promise<MenuScr
     parent: options.parent,
     name: 'result',
     title: result.won ? 'CHAPTER CLEAR' : 'RUN OVER',
+    titleColor: result.won ? MENU_TITLE_COLOR : MENU_DANGER,
     subtitle: result.won ? 'The chapter is cleared.' : 'Gold is kept — spend it in the shop.',
     info,
     items: [
@@ -60,7 +61,11 @@ export function buildResultScreen(options: ResultScreenOptions): Promise<MenuScr
       { label: 'Title', detail: 'Back to the main menu', activate: options.onTitle },
     ],
     onBack: options.onChapterSelect,
-    buttonHeight: 38,
+    panelWidth: 384,
+    buttonWidth: 328,
+    buttonHeight: 35,
+    buttonGap: 5,
+    buttonFontSize: 12,
     hint: '↑/↓ select · Enter confirm · Esc chapter select',
   });
 }
