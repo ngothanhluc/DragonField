@@ -41,7 +41,7 @@ export function spawnBossForRoom(combat: CombatLoop, level: LevelData, bossId?: 
   }
 
   const start = level.bossStart ?? BOSS_START_FALLBACK;
-  combat.spawnBoss(def, start);
+  combat.spawnBoss(def, start, combat.clockMs);
   console.log(
     `[YokaiField] Boss ${def.displayName} (${def.maxHealth} HP, 3 phases) at ` +
       `${start.x},${start.y} — pattern ${def.id}.`,

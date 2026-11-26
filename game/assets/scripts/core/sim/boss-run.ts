@@ -29,6 +29,7 @@ import { BOSSES, phaseFor, type BossId, type BossPhase } from '../boss/boss-defs
 import {
   bulletVelocity,
   initialBossState,
+  isBossInIntro,
   stepBoss,
   type BossState,
   type BulletVerb,
@@ -89,9 +90,9 @@ const PLAYER_EDGE_MARGIN_TILES = 0.5;
  */
 export const BOSS_COMFORT_RANGE_TILES = Math.max(1, DEFAULT_COMBAT.targetingRangeTiles - 2);
 
-/** Player stands at bottom centre; the boss at mid-arena. */
+/** Player stands at bottom centre; the boss at top centre (11 tiles apart). */
 export const DEFAULT_PLAYER_START: Vec2 = { x: ROOM_COLS / 2, y: ROOM_ROWS - 2 };
-export const DEFAULT_BOSS_START: Vec2 = { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 };
+export const DEFAULT_BOSS_START: Vec2 = { x: ROOM_COLS / 2, y: 5 };
 
 /**
  * Boss **hitbox** radius from `BossDef.hitboxRadiusTiles` (single source,
@@ -188,6 +189,13 @@ export interface BossRunOptions {
   readonly policy?: BossRunPolicy;
   readonly playerStart?: Vec2;
   readonly bossStart?: Vec2;
+  /**
+   * Simulation clock when entering the boss room (default 0). `simulateRun` passes the
+   * accumulated chapter duration (~300 s) so the real non-zero `nowMs` entry path is exercised.
+   */
+  readonly startNowMs?: number;
+  /** Override boss intro grace window (defaults to `BOSS_TUNING.introGraceMs`). */
+  readonly introGraceMs?: number;
 }
 
 export interface BossRunResult {
@@ -276,7 +284,13 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
   const policy = options.policy ?? approachBoss;
   const fraction = Math.min(1, Math.max(0, options.bossHealthFraction ?? 1));
 
-  let boss: BossState = initialBossState(options.bossId, options.bossStart ?? DEFAULT_BOSS_START);
+  const startNowMs = options.startNowMs ?? 0;
+  let boss: BossState = initialBossState(
+    options.bossId,
+    options.bossStart ?? DEFAULT_BOSS_START,
+    startNowMs,
+    options.introGraceMs,
+  );
   if (fraction < 1) {
     boss = {
       ...boss,
@@ -301,9 +315,13 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     events.push({ kind: 'boss-hit', nowMs: durationMs, health: boss.health });
   };
 
-  const damagePlayer = (amount: number, source: 'projectile' | 'contact' = 'projectile'): void => {
+  const damagePlayer = (
+    amount: number,
+    nowMs: number,
+    source: 'projectile' | 'contact' = 'projectile',
+  ): void => {
     if (options.godMode === true) return;
-    const result = health.tryDamage(amount, durationMs);
+    const result = health.tryDamage(amount, nowMs);
     if (!result.applied) return;
     events.push({
       kind: 'player-hit',
@@ -319,6 +337,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
 
   while (durationMs < maxDurationMs && outcome === null) {
     durationMs += BOSS_RUN_STEP_MS;
+    const nowMs = startNowMs + durationMs;
 
     // Hitstop: real time passes but the simulation stands still, exactly like the game's `HitstopClock`.
     if (hitstopMs > 0) {
@@ -330,7 +349,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     player = movePlayer(
       player,
       policy({
-        nowMs: durationMs,
+        nowMs,
         player,
         boss: boss.position,
         bossHealth: boss.health,
@@ -372,7 +391,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     // --- Boss: pattern ---------------------------------------------------
     const stepped = stepBoss({
       state: boss,
-      nowMs: durationMs,
+      nowMs,
       deltaMs: BOSS_RUN_STEP_MS,
       player,
       rng,
@@ -381,11 +400,12 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
 
     // The boss body deals contact damage while charging (see `combat-loop.ts`).
     if (
+      !isBossInIntro(boss, nowMs) &&
       boss.chargeDirection !== null &&
       boss.health > 0 &&
       distance(boss.position, player) <= hitboxRadius + PLAYER_RADIUS_TILES
     ) {
-      damagePlayer(DEFAULT_COMBAT.contactDamage, 'contact');
+      damagePlayer(DEFAULT_COMBAT.contactDamage, nowMs, 'contact');
     }
 
     for (const event of stepped.events) {
@@ -449,7 +469,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     }
 
     // --- Poison on the boss (Poison skill) ------------------------------
-    const poison = bossStatus.poisonDamage(durationMs, BOSS_RUN_STEP_MS);
+    const poison = bossStatus.poisonDamage(nowMs, BOSS_RUN_STEP_MS);
     if (poison > 0 && boss.health > 0) damageBoss(poison);
 
     // --- Homing: rotate velocity toward the nearest target ---------------
@@ -475,7 +495,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
       if (bullet.owner === 'enemy') {
         if (!hitsCircle(area, { position: player, radiusTiles: PLAYER_RADIUS_TILES })) continue;
         spent.add(bullet.id);
-        damagePlayer(bullet.damage);
+        damagePlayer(bullet.damage, nowMs);
         continue;
       }
 
@@ -494,7 +514,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
           healthBefore / BOSSES[options.bossId].maxHealth,
         );
         damageBoss(damage);
-        bossStatus.apply(stats, durationMs);
+        bossStatus.apply(stats, nowMs);
         healPlayer(lifestealHeal(stats, Math.min(damage, healthBefore)));
         bullet.hitIds.push(BOSS_TARGET_ID);
         hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);

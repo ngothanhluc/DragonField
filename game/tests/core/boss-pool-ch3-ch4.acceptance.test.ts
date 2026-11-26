@@ -14,6 +14,7 @@ import {
   type BossId,
 } from '../../assets/scripts/core/boss/boss-defs';
 import { BOSS_POOLS, bossMusicPath, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
+import { BOSS_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
 import { holdPosition, simulateBossRun } from '../../assets/scripts/core/sim/boss-run';
 
@@ -22,18 +23,18 @@ const byId = BOSSES as Readonly<Record<string, BossDef | undefined>>;
 const ids = BOSS_IDS as readonly string[];
 
 const NEW_BOSSES = [
-  { id: 'bamboo', sprite: 'GiantBamboo', chapter: 3, health: 100 },
-  { id: 'racoon', sprite: 'GiantRacoon', chapter: 4, health: 120 },
-  { id: 'redtengu', sprite: 'TenguRed', chapter: 4, health: 120 },
+  { id: 'bamboo', sprite: 'GiantBamboo', chapter: 3 },
+  { id: 'racoon', sprite: 'GiantRacoon', chapter: 4 },
+  { id: 'redtengu', sprite: 'TenguRed', chapter: 4 },
 ] as const;
 
 describe('new bosses', () => {
   for (const boss of NEW_BOSSES) {
-    it(`${boss.sprite} is a chapter ${boss.chapter} boss with ${boss.health} health`, () => {
+    it(`${boss.sprite} is a chapter ${boss.chapter} boss using chapter ${boss.chapter} health from tuning`, () => {
       expect(ids).toContain(boss.id);
       expect(byId[boss.id]?.spriteName).toBe(boss.sprite);
       expect(byId[boss.id]?.chapter).toBe(boss.chapter);
-      expect(byId[boss.id]?.maxHealth).toBe(boss.health);
+      expect(byId[boss.id]?.maxHealth).toBe(BOSS_TUNING.healthByChapter[boss.chapter - 1]);
       expect(bossForSpriteName(boss.sprite)?.id).toBe(boss.id);
     });
   }
@@ -78,8 +79,8 @@ describe('music per boss', () => {
 
 describe('new bosses force movement in every phase', () => {
   const arenas: Readonly<Record<string, { playerStart: Vec2; bossStart: Vec2 }>> = {
-    bamboo: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
-    racoon: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
+    bamboo: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
+    racoon: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
     redtengu: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
   };
   const fraction = { 1: 1, 2: 0.6, 3: 0.2 } as const;

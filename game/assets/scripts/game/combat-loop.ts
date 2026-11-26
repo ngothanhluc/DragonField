@@ -340,15 +340,17 @@ export class CombatLoop {
 
   /**
    * Spawn the room's real boss. Call before `startWave` so boss telegraphs/bullets exist
-   * from the room's first frame (bootstrap calls it from `enterRoom`).
+   * from the room's first frame (bootstrap calls it from `enterRoom`). Passes `nowMs` so the
+   * boss honours the accumulated simulation clock and its entrance grace window.
    */
-  spawnBoss(def: BossDef, start: Vec2): BossView {
+  spawnBoss(def: BossDef, start: Vec2, nowMs: number = this.nowMs): BossView {
     this.boss?.destroy();
     this.bossStatus.clear();
     this.bossRewarded = false;
     const boss = new BossView({
       def,
       start,
+      nowMs,
       actorLayer: this.actorLayer,
       bullets: this.player.bullets,
       rng: this.rng,
@@ -540,6 +542,7 @@ export class CombatLoop {
     // The boss body also deals damage while dashing — otherwise a Samurai charge would
     // pass through the player with nothing happening. i-frames stop multi-frame hits.
     if (
+      !boss.isInIntro(this.nowMs) &&
       boss.isCharging &&
       distance(boss.position, playerPosition) <= boss.hitboxRadiusTiles + PLAYER_RADIUS_TILES
     ) {

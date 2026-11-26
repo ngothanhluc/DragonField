@@ -25,9 +25,9 @@ export const TUNING_DATA = {
   chapters: {
     enemyHealthMultipliers: [
       1,
-      1.05,
-      1.05,
-      1.1,
+      1.06,
+      1.11,
+      1.16,
     ],
     enemyDamageMultipliers: [
       1,
@@ -44,9 +44,9 @@ export const TUNING_DATA = {
       scale: 1.15,
       chaser: {
         pounceTelegraphMs: 300,
-        pounceSpeedTilesPerSecond: 5,
+        pounceSpeedTilesPerSecond: 6.2,
         pounceDurationMs: 300,
-        pounceCooldownMs: 1200,
+        pounceCooldownMs: 1050,
         pounceRangeTiles: 6,
       },
       caster: {
@@ -60,7 +60,7 @@ export const TUNING_DATA = {
     roles: {
       chaser: {
         health: 6,
-        speedTilesPerSecond: 2.6,
+        speedTilesPerSecond: 2.75,
         attackCooldownMs: 0,
         telegraphMs: 0,
         preferredRangeMinTiles: 0.75,
@@ -73,7 +73,7 @@ export const TUNING_DATA = {
       caster: {
         health: 4,
         speedTilesPerSecond: 1.6,
-        attackCooldownMs: 3000,
+        attackCooldownMs: 2800,
         telegraphMs: 500,
         preferredRangeMinTiles: 4,
         preferredRangeMaxTiles: 6,
@@ -85,19 +85,19 @@ export const TUNING_DATA = {
       tank: {
         health: 10,
         speedTilesPerSecond: 1.2,
-        attackCooldownMs: 2200,
+        attackCooldownMs: 2000,
         telegraphMs: 700,
         preferredRangeMinTiles: 0,
         preferredRangeMaxTiles: 8,
         contactDamage: 2,
-        chargeSpeedTilesPerSecond: 4,
-        chargeDurationMs: 350,
+        chargeSpeedTilesPerSecond: 6.6,
+        chargeDurationMs: 260,
         scale: 1.75,
       },
       sniper: {
         health: 4,
         speedTilesPerSecond: 1.1,
-        attackCooldownMs: 4000,
+        attackCooldownMs: 3700,
         telegraphMs: 900,
         preferredRangeMinTiles: 8,
         preferredRangeMaxTiles: 12,
@@ -109,7 +109,7 @@ export const TUNING_DATA = {
       },
       splitter: {
         health: 8,
-        speedTilesPerSecond: 1.7,
+        speedTilesPerSecond: 1.85,
         attackCooldownMs: 0,
         telegraphMs: 0,
         preferredRangeMinTiles: 0.75,
@@ -122,7 +122,7 @@ export const TUNING_DATA = {
       },
       splitling: {
         health: 2,
-        speedTilesPerSecond: 2.6,
+        speedTilesPerSecond: 2.9,
         attackCooldownMs: 0,
         telegraphMs: 0,
         preferredRangeMinTiles: 0.6,
@@ -151,7 +151,7 @@ export const TUNING_DATA = {
   },
   waves: {
     aliveCap: 24,
-    aliveCapStart: 3,
+    aliveCapStart: 4,
     aliveCapStepPerRoom: 3,
     spawnIntervalMs: 1800,
     spawnBatchSize: 4,
@@ -257,5 +257,14 @@ export const TUNING_DATA = {
   roomArt: {
     detailDensity: 0.08,
     pathStoneDensity: 0.14,
+  },
+  boss: {
+    introGraceMs: 1000,
+    healthByChapter: [
+      80,
+      110,
+      140,
+      170,
+    ],
   },
 } as const;

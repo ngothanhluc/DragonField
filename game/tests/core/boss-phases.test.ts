@@ -16,18 +16,21 @@ interface Arena {
   readonly bossStart: Vec2;
 }
 
+/** All 4 boss arenas place player at bottom-center (16, 16) and boss at top-center (16, 5) — 11 tiles apart. */
+const NORMALIZED_ARENA: Arena = {
+  playerStart: { x: 16, y: 16 },
+  bossStart: { x: 16, y: 5 },
+};
+
 const ARENAS: Readonly<Record<BossId, Arena>> = {
-  tengu: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
-  squid: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 8 } },
-  // Samurai charges sideways: the player stands on the same row, offset to the right (ch3 arena).
-  samurai: { playerStart: { x: 27, y: 6 }, bossStart: { x: 16, y: 6 } },
-  // Pool alternatives (#43) — the same arena the acceptance test uses.
-  frog: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
-  slime: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
-  // Ch3/ch4 pool (#44) — the same arenas the acceptance test uses.
-  bamboo: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
-  racoon: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
-  redtengu: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
+  tengu: NORMALIZED_ARENA,
+  squid: NORMALIZED_ARENA,
+  samurai: NORMALIZED_ARENA,
+  frog: NORMALIZED_ARENA,
+  slime: NORMALIZED_ARENA,
+  bamboo: NORMALIZED_ARENA,
+  racoon: NORMALIZED_ARENA,
+  redtengu: NORMALIZED_ARENA,
 };
 
 const PHASE_FRACTION: Readonly<Record<BossPhase, number>> = { 1: 1, 2: 0.6, 3: 0.2 };

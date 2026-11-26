@@ -14,6 +14,7 @@ import {
   type BossId,
 } from '../../assets/scripts/core/boss/boss-defs';
 import { BOSS_POOLS, bossMusicPath, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
+import { BOSS_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
 import { holdPosition, simulateBossRun } from '../../assets/scripts/core/sim/boss-run';
 
@@ -22,19 +23,19 @@ const byId = BOSSES as Readonly<Record<string, BossDef | undefined>>;
 const ids = BOSS_IDS as readonly string[];
 
 describe('new bosses', () => {
-  it('GiantFrog is a chapter 1 boss with 60 health', () => {
+  it('GiantFrog is a chapter 1 boss using chapter 1 boss health from tuning', () => {
     expect(ids).toContain('frog');
     expect(byId.frog?.spriteName).toBe('GiantFrog');
     expect(byId.frog?.chapter).toBe(1);
-    expect(byId.frog?.maxHealth).toBe(60);
+    expect(byId.frog?.maxHealth).toBe(BOSS_TUNING.healthByChapter[0]);
     expect(bossForSpriteName('GiantFrog')?.id).toBe('frog');
   });
 
-  it('GiantSlime is a chapter 2 boss with 80 health', () => {
+  it('GiantSlime is a chapter 2 boss using chapter 2 boss health from tuning', () => {
     expect(ids).toContain('slime');
     expect(byId.slime?.spriteName).toBe('GiantSlime');
     expect(byId.slime?.chapter).toBe(2);
-    expect(byId.slime?.maxHealth).toBe(80);
+    expect(byId.slime?.maxHealth).toBe(BOSS_TUNING.healthByChapter[1]);
     expect(bossForSpriteName('GiantSlime')?.id).toBe('slime');
   });
 });
@@ -79,7 +80,7 @@ describe('music per boss', () => {
 describe('new bosses force movement in every phase', () => {
   const arenas: Readonly<Record<string, { playerStart: Vec2; bossStart: Vec2 }>> = {
     frog: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
-    slime: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 6 } },
+    slime: { playerStart: { x: 16, y: 16 }, bossStart: { x: 16, y: 5 } },
   };
   const fraction = { 1: 1, 2: 0.6, 3: 0.2 } as const;
 

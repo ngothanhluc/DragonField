@@ -224,6 +224,22 @@ export interface TuningConfig {
   readonly specialRooms: SpecialRoomsTuning;
   /** Room composition art (#67): how many walkable details a generated room scatters. */
   readonly roomArt: RoomArtTuning;
+  /** Boss entrance grace window and per-chapter max health (M11 T6). */
+  readonly boss: BossTuning;
+}
+
+/**
+ * Boss tuning (M11 T6).
+ *
+ * `introGraceMs` holds the boss idle on room entry so entering after minutes of play never
+ * attacks, teleports, or lunges on frame 1. `healthByChapter` sets each chapter's boss max HP
+ * (index 0 = chapter 1), keeping all balance numbers in `config/tuning.json`.
+ */
+export interface BossTuning {
+  /** Entrance grace window before the boss starts step 0, ms. */
+  readonly introGraceMs: number;
+  /** Max health for each chapter's bosses (index 0 = chapter 1), positive integers. */
+  readonly healthByChapter: readonly number[];
 }
 
 /**
@@ -531,6 +547,8 @@ const SPECIAL_ROOMS_FIELDS = ['healHearts', 'chestGold', 'shop'] as const;
 const SHOP_FIELDS = ['heartRefill', 'skillPrices'] as const;
 
 const ROOM_ART_FIELDS = ['detailDensity', 'pathStoneDensity'] as const;
+
+const BOSS_FIELDS = ['introGraceMs', 'healthByChapter'] as const;
 
 const SHOP_PRICE_FIELDS = ['common', 'rare', 'epic'] as const;
 
@@ -1454,6 +1472,54 @@ function parseSpecialRooms(
   };
 }
 
+/** Default boss max health per chapter when the config block is missing. */
+const DEFAULT_BOSS_HEALTH_BY_CHAPTER: readonly number[] = [60, 80, 100, 120];
+
+function parseBossHealthArray(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): readonly number[] {
+  const fieldPath = 'boss.healthByChapter';
+  const value = source.healthByChapter;
+  if (!Array.isArray(value)) {
+    problems.add(
+      fieldPath,
+      `must be an array of ${CHAPTERS_PER_RUN} positive integers, got ${describe(value)}`,
+    );
+    return DEFAULT_BOSS_HEALTH_BY_CHAPTER;
+  }
+  if (value.length !== CHAPTERS_PER_RUN) {
+    problems.add(
+      fieldPath,
+      `must have exactly ${CHAPTERS_PER_RUN} elements (one per chapter), got ${value.length}`,
+    );
+  }
+
+  const result: number[] = [];
+  value.forEach((entry, index) => {
+    if (typeof entry !== 'number' || !Number.isInteger(entry) || entry <= 0) {
+      problems.add(`${fieldPath}[${index}]`, `must be a positive integer, got ${describe(entry)}`);
+      result.push(DEFAULT_BOSS_HEALTH_BY_CHAPTER[index] ?? 60);
+      return;
+    }
+    result.push(entry);
+  });
+  return result;
+}
+
+function parseBoss(raw: Record<string, unknown>, problems: ProblemList): BossTuning {
+  const source = readObject(raw, 'boss', '', problems, BOSS_FIELDS);
+  if (source === undefined) {
+    return { introGraceMs: 1000, healthByChapter: DEFAULT_BOSS_HEALTH_BY_CHAPTER };
+  }
+
+  return {
+    introGraceMs:
+      readNumber(source, 'introGraceMs', 'boss', problems, { integer: true }) ?? 0,
+    healthByChapter: parseBossHealthArray(source, problems),
+  };
+}
+
 function zeroCover(): CoverTuning {
   return { overlayAlpha: 1, actorInCoverAlpha: 1, fadeRate: 1 };
 }
@@ -1522,6 +1588,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     doors: parseDoors(raw, problems),
     specialRooms: parseSpecialRooms(raw, problems),
     roomArt: parseRoomArt(raw, problems),
+    boss: parseBoss(raw, problems),
   };
 
   problems.throwIfAny();

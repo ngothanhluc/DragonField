@@ -26,6 +26,7 @@ import {
   bulletVelocity,
   initialBossState,
   isBossDefeated,
+  isBossInIntro,
   stepBoss,
   TELEPORT_SNAP_SPEED_TILES_PER_SECOND,
   type BossEvent,
@@ -78,6 +79,8 @@ export interface BossViewOptions {
   readonly def: BossDef;
   /** Initial standing spot, tile units (usually from `LevelData.bossStart`). */
   readonly start: Vec2;
+  /** Live simulation clock when entering the boss room, ms (prevents frame-1 step skip). */
+  readonly nowMs: number;
   readonly actorLayer: Node;
   readonly bullets: BulletPool;
   readonly rng: SeededRng;
@@ -104,7 +107,7 @@ export class BossView {
   /** Fractional damage that has not reached 1 HP yet (poison/crit/execute) — see `integer-damage.ts`. */
   private damageCarry = 0;
 
-  private hitFlashUntilMs = 0;
+  private hitFlashUntilMs = Number.NEGATIVE_INFINITY;
   /** Squash start time on a bullet hit (multiplied from `ACTOR_SCALE`, never drifts). */
   private squashStartMs = Number.NEGATIVE_INFINITY;
   private ring: Sprite | null = null;
@@ -124,7 +127,7 @@ export class BossView {
     this.onPhase = options.onPhase ?? (() => undefined);
     this.onSummon = options.onSummon ?? (() => undefined);
     this.fx = options.fx ?? null;
-    this.state = initialBossState(options.def.id, options.start);
+    this.state = initialBossState(options.def.id, options.start, options.nowMs);
 
     const node = new CocosNode(`boss-${options.def.id}`);
     node.parent = options.actorLayer;
@@ -196,6 +199,11 @@ export class BossView {
   /** Dashing sideways (Samurai charge). Used to apply body contact damage. */
   get isCharging(): boolean {
     return this.state.chargeDirection !== null;
+  }
+
+  /** Whether the boss is still inside its entrance grace window at `nowMs`. */
+  isInIntro(nowMs: number): boolean {
+    return isBossInIntro(this.state, nowMs);
   }
 
   /** One pattern frame. Returns events for CombatLoop to handle summons (bullets are spawned here). */

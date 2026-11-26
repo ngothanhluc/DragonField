@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BOSSES, BOSS_IDS } from '../../assets/scripts/core/boss/boss-defs';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
+import { BOSS_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import { ROOM_COLS, ROOM_ROWS } from '../../assets/scripts/core/level/level-data';
 import {
   BOSS_RUN_STEP_MS,
@@ -139,6 +140,39 @@ describe('boss run — determinism', () => {
     expect(other.phaseChanges).toEqual([2, 3]);
     expect(other.bossHealth).toBe(0);
     expect(other.events.length).toBeGreaterThan(0);
+  });
+
+  it('entering at startNowMs = 300_000 honours intro grace and matches startNowMs = 0', () => {
+    const atZero = simulateBossRun({
+      bossId: 'samurai',
+      seed: 19,
+      godMode: true,
+      playerDamagePerShot: 2,
+      maxDurationMs: 120_000,
+      startNowMs: 0,
+    });
+    const atLate = simulateBossRun({
+      bossId: 'samurai',
+      seed: 19,
+      godMode: true,
+      playerDamagePerShot: 2,
+      maxDurationMs: 120_000,
+      startNowMs: 300_000,
+    });
+
+    const graceMs = BOSS_TUNING.introGraceMs;
+    const bossActionsDuringIntro = atLate.events.filter(
+      (event) =>
+        event.nowMs <= graceMs &&
+        (event.kind === 'boss-shoot' ||
+          event.kind === 'boss-move' ||
+          event.kind === 'boss-telegraph' ||
+          event.kind === 'boss-summon'),
+    );
+    expect(bossActionsDuringIntro).toEqual([]);
+    expect(atLate.outcome).toBe(atZero.outcome);
+    expect(atLate.phaseChanges).toEqual(atZero.phaseChanges);
+    expect(atLate.events).toEqual(atZero.events);
   });
 });
 

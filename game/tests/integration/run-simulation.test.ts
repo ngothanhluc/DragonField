@@ -385,9 +385,12 @@ describe('simulateRun — skills really matter', () => {
 
 describe('simulateRun — chapter 2 and 3 balance with a 0-skill run', () => {
   /**
-   * Each chapter is a new run (GDD §2), so the ch2/ch3 entrance must be proven
-   * playable **without skills**: standing still still loses within the first 3 rooms, while dodging
-   * with no skills must survive at least 2× and clear at least 3 rooms.
+   * Each chapter is a new run (GDD §2), so the ch2/ch3 entrance must be proven readable
+   * **without skills** while still posing genuine danger (M11 T6 Tier 1):
+   * - Standing still loses within the first 3 rooms.
+   * - Dodging with 0 skills survives well past standing still (≥ 5× duration, proving attacks
+   *   are dodgeable on entry) and clears rooms across the seed sample (real runs pick Skill #1
+   *   right after Room 1), yet still loses before finishing the chapter without skills.
    */
   for (const chapter of [2, 3]) {
     const level = chapterFromLevels(loadTmxLevels(join(LEVELS_ROOT, `chapter-${chapter}`)));
@@ -400,7 +403,8 @@ describe('simulateRun — chapter 2 and 3 balance with a 0-skill run', () => {
       }
     });
 
-    it(`chapter ${chapter}: dodging with no skills survives ≥2× and clears ≥3 rooms`, () => {
+    it(`chapter ${chapter}: dodging with no skills survives ≥5× yet still faces lethal danger`, () => {
+      let totalRoomsCleared = 0;
       for (const seed of BALANCE_SEEDS) {
         const idle = simulateRun({ seed, level, policy: standStill });
         const dodging = simulateRun({
@@ -411,10 +415,13 @@ describe('simulateRun — chapter 2 and 3 balance with a 0-skill run', () => {
         });
 
         expect(dodging.durationMs, `chapter ${chapter} seed ${seed}`).toBeGreaterThanOrEqual(
-          idle.durationMs * 2,
+          idle.durationMs * 5,
         );
-        expect(dodging.roomsCleared, `chapter ${chapter} seed ${seed}`).toBeGreaterThanOrEqual(3);
+        expect(dodging.status, `chapter ${chapter} seed ${seed}`).not.toBe('won');
+        expect(dodging.roomsCleared, `chapter ${chapter} seed ${seed}`).toBeGreaterThanOrEqual(1);
+        totalRoomsCleared += dodging.roomsCleared;
       }
+      expect(totalRoomsCleared, `chapter ${chapter} total rooms cleared`).toBeGreaterThanOrEqual(4);
     }, 120_000);
   }
 });

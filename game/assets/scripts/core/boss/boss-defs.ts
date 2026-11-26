@@ -10,6 +10,8 @@
  * (`layout: "strip"` in `assets/resources/data/animations.json`), so core only *names*
  * animations while the adapter handles slicing and flipping.
  */
+import { BOSS_TUNING } from '../enemies/tuning';
+
 export const BOSS_IDS = [
   'tengu',
   'squid',
@@ -206,13 +208,19 @@ function animationsOf(id: BossId): readonly string[] {
   return Array.from(keys);
 }
 
+function bossHealthForChapter(chapter: number): number {
+  const byChapter = BOSS_TUNING.healthByChapter;
+  const index = Math.min(Math.max(Math.floor(chapter), 1), byChapter.length) - 1;
+  return byChapter[index] ?? byChapter[0] ?? 60;
+}
+
 export const BOSSES: Readonly<Record<BossId, BossDef>> = {
   tengu: {
     id: 'tengu',
     displayName: 'Tengu',
     spriteName: 'TenguBlue',
     chapter: 1,
-    maxHealth: 60,
+    maxHealth: bossHealthForChapter(1),
     hitboxRadiusTiles: 1.75,
     phaseThresholds: PHASE_THRESHOLDS,
     spriteExtentTiles: { left: 2.375, right: 2.3125, up: 5.0625 },
@@ -223,7 +231,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     displayName: 'Squid',
     spriteName: 'SquidGreen',
     chapter: 2,
-    maxHealth: 80,
+    maxHealth: bossHealthForChapter(2),
     hitboxRadiusTiles: 2,
     phaseThresholds: PHASE_THRESHOLDS,
     spriteExtentTiles: { left: 2.125, right: 2.125, up: 3.9375 },
@@ -234,7 +242,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     displayName: 'Samurai',
     spriteName: 'GiantBlueSamurai',
     chapter: 3,
-    maxHealth: 100,
+    maxHealth: bossHealthForChapter(3),
     hitboxRadiusTiles: 2.25,
     phaseThresholds: PHASE_THRESHOLDS,
     spriteExtentTiles: { left: 2.4375, right: 2.25, up: 3.6875 },
@@ -245,7 +253,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     displayName: 'Giant Frog',
     spriteName: 'GiantFrog',
     chapter: 1,
-    maxHealth: 60,
+    maxHealth: bossHealthForChapter(1),
     hitboxRadiusTiles: 1,
     phaseThresholds: PHASE_THRESHOLDS,
     // Measured from the 40×40 sheets (Idle/Jump/Charge/Attack/Hit), feet anchor.
@@ -257,7 +265,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     displayName: 'Giant Slime',
     spriteName: 'GiantSlime',
     chapter: 2,
-    maxHealth: 80,
+    maxHealth: bossHealthForChapter(2),
     hitboxRadiusTiles: 1.5,
     phaseThresholds: PHASE_THRESHOLDS,
     // Measured from the 62×52 sheets (Idle/Jump/Hit), feet anchor.
@@ -269,7 +277,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     displayName: 'Giant Bamboo',
     spriteName: 'GiantBamboo',
     chapter: 3,
-    maxHealth: 100,
+    maxHealth: bossHealthForChapter(3),
     hitboxRadiusTiles: 1.75,
     phaseThresholds: PHASE_THRESHOLDS,
     // Measured from the 62×62 sheets (Idle/Walk/Attack/Charge/Hit), feet anchor.
@@ -281,7 +289,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     displayName: 'Giant Racoon',
     spriteName: 'GiantRacoon',
     chapter: 4,
-    maxHealth: 120,
+    maxHealth: bossHealthForChapter(4),
     hitboxRadiusTiles: 1.75,
     phaseThresholds: PHASE_THRESHOLDS,
     // Measured from the 60×60 sheets (Idle/Jump/Attack/Charge), feet anchor.
@@ -293,7 +301,7 @@ export const BOSSES: Readonly<Record<BossId, BossDef>> = {
     displayName: 'Red Tengu',
     spriteName: 'TenguRed',
     chapter: 4,
-    maxHealth: 120,
+    maxHealth: bossHealthForChapter(4),
     hitboxRadiusTiles: 1.75,
     phaseThresholds: PHASE_THRESHOLDS,
     // Measured from the 82×82 sheets (Idle/Walk/Attack/Trans/Hit), feet anchor.

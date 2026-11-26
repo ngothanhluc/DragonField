@@ -55,7 +55,7 @@
  </layer>
  <objectgroup id="3" name="objects">
   <object id="1" name="playerStart" x="256" y="256"><point/></object>
-  <object id="2" name="bossStart" x="256" y="128"><point/></object>
+  <object id="2" name="bossStart" x="256" y="80"><point/></object>
   <object id="3" name="spawn" x="64" y="64">
    <properties>
     <property name="role" type="string" value="chaser"/>

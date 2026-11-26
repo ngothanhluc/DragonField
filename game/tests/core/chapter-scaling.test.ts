@@ -4,11 +4,11 @@ import {
   maxHealthFor,
 } from '../../assets/scripts/core/enemies/behaviours';
 import { parseTuning } from '../../assets/scripts/core/enemies/tuning-schema';
-import { TUNING_SOURCE } from '../../assets/scripts/core/enemies/tuning';
+import { CHAPTER_TUNING, TUNING_SOURCE } from '../../assets/scripts/core/enemies/tuning';
 import { spawnWave } from '../../assets/scripts/core/enemies/waves';
 import { parseLevelData } from '../../assets/scripts/core/level/level-data';
 
-const HEALTH = [1, 1.05, 1.05, 1.1];
+const HEALTH = CHAPTER_TUNING.enemyHealthMultipliers;
 
 function roomForChapter(chapter: number) {
   return parseLevelData({
@@ -53,15 +53,23 @@ describe('chapter scaling', () => {
     }
   });
 
+  it('chapter health multipliers climb meaningfully from chapter 1 through chapter 4', () => {
+    expect(HEALTH[0]).toBe(1);
+    expect(HEALTH[1]!).toBeGreaterThan(HEALTH[0]!);
+    expect(HEALTH[2]!).toBeGreaterThan(HEALTH[1]!);
+    expect(HEALTH[3]!).toBeGreaterThan(HEALTH[2]!);
+  });
+
   it('spawnWave uses the room chapter, not a constant', () => {
     const chapterOne = spawnWave(roomForChapter(1), 0);
     const chapterThree = spawnWave(roomForChapter(3), 0);
+    const ch3Scale = HEALTH[2] ?? 1;
 
     expect(chapterOne.map((enemy) => enemy.maxHealth)).toEqual([6, 4, 10]);
     expect(chapterThree.map((enemy) => enemy.maxHealth)).toEqual([
-      Math.round(6 * 1.05),
-      Math.round(4 * 1.05),
-      Math.round(10 * 1.05),
+      Math.round(6 * ch3Scale),
+      Math.round(4 * ch3Scale),
+      Math.round(10 * ch3Scale),
     ]);
   });
 

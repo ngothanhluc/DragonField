@@ -455,6 +455,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       playerHearts: health.current,
       playerStart: bossRoom.playerStart,
       bossStart: bossRoom.bossStart,
+      startNowMs: durationMs,
       // The same player plays the boss room: "dodge + typical loadout wins the chapter" is only
       // true if the boss fight dodges too. The boss room used to fall back to `approachBoss`
       // (walk into the boss), which won while the player entered with full hearts; once the
@@ -469,6 +470,14 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           nowMs: durationMs + event.nowMs,
           room: bossRoom.room,
           phase: event.phase,
+        });
+      } else if (event.kind === 'player-hit') {
+        events.push({
+          kind: 'player-hit',
+          nowMs: durationMs + event.nowMs,
+          room: bossRoom.room,
+          hearts: event.hearts,
+          source: event.source,
         });
       }
     }

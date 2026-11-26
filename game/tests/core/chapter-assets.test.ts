@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { BOSS_POOLS } from '../../assets/scripts/core/boss/boss-pool';
+import { bossRoomBounds } from '../../assets/scripts/core/boss/patterns';
+import { firstHit } from '../../assets/scripts/core/combat/bullets';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import {
   obstacleAt,
   type ChapterData,
 } from '../../assets/scripts/core/level/level-data';
+import { distance } from '../../assets/scripts/core/math/vec2';
 import { loadTmxLevels, LEVELS_ROOT } from '../helpers/tmx-levels';
 import { join } from 'node:path';
 
@@ -81,10 +85,25 @@ describe('chapter assets', () => {
     }
   });
 
-  it('chapter 3 boss arena: the player stands on the boss row so a horizontal charge is meaningful', () => {
-    const rooms = loadChapter(3).rooms;
-    const bossRoom = rooms[rooms.length - 1];
-    expect(bossRoom?.bossStart?.y).toBe(bossRoom?.playerStart.y);
+  it('all 4 boss arenas separate playerStart and bossStart by >= 10 tiles inside bossRoomBounds', () => {
+    for (const chapter of [1, 2, 3, 4]) {
+      const rooms = loadChapter(chapter).rooms;
+      const bossRoom = rooms[rooms.length - 1];
+      if (bossRoom?.bossStart === undefined) {
+        throw new Error(`chapter ${chapter} boss room is missing bossStart`);
+      }
+
+      const gap = distance(bossRoom.playerStart, bossRoom.bossStart);
+      expect(gap, `chapter ${chapter} separation`).toBeGreaterThanOrEqual(10);
+
+      for (const bossId of BOSS_POOLS[chapter] ?? []) {
+        const bounds = bossRoomBounds(bossId);
+        expect(bossRoom.bossStart.x, `ch${chapter} ${bossId} minX`).toBeGreaterThanOrEqual(bounds.minX);
+        expect(bossRoom.bossStart.x, `ch${chapter} ${bossId} maxX`).toBeLessThanOrEqual(bounds.maxX);
+        expect(bossRoom.bossStart.y, `ch${chapter} ${bossId} minY`).toBeGreaterThanOrEqual(bounds.minY);
+        expect(bossRoom.bossStart.y, `ch${chapter} ${bossId} maxY`).toBeLessThanOrEqual(bounds.maxY);
+      }
+    }
   });
 
   it('every room has a playerStart and at least one valid obstacle/door', () => {
@@ -116,15 +135,14 @@ describe('chapter assets', () => {
     }
   });
 
-  it('the chapter 3 boss is not blocked by a pillar on the projectile path from playerStart', () => {
-    const rooms = loadChapter(3).rooms;
-    const room = rooms[rooms.length - 1];
-    if (room?.bossStart === undefined) throw new Error('missing bossStart');
-    // The player and boss rows coincide; any pillar on that row would block projectiles.
-    for (let x = Math.floor(room.bossStart.x); x <= Math.ceil(room.playerStart.x); x += 1) {
+  it('no boss arena puts a pillar on the straight sightline between playerStart and bossStart', () => {
+    for (const chapter of [1, 2, 3, 4]) {
+      const rooms = loadChapter(chapter).rooms;
+      const room = rooms[rooms.length - 1];
+      if (room?.bossStart === undefined) throw new Error(`ch${chapter} missing bossStart`);
       expect(
-        obstacleAt(room, { x: x + 0.5, y: room.bossStart.y + 0.5 }),
-        `pillar blocking the projectile at x=${x}`,
+        firstHit({ from: room.playerStart, to: room.bossStart }, room),
+        `ch${chapter} pillar blocking sightline`,
       ).toBeNull();
     }
   });

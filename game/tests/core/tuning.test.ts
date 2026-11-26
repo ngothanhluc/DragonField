@@ -143,7 +143,7 @@ describe('tuning — config/tuning.json is the single source', () => {
 
       expect(maxHealthFor(role, false)).toBe(numberAt(raw, 'health'));
       expect(maxHealthFor(role, true)).toBe(
-        numberAt(raw, 'health') * ENEMY_TUNING.eliteHealthMultiplier,
+        Math.round(numberAt(raw, 'health') * ENEMY_TUNING.eliteHealthMultiplier),
       );
       expect(speedFor(role, false)).toBe(numberAt(raw, 'speedTilesPerSecond'));
       expect(contactDamageFor(role, false)).toBe(numberAt(raw, 'contactDamage'));
@@ -336,5 +336,32 @@ describe('tuning — M3 round 2: silhouette per role', () => {
     const raw = cloneSource();
     roleOf(raw, 'tank').scale = 0;
     expect(() => parseTuning(raw)).toThrowError(/enemies\.roles\.tank\.scale.*must be > 0/);
+  });
+});
+
+describe('tuning — M11: boss intro grace & chapter HP', () => {
+  it('boss.introGraceMs and boss.healthByChapter match config/tuning.json', () => {
+    const rawBoss = cloneSource().boss as { introGraceMs: number; healthByChapter: number[] };
+    expect(TUNING.boss.introGraceMs).toBe(rawBoss.introGraceMs);
+    expect(TUNING.boss.healthByChapter).toEqual(rawBoss.healthByChapter);
+    expect(TUNING.boss.introGraceMs).toBeGreaterThanOrEqual(800);
+  });
+
+  it('rejects invalid boss tuning fields', () => {
+    const negativeGrace = cloneSource();
+    (negativeGrace.boss as Record<string, unknown>).introGraceMs = -100;
+    expect(() => parseTuning(negativeGrace)).toThrowError(/boss\.introGraceMs/);
+
+    const shortHp = cloneSource();
+    (shortHp.boss as Record<string, unknown>).healthByChapter = [80, 100];
+    expect(() => parseTuning(shortHp)).toThrowError(/boss\.healthByChapter/);
+
+    const zeroHp = cloneSource();
+    (zeroHp.boss as Record<string, unknown>).healthByChapter = [80, 0, 140, 180];
+    expect(() => parseTuning(zeroHp)).toThrowError(/boss\.healthByChapter\[1\]/);
+
+    const missingBoss = cloneSource();
+    delete missingBoss.boss;
+    expect(() => parseTuning(missingBoss)).toThrowError(/boss.*must be an object/);
   });
 });

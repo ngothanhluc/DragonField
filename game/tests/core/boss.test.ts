@@ -18,6 +18,7 @@ import {
   bossRoomBounds,
   initialBossState,
   isBossDefeated,
+  isBossInIntro,
   isDamagingStep,
   stepBoss,
   type BossEvent,
@@ -31,6 +32,7 @@ import {
   summonedEnemies,
 } from '../../assets/scripts/core/boss/summon';
 import { TELEGRAPH_MS } from '../../assets/scripts/core/combat/telegraph';
+import { BOSS_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import { ROOM_COLS, ROOM_ROWS } from '../../assets/scripts/core/level/level-data';
 import { distance, type Vec2 } from '../../assets/scripts/core/math/vec2';
 import { SeededRng } from '../../assets/scripts/core/rng';
@@ -51,6 +53,8 @@ interface SimOptions {
   readonly healthFraction?: number;
   readonly deltaMs?: number;
   readonly staticPlayer?: boolean;
+  /** Default 0 so single-loop script timing tests measure exact script duration; intro grace has its own suite. */
+  readonly introGraceMs?: number;
 }
 
 interface SimResult {
@@ -69,7 +73,7 @@ function simulate(id: BossId, options: SimOptions): SimResult {
   const rng = new SeededRng(options.seed ?? 101);
 
   let state: BossState = {
-    ...initialBossState(id, BOSS_START),
+    ...initialBossState(id, BOSS_START, 0, options.introGraceMs ?? 0),
     health: BOSSES[id].maxHealth * fraction,
     phase: phaseFor(id, fraction),
   };
@@ -134,8 +138,14 @@ function matchesSpec(bullets: readonly BulletVerb[], spec: VolleySpec): boolean 
 }
 
 describe('boss defs', () => {
-  it('health exactly as GDD 60 / 80 / 100 from all 3 chapters, 60 / 80 for the ch1/ch2 pool', () => {
-    expect(BOSS_IDS.map((id) => BOSSES[id].maxHealth)).toEqual([60, 80, 100, 60, 80, 100, 120, 120]);
+  it('health scales per chapter from config/tuning.json (boss.healthByChapter)', () => {
+    const byChapter = BOSS_TUNING.healthByChapter;
+    expect(BOSS_IDS.map((id) => BOSSES[id].maxHealth)).toEqual(
+      BOSS_IDS.map((id) => byChapter[BOSSES[id].chapter - 1]),
+    );
+    expect(byChapter[0]!).toBeLessThan(byChapter[1]!);
+    expect(byChapter[1]!).toBeLessThan(byChapter[2]!);
+    expect(byChapter[2]!).toBeLessThan(byChapter[3]!);
     expect(BOSS_IDS.map((id) => BOSSES[id].chapter)).toEqual([1, 2, 3, 1, 2, 3, 4, 4]);
     expect(BOSSES.tengu.spriteName).toBe('TenguBlue');
     expect(BOSSES.squid.spriteName).toBe('SquidGreen');
@@ -202,8 +212,9 @@ describe('phaseFor', () => {
   });
 
   it('healthFraction clamps into [0, 1]', () => {
-    expect(healthFraction('tengu', 60)).toBe(1);
-    expect(healthFraction('tengu', 30)).toBe(0.5);
+    const maxHp = BOSSES.tengu.maxHealth;
+    expect(healthFraction('tengu', maxHp)).toBe(1);
+    expect(healthFraction('tengu', maxHp / 2)).toBe(0.5);
     expect(healthFraction('tengu', 0)).toBe(0);
     expect(healthFraction('tengu', 999)).toBe(1);
     expect(healthFraction('tengu', -5)).toBe(0);
@@ -367,7 +378,7 @@ describe('determinism', () => {
   });
 
   it('does not mutate the caller state', () => {
-    const state: BossState = { ...initialBossState('tengu', BOSS_START), phase: 2, health: 40 };
+    const state: BossState = { ...initialBossState('tengu', BOSS_START, 0, 0), phase: 2, health: 40 };
     const before = JSON.stringify(state);
 
     stepBoss({ state, nowMs: 500, deltaMs: 40, player: playerAt(500), rng: new SeededRng(9) });
@@ -376,7 +387,7 @@ describe('determinism', () => {
   });
 
   it('a long frame (dropped frame) still runs every step, without getting stuck in the loop', () => {
-    const state: BossState = { ...initialBossState('tengu', BOSS_START), health: 10, phase: 3 };
+    const state: BossState = { ...initialBossState('tengu', BOSS_START, 0, 0), health: 10, phase: 3 };
     const result = stepBoss({
       state,
       nowMs: 12_000,
@@ -679,5 +690,132 @@ describe('the boss sprite never spills outside the room', () => {
       const bounds = bossRoomBounds(id);
       expect(initialBossState(id, { x: 0, y: 0 }).position).toEqual({ x: bounds.minX, y: bounds.minY });
     }
+  });
+});
+
+describe('boss entrance nowMs & intro grace window (M11 T6)', () => {
+  it('initialBossState honours non-zero nowMs and defaults to BOSS_TUNING.introGraceMs', () => {
+    const entryMs = 300_000;
+    const graceMs = BOSS_TUNING.introGraceMs;
+    expect(graceMs).toBeGreaterThanOrEqual(800);
+
+    for (const id of BOSS_IDS) {
+      const state = initialBossState(id, { x: 16, y: 5 }, entryMs);
+      expect(state.introUntilMs, id).toBe(entryMs + graceMs);
+      expect(state.stepStartedMs, id).toBe(entryMs + graceMs);
+      expect(state.step, id).toBe(0);
+      expect(state.chargeDirection, id).toBeNull();
+      expect(isBossInIntro(state, entryMs), id).toBe(true);
+      expect(isBossInIntro(state, entryMs + graceMs), id).toBe(true);
+      expect(isBossInIntro(state, entryMs + graceMs + 1), id).toBe(false);
+    }
+  });
+
+  it('entering after 300 s of play does not skip step 0 or attack/move/teleport during intro grace', () => {
+    const entryMs = 300_000;
+    const graceMs = BOSS_TUNING.introGraceMs;
+    const deltaMs = 16;
+    const player: Vec2 = { x: 16, y: 16 };
+
+    for (const id of BOSS_IDS) {
+      const rng = new SeededRng(42);
+      let state = initialBossState(id, { x: 16, y: 5 }, entryMs);
+      const startPos = { ...state.position };
+      const introEvents: BossEvent[] = [];
+
+      for (let elapsed = deltaMs; elapsed <= graceMs; elapsed += deltaMs) {
+        const result = stepBoss({
+          state,
+          nowMs: entryMs + elapsed,
+          deltaMs,
+          player,
+          rng,
+        });
+        state = result.state;
+        introEvents.push(...result.events);
+        expect(state.position, `${id} moved at +${elapsed} ms`).toEqual(startPos);
+        expect(state.chargeDirection, `${id} charged at +${elapsed} ms`).toBeNull();
+        expect(state.step, `${id} skipped step 0 at +${elapsed} ms`).toBe(0);
+      }
+
+      expect(introEvents, `${id} emitted events during intro grace`).toEqual([]);
+
+      // Immediately after intro finishes, stepping begins cleanly at step 0 with zero fast-forward.
+      const firstAfter = stepBoss({
+        state,
+        nowMs: entryMs + graceMs + deltaMs,
+        deltaMs,
+        player,
+        rng,
+      });
+      expect(firstAfter.events.some((event) => event.kind === 'shoot'), id).toBe(false);
+      expect(firstAfter.state.step, id).toBe(0);
+    }
+  });
+
+  it('entering at nowMs = 300_000 produces the exact same post-intro event stream as entering at nowMs = 0', () => {
+    const player: Vec2 = { x: 16, y: 16 };
+    const deltaMs = 40;
+    const totalMs = 8_000;
+
+    for (const id of BOSS_IDS) {
+      const runFrom = (startMs: number): BossEvent[] => {
+        const rng = new SeededRng(77);
+        let state = initialBossState(id, { x: 16, y: 5 }, startMs);
+        const events: BossEvent[] = [];
+        for (let elapsed = deltaMs; elapsed <= totalMs; elapsed += deltaMs) {
+          const stepped = stepBoss({
+            state,
+            nowMs: startMs + elapsed,
+            deltaMs,
+            player,
+            rng,
+          });
+          state = stepped.state;
+          events.push(...stepped.events);
+        }
+        return events;
+      };
+
+      expect(runFrom(300_000), id).toEqual(runFrom(0));
+    }
+  });
+
+  it('even with 0 intro grace, non-zero nowMs prevents frame-1 step skipping', () => {
+    const entryMs = 300_000;
+    const rng = new SeededRng(13);
+    const state = initialBossState('samurai', { x: 16, y: 5 }, entryMs, 0);
+    const first = stepBoss({
+      state,
+      nowMs: entryMs + 16,
+      deltaMs: 16,
+      player: { x: 16, y: 16 },
+      rng,
+    });
+
+    expect(first.state.step).toBe(0);
+    expect(first.state.chargeDirection).toBeNull();
+    expect(first.events.some((event) => event.kind === 'shoot')).toBe(false);
+  });
+
+  it('phase change during intro grace updates phase but keeps boss idle until intro finishes', () => {
+    const entryMs = 300_000;
+    const graceMs = BOSS_TUNING.introGraceMs;
+    const rng = new SeededRng(5);
+    const initial = initialBossState('tengu', { x: 16, y: 5 }, entryMs);
+    const hurt: BossState = { ...initial, health: Math.floor(BOSSES.tengu.maxHealth * 0.5) };
+
+    const stepped = stepBoss({
+      state: hurt,
+      nowMs: entryMs + 200,
+      deltaMs: 16,
+      player: { x: 16, y: 16 },
+      rng,
+    });
+
+    expect(stepped.state.phase).toBe(2);
+    expect(stepped.state.stepStartedMs).toBe(entryMs + graceMs);
+    expect(stepped.state.position).toEqual(initial.position);
+    expect(stepped.events).toEqual([{ kind: 'phase-change', phase: 2 }]);
   });
 });

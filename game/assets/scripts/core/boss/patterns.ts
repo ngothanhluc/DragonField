@@ -31,6 +31,7 @@
  * are **radians**, 0 = +x, `Math.PI / 2` = +y (down).
  */
 import { TELEGRAPH_MS } from '../combat/telegraph';
+import { BOSS_TUNING } from '../enemies/tuning';
 import { ROOM_COLS, ROOM_ROWS, type EnemyRole } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
 import type { SeededRng } from '../rng';
@@ -63,6 +64,11 @@ export interface BossState {
   /** Current step in the `phase` script. */
   step: number;
   stepStartedMs: number;
+  /**
+   * Sim time until which the boss holds idle on room entry (no attacks, teleports, movement,
+   * or contact lunges). Set by `initialBossState` from `nowMs + introGraceMs`.
+   */
+  introUntilMs: number;
   facing: Facing;
   /** Non-`null` only during a charge step; `move` also reads from here. */
   chargeDirection: Vec2 | null;
@@ -101,8 +107,23 @@ export interface StepBossArgs {
   readonly rng: SeededRng;
 }
 
-/** Initial state of a freshly spawned boss; `stepStartedMs = 0`. */
-export function initialBossState(id: BossId, position: Vec2): BossState {
+/**
+ * Initial state of a freshly spawned boss at simulation clock `nowMs`.
+ *
+ * `nowMs` MUST be passed from the caller's live simulation clock (e.g. `CombatLoop.clockMs` after
+ * rooms 1–8): leaving it at 0 makes `stepBoss` see a ~300 s deficit on frame 1 and immediately
+ * fast-forward through dozens of attack steps. `introGraceMs` (default `BOSS_TUNING.introGraceMs`)
+ * holds the boss visible and idle on room entry before step 0 begins.
+ */
+export function initialBossState(
+  id: BossId,
+  position: Vec2,
+  nowMs = 0,
+  introGraceMs = BOSS_TUNING.introGraceMs,
+): BossState {
+  const safeNowMs = Number.isFinite(nowMs) ? nowMs : 0;
+  const safeGraceMs = Number.isFinite(introGraceMs) && introGraceMs > 0 ? introGraceMs : 0;
+  const introUntilMs = safeNowMs + safeGraceMs;
   return {
     id,
     // A `.tmx` spawn may be against the wall; pull it in so the sprite is not cut on the first frame.
@@ -110,10 +131,16 @@ export function initialBossState(id: BossId, position: Vec2): BossState {
     health: BOSSES[id].maxHealth,
     phase: 1,
     step: 0,
-    stepStartedMs: 0,
+    stepStartedMs: introUntilMs,
+    introUntilMs,
     facing: 'right',
     chargeDirection: null,
   };
+}
+
+/** Whether the boss is still inside its entrance grace window at `nowMs`. */
+export function isBossInIntro(state: BossState, nowMs: number): boolean {
+  return nowMs <= state.introUntilMs;
 }
 
 /** A dead boss: no actions, no shots, no further phase changes. */
@@ -1105,8 +1132,14 @@ export function stepBoss(args: StepBossArgs): { state: BossState; events: BossEv
       events.push({ kind: 'phase-change', phase });
     }
     state.step = 0;
-    state.stepStartedMs = nowMs;
+    state.stepStartedMs = Math.max(nowMs, state.introUntilMs);
     state.chargeDirection = null;
+  }
+
+  // Entrance grace window: boss remains visible and idle (no attacks, teleports, or lunges).
+  if (isBossInIntro(state, nowMs)) {
+    state.chargeDirection = null;
+    return { state, events };
   }
 
   const script = BOSS_SCRIPTS[state.id][state.phase];
