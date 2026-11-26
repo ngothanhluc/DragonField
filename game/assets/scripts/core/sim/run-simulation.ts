@@ -2,10 +2,10 @@
  * Headless run simulation — no engine, no DOM, no `SaveStorage`.
  *
  * Wires the `core/` modules the game uses (`waves`, `behaviours`, `AutoFire`,
- * `BulletPool`, `HealthState`, `rewards`, `skills`, `boss`) into a 16 ms tick loop,
+ * `BulletPool`, `HealthState`, `rewards`, `skills`, `xp`, `boss`) into a 16 ms tick loop,
  * so integration tests catch balance regressions and win/lose flow without opening Cocos.
  *
- * This simulates **exactly the rules the game runs** (M4):
+ * This simulates **exactly the rules the game runs** (M4–M12, ADR-021):
  *
  * - Fire rate/damage/projectile count/crit/pierce/ricochet/homing/explosion/freeze/poison/
  *   lifesteal/shield/thorns all come from `DerivedStats` and the core helpers that
@@ -14,6 +14,13 @@
  *   staggers the enemy for 150 ms, without resetting cooldowns.
  * - An elite caster fires a 3-bullet volley, an elite chaser pounces, an elite tank charges twice; hitbox
  *   and contact range scale with the role silhouette.
+ * - M12 unified XP economy (ADR-021): enemies drop pooled XP orbs (`XpOrbPool`, `xpForKill`,
+ *   `splitling` = 0 XP) with magnetic pickup and full-room auto-vacuum on room clear; `'xp'`
+ *   challenge rooms spawn `xpRoomExtraElites` extra elites, apply `xpRoomXpMultiplier`, and award
+ *   `xpDoorClearBonus` on clear. When `chooseSkill` is provided, each level-up rolls 1-of-3 from
+ *   the dedicated `createSkillRollRng(seed)` sub-seed (decoupled from combat RNG), applies the
+ *   chosen skill immediately, and triggers `computeLevelUpKnockback` + `levelUpResumeIframeMs`
+ *   (leaving enemy bullets live).
  * - The boss room is **no** longer a placeholder tank: it runs `simulateBossRun`
  *   (`core/sim/boss-run.ts`), i.e. `stepBoss` + phases + summon + skills.
  *
@@ -27,6 +34,7 @@ import { pickBoss } from '../boss/boss-pool';
 import { AutoFire } from '../combat/auto-fire';
 import { BulletPool, firstHit, hitsCircle, type Bullet } from '../combat/bullets';
 import { HealthState } from '../combat/health';
+import { stepKnockback, type KnockbackState } from '../combat/knockback';
 import { firePlayerVolley } from '../combat/player-fire';
 import {
   HOMING_TURN_RATE_RADIANS_PER_SECOND,
@@ -62,7 +70,11 @@ import {
   type FlowField,
   type SeparationBody,
 } from '../enemies/navigation';
-import { DOORS_TUNING, NAVIGATION_TUNING, SPECIAL_ROOMS_TUNING } from '../enemies/tuning';
+import {
+  DOORS_TUNING,
+  NAVIGATION_TUNING,
+  SPECIAL_ROOMS_TUNING,
+} from '../enemies/tuning';
 import { WaveScheduler, enemyStateFromSpawn, usesWaveScheduler } from '../enemies/wave-scheduler';
 import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
@@ -86,7 +98,13 @@ import {
   type SpecialKind,
 } from '../run/special-rooms';
 import { computeDerivedStats } from '../skills/derived-stats';
+import type { SkillDef } from '../skills/pool';
+import { createSkillRollRng, rerollChoices, rollChoices } from '../skills/roll';
 import { screenViewAround } from '../view/view-rect';
+import { computeLevelUpKnockback, levelUpResumeIframeMs } from '../xp/level-up-wave';
+import { canReroll, deductRerollCost, rerollCost } from '../xp/reroll';
+import { XpTracker, xpDoorClearBonus, xpForKill } from '../xp/xp-curve';
+import { XpOrbPool } from '../xp/xp-orbs';
 import { BOSS_TARGET_ID, simulateBossRun, type BossRunPolicy } from './boss-run';
 import type { ViewRect } from '../camera/follow-camera';
 
@@ -140,6 +158,35 @@ export interface PolicyWorld {
 /** Scripted input: a pure function of the world returning this frame's WASD keys. */
 export type InputPolicy = (world: PolicyWorld) => MoveInput;
 
+/** Read-only player vitals visible on the HUD while choosing a level-up skill. */
+export interface SkillPickContext {
+  readonly hearts: number;
+  readonly maxHearts: number;
+}
+
+/**
+ * Policy for choosing 1 of 3 skills offered on an XP level-up (M12, ADR-021).
+ * Returns an index into `offers`. Omit in `SimulationOptions` for 0-skill / fixed-loadout runs.
+ */
+export type SkillPickPolicy = (
+  offers: readonly SkillDef[],
+  owned: ReadonlyMap<string, number>,
+  level: number,
+  context: SkillPickContext,
+) => number;
+
+/**
+ * Optional policy deciding whether to spend run gold on a level-up skill reroll (`core/xp/reroll.ts`,
+ * M12 ADR-021). Uses the same dedicated `createSkillRollRng` stream via `rerollChoices`.
+ */
+export type SkillRerollPolicy = (
+  offers: readonly SkillDef[],
+  owned: ReadonlyMap<string, number>,
+  availableGold: number,
+  nextCost: number,
+  rerollsUsed: number,
+) => boolean;
+
 export interface SimulationOptions {
   readonly seed: number;
   /** A full chapter; the run plays `drawRunRooms(level, seed)` (8 normal rooms + the boss). */
@@ -151,8 +198,16 @@ export interface SimulationOptions {
   readonly godMode?: boolean;
   /** Test hook: start the run at this many hearts (defaults to the derived max). */
   readonly playerHearts?: number;
-  /** Owned skills, `Map<skillId, stacks>` like the game's `RunState`. */
+  /** Starting skills, `Map<skillId, stacks>` like the game's `RunState` (defaults to empty). */
   readonly skills?: ReadonlyMap<string, number>;
+  /**
+   * Level-up skill pick policy (M12, ADR-021). When provided, each XP level-up rolls 1-of-3
+   * from the dedicated `createSkillRollRng(seed)` stream, acquires the chosen skill, and emits
+   * the radial knockback wave + resume i-frame. When omitted, no skills are acquired on level-up.
+   */
+  readonly chooseSkill?: SkillPickPolicy;
+  /** Optional gold reroll policy evaluated before `chooseSkill` on each level-up. */
+  readonly shouldReroll?: SkillRerollPolicy;
   /**
    * Which door to take after a normal room (#39): returns an index into `offers`.
    * Defaults to 0 (the first door).
@@ -178,12 +233,23 @@ export type SimulationEvent =
   | (SimEventBase & { readonly kind: 'kill'; readonly enemyId: string; readonly role: EnemyRole; readonly gold: number })
   | (SimEventBase & { readonly kind: 'player-hit'; readonly hearts: number; readonly source: 'contact' | 'projectile' })
   | (SimEventBase & { readonly kind: 'shield-block' })
+  | (SimEventBase & {
+      readonly kind: 'level-up';
+      readonly level: number;
+      readonly offers: readonly string[];
+      readonly chosen: string | null;
+    })
+  | (SimEventBase & {
+      readonly kind: 'skill-reroll';
+      readonly cost: number;
+      readonly offers: readonly string[];
+    })
   | (SimEventBase & { readonly kind: 'room-cleared'; readonly gold: number })
   | (SimEventBase & { readonly kind: 'boss-phase'; readonly phase: number })
   /** Doors offered after a normal room (#39); `room` is the cleared room position, 1-based. */
   | (SimEventBase & { readonly kind: 'door'; readonly offers: readonly DoorReward[]; readonly chosen: DoorReward })
-  /** The clear reward of room `room`; `gold` is the door bonus paid for a `gold` reward, else 0. */
-  | (SimEventBase & { readonly kind: 'reward'; readonly reward: DoorReward; readonly gold: number })
+  /** The clear reward of room `room`; `gold` is the door bonus paid for a `gold` reward, `xp` for an `xp` door room. */
+  | (SimEventBase & { readonly kind: 'reward'; readonly reward: DoorReward; readonly gold: number; readonly xp?: number })
   /** A special room used in slot `room` (#40): heal / shop (never buys) / chest reward. */
   | (SimEventBase & {
       readonly kind: 'special';
@@ -198,6 +264,14 @@ export interface SimulationResult {
   readonly roomsCleared: number;
   readonly kills: number;
   readonly goldEarned: number;
+  /** Cumulative XP collected across the run (orbs + `'xp'` room clear bonuses). */
+  readonly xpEarned: number;
+  /** Total XP level-ups earned during the run (`finalLevel - 1`). */
+  readonly levelUps: number;
+  /** Final player level at run end (starts at 1). */
+  readonly finalLevel: number;
+  /** Final owned skill stacks (`starting skills + XP level-up picks`). */
+  readonly acquiredSkills: ReadonlyMap<string, number>;
   readonly durationMs: number;
   readonly events: readonly SimulationEvent[];
 }
@@ -224,7 +298,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   let doorReward: DoorReward | null = null;
 
   const rng = new SeededRng(options.seed);
-  const stats = computeDerivedStats(options.skills ?? new Map<string, number>());
+  /** Dedicated skill-roll RNG stream, strictly decoupled from combat RNG (ADR-021). */
+  const skillRollRng = createSkillRollRng(options.seed);
+  const ownedSkills = new Map<string, number>(options.skills ?? []);
+  let stats = computeDerivedStats(ownedSkills);
   const startHearts =
     options.playerHearts !== undefined && Number.isFinite(options.playerHearts)
       ? Math.max(1, Math.min(stats.maxHearts, Math.trunc(options.playerHearts)))
@@ -236,23 +313,36 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     },
     startHearts,
   );
-  const shield = new ShieldCharger(
+  let shield = new ShieldCharger(
     stats.shield?.charges ?? 0,
     stats.shield?.cooldownMs ?? 0,
   );
-  const autoFire = AutoFire.fromRate(stats.fireRatePerSecond);
+  let autoFire = AutoFire.fromRate(stats.fireRatePerSecond);
   const bullets = new BulletPool();
+  const xpTracker = new XpTracker(options.level.chapter);
+  const xpOrbs = new XpOrbPool();
   /** Status of each enemy, key = id (not stuffed into `EnemyState` to keep the shared schema). */
   const statuses = new Map<string, StatusEffects>();
+  /** Active level-up radial knockback pushes per enemy id (M12, ADR-021). */
+  const enemyKnockbacks = new Map<string, KnockbackState>();
   const events: SimulationEvent[] = [];
   /** Ids of bullets hit this frame; reused so each frame allocates nothing. */
   const spent = new Set<number>();
   let hitstopMs = 0;
+  /** End timestamp of the 0.6 s post-level-up resume i-frame window (M12, ADR-021). */
+  let levelUpInvulnerableUntilMs = Number.NEGATIVE_INFINITY;
   /** Splitlings born this frame; appended after the damage loops so we never mutate mid-iteration. */
   const pendingSplits: EnemyState[] = [];
 
   let roomIndex = 0;
   let room = firstRoom;
+  /** True when the current normal combat room was entered via an `'xp'` challenge door. */
+  let currentRoomIsXpChallenge = false;
+  /** Remaining non-elite wave spawns to promote into elites in an `'xp'` room (`doors.xpRoomExtraElites`). */
+  let extraElitesToPromote = 0;
+  let roomBatchIndex = 0;
+  /** Number of gold rerolls spent across the run (`core/xp/reroll.ts`). */
+  let rerollsUsed = 0;
   /** Shared flow field per radius class for the current room (#34). Reset on a room change. */
   let navigation = createRoomNavigation(firstRoom);
   const stuckGuard = new StuckGuard(
@@ -277,12 +367,25 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
   /**
    * Enter a room's enemies. A normal room is empty and fills from the `WaveScheduler` over time
-   * (8× the authored count under the alive cap); the boss room keeps its authored add list.
+   * (8× the authored count under the alive cap); an `'xp'` challenge room also queues
+   * `DOORS_TUNING.xpRoomExtraElites` extra elite spawns. The boss room keeps its authored list.
    */
-  const enterRoomEnemies = (level: LevelData, atRoomIndex: number): EnemyState[] => {
+  const enterRoomEnemies = (
+    level: LevelData,
+    atRoomIndex: number,
+    isXpChallenge: boolean,
+  ): EnemyState[] => {
     scheduler = null;
     pendingSpawns = [];
     spawnSeq = 0;
+    enemyKnockbacks.clear();
+    xpOrbs.clear();
+    currentRoomIsXpChallenge = isXpChallenge && usesWaveScheduler(level);
+    extraElitesToPromote = currentRoomIsXpChallenge
+      ? Math.max(0, Math.floor(DOORS_TUNING.xpRoomExtraElites))
+      : 0;
+    roomBatchIndex = 0;
+
     if (!usesWaveScheduler(level)) {
       // One-screen room (boss arena, hand-built fixture): its authored list, all of it.
       return level.waves.flatMap((_, wave) => spawnWave(level, wave));
@@ -311,7 +414,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     pendingSpawns = waiting;
   };
 
-  enemies = enterRoomEnemies(room, 0);
+  enemies = enterRoomEnemies(room, 0, false);
   let player: Vec2 = { x: room.playerStart.x, y: room.playerStart.y };
   let durationMs = 0;
   let roomsCleared = 0;
@@ -323,8 +426,122 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (amount > 0) health.heal(amount);
   };
 
+  const isResumeInvulnerable = (): boolean => durationMs < levelUpInvulnerableUntilMs;
+
+  const acquireSkill = (skill: SkillDef): void => {
+    const prevMaxHearts = stats.maxHearts;
+    const prevFireRate = stats.fireRatePerSecond;
+    const prevShieldCharges = stats.shield?.charges ?? 0;
+    const prevShieldCooldown = stats.shield?.cooldownMs ?? 0;
+
+    const currentStacks = ownedSkills.get(skill.id) ?? 0;
+    ownedSkills.set(skill.id, Math.min(skill.maxStacks, currentStacks + 1));
+    stats = computeDerivedStats(ownedSkills);
+
+    health.configure(stats.maxHearts, stats.invulnerabilityMs);
+    if (stats.maxHearts > prevMaxHearts) {
+      health.heal(stats.maxHearts - prevMaxHearts);
+    }
+    if (stats.fireRatePerSecond !== prevFireRate) {
+      autoFire = AutoFire.fromRate(stats.fireRatePerSecond);
+    }
+    const nextShieldCharges = stats.shield?.charges ?? 0;
+    const nextShieldCooldown = stats.shield?.cooldownMs ?? 0;
+    if (nextShieldCharges !== prevShieldCharges || nextShieldCooldown !== prevShieldCooldown) {
+      shield = new ShieldCharger(nextShieldCharges, nextShieldCooldown);
+    }
+  };
+
+  const applyLevelUpResumeSafety = (): void => {
+    // Radial knockback pushes nearby enemies away; enemy bullets remain live (ADR-021).
+    const living = enemies.filter((enemy) => enemy.health > 0 && enemy.action.kind !== 'dead');
+    for (const hit of computeLevelUpKnockback(player, living)) {
+      enemyKnockbacks.set(hit.id, hit.knockback);
+    }
+    const iframeMs = levelUpResumeIframeMs();
+    if (iframeMs > 0) {
+      levelUpInvulnerableUntilMs = Math.max(levelUpInvulnerableUntilMs, durationMs + iframeMs);
+    }
+  };
+
+  const grantAndResolveXp = (amount: number): void => {
+    if (amount <= 0) return;
+    const grant = xpTracker.grant(amount);
+    if (grant.levelsGained <= 0) return;
+
+    let resolvedLevel = xpTracker.level - xpTracker.pendingLevelUps;
+    let openedModal = false;
+    while (xpTracker.consumeLevelUp()) {
+      resolvedLevel += 1;
+      if (options.chooseSkill === undefined) {
+        events.push({
+          kind: 'level-up',
+          nowMs: durationMs,
+          room: room.room,
+          level: resolvedLevel,
+          offers: [],
+          chosen: null,
+        });
+        continue;
+      }
+
+      openedModal = true;
+      let offers = rollChoices({ rng: skillRollRng, owned: ownedSkills });
+      // Optional M12 gold reroll (`core/xp/reroll.ts` + `rerollChoices` on `skillRollRng`).
+      while (
+        offers.length > 0 &&
+        options.shouldReroll !== undefined &&
+        canReroll(goldEarned, rerollsUsed) &&
+        options.shouldReroll(
+          offers,
+          ownedSkills,
+          goldEarned,
+          rerollCost(rerollsUsed),
+          rerollsUsed,
+        )
+      ) {
+        const spentGold = deductRerollCost(goldEarned, rerollsUsed);
+        if (!spentGold.ok) break;
+        goldEarned = spentGold.remainingGold;
+        rerollsUsed = spentGold.nextRerollsUsed;
+        offers = rerollChoices({ rng: skillRollRng, owned: ownedSkills, previous: offers });
+        events.push({
+          kind: 'skill-reroll',
+          nowMs: durationMs,
+          room: room.room,
+          cost: spentGold.cost,
+          offers: offers.map((skill) => skill.id),
+        });
+      }
+      let chosenId: string | null = null;
+      if (offers.length > 0) {
+        const pickedIndex = pickSkillIndex(options.chooseSkill, offers, ownedSkills, resolvedLevel, {
+          hearts: health.current,
+          maxHearts: health.max,
+        });
+        const chosen = offers[pickedIndex] ?? offers[0];
+        if (chosen !== undefined) {
+          chosenId = chosen.id;
+          acquireSkill(chosen);
+        }
+      }
+      events.push({
+        kind: 'level-up',
+        nowMs: durationMs,
+        room: room.room,
+        level: resolvedLevel,
+        offers: offers.map((skill) => skill.id),
+        chosen: chosenId,
+      });
+    }
+
+    if (openedModal) {
+      applyLevelUpResumeSafety();
+    }
+  };
+
   const damagePlayer = (amount: number): void => {
-    if (options.godMode === true) return;
+    if (options.godMode === true || isResumeInvulnerable()) return;
     if (shield.tryBlock(durationMs)) {
       events.push({ kind: 'shield-block', nowMs: durationMs, room: room.room });
       return;
@@ -410,6 +627,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     enemy.health = 0;
     enemy.action = { kind: 'dead' };
     stuckGuard.forget(enemy.id);
+    enemyKnockbacks.delete(enemy.id);
     const gold = Math.round(goldForKill(enemy.role, enemy.elite) * stats.goldMultiplier);
     kills += 1;
     goldEarned += gold;
@@ -421,6 +639,13 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       role: enemy.role,
       gold,
     });
+
+    // M12 (ADR-021): drop a pooled XP orb (splitling = 0 XP so splitters cannot be farmed).
+    const roomMultiplier = currentRoomIsXpChallenge ? DOORS_TUNING.xpRoomXpMultiplier : 1;
+    const dropXp = xpForKill(enemy.role, enemy.elite, undefined, roomMultiplier);
+    if (dropXp > 0) {
+      xpOrbs.spawn({ position: enemy.position, value: dropXp });
+    }
 
     // #42: a splitter leaves 2–3 splitlings. They are appended after this frame's damage
     // loops, so the room only clears once they are dead too.
@@ -451,7 +676,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       seed: options.seed + atRoomIndex * 1_000 + 1,
       maxDurationMs: Math.max(1, maxDurationMs - durationMs),
       godMode: options.godMode,
-      skills: options.skills,
+      skills: ownedSkills,
       playerHearts: health.current,
       playerStart: bossRoom.playerStart,
       bossStart: bossRoom.bossStart,
@@ -508,6 +733,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       roomsCleared,
       kills,
       goldEarned,
+      xpEarned: xpTracker.totalXp,
+      levelUps: xpTracker.level - 1,
+      finalLevel: xpTracker.level,
+      acquiredSkills: new Map(ownedSkills),
       durationMs: bossRun.bossDurationMs,
       events,
     };
@@ -547,10 +776,23 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         view,
         alive: aliveEnemies(),
       });
+      if (spawns.length > 0) roomBatchIndex += 1;
       for (const spawn of spawns) {
+        // `'xp'` Elite challenge door room: promote up to `xpRoomExtraElites` non-elite spawns
+        // cleanly inside the wave flow (from batch 2 onward, preserving opening-batch fairness).
+        let promoted = spawn;
+        if (
+          extraElitesToPromote > 0 &&
+          roomBatchIndex >= 2 &&
+          !spawn.elite &&
+          spawn.role !== 'splitling'
+        ) {
+          promoted = { ...spawn, elite: true };
+          extraElitesToPromote -= 1;
+        }
         pendingSpawns.push({
-          state: enemyStateFromSpawn(room, spawn, spawnSeq, durationMs),
-          atMs: durationMs + spawn.telegraphMs,
+          state: enemyStateFromSpawn(room, promoted, spawnSeq, durationMs),
+          atMs: durationMs + promoted.telegraphMs,
         });
         spawnSeq += 1;
       }
@@ -591,6 +833,23 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       if (poison > 0) damageEnemy(enemy, poison);
       if (enemy.health <= 0) continue;
 
+      const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
+      const activeKnockback = enemyKnockbacks.get(enemy.id);
+      if (activeKnockback !== undefined) {
+        const pushed = stepKnockback(
+          enemy.position,
+          activeKnockback,
+          SIM_STEP_MS,
+          room,
+          ROOM_EDGE_MARGIN_TILES,
+          enemyRadius,
+        );
+        enemy.position = pushed.position;
+        if (pushed.state === null) enemyKnockbacks.delete(enemy.id);
+        else enemyKnockbacks.set(enemy.id, pushed.state);
+        continue;
+      }
+
       const before = enemy.action;
       const next = decideAction({ state: enemy, player, nowMs: durationMs, level: room, view });
       // Same attack-cycle rule as the game adapter (`core/enemies/attack-cycle.ts`): a stagger or
@@ -610,7 +869,6 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
       // Walk on the shared flow field toward the player: straight while in sight, around the
       // wall otherwise. The stuck guard may override the direction for a short detour.
-      const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
       const field = navigation.field(enemyRadius, player, durationMs);
       const detour = stuckGuard.update(
         enemy.id,
@@ -629,7 +887,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         enemy.role === 'splitling';
       const contactRange = CONTACT_RANGE_TILES * visualScaleFor(enemy.role);
       if (melee && distance(enemy.position, player) <= contactRange) {
-        if (options.godMode !== true) {
+        if (options.godMode !== true && !isResumeInvulnerable()) {
           if (shield.tryBlock(durationMs)) {
             events.push({ kind: 'shield-block', nowMs: durationMs, room: room.room });
           } else {
@@ -760,6 +1018,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       pendingSplits.length = 0;
     }
 
+    // M12 (ADR-021): step pooled XP orbs (scatter glide + magnetic pickup -> mid-combat level-ups).
+    const collectedXp = xpOrbs.step(SIM_STEP_MS / 1000, player, false);
+    if (collectedXp > 0) {
+      grantAndResolveXp(collectedXp);
+    }
+
     if (health.isDead) {
       status = 'lost';
       events.push({ kind: 'run-lost', nowMs: durationMs });
@@ -771,17 +1035,36 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (!cleared) continue;
 
     {
+      // M12 (ADR-021): full-room auto-vacuum collects every remaining XP orb on room clear.
+      const vacuumStepSec = SIM_STEP_MS / 1000;
+      for (let step = 0; step < 1000 && xpOrbs.size > 0; step += 1) {
+        const vacuumedXp = xpOrbs.step(vacuumStepSec, player, true);
+        if (vacuumedXp > 0) grantAndResolveXp(vacuumedXp);
+      }
+      xpOrbs.clear();
+
       // The room's clear reward comes from the door taken after the previous room (#39).
       const roomPosition = roomIndex + 1;
       const reward = clearRewardFor(roomPosition, doorReward);
       const goldBonus =
         reward === 'gold' ? Math.max(0, Math.round(DOORS_TUNING.goldBonus)) : 0;
+      const xpBonus = currentRoomIsXpChallenge ? xpDoorClearBonus(room.chapter) : 0;
+      if (xpBonus > 0) {
+        grantAndResolveXp(xpBonus);
+      }
       const roomGold =
         Math.round(goldForRoomClear(room.isBossRoom) * stats.goldMultiplier) + goldBonus;
       goldEarned += roomGold;
       roomsCleared += 1;
       events.push({ kind: 'room-cleared', nowMs: durationMs, room: room.room, gold: roomGold });
-      events.push({ kind: 'reward', nowMs: durationMs, room: roomPosition, reward, gold: goldBonus });
+      events.push({
+        kind: 'reward',
+        nowMs: durationMs,
+        room: roomPosition,
+        reward,
+        gold: goldBonus,
+        ...(xpBonus > 0 ? { xp: xpBonus } : {}),
+      });
       healPlayer(stats.healPerRoom ?? 0);
 
       const nextRoom = runRooms[roomIndex + 1];
@@ -869,7 +1152,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         }
 
         player = { x: room.playerStart.x, y: room.playerStart.y };
-        enemies = enterRoomEnemies(room, roomIndex);
+        enemies = enterRoomEnemies(room, roomIndex, doorReward === 'xp');
         bullets.clear();
         continue;
       }
@@ -889,11 +1172,36 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       player = { x: room.playerStart.x, y: room.playerStart.y };
     }
 
-    enemies = enterRoomEnemies(room, roomIndex);
+    enemies = enterRoomEnemies(room, roomIndex, doorReward === 'xp');
     bullets.clear();
   }
 
-  return { status: status ?? 'timeout', roomsCleared, kills, goldEarned, durationMs, events };
+  return {
+    status: status ?? 'timeout',
+    roomsCleared,
+    kills,
+    goldEarned,
+    xpEarned: xpTracker.totalXp,
+    levelUps: xpTracker.level - 1,
+    finalLevel: xpTracker.level,
+    acquiredSkills: new Map(ownedSkills),
+    durationMs,
+    events,
+  };
+}
+
+/** Pick a valid index from `chooseSkill`, falling back to 0 on out-of-range indices. */
+function pickSkillIndex(
+  choose: SkillPickPolicy,
+  offers: readonly SkillDef[],
+  owned: ReadonlyMap<string, number>,
+  level: number,
+  context: SkillPickContext,
+): number {
+  if (offers.length <= 1) return 0;
+  const index = choose(offers, owned, level, context);
+  if (!Number.isInteger(index) || index < 0 || index >= offers.length) return 0;
+  return index;
 }
 
 /** One screen of view centred on `centre`, clamped to the room — what the sim's player sees. */

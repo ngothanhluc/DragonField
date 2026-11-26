@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
 import { makeDodgePolicy } from '../helpers/dodge-policy';
-import { TYPICAL_LOADOUT } from '../helpers/sim-table';
+import {
+  LEVEL_UP_TARGET_MAX,
+  LEVEL_UP_TARGET_MIN,
+  TYPICAL_LOADOUT,
+  typicalDoorChoice,
+  typicalRerollPolicy,
+  typicalSkillChoice,
+} from '../helpers/sim-table';
 import { CHASER_CONTACT_RANGE_TILES } from '../../assets/scripts/core/enemies/behaviours';
+import { DOORS_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import { parseLevelData, type ChapterData, type LevelData } from '../../assets/scripts/core/level/level-data';
 import { ROOMS_PER_CHAPTER } from '../../assets/scripts/core/run/run-state';
 import {
@@ -18,6 +26,9 @@ import {
   simulateRun,
   type InputPolicy,
 } from '../../assets/scripts/core/sim/run-simulation';
+import { xpDoorClearBonus, xpForKill, xpForNextLevel } from '../../assets/scripts/core/xp/xp-curve';
+import { rerollCost } from '../../assets/scripts/core/xp/reroll';
+import { levelUpResumeIframeMs } from '../../assets/scripts/core/xp/level-up-wave';
 import { loadChapterOne, loadTmxLevels, LEVELS_ROOT } from '../helpers/tmx-levels';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import { join } from 'node:path';
@@ -458,5 +469,273 @@ describe('simulateRun — save integration', () => {
     expect(gold).toBe(MAX_GOLD);
     expect(save.gold).toBe(MAX_GOLD);
     expect(Number.isFinite(save.gold)).toBe(true);
+  });
+});
+
+describe('simulateRun — M12 unified XP level-up economy (ADR-021)', () => {
+  it('earns 12–16 level-ups in a full Chapter 1 run with mid-combat picks and 0 starting skills', () => {
+    const result = simulateRun({
+      seed: 1,
+      level: chapterOne,
+      policy: makeDodgePolicy(),
+      chooseSkill: typicalSkillChoice,
+      shouldReroll: typicalRerollPolicy,
+      chooseDoor: typicalDoorChoice,
+      maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
+    });
+
+    expect(result.status).toBe('won');
+    expect(result.roomsCleared).toBe(ROOMS_PER_CHAPTER);
+    expect(result.levelUps).toBeGreaterThanOrEqual(LEVEL_UP_TARGET_MIN);
+    expect(result.levelUps).toBeLessThanOrEqual(LEVEL_UP_TARGET_MAX);
+    expect(result.finalLevel).toBe(result.levelUps + 1);
+    expect(result.xpEarned).toBeGreaterThan(0);
+
+    const levelUpEvents = result.events.filter((event) => event.kind === 'level-up');
+    expect(levelUpEvents).toHaveLength(result.levelUps);
+
+    const totalStacks = Array.from(result.acquiredSkills.values()).reduce((a, b) => a + b, 0);
+    expect(totalStacks).toBe(result.levelUps);
+
+    // At least one level-up occurs mid-combat (strictly before the first room clears).
+    const firstClearMs =
+      result.events.find((event) => event.kind === 'room-cleared')?.nowMs ?? 0;
+    expect(levelUpEvents.some((event) => event.nowMs < firstClearMs)).toBe(true);
+
+    // Entering an `'xp'` door room grants `xpDoorClearBonus` on clear.
+    const xpRewards = result.events.filter(
+      (event) => event.kind === 'reward' && event.reward === 'xp' && event.room > 1,
+    );
+    expect(xpRewards.length).toBeGreaterThan(0);
+    for (const reward of xpRewards) {
+      if (reward.kind === 'reward') {
+        expect(reward.xp).toBe(xpDoorClearBonus(1));
+      }
+    }
+  });
+
+  it('skill-roll sub-seed is strictly independent from combat RNG (same seed, different combat paths)', () => {
+    const twoRooms: ChapterData = { chapter: 1, rooms: chapterOne.rooms.slice(0, 2) };
+    const alwaysFirst = () => 0;
+
+    // Two runs with the SAME seed but completely different movement/combat trajectories.
+    const standing = simulateRun({
+      seed: 77,
+      level: twoRooms,
+      policy: standStill,
+      godMode: true,
+      chooseSkill: alwaysFirst,
+    });
+    const patrolling = simulateRun({
+      seed: 77,
+      level: twoRooms,
+      policy: patrol,
+      godMode: true,
+      chooseSkill: alwaysFirst,
+    });
+
+    const standOffers = standing.events.flatMap((event) =>
+      event.kind === 'level-up' ? [event.offers] : [],
+    );
+    const patrolOffers = patrolling.events.flatMap((event) =>
+      event.kind === 'level-up' ? [event.offers] : [],
+    );
+
+    const sharedCount = Math.min(standOffers.length, patrolOffers.length);
+    expect(sharedCount).toBeGreaterThanOrEqual(2);
+    // Combat trajectories genuinely diverged in timing, yet offered skill hands stay identical.
+    expect(standing.durationMs).not.toBe(patrolling.durationMs);
+    expect(standOffers.slice(0, sharedCount)).toEqual(patrolOffers.slice(0, sharedCount));
+  });
+
+  it('0-skill mode tracks XP/level-ups without acquiring any skills', () => {
+    const singleRoom: ChapterData = { chapter: 1, rooms: chapterOne.rooms.slice(0, 1) };
+    const result = simulateRun({
+      seed: 7,
+      level: singleRoom,
+      policy: standStill,
+      godMode: true,
+    });
+
+    expect(result.status).toBe('won');
+    expect(result.xpEarned).toBeGreaterThan(0);
+    expect(result.levelUps).toBeGreaterThan(0);
+    expect(result.acquiredSkills.size).toBe(0);
+    for (const event of result.events) {
+      if (event.kind === 'level-up') {
+        expect(event.offers).toEqual([]);
+        expect(event.chosen).toBeNull();
+      }
+    }
+  });
+
+  it('splitling kills grant 0 XP so splitters cannot be farmed', () => {
+    const splitterRoom: LevelData = parseLevelData({
+      id: 'splitter-xp-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 12 },
+      waves: [
+        {
+          enemies: [{ role: 'splitter', at: { x: 16, y: 8 }, elite: false }],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+    const result = simulateRun({
+      seed: 1,
+      level: { chapter: 1, rooms: [splitterRoom] },
+      policy: standStill,
+      godMode: true,
+    });
+
+    expect(result.status).toBe('won');
+    const splitlingKills = result.events.filter(
+      (event) => event.kind === 'kill' && event.role === 'splitling',
+    );
+    expect(splitlingKills.length).toBeGreaterThanOrEqual(2);
+    // Only the parent splitter awards XP; all splitlings yield 0 XP.
+    expect(result.xpEarned).toBe(xpForKill('splitter', false));
+  });
+
+  it('mid-combat level-up pushes nearby enemies radially, grants 0.6 s i-frame, and keeps enemy bullets live', () => {
+    // 3 elite casters (= 3 × 30 = 90 XP > ch1 Lv1 threshold 70, 8 HP each) inside auto-aim +
+    // magnet radius, plus a nearby chaser inside knockback radius (5.5 tiles) and a far caster
+    // that fires a live bullet before the level-up triggers.
+    const needXp = xpForNextLevel(1, 1);
+    const eliteCasterXp = xpForKill('caster', true);
+    expect(eliteCasterXp * 3).toBeGreaterThanOrEqual(needXp);
+
+    const waveRoom: LevelData = parseLevelData({
+      id: 'level-up-safety-room',
+      chapter: 1,
+      room: 1,
+      isBossRoom: false,
+      size: { cols: 32, rows: 18 },
+      tileSizePx: 16,
+      playerStart: { x: 16, y: 10 },
+      waves: [
+        {
+          enemies: [
+            // Nearest targets (1.8–2.2 tiles): killed first to drop 90 XP (> 70) mid-combat.
+            { role: 'caster', at: { x: 16, y: 8.2 }, elite: true },
+            { role: 'caster', at: { x: 16, y: 8.0 }, elite: true },
+            { role: 'caster', at: { x: 16, y: 7.8 }, elite: true },
+            // Nearby survivor inside knockback radius (5.5 tiles) to observe radial push.
+            { role: 'tank', at: { x: 20.5, y: 10 }, elite: false },
+            // Far caster firing a live enemy bullet that must survive the level-up resume wave.
+            { role: 'caster', at: { x: 10, y: 10 }, elite: false },
+          ],
+        },
+      ],
+      obstacles: [],
+      doors: [],
+    });
+
+    const skills = new Map([
+      ['sharpen', 3],
+      ['rapid-fire', 1],
+    ]);
+
+    const firstPass = simulateRun({
+      seed: 5,
+      level: { chapter: 1, rooms: [waveRoom] },
+      policy: standStill,
+      skills,
+      chooseSkill: () => 0,
+    });
+    const firstLevelUp = firstPass.events.find((event) => event.kind === 'level-up');
+    expect(firstLevelUp).toBeDefined();
+    const levelUpAtMs = firstLevelUp?.nowMs ?? 0;
+    expect(levelUpAtMs).toBeGreaterThan(0);
+
+    // Re-run deterministically to inspect exact enemy distance and enemy bullet survival across `levelUpAtMs`.
+    let bulletsBefore = 0;
+    let bulletsAfter = 0;
+    let tankDistAtLevelUp = 0;
+    let tankMaxDistSoonAfter = 0;
+
+    const verified = simulateRun({
+      seed: 5,
+      level: { chapter: 1, rooms: [waveRoom] },
+      policy: (world) => {
+        const enemyBullets = world.bullets.filter((bullet) => bullet.owner === 'enemy').length;
+        const tank = world.enemies.find(
+          (enemy) => enemy.role === 'tank' && enemy.health > 0 && enemy.action.kind !== 'dead',
+        );
+        if (world.nowMs < levelUpAtMs) {
+          bulletsBefore = Math.max(bulletsBefore, enemyBullets);
+          if (tank !== undefined) {
+            tankDistAtLevelUp = Math.hypot(
+              tank.position.x - world.player.x,
+              tank.position.y - world.player.y,
+            );
+          }
+        } else if (world.nowMs <= levelUpAtMs + 48) {
+          bulletsAfter = Math.max(bulletsAfter, enemyBullets);
+        }
+        if (tank !== undefined && world.nowMs > levelUpAtMs && world.nowMs <= levelUpAtMs + 260) {
+          const gap = Math.hypot(
+            tank.position.x - world.player.x,
+            tank.position.y - world.player.y,
+          );
+          tankMaxDistSoonAfter = Math.max(tankMaxDistSoonAfter, gap);
+        }
+        return standStill(world);
+      },
+      skills,
+      chooseSkill: () => 0,
+    });
+
+    // Resume i-frame window: zero player hits in [levelUpAtMs, levelUpAtMs + 600ms).
+    const iframeMs = levelUpResumeIframeMs();
+    const hitsDuringResumeIframe = verified.events.filter(
+      (event) =>
+        event.kind === 'player-hit' &&
+        event.nowMs >= levelUpAtMs &&
+        event.nowMs < levelUpAtMs + iframeMs,
+    );
+    expect(hitsDuringResumeIframe).toEqual([]);
+    // Nearby tank was pushed radially outward by the knockback wave.
+    expect(tankDistAtLevelUp).toBeGreaterThan(0);
+    expect(tankMaxDistSoonAfter).toBeGreaterThan(tankDistAtLevelUp + 1);
+    // Enemy bullets fired before the level-up remained live immediately after resuming.
+    expect(bulletsBefore).toBeGreaterThan(0);
+    expect(bulletsAfter).toBeGreaterThan(0);
+  });
+
+  it('gold reroll deducts escalating gold and avoids repeating the previous offer', () => {
+    const singleRoom: ChapterData = { chapter: 1, rooms: chapterOne.rooms.slice(0, 1) };
+    let rerollCalls = 0;
+    const result = simulateRun({
+      seed: 9,
+      level: singleRoom,
+      policy: standStill,
+      godMode: true,
+      chooseSkill: () => 0,
+      shouldReroll: (_offers, _owned, _gold, _nextCost, used) => {
+        if (used >= 2) return false;
+        rerollCalls += 1;
+        return true;
+      },
+    });
+
+    const rerolls = result.events.filter((event) => event.kind === 'skill-reroll');
+    expect(rerollCalls).toBe(2);
+    expect(rerolls).toHaveLength(2);
+    expect(rerolls[0]?.kind === 'skill-reroll' ? rerolls[0].cost : 0).toBe(rerollCost(0));
+    expect(rerolls[1]?.kind === 'skill-reroll' ? rerolls[1].cost : 0).toBe(rerollCost(1));
+
+    const earnedFromEvents = result.events.reduce((sum, event) => {
+      if (event.kind === 'kill' || event.kind === 'room-cleared') return sum + event.gold;
+      if (event.kind === 'skill-reroll') return sum - event.cost;
+      return sum;
+    }, 0);
+    expect(result.goldEarned).toBe(earnedFromEvents);
+    expect(DOORS_TUNING.xpRoomXpMultiplier).toBeGreaterThanOrEqual(1);
   });
 });

@@ -227,8 +227,8 @@
   },
   "doors": {
     "goldBonus": 15,
-    "xpBonus": 80,
-    "xpRoomXpMultiplier": 1.25,
+    "xpBonus": 60,
+    "xpRoomXpMultiplier": 1.2,
     "xpRoomExtraElites": 2,
     "specialRoomsEnabled": true,
     "hintMs": 2000,
@@ -269,7 +269,7 @@
     "curve": {
       "baseThreshold": 70,
       "linearStep": 15,
-      "quadraticStep": 1.1,
+      "quadraticStep": 1.4,
       "chapterMultipliers": [
         1,
         1.48,

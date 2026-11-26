@@ -1,11 +1,12 @@
 /**
- * Test-only balance sim table (ADR-013, `docs/milestones.md` §M9).
+ * Test-only balance sim table (ADR-013, `docs/milestones.md` §M9 / §M12, ADR-021).
  *
- * The M9 acceptance says "sim (multiple seeds, both bosses per chapter): standing still loses
- * room 1; dodging + a typical loadout wins all 4 chapters". This helper turns that sentence into
- * rows: for each chapter and seed it runs the real `simulateRun` twice — a player who presses no
- * key, and one who dodges with a typical loadout and models the door choice (heal first, then
- * skill) — so the table the owner approves comes from the shipped rules, not from a spreadsheet.
+ * Runs the real `simulateRun` twice per (chapter, seed):
+ * 1. `standStill`: presses no keys and acquires no skills — must lose Room 1.
+ * 2. `loadout` (M12 unified XP economy): starts with **0 skills**, dodges, models door choice
+ *    (`heal` first, then `xp`), and earns every skill purely through XP level-ups (`XpOrbPool` +
+ *    `XpTracker` + dedicated `createSkillRollRng` sub-seed + `typicalSkillChoice`), landing in
+ *    the 12–16 level-ups/run target band across Ch1–Ch4 and winning 9/9.
  *
  * Nothing under `assets/` imports this file: it is the test/CLI seam over `core/sim`.
  */
@@ -15,16 +16,23 @@ import type { BossId } from '../../assets/scripts/core/boss/boss-defs';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import type { ChapterData } from '../../assets/scripts/core/level/level-data';
 import type { DoorReward } from '../../assets/scripts/core/run/doors';
+import type { SkillDef } from '../../assets/scripts/core/skills/pool';
 import {
   SIM_DEFAULT_MAX_DURATION_MS,
   simulateRun,
   type InputPolicy,
   type SimulationStatus,
+  type SkillPickPolicy,
+  type SkillRerollPolicy,
 } from '../../assets/scripts/core/sim/run-simulation';
 import { makeDodgePolicy } from './dodge-policy';
 import { LEVELS_ROOT, loadTmxLevels } from './tmx-levels';
 
-/** A typical loadout of a player who picked up a few cards during the run. */
+/** M12 target band for level-ups earned during a full 9-room chapter run (GDD §15.2, ADR-021). */
+export const LEVEL_UP_TARGET_MIN = 12;
+export const LEVEL_UP_TARGET_MAX = 16;
+
+/** A fixed mid-run loadout used by unit/integration tests that compare DPS with vs without skills. */
 export const TYPICAL_LOADOUT: ReadonlyMap<string, number> = new Map([
   ['sharpen', 2],
   ['rapid-fire', 2],
@@ -35,6 +43,105 @@ export const TYPICAL_LOADOUT: ReadonlyMap<string, number> = new Map([
   ['crit-eye', 1],
   ['shield', 1],
 ]);
+
+/**
+ * Competent-player skill preference order for 1-of-3 XP level-up picks (M12, ADR-021).
+ * Prioritises core DPS (`twin-shot`, `sharpen`), premier defense (`shield`, `second-wind`),
+ * fire rate & wave-clear (`rapid-fire`, `piercing`, `ricochet`, `explosive`), then sustain and
+ * secondary combat modifiers over economy cards (`luck`, `greed`).
+ */
+const SKILL_PRIORITY: readonly string[] = [
+  'twin-shot',
+  'sharpen',
+  'shield',
+  'second-wind',
+  'rapid-fire',
+  'piercing',
+  'ricochet',
+  'explosive',
+  'lifesteal',
+  'vitality',
+  'crit-eye',
+  'homing',
+  'swift',
+  'freeze',
+  'executioner',
+  'poison',
+  'long-iframe',
+  'thorns',
+  'luck',
+  'greed',
+];
+
+/** Skills strong enough to accept without spending gold on an M12 reroll. */
+const CORE_COMBAT_SKILLS: ReadonlySet<string> = new Set([
+  'twin-shot',
+  'sharpen',
+  'shield',
+  'second-wind',
+  'rapid-fire',
+  'piercing',
+  'ricochet',
+  'explosive',
+  'lifesteal',
+]);
+
+/** Max gold a frugal player spends on a single level-up reroll (`10g → 20g → 30g → 40g`). */
+const TYPICAL_REROLL_MAX_COST = 40;
+
+/**
+ * Pick the highest-priority card from a 1-of-3 level-up offer.
+ * - While healthy: prioritises core DPS (`twin-shot`, `sharpen` 1–2), then `shield`/`second-wind`,
+ *   then further `sharpen`/`rapid-fire`/wave-clear.
+ * - When low on hearts (`hearts <= 4`): prioritises immediate survival (`second-wind`, `vitality`,
+ *   `shield`, `lifesteal`) just as a real player reading their HUD hearts would.
+ */
+export const typicalSkillChoice: SkillPickPolicy = (
+  offers: readonly SkillDef[],
+  owned: ReadonlyMap<string, number>,
+  _level: number,
+  context,
+): number => {
+  const sharpenStacks = owned.get('sharpen') ?? 0;
+  const lowHearts = context.hearts <= 4;
+  let bestIndex = 0;
+  let bestRank = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < offers.length; index += 1) {
+    const skill = offers[index];
+    if (skill === undefined) continue;
+    const rank = SKILL_PRIORITY.indexOf(skill.id);
+    let effectiveRank = rank === -1 ? SKILL_PRIORITY.length : rank;
+    if (skill.id === 'sharpen' && sharpenStacks >= 2) {
+      // Ranks behind `shield` (2) and `second-wind` (3) once base damage is already 3+.
+      effectiveRank = 3.5;
+    }
+    if (lowHearts) {
+      if (skill.id === 'second-wind') effectiveRank = -3;
+      else if (skill.id === 'vitality') effectiveRank = -2;
+      else if (skill.id === 'shield') effectiveRank = -1;
+      else if (skill.id === 'lifesteal') effectiveRank = 0.5;
+    }
+    if (effectiveRank < bestRank) {
+      bestRank = effectiveRank;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
+};
+
+/**
+ * Competent-player M12 gold reroll policy: spend run gold (up to 40g/reroll) only when a
+ * level-up hand offers zero core combat/survival cards (`CORE_COMBAT_SKILLS`).
+ */
+export const typicalRerollPolicy: SkillRerollPolicy = (
+  offers: readonly SkillDef[],
+  _owned: ReadonlyMap<string, number>,
+  _availableGold: number,
+  nextCost: number,
+): boolean => {
+  if (nextCost > TYPICAL_REROLL_MAX_COST) return false;
+  return !offers.some((skill) => CORE_COMBAT_SKILLS.has(skill.id));
+};
 
 /** No keys pressed: the "standing still" player. */
 const standStill: InputPolicy = () => ({ up: false, down: false, left: false, right: false });
@@ -79,13 +186,19 @@ export function balanceSeeds(chapter: number, perBoss: number): number[] {
   throw new Error(`balanceSeeds(${chapter}, ${perBoss}) found no full cover within ${MAX_SEED} seeds`);
 }
 
-/** The four numbers of one run that make a table cell. */
+/** The summary numbers of one run that make a table cell. */
 export interface SimOutcome {
   readonly status: SimulationStatus;
   readonly roomsCleared: number;
   readonly durationMs: number;
   /** Number of `player-hit` events (0 for the standing player only if it never got touched). */
   readonly hits: number;
+  /** Total XP level-ups earned during the run (M12, ADR-021). */
+  readonly levelUps: number;
+  /** Final player level (`1 + levelUps`). */
+  readonly finalLevel: number;
+  /** Cumulative XP collected during the run. */
+  readonly xpEarned: number;
 }
 
 export interface SimTableRow {
@@ -94,7 +207,7 @@ export interface SimTableRow {
   /** The boss this seed meets (`pickBoss`), i.e. the one the run must beat. */
   readonly boss: BossId;
   readonly standStill: SimOutcome;
-  /** The dodge + typical loadout run, plus the door picks it made before the boss door. */
+  /** The dodge + XP-earned skills run, plus the door picks it made before the boss door. */
   readonly loadout: SimOutcome & { readonly doors: DoorReward[] };
 }
 
@@ -104,6 +217,9 @@ function outcomeOf(result: ReturnType<typeof simulateRun>): SimOutcome {
     roomsCleared: result.roomsCleared,
     durationMs: result.durationMs,
     hits: result.events.filter((event) => event.kind === 'player-hit').length,
+    levelUps: result.levelUps,
+    finalLevel: result.finalLevel,
+    xpEarned: result.xpEarned,
   };
 }
 
@@ -112,8 +228,9 @@ function chapterLevels(chapter: number): ChapterData {
 }
 
 /**
- * One row per (chapter, seed): the standing-still run and the dodge + typical-loadout run.
- * Both use the default `maxDurationMs`; the door choice is modelled by `typicalDoorChoice`.
+ * One row per (chapter, seed): the standing-still run and the dodge + XP-earned skills run.
+ * Both use the default `maxDurationMs`; doors follow `typicalDoorChoice` and level-up skill picks
+ * flow through `typicalSkillChoice` on the dedicated skill-roll sub-seed (ADR-021).
  */
 export function simTableRows(options: {
   readonly chapters: readonly number[];
@@ -135,7 +252,8 @@ export function simTableRows(options: {
         seed,
         level,
         policy: makeDodgePolicy(),
-        skills: TYPICAL_LOADOUT,
+        chooseSkill: typicalSkillChoice,
+        shouldReroll: typicalRerollPolicy,
         chooseDoor: typicalDoorChoice,
         maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
       });
@@ -150,7 +268,7 @@ export function simTableRows(options: {
           /**
            * Every door the run walked through before the boss door. `offers.length > 1` cannot be
            * the filter: taking `heal` enters a special room that replaces the next slot, and the
-           * door out of it carries a single (`skill`) offer — filtering those out would drop real
+           * door out of it carries a single (`xp`) offer — filtering those out would drop real
            * picks and make the count depend on how many heals the seed drew (ch3 seed 3 → 5).
            * A won run always takes exactly the 7 normal-slot doors, then the boss door.
            */
@@ -187,19 +305,20 @@ function formatHits(hits: number): string {
 /**
  * The Markdown table for the PR: one line per row, in the order given.
  *
- * `| chapter | seed | boss | stand still | dodge + loadout | doors |`
+ * `| chapter | seed | boss | stand still | dodge + XP skills | level-ups | doors |`
  */
 export function formatSimTable(rows: readonly SimTableRow[]): string {
   const lines = [
-    '| chapter | seed | boss | stand still | dodge + loadout | doors |',
-    '| --- | --- | --- | --- | --- | --- |',
+    '| chapter | seed | boss | stand still | dodge + XP skills | level-ups | doors |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
   ];
 
   for (const row of rows) {
     const doors = row.loadout.doors.join(', ') || '—';
     lines.push(
       `| ${row.chapter} | ${row.seed} | ${row.boss} | ${formatOutcome(row.standStill)} | ` +
-        `${formatOutcome(row.loadout)}, ${formatHits(row.loadout.hits)} | ${doors} |`,
+        `${formatOutcome(row.loadout)}, ${formatHits(row.loadout.hits)} | ` +
+        `${row.loadout.levelUps} (Lv ${row.loadout.finalLevel}) | ${doors} |`,
     );
   }
 
