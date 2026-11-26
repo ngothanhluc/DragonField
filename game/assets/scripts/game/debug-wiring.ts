@@ -11,9 +11,11 @@ import type {
   DebugActionsSnapshot,
   DebugAnimationSnapshot,
   DebugAtmosphereSnapshot,
+  DebugAttachmentStateSnapshot,
   DebugAudioSnapshot,
   DebugBossSnapshot,
   DebugCharacterSnapshot,
+  DebugCharacterStatsSnapshot,
   DebugDoorSnapshot,
   DebugEnemySnapshot,
   DebugMenuBackdropSnapshot,
@@ -77,7 +79,10 @@ export interface DebugWiringHost {
   readonly useSpecial: () => boolean;
   readonly character: () => DebugCharacterSnapshot;
   readonly selectCharacter: (id: string) => boolean;
+  readonly unlockAllCharacters: () => string[];
   readonly playerAttachment: () => DebugPlayerAttachmentSnapshot | null;
+  readonly attachmentState: () => DebugAttachmentStateSnapshot;
+  readonly characterStats: () => DebugCharacterStatsSnapshot | null;
   readonly setAttachmentHidden: (hidden: boolean) => boolean;
   readonly hideAttachmentForSkill: (skillId: string) => boolean;
   readonly showAttachmentForSkill: (skillId: string) => boolean;
@@ -158,7 +163,10 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     useSpecial: host.useSpecial,
     character: host.character,
     selectCharacter: host.selectCharacter,
+    unlockAllCharacters: host.unlockAllCharacters,
     playerAttachment: host.playerAttachment,
+    attachmentState: host.attachmentState,
+    characterStats: host.characterStats,
     setAttachmentHidden: host.setAttachmentHidden,
     hideAttachmentForSkill: host.hideAttachmentForSkill,
     showAttachmentForSkill: host.showAttachmentForSkill,

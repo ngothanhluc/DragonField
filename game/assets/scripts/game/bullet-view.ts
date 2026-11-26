@@ -23,6 +23,7 @@ import {
 import { resolve } from '../core/art/manifest';
 import type { Bullet, BulletPool } from '../core/combat/bullets';
 import { FEEL_TUNING } from '../core/enemies/tuning';
+import type { SignatureSkillId } from '../core/input/active-skill';
 import type { Vec2 } from '../core/math/vec2';
 import {
   ELEMENT_TINTS,
@@ -31,6 +32,7 @@ import {
   playerProjectileLook,
   strongestElement,
   type EffectsMode,
+  type ProjectileLook,
   type VfxElement,
 } from '../core/vfx/weapon-vfx';
 import { loadAnimationManifest } from './anim/sprite-animator';
@@ -45,7 +47,7 @@ type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = Awaited<ReturnType<typeof getFrame>>;
 
-/** Every projectile the player can shoot (`playerProjectileLook` only returns these). */
+/** Every projectile the player can shoot (`playerProjectileLook` + 4-class default projectiles). */
 const PLAYER_KEYS = [
   'fx.shuriken',
   'fx.big-shuriken',
@@ -55,6 +57,9 @@ const PLAYER_KEYS = [
   'fx.plant-spike',
   'fx.shuriken-magic',
   'fx.big-energy-ball',
+  'fx.arrow',
+  'fx.arcane-bolt',
+  'fx.spirit-sword',
 ] as const;
 
 /** Round enemy balls, one per chapter (`enemyProjectileKey`). */
@@ -66,6 +71,9 @@ const ROTATING_KEYS: ReadonlySet<string> = new Set([
   'fx.plant-spike',
   'fx.kunai',
   'fx.big-kunai',
+  'fx.arrow',
+  'fx.arcane-bolt',
+  'fx.spirit-sword',
 ]);
 
 /**
@@ -77,6 +85,9 @@ const ENEMY_BULLET_TINT = new CocosColor(255, 142, 78, 255);
 /** Signature Active (*Shadow Barrage*) shuriken tint + scale so barrages read immediately. */
 const SHADOW_BULLET_TINT = new CocosColor(195, 130, 255, 255);
 const SHADOW_DRAW_SCALE = 1.35;
+const PIERCING_VOLLEY_DRAW_SCALE = 1.3;
+const ARCANE_NOVA_DRAW_SCALE = 1.3;
+const SPIRIT_SWORD_DRAW_SCALE = 1.35;
 
 /** Cached `cc.Color` per element — the trail spawns many ghosts and must not allocate per frame. */
 const ELEMENT_COLORS: Readonly<Record<VfxElement, Color>> = {
@@ -108,11 +119,32 @@ const DRAW_SCALE: Readonly<Record<string, number>> = {
 /** Ghosts are slightly smaller than the bullet so the trail reads as "behind", not "another shot". */
 const GHOST_SCALE = 0.85;
 
+/**
+ * Resolve a playable class's auto-fire projectile sprite:
+ * - Any stronger elemental override (`Explosive`, `Freeze`, `Poison`, `Homing`) wins for all classes.
+ * - Otherwise, classes with a dedicated weapon projectile (`fx.arrow`, `fx.arcane-bolt`,
+ *   `fx.spirit-sword`) keep their pointed class sprite instead of reverting to Ninja shuriken/kunai.
+ */
+export function resolveClassProjectileLook(
+  owned: ReadonlyMap<string, number>,
+  defaultProjectileKey = 'fx.shuriken',
+): ProjectileLook {
+  const element = strongestElement(owned);
+  if (element !== null || defaultProjectileKey === 'fx.shuriken') {
+    return playerProjectileLook(owned);
+  }
+  return { key: defaultProjectileKey, tint: null };
+}
+
 export interface BulletViewOptions {
   /** Chapter of the current run — picks the enemy ball. Cheap read, cached per change. */
   readonly chapter: () => number;
+  /** Default class projectile key (`fx.shuriken`, `fx.arrow`, `fx.arcane-bolt`, `fx.spirit-sword`). */
+  readonly defaultProjectileKey?: string;
   /** Optional predicate identifying Ninja's *Shadow Barrage* projectiles for distinct VFX. */
   readonly isShadowBullet?: (bulletId: number) => boolean;
+  /** Optional lookup returning the Signature Active skill id for a bullet, or `null`. */
+  readonly signatureSkillForBullet?: (bulletId: number) => SignatureSkillId | null;
 }
 
 interface KeyData {
@@ -128,7 +160,7 @@ interface BulletNode {
   lastFrame: number;
   lastKey: string;
   lastPlayer: boolean | null;
-  lastShadow: boolean;
+  lastSignature: SignatureSkillId | null;
   lastRadiusScale: number;
   lastAngle: number;
 }
@@ -154,6 +186,8 @@ export class BulletView extends Component {
   private limit = MAX_BULLET_NODES;
   private elapsedMs = 0;
   /** Loadout-derived look, cached by `setLoadout` — never recomputed inside the frame loop. */
+  private defaultProjectileKey = 'fx.shuriken';
+  private lastOwned: ReadonlyMap<string, number> = new Map();
   private playerKey = 'fx.shuriken';
   private playerTint: Color = BULLET_NO_TINT;
   private baseTrail: VfxElement | null = null;
@@ -168,6 +202,7 @@ export class BulletView extends Component {
   async init(pool: BulletPool, options: BulletViewOptions): Promise<void> {
     this.pool = pool;
     this.options = options;
+    this.defaultProjectileKey = options.defaultProjectileKey ?? 'fx.shuriken';
     this.limit = Math.max(1, Math.min(pool.capacity, MAX_BULLET_NODES));
 
     const manifest = await loadAnimationManifest();
@@ -196,13 +231,20 @@ export class BulletView extends Component {
     this.setEffectsMode('full');
   }
 
+  /** Update the class's default projectile key (e.g. when switching character in `?debug=1`). */
+  setDefaultProjectileKey(key: string): void {
+    this.defaultProjectileKey = key;
+    this.setLoadout(this.lastOwned);
+  }
+
   /**
    * Bootstrap pushes the loadout on every skill pick (same moment as `PlayerController.setLoadout`).
    * `SkillLoadout.snapshot()` allocates a Map and `resolveOwnedSkills` builds arrays, so calling
    * this from the frame loop was measurable — the loop now only reads the cached look.
    */
   setLoadout(owned: ReadonlyMap<string, number>): void {
-    const look = playerProjectileLook(owned);
+    this.lastOwned = owned;
+    const look = resolveClassProjectileLook(owned, this.defaultProjectileKey);
     this.playerKey = look.key;
     this.playerTint = look.tint === null ? BULLET_NO_TINT : ELEMENT_COLORS[look.tint];
     this.baseTrail = strongestElement(owned);
@@ -262,8 +304,22 @@ export class BulletView extends Component {
       if (entry === null) break;
 
       const player = bullet.owner === 'player';
-      const isShadow = player && (options.isShadowBullet?.(bullet.id) ?? false);
-      const key = isShadow ? 'fx.shuriken-magic' : player ? playerKey : this.enemyKey;
+      const sigSkill = player
+        ? (options.signatureSkillForBullet?.(bullet.id) ??
+          (options.isShadowBullet?.(bullet.id) ? 'shadow-barrage' : null))
+        : null;
+      const key =
+        sigSkill === 'shadow-barrage'
+          ? 'fx.shuriken-magic'
+          : sigSkill === 'piercing-volley'
+            ? 'fx.arrow'
+            : sigSkill === 'arcane-nova'
+              ? 'fx.arcane-bolt'
+              : sigSkill === 'ten-thousand-swords'
+                ? 'fx.spirit-sword'
+                : player
+                  ? playerKey
+                  : this.enemyKey;
       const data = this.byKey.get(key);
       if (data === undefined) continue;
 
@@ -271,11 +327,18 @@ export class BulletView extends Component {
       const frame = data.frames[frameIndex];
       if (frame === undefined) continue;
 
-      const radiusScale = isShadow
-        ? SHADOW_DRAW_SCALE
-        : !player && bullet.radiusTiles > 0.22
-          ? Math.min(1.6, bullet.radiusTiles / 0.2)
-          : 1;
+      const radiusScale =
+        sigSkill === 'shadow-barrage'
+          ? SHADOW_DRAW_SCALE
+          : sigSkill === 'piercing-volley'
+            ? PIERCING_VOLLEY_DRAW_SCALE
+            : sigSkill === 'arcane-nova'
+              ? ARCANE_NOVA_DRAW_SCALE
+              : sigSkill === 'ten-thousand-swords'
+                ? SPIRIT_SWORD_DRAW_SCALE
+                : !player && bullet.radiusTiles > 0.22
+                  ? Math.min(1.6, bullet.radiusTiles / 0.2)
+                  : 1;
       const drawScale =
         (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) *
         (DRAW_SCALE[key] ?? 1) *
@@ -285,13 +348,13 @@ export class BulletView extends Component {
         entry.lastFrame !== frameIndex ||
         entry.lastKey !== key ||
         entry.lastPlayer !== player ||
-        entry.lastShadow !== isShadow ||
+        entry.lastSignature !== sigSkill ||
         entry.lastRadiusScale !== radiusScale
       ) {
         entry.lastFrame = frameIndex;
         entry.lastKey = key;
         entry.lastPlayer = player;
-        entry.lastShadow = isShadow;
+        entry.lastSignature = sigSkill;
         entry.lastRadiusScale = radiusScale;
         entry.sprite.spriteFrame = frame;
 
@@ -299,11 +362,14 @@ export class BulletView extends Component {
         // `sizeMode = CUSTOM` takes its size from UITransform — set the sliced frame size.
         if (transform !== null) transform.setContentSize(data.width, data.height);
         entry.node.setScale(drawScale, drawScale, 1);
-        entry.sprite.color = isShadow
-          ? SHADOW_BULLET_TINT
-          : player
-            ? playerTint
-            : enemyTint;
+        entry.sprite.color =
+          sigSkill === 'shadow-barrage'
+            ? SHADOW_BULLET_TINT
+            : sigSkill !== null
+              ? BULLET_NO_TINT
+              : player
+                ? playerTint
+                : enemyTint;
       }
 
       this.applyPosition(entry.node, bullet.position);
@@ -321,11 +387,16 @@ export class BulletView extends Component {
       }
 
       if (player && trailOn) {
-        const element: VfxElement | null = isShadow
-          ? 'homing'
-          : bullet.crit
-            ? 'crit'
-            : baseTrail;
+        const element: VfxElement | null =
+          sigSkill === 'shadow-barrage' || sigSkill === 'ten-thousand-swords'
+            ? 'homing'
+            : sigSkill === 'piercing-volley'
+              ? 'crit'
+              : sigSkill === 'arcane-nova'
+                ? 'ice'
+                : bullet.crit
+                  ? 'crit'
+                  : baseTrail;
         if (element !== null) {
           this.spawnGhost(bullet, data, frameIndex, element, angle, drawScale);
         }
@@ -436,7 +507,7 @@ export class BulletView extends Component {
       lastFrame: -1,
       lastKey: '',
       lastPlayer: null,
-      lastShadow: false,
+      lastSignature: null,
       lastRadiusScale: 1,
       lastAngle: Number.NaN,
     };

@@ -160,10 +160,12 @@ export interface DebugCharacterSnapshot {
 
 /** Live player attachment child-node state (M10); `null` outside a run. */
 export interface DebugPlayerAttachmentSnapshot {
+  readonly characterId?: string;
   readonly hasNode: boolean;
   readonly active: boolean;
   readonly visible: boolean;
   readonly hidden: boolean;
+  readonly hiddenBySkill?: boolean;
   readonly behind: boolean;
   readonly localX: number;
   readonly localY: number;
@@ -171,6 +173,30 @@ export interface DebugPlayerAttachmentSnapshot {
   readonly spriteKey: string | null;
   readonly direction: string;
   readonly frame: number;
+}
+
+/** Concise M14 attachment state snapshot (`__yokai.attachmentState()`). */
+export interface DebugAttachmentStateSnapshot {
+  readonly characterId: string;
+  readonly hasNode: boolean;
+  readonly visible: boolean;
+  readonly hiddenBySkill: boolean;
+  readonly facing: string;
+  readonly behindBody: boolean;
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Active character identity + live 3-layer `DerivedStats` snapshot (`__yokai.characterStats()`). */
+export interface DebugCharacterStatsSnapshot extends DerivedStats {
+  readonly characterId: string;
+  readonly name: string;
+  readonly signatureSkillId: string;
+  readonly signatureName: string;
+  readonly weaponForm: string;
+  readonly defaultProjectileKey: string;
+  readonly projectileKey: string;
+  readonly hearts: number;
 }
 
 /** Active XP orb snapshot for `window.__yokai.xp()`. */
@@ -277,10 +303,16 @@ export interface DebugProvider {
   readonly useSpecial: () => boolean;
   /** M10/M14: active/selected character and unlocked roster state. */
   readonly character?: () => DebugCharacterSnapshot;
-  /** M10/M14: select a playable character by id when not mid-run; returns `false` if locked/mid-run. */
+  /** M10/M14: select a playable character by id (unlocks if needed / switches active class). */
   readonly selectCharacter?: (id: string) => boolean;
+  /** M14: unlock all 4 playable characters on the save and return unlocked ids. */
+  readonly unlockAllCharacters?: () => string[];
   /** M10: live player attachment child-node state; `null` outside a run. */
   readonly playerAttachment?: () => DebugPlayerAttachmentSnapshot | null;
+  /** M14: live attachment state `{ characterId, hasNode, visible, hiddenBySkill, facing, behindBody, x, y }`. */
+  readonly attachmentState?: () => DebugAttachmentStateSnapshot;
+  /** M14: live active character + 3-layer `DerivedStats` snapshot. */
+  readonly characterStats?: () => DebugCharacterStatsSnapshot | null;
   /** M10: toggle manual hide on the player's attachment node. */
   readonly setAttachmentHidden?: (hidden: boolean) => boolean;
   /** M10: hide the player's attachment node for a skill id. */
@@ -316,7 +348,10 @@ export type YokaiDebugApi = Omit<
   | 'roomTotal'
   | 'character'
   | 'selectCharacter'
+  | 'unlockAllCharacters'
   | 'playerAttachment'
+  | 'attachmentState'
+  | 'characterStats'
   | 'setAttachmentHidden'
   | 'hideAttachmentForSkill'
   | 'showAttachmentForSkill'
@@ -337,7 +372,10 @@ export type YokaiDebugApi = Omit<
   readonly roomTotal: number;
   readonly character: () => DebugCharacterSnapshot;
   readonly selectCharacter: (id: string) => boolean;
+  readonly unlockAllCharacters: () => string[];
   readonly playerAttachment: () => DebugPlayerAttachmentSnapshot | null;
+  readonly attachmentState: () => DebugAttachmentStateSnapshot;
+  readonly characterStats: () => DebugCharacterStatsSnapshot | null;
   readonly setAttachmentHidden: (hidden: boolean) => boolean;
   readonly hideAttachmentForSkill: (skillId: string) => boolean;
   readonly showAttachmentForSkill: (skillId: string) => boolean;
@@ -355,6 +393,17 @@ const DEFAULT_CHARACTER_SNAPSHOT: DebugCharacterSnapshot = {
   id: 'ninja',
   name: 'Ninja',
   available: ['ninja'],
+};
+
+const DEFAULT_ATTACHMENT_STATE: DebugAttachmentStateSnapshot = {
+  characterId: 'ninja',
+  hasNode: false,
+  visible: false,
+  hiddenBySkill: false,
+  facing: 'down',
+  behindBody: false,
+  x: 0,
+  y: 0,
 };
 
 const DEFAULT_XP_SNAPSHOT: DebugXpSnapshot = {
@@ -391,8 +440,13 @@ export function installDebugApi(provider: DebugProvider): boolean {
 
   const character = provider.character ?? ((): DebugCharacterSnapshot => DEFAULT_CHARACTER_SNAPSHOT);
   const selectCharacter = provider.selectCharacter ?? ((): boolean => false);
+  const unlockAllCharacters = provider.unlockAllCharacters ?? ((): string[] => ['ninja']);
   const playerAttachment =
     provider.playerAttachment ?? ((): DebugPlayerAttachmentSnapshot | null => null);
+  const attachmentState =
+    provider.attachmentState ?? ((): DebugAttachmentStateSnapshot => DEFAULT_ATTACHMENT_STATE);
+  const characterStats =
+    provider.characterStats ?? ((): DebugCharacterStatsSnapshot | null => null);
   const setAttachmentHidden = provider.setAttachmentHidden ?? ((): boolean => false);
   const hideAttachmentForSkill = provider.hideAttachmentForSkill ?? ((): boolean => false);
   const showAttachmentForSkill = provider.showAttachmentForSkill ?? ((): boolean => false);
@@ -446,7 +500,10 @@ export function installDebugApi(provider: DebugProvider): boolean {
     useSpecial: { value: provider.useSpecial, enumerable: true },
     character: { value: character, enumerable: true },
     selectCharacter: { value: selectCharacter, enumerable: true },
+    unlockAllCharacters: { value: unlockAllCharacters, enumerable: true },
     playerAttachment: { value: playerAttachment, enumerable: true },
+    attachmentState: { value: attachmentState, enumerable: true },
+    characterStats: { value: characterStats, enumerable: true },
     setAttachmentHidden: { value: setAttachmentHidden, enumerable: true },
     hideAttachmentForSkill: { value: hideAttachmentForSkill, enumerable: true },
     showAttachmentForSkill: { value: showAttachmentForSkill, enumerable: true },
@@ -468,7 +525,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'skillChoices, pickSkill, grantSkill, stats, boss, setBossHp, startChapter, loadRoom, ' +
       'screen, save, setGold, markChapterCleared, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
       'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, ' +
-      'character, selectCharacter, playerAttachment, setAttachmentHidden, ' +
+      'character, selectCharacter, unlockAllCharacters, playerAttachment, attachmentState, characterStats, setAttachmentHidden, ' +
       'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, ' +
       'dash, activeSkill, actions, triggerEvolution, keyLog).',
   );

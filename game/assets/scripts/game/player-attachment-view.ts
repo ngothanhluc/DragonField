@@ -49,12 +49,14 @@ const DEFAULT_POSE: AttachmentPose = {
   frame: 0,
 };
 
-/** Read-only snapshot exposed for debugging and M10 browser verification (`window.__yokai`). */
+/** Read-only snapshot exposed for debugging and M10/M14 browser verification (`window.__yokai`). */
 export interface PlayerAttachmentSnapshot {
+  readonly characterId: string;
   readonly hasNode: boolean;
   readonly active: boolean;
   readonly visible: boolean;
   readonly hidden: boolean;
+  readonly hiddenBySkill: boolean;
   readonly behind: boolean;
   readonly localX: number;
   readonly localY: number;
@@ -110,8 +112,10 @@ function resolveItemAnchorY(
 export class PlayerAttachmentView {
   private readonly parent: Node;
   private readonly manifest: AnimationManifest;
+  private readonly characterId: string;
   private readonly itemAnchorY: number;
   private readonly controller: AttachmentNodeController;
+  private readonly activeSkillHides = new Set<string>();
   private pose: AttachmentPose;
   private attachmentNode: Node | null = null;
   private attachmentSprite: Sprite | null = null;
@@ -126,6 +130,7 @@ export class PlayerAttachmentView {
   constructor(args: PlayerAttachmentViewArgs) {
     this.parent = args.parent;
     this.manifest = args.manifest;
+    this.characterId = args.character.id;
     this.pose = args.initialPose ?? DEFAULT_POSE;
 
     const bodyAnchorY = resolveBodyAnchorY(args.manifest, args.character, this.pose.direction);
@@ -181,6 +186,7 @@ export class PlayerAttachmentView {
 
   /** Hide the attachment while `skillId` is active (e.g. `'ten-thousand-swords'`). */
   hideForSkill(skillId: string): AttachmentNodeState {
+    if (skillId.length > 0) this.activeSkillHides.add(skillId);
     const state = this.controller.hideForSkill(skillId);
     this.applyState(state);
     return state;
@@ -188,6 +194,7 @@ export class PlayerAttachmentView {
 
   /** End a skill's hide request for `skillId`, restoring visibility when no hide remains. */
   showForSkill(skillId: string): AttachmentNodeState {
+    this.activeSkillHides.delete(skillId);
     const state = this.controller.showForSkill(skillId);
     this.applyState(state);
     return state;
@@ -195,6 +202,7 @@ export class PlayerAttachmentView {
 
   /** Clear both manual and skill-scoped hide flags. */
   clearHidden(): AttachmentNodeState {
+    this.activeSkillHides.clear();
     const state = this.controller.clearHidden();
     this.applyState(state);
     return state;
@@ -210,10 +218,12 @@ export class PlayerAttachmentView {
     const state = this.controller.getState();
     const hasNode = this.attachmentNode !== null && this.attachmentNode.isValid;
     return {
+      characterId: this.characterId,
       hasNode,
       active: state.active,
       visible: state.visible && hasNode && this.attachmentNode!.active,
       hidden: state.hidden,
+      hiddenBySkill: this.activeSkillHides.size > 0,
       behind: state.behind,
       localX: state.localOffsetPx.x,
       localY: state.localOffsetPx.y,

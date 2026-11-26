@@ -8,6 +8,7 @@
  * The ids and their files live in `core/audio/sfx-bank.ts` (`SFX_BANK`), the single source.
  */
 import { SFX_BANK, type SfxId } from '../../core/audio/sfx-bank';
+import type { SignatureSkillId } from '../../core/input/active-skill';
 
 export { SFX_BANK };
 export type { SfxId };
@@ -42,9 +43,26 @@ export function playDashNovaSfx(): void {
   playSfx('shield');
 }
 
-export function playActiveSkillSfx(): void {
-  playSfx('shoot');
-  playSfx('skill-acquired');
+/** Distinct 2-layer SFX cues for all 4 Signature Active skills (routed through validated `SFX_BANK`). */
+export function playActiveSkillSfx(skillId: SignatureSkillId = 'shadow-barrage'): void {
+  switch (skillId) {
+    case 'shadow-barrage':
+      playSfx('shoot');
+      playSfx('skill-acquired');
+      break;
+    case 'piercing-volley':
+      playSfx('shoot');
+      playSfx('ui-confirm');
+      break;
+    case 'arcane-nova':
+      playSfx('freeze');
+      playSfx('explosion');
+      break;
+    case 'ten-thousand-swords':
+      playSfx('shield');
+      playSfx('skill-acquired');
+      break;
+  }
 }
 
 export function playEvolutionPickSfx(): void {

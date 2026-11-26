@@ -85,19 +85,6 @@ const PLAYER_TINT_MS = 140;
 /** Player bullet radius, tiles — same convention as `run-simulation.ts`. */
 const BULLET_RADIUS_TILES = 0.15;
 
-/**
- * A bullet must live long enough to cover the auto-aim range, otherwise "8 tile range" in
- * `config/tuning.json` is only a number on paper. Same formula as the sim.
- */
-const PLAYER_BULLET_TTL_MS = Math.max(
-  1200,
-  Math.ceil(
-    (DEFAULT_COMBAT.targetingRangeTiles / DEFAULT_COMBAT.projectileSpeedTilesPerSecond) *
-      1000 *
-      1.5,
-  ),
-);
-
 /** How long the `player.hit.*` frame stays after a hit (GDD §3: it must read as "I just got hit"). */
 const HIT_ANIM_MS = 150;
 
@@ -252,6 +239,52 @@ export class PlayerController extends Component {
   /** Current attachment state snapshot for debug/acceptance hooks (`window.__yokai`). */
   getAttachmentSnapshot(): PlayerAttachmentSnapshot | null {
     return this.attachmentView?.getSnapshot() ?? null;
+  }
+
+  /** Current facing cardinal direction. */
+  get facingDirection(): Direction {
+    return this.facing;
+  }
+
+  /**
+   * Switch the active playable character mid-run (used by `?debug=1` `__yokai.selectCharacter`).
+   * Rebinds animation keys and rebuilds `PlayerAttachmentView` cleanly without moving the player.
+   */
+  switchCharacter(character: CharacterDef, attachments: AttachmentsData | null): void {
+    const manifest = this.manifest;
+    if (manifest === null) return;
+
+    this.attachmentView?.destroy();
+    this.attachmentView = null;
+
+    this.character = character;
+    const attackKeys = characterAnimationKeys(this.character, 'attack', this.facing);
+    this.attackAnimMs = Math.max(
+      1,
+      loopDurationMs(resolve(manifest, attackKeys.key, attackKeys.fallback)),
+    );
+
+    this.animKey = '';
+    this.animDirection = null;
+    this.attachmentAnimName = 'idle';
+    this.lastAttachmentAnim = '';
+    this.lastAttachmentDir = null;
+    this.lastAttachmentFrame = -1;
+    this.playCharacterAnimation('idle', this.facing);
+
+    this.attachmentView = new PlayerAttachmentView({
+      parent: this.node,
+      bodyNode: this.bodyNode ?? this.node,
+      manifest,
+      attachments,
+      character: this.character,
+      initialPose: {
+        animation: this.attachmentAnimName,
+        direction: this.facing,
+        frame: this.animator?.frameIndex ?? 0,
+      },
+    });
+    this.syncAttachmentPose(true);
   }
 
   /** Player bullets in flight — `bullet-view` reads this pool every frame. */
@@ -437,11 +470,12 @@ export class PlayerController extends Component {
   /** Reset the position when entering a new room; health is untouched (it lasts the whole run). */
   teleport(at: Vec2): void {
     this.tilePosition = { x: at.x, y: at.y };
-    // On a room change, the old room's knockback and transient post-dash buff must not carry over.
+    // On a room change, the old room's knockback, post-dash buff, and skill-hidden attachment must reset.
     this.knockback = null;
     this.postDashFireUntilMs = Number.NEGATIVE_INFINITY;
     this.currentVelocity.x = 0;
     this.currentVelocity.y = 0;
+    this.attachmentView?.clearHidden();
     this.syncNodePosition();
   }
 
@@ -604,8 +638,9 @@ export class PlayerController extends Component {
       this.node.setScale(this.baseScale, this.baseScale, 1);
       this.fx?.setAura(null, null);
       this.auraShown = false;
+      this.attachmentView?.clearHidden();
       this.playCharacterAnimation('dead');
-      this.syncAttachmentPose();
+      this.syncAttachmentPose(true);
       playSfx('game-over');
       return true;
     }
@@ -656,14 +691,31 @@ export class PlayerController extends Component {
     this.attachmentView = null;
   }
 
+  protected lateUpdate(): void {
+    if (!this.health.isDead) {
+      this.syncAttachmentPose();
+    }
+  }
+
   private fireIfReady(nowMs: number, deltaMs: number, targets: readonly Targetable[]): void {
+    const rangeTiles =
+      this.stats.targetingRangeTiles > 0
+        ? this.stats.targetingRangeTiles
+        : DEFAULT_COMBAT.targetingRangeTiles;
+    const speedTilesPerSecond =
+      this.stats.projectileSpeedTilesPerSecond > 0
+        ? this.stats.projectileSpeedTilesPerSecond
+        : DEFAULT_COMBAT.projectileSpeedTilesPerSecond;
+
     const shot = this.autoFire.update({
       deltaMs,
       origin: this.tilePosition,
       targets,
-      rangeTiles: DEFAULT_COMBAT.targetingRangeTiles,
+      rangeTiles,
     });
     if (shot === null) return;
+
+    const ttlMs = Math.max(1200, Math.ceil((rangeTiles / speedTilesPerSecond) * 1000 * 1.5));
 
     firePlayerVolley({
       pool: this.bulletPool,
@@ -671,9 +723,9 @@ export class PlayerController extends Component {
       rng: this.rng,
       origin: shot.origin,
       direction: shot.direction,
-      speedTilesPerSecond: DEFAULT_COMBAT.projectileSpeedTilesPerSecond,
+      speedTilesPerSecond,
       radiusTiles: BULLET_RADIUS_TILES,
-      ttlMs: PLAYER_BULLET_TTL_MS,
+      ttlMs,
     });
 
     this.attackUntilMs = nowMs + this.attackAnimMs;

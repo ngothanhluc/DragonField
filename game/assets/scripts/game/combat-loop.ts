@@ -55,7 +55,6 @@ import {
 } from '../core/enemies/bomber';
 import { EnemyBuffTracker, resolveBufferPulse, type BufferPulseResult } from '../core/enemies/buffer';
 import {
-  ACTIVE_SKILL_TUNING,
   DASH_TUNING,
   FEEL_TUNING,
   NAVIGATION_TUNING,
@@ -69,7 +68,11 @@ import { ActionBuffer, type ActionKind } from '../core/input/action-buffer';
 import {
   activeCooldownSeconds,
   activeReadyRatio,
+  activeSkillConfigFor,
+  computeArcaneNovaSpec,
+  computePiercingVolley,
   computeShadowBarrageVolley,
+  computeTenThousandSwordsVolley,
   createActiveSkillState,
   isActiveSkillReady,
   onActiveHit,
@@ -78,6 +81,8 @@ import {
   tryActivateSkill,
   type ActiveSkillConfig,
   type ActiveSkillState,
+  type SignatureProjectile,
+  type SignatureSkillId,
 } from '../core/input/active-skill';
 import {
   canStartDash,
@@ -148,6 +153,9 @@ const BURN_TINT = new CocosColor(255, 145, 65, 255);
 const SHOCK_ARC_TINT = new CocosColor(135, 235, 255, 255);
 const DASH_NOVA_TINT = new CocosColor(140, 245, 255, 255);
 const SHADOW_BARRAGE_TINT = new CocosColor(195, 130, 255, 255);
+const PIERCING_VOLLEY_TINT = new CocosColor(255, 235, 130, 255);
+const ARCANE_NOVA_CYAN_TINT = new CocosColor(110, 235, 255, 255);
+const TEN_THOUSAND_SWORDS_TINT = new CocosColor(125, 250, 225, 255);
 const BOMBER_BLAST_TINT = new CocosColor(255, 110, 55, 255);
 const BOMBER_FOLLOWUP_TINT = new CocosColor(255, 180, 90, 255);
 const BUFFER_AURA_TINT = new CocosColor(145, 255, 160, 255);
@@ -280,13 +288,14 @@ export class CombatLoop {
   private readonly bossStatus = new StatusEffects();
   private readonly actionBuffer = new ActionBuffer(DASH_TUNING.bufferMs);
   private dashState: DashState = createDashState();
-  private activeSkillState: ActiveSkillState = createActiveSkillState(
-    true,
-    ACTIVE_SKILL_TUNING.cooldownMs,
-  );
+  private signatureSkillId: SignatureSkillId;
+  private activeConfig: ActiveSkillConfig;
+  private activeSkillState: ActiveSkillState;
   private dashesUsed = 0;
   private activeSkillsUsed = 0;
-  private readonly shadowBulletIds = new Set<number>();
+  private readonly signatureBullets = new Map<number, SignatureSkillId>();
+  private activeAttachmentHideToken: string | null = null;
+  private activeAttachmentHideRemainingMs = 0;
   private readonly enemyBuffs = new EnemyBuffTracker();
   private pendingBlasts: PendingBomberBlast[] = [];
   private readonly livingEnemyStates: EnemyState[] = [];
@@ -297,11 +306,6 @@ export class CombatLoop {
     durationMs: DASH_TUNING.durationMs,
     speedTilesPerSecond: DASH_TUNING.speedTilesPerSecond,
     invulnerabilityMs: DASH_TUNING.invulnerabilityMs,
-  };
-  private readonly activeConfig: ActiveSkillConfig = {
-    cooldownMs: ACTIVE_SKILL_TUNING.cooldownMs,
-    hitCooldownReductionMs: ACTIVE_SKILL_TUNING.hitCooldownReductionMs,
-    killCooldownReductionMs: ACTIVE_SKILL_TUNING.killCooldownReductionMs,
   };
   /**
    * Shared enemy navigation for the current room: one flow field per radius class, rebuilt only
@@ -330,6 +334,9 @@ export class CombatLoop {
 
   constructor(options: CombatLoopOptions) {
     this.player = options.player;
+    this.signatureSkillId = options.player.characterDef.signatureSkillId;
+    this.activeConfig = activeSkillConfigFor(this.signatureSkillId);
+    this.activeSkillState = createActiveSkillState(true, this.activeConfig.cooldownMs);
     this.bulletView = options.bulletView;
     this.manifest = options.manifest;
     this.actorLayer = options.actorLayer;
@@ -436,7 +443,44 @@ export class CombatLoop {
 
   /** True when `bulletId` was fired by Ninja's Signature Active (*Shadow Barrage*). */
   isShadowBullet(bulletId: number): boolean {
-    return this.shadowBulletIds.has(bulletId);
+    return this.signatureBullets.get(bulletId) === 'shadow-barrage';
+  }
+
+  /** Signature Active skill that spawned `bulletId`, or `null` for auto-fire / enemy bullets. */
+  signatureSkillForBullet(bulletId: number): SignatureSkillId | null {
+    return this.signatureBullets.get(bulletId) ?? null;
+  }
+
+  /** Switch the active class Signature Skill mid-run (used by `?debug=1` `__yokai.selectCharacter`). */
+  setSignatureSkill(skillId: SignatureSkillId): void {
+    this.clearSkillAttachmentHide();
+    this.signatureSkillId = skillId;
+    this.activeConfig = activeSkillConfigFor(skillId);
+    this.activeSkillState = {
+      cooldownRemainingMs: 0,
+      cooldownTotalMs: this.activeConfig.cooldownMs,
+      activations: this.activeSkillState.activations,
+    };
+  }
+
+  /**
+   * Advance the Cultivator `sword-back` hide countdown on simulated game-time `deltaMs`.
+   * Also called during room-clear / door phases so a blade storm at room end restores cleanly.
+   */
+  stepAttachmentHideTimer(deltaMs: number): void {
+    if (this.activeAttachmentHideToken === null || !(deltaMs > 0)) return;
+    this.activeAttachmentHideRemainingMs -= deltaMs;
+    if (this.activeAttachmentHideRemainingMs <= 0) {
+      this.clearSkillAttachmentHide();
+    }
+  }
+
+  private clearSkillAttachmentHide(): void {
+    if (this.activeAttachmentHideToken !== null) {
+      this.player.showAttachmentForSkill(this.activeAttachmentHideToken);
+      this.activeAttachmentHideToken = null;
+    }
+    this.activeAttachmentHideRemainingMs = 0;
   }
 
   /** Debug / immediate trigger for Dash (`__yokai.dash()`). */
@@ -502,12 +546,13 @@ export class CombatLoop {
     this.dashState = createDashState();
     this.activeSkillState = {
       cooldownRemainingMs: 0,
-      cooldownTotalMs: ACTIVE_SKILL_TUNING.cooldownMs,
+      cooldownTotalMs: this.activeConfig.cooldownMs,
       activations: this.activeSkillState.activations,
     };
+    this.clearSkillAttachmentHide();
     this.enemyBuffs.clear();
     this.pendingBlasts = [];
-    this.shadowBulletIds.clear();
+    this.signatureBullets.clear();
   }
 
   /**
@@ -619,7 +664,7 @@ export class CombatLoop {
   /** Drop active bullets immediately (used on room clear before vacuuming orbs to doors). */
   clearBullets(): void {
     this.player.bullets.clear();
-    this.shadowBulletIds.clear();
+    this.signatureBullets.clear();
     this.bulletView?.sync();
   }
 
@@ -640,10 +685,11 @@ export class CombatLoop {
     }
     this.nowMs += deltaMs;
 
-    // Advance action buffer & Dash / Signature Active strictly on game-time `deltaMs`.
+    // Advance action buffer, Dash, Signature Active, and skill attachment hide strictly on game-time `deltaMs`.
     this.actionBuffer.step(deltaMs);
     this.dashState = stepDash(this.dashState, deltaMs);
     this.activeSkillState = stepActiveSkill(this.activeSkillState, deltaMs);
+    this.stepAttachmentHideTimer(deltaMs);
 
     this.tryConsumeOrStartDash(true);
     this.tryConsumeOrStartActive(true);
@@ -670,7 +716,10 @@ export class CombatLoop {
     this.bulletView?.sync();
     if (this.stress) this.topUpStress();
 
-    if (player.isDead) this.playerDied = true;
+    if (player.isDead) {
+      this.playerDied = true;
+      this.clearSkillAttachmentHide();
+    }
 
     const cleared = this.roomCleared;
     if (cleared) this.awaitingAdvance = true;
@@ -1048,7 +1097,7 @@ export class CombatLoop {
     }
 
     if (spent.size > 0) {
-      for (const id of spent) this.shadowBulletIds.delete(id);
+      for (const id of spent) this.signatureBullets.delete(id);
       pool.consumeWhere((bullet) => spent.has(bullet.id));
     }
   }
@@ -1059,12 +1108,15 @@ export class CombatLoop {
     center: Vec2,
     direct: EnemyView | null,
   ): void {
-    if (bullet.explosiveRadiusTiles <= 0 || bullet.explosiveDamage <= 0) return;
+    const aoeMult = Math.max(1, this.player.derivedStats.aoePowerMult);
+    const radiusTiles = bullet.explosiveRadiusTiles * aoeMult;
+    const damage = bullet.explosiveDamage * aoeMult;
+    if (radiusTiles <= 0 || damage <= 0) return;
 
     for (const enemy of this.enemies) {
       if (enemy.isDead || enemy === direct || bullet.hitIds.includes(enemy.id)) continue;
-      if (distance(center, enemy.position) > bullet.explosiveRadiusTiles) continue;
-      enemy.takeDamage(bullet.explosiveDamage, center, this.nowMs);
+      if (distance(center, enemy.position) > radiusTiles) continue;
+      enemy.takeDamage(damage, center, this.nowMs);
     }
 
     const boss = this.boss;
@@ -1072,19 +1124,19 @@ export class CombatLoop {
       boss !== null &&
       !boss.isDefeated &&
       !bullet.hitIds.includes(BOSS_TARGET_ID) &&
-      distance(center, boss.position) <= bullet.explosiveRadiusTiles
+      distance(center, boss.position) <= radiusTiles
     ) {
-      boss.takeDamage(bullet.explosiveDamage, this.nowMs);
+      boss.takeDamage(damage, this.nowMs);
     }
 
     this.fx?.spawn('fx.explosion', center, {
-      drawUnits: Math.max(1.2, bullet.explosiveRadiusTiles * 2),
+      drawUnits: Math.max(1.2, radiusTiles * 2),
       lifetimeMs: 820,
     });
     // The smoke ring belongs to the explosive impact, so it stays under Reduced like the
     // explosion itself (only the extra particles are dropped there).
     this.fx?.spawn('fx.smoke-circular', center, {
-      drawUnits: Math.max(1.0, bullet.explosiveRadiusTiles * 1.6),
+      drawUnits: Math.max(1.0, radiusTiles * 1.6),
       lifetimeMs: 900,
     });
     this.shake?.addTrauma(FEEL_TUNING.shake.explosion);
@@ -1424,33 +1476,37 @@ export class CombatLoop {
     const nova = stats.dashNova;
     if (nova === undefined || !(nova.radiusTiles > 0) || !(nova.damage > 0)) return;
 
+    const aoeMult = Math.max(1, stats.aoePowerMult);
+    const radiusTiles = nova.radiusTiles * aoeMult;
+    const damage = nova.damage * aoeMult;
+
     const origin = this.player.position;
     for (const enemy of this.enemies) {
       if (enemy.isDead) continue;
-      if (distance(origin, enemy.position) > nova.radiusTiles + enemy.radiusTiles) continue;
-      enemy.takeDamage(nova.damage, origin, this.nowMs);
-      this.reportDamage(nova.damage, enemy.position, false);
+      if (distance(origin, enemy.position) > radiusTiles + enemy.radiusTiles) continue;
+      enemy.takeDamage(damage, origin, this.nowMs);
+      this.reportDamage(damage, enemy.position, false);
     }
 
     const boss = this.boss;
     if (
       boss !== null &&
       !boss.isDefeated &&
-      distance(origin, boss.position) <= nova.radiusTiles + boss.hitboxRadiusTiles
+      distance(origin, boss.position) <= radiusTiles + boss.hitboxRadiusTiles
     ) {
-      boss.takeDamage(nova.damage, this.nowMs);
-      this.reportDamage(nova.damage, boss.position, false);
+      boss.takeDamage(damage, this.nowMs);
+      this.reportDamage(damage, boss.position, false);
     }
 
     this.fx?.spawnShockwave(origin, {
       startRadiusTiles: 0.4,
-      endRadiusTiles: nova.radiusTiles,
+      endRadiusTiles: radiusTiles,
       durationMs: 280,
       lineWidth: 0.11,
       tint: DASH_NOVA_TINT,
     });
     this.fx?.spawn('fx.boost', origin, {
-      drawUnits: nova.radiusTiles * 1.4,
+      drawUnits: radiusTiles * 1.4,
       tint: DASH_NOVA_TINT,
       lifetimeMs: 360,
     });
@@ -1458,7 +1514,7 @@ export class CombatLoop {
     playDashNovaSfx();
   }
 
-  /** Try consuming buffered `'active'` (or trigger directly in debug) to fire *Shadow Barrage*. */
+  /** Try consuming buffered `'active'` (or trigger directly in debug) to fire the class's Signature Active. */
   private tryConsumeOrStartActive(fromBuffer: boolean): boolean {
     if (!isActiveSkillReady(this.activeSkillState)) return false;
     if (fromBuffer && !this.actionBuffer.has('active')) return false;
@@ -1484,11 +1540,35 @@ export class CombatLoop {
         ? { x: nearest.x - origin.x, y: nearest.y - origin.y }
         : this.player.facingVectorTile();
 
-    const volley = computeShadowBarrageVolley(origin, aimDir, stats.activePowerMult, {
-      baseDamage: stats.damage,
-      projectileCount: ACTIVE_SKILL_TUNING.barrageProjectiles,
-      damageMultiplier: ACTIVE_SKILL_TUNING.barrageDamageMultiplier,
-    });
+    switch (this.signatureSkillId) {
+      case 'shadow-barrage':
+        this.castShadowBarrage(origin, aimDir, stats);
+        break;
+      case 'piercing-volley':
+        this.castPiercingVolley(origin, aimDir, stats);
+        break;
+      case 'arcane-nova':
+        this.castArcaneNova(origin, stats);
+        break;
+      case 'ten-thousand-swords':
+        this.castTenThousandSwords(origin, aimDir, stats);
+        break;
+    }
+
+    return true;
+  }
+
+  private spawnSignatureVolley(
+    volley: readonly SignatureProjectile[],
+    skillId: SignatureSkillId,
+  ): void {
+    // Bound map size when older TTL-expired bullet IDs are no longer active.
+    if (this.signatureBullets.size > 256) {
+      for (const id of this.signatureBullets.keys()) {
+        this.signatureBullets.delete(id);
+        if (this.signatureBullets.size <= 192) break;
+      }
+    }
 
     for (const blade of volley) {
       const spawned = this.player.bullets.spawn({
@@ -1501,8 +1581,15 @@ export class CombatLoop {
         pierceRemaining: blade.pierceRemaining,
         homing: blade.homing,
       });
-      this.shadowBulletIds.add(spawned.id);
+      this.signatureBullets.set(spawned.id, skillId);
     }
+  }
+
+  private castShadowBarrage(origin: Vec2, aimDir: Vec2, stats: DerivedStats): void {
+    const volley = computeShadowBarrageVolley(origin, aimDir, stats.activePowerMult, {
+      baseDamage: stats.damage,
+    });
+    this.spawnSignatureVolley(volley, 'shadow-barrage');
 
     this.fx?.spawnShockwave(origin, {
       startRadiusTiles: 0.35,
@@ -1516,8 +1603,135 @@ export class CombatLoop {
       tint: SHADOW_BARRAGE_TINT,
       lifetimeMs: 300,
     });
-    playActiveSkillSfx();
-    return true;
+    playActiveSkillSfx('shadow-barrage');
+  }
+
+  private castPiercingVolley(origin: Vec2, aimDir: Vec2, stats: DerivedStats): void {
+    const volley = computePiercingVolley(origin, aimDir, stats.activePowerMult, {
+      baseDamage: stats.damage,
+    });
+    this.spawnSignatureVolley(volley, 'piercing-volley');
+
+    const len = Math.hypot(aimDir.x, aimDir.y);
+    const nx = len > 1e-6 ? aimDir.x / len : 1;
+    const ny = len > 1e-6 ? aimDir.y / len : 0;
+    this.fx?.spawnShockwave(origin, {
+      startRadiusTiles: 0.3,
+      endRadiusTiles: 1.9,
+      durationMs: 220,
+      lineWidth: 0.08,
+      tint: PIERCING_VOLLEY_TINT,
+    });
+    this.fx?.spawn(
+      'fx.spark',
+      { x: origin.x + nx * 0.45, y: origin.y + ny * 0.45 },
+      { drawUnits: 1.4, tint: PIERCING_VOLLEY_TINT, lifetimeMs: 220 },
+    );
+    playActiveSkillSfx('piercing-volley');
+  }
+
+  private castArcaneNova(origin: Vec2, stats: DerivedStats): void {
+    const nova = computeArcaneNovaSpec(origin, stats.activePowerMult, {
+      baseDamage: stats.damage,
+      aoePowerMult: stats.aoePowerMult,
+    });
+    const novaStatusStats: DerivedStats = {
+      ...stats,
+      slowOnHit: { factor: nova.slowFactor, durationMs: nova.slowDurationMs },
+      poisonOnHit: undefined,
+      burnOnHit: undefined,
+    };
+
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      if (distance(origin, enemy.position) > nova.radiusTiles + enemy.radiusTiles) continue;
+      enemy.applyStatus(novaStatusStats, this.nowMs);
+      const afflicted = enemy.hasAnyStatus(this.nowMs);
+      const executed = damageAfterExecute(stats, nova.damage, enemy.health / enemy.maxHealth);
+      const damage = damageWithStatusBonus(stats, executed, afflicted);
+      enemy.takeDamage(damage, origin, this.nowMs);
+      this.reportDamage(damage, enemy.position, false);
+      this.activeSkillState = onActiveHit(this.activeSkillState, this.activeConfig, 1);
+      this.fx?.spawn('fx.impact', enemy.position, {
+        tint: ARCANE_NOVA_CYAN_TINT,
+        drawUnits: 1.3,
+        lifetimeMs: 260,
+      });
+    }
+
+    const boss = this.boss;
+    if (
+      boss !== null &&
+      !boss.isDefeated &&
+      distance(origin, boss.position) <= nova.radiusTiles + boss.hitboxRadiusTiles
+    ) {
+      this.bossStatus.applySlow(
+        { factor: nova.slowFactor, durationMs: nova.slowDurationMs },
+        this.nowMs,
+      );
+      const afflicted = this.bossStatus.hasAnyStatus(this.nowMs);
+      const executed = damageAfterExecute(stats, nova.damage, boss.health / boss.maxHealth);
+      const damage = damageWithStatusBonus(stats, executed, afflicted);
+      boss.takeDamage(damage, this.nowMs);
+      this.reportDamage(damage, boss.position, false);
+      this.activeSkillState = onActiveHit(this.activeSkillState, this.activeConfig, 1);
+      this.fx?.spawn('fx.impact', boss.position, {
+        tint: ARCANE_NOVA_CYAN_TINT,
+        drawUnits: 1.6,
+        lifetimeMs: 280,
+      });
+    }
+
+    this.spawnSignatureVolley(nova.bolts, 'arcane-nova');
+
+    this.fx?.spawnShockwave(origin, {
+      startRadiusTiles: 0.4,
+      endRadiusTiles: nova.radiusTiles,
+      durationMs: 340,
+      lineWidth: 0.14,
+      tint: ARCANE_NOVA_CYAN_TINT,
+    });
+    this.fx?.spawnShockwave(origin, {
+      startRadiusTiles: 0.25,
+      endRadiusTiles: nova.radiusTiles * 0.72,
+      durationMs: 260,
+      lineWidth: 0.1,
+      tint: SHADOW_BARRAGE_TINT,
+    });
+    this.fx?.spawn('fx.boost', origin, {
+      drawUnits: Math.max(2.4, nova.radiusTiles * 1.1),
+      tint: ARCANE_NOVA_CYAN_TINT,
+      lifetimeMs: 420,
+    });
+    this.shake?.addTrauma(0.22);
+    playActiveSkillSfx('arcane-nova');
+  }
+
+  private castTenThousandSwords(origin: Vec2, aimDir: Vec2, stats: DerivedStats): void {
+    const cast = computeTenThousandSwordsVolley(origin, aimDir, stats.activePowerMult, {
+      baseDamage: stats.damage,
+    });
+    this.spawnSignatureVolley(cast.projectiles, 'ten-thousand-swords');
+
+    if (cast.hideAttachmentMs > 0) {
+      this.player.hideAttachmentForSkill(cast.attachmentSkillId);
+      this.activeAttachmentHideToken = cast.attachmentSkillId;
+      this.activeAttachmentHideRemainingMs = cast.hideAttachmentMs;
+    }
+
+    this.fx?.spawnShockwave(origin, {
+      startRadiusTiles: 0.35,
+      endRadiusTiles: 2.4,
+      durationMs: 280,
+      lineWidth: 0.11,
+      tint: TEN_THOUSAND_SWORDS_TINT,
+    });
+    this.fx?.spawn('fx.slash-arc', origin, {
+      drawUnits: 2.6,
+      tint: TEN_THOUSAND_SWORDS_TINT,
+      lifetimeMs: 320,
+    });
+    playActiveSkillSfx('ten-thousand-swords');
   }
 
   /** Chain Lightning (`shockOnHit`): hop lightning arcs across nearby unvisited targets. */
@@ -1767,7 +1981,8 @@ export class CombatLoop {
     this.rewarded.clear();
     this.bossRewarded = false;
     this.player.bullets.clear();
-    this.shadowBulletIds.clear();
+    this.signatureBullets.clear();
+    this.clearSkillAttachmentHide();
     this.actionBuffer.clear();
     this.enemyBuffs.clear();
     this.pendingBlasts = [];

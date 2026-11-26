@@ -39,7 +39,11 @@ import { validateAttachments, type AttachmentsData } from '../core/art/attachmen
 import { resolve, validateManifest } from '../core/art/manifest';
 import type { AnimationManifest } from '../core/art/manifest';
 import {
+  CHARACTERS,
+  CHARACTER_IDS,
   CHARACTER_ROSTER,
+  isCharacterId,
+  isCharacterUnlocked,
   resolveCharacterAnimKey,
   type CharacterAnimKind,
   type CharacterDef,
@@ -68,7 +72,6 @@ import type { AtmosphereConfig } from '../core/atmosphere/atmosphere';
 import { attachRoomAtmosphere } from './atmosphere-view';
 import type { RoomAtmosphereParts } from './atmosphere-view';
 import type { Vec2 } from '../core/math/vec2';
-import { metaBaseline } from '../core/meta/run-stats';
 import { SeededRng } from '../core/rng';
 import { RunState } from '../core/run/run-state';
 import { drawRunRooms } from '../core/run/room-draw';
@@ -94,7 +97,7 @@ import {
 import { EVOLUTIONS, getEvolution, isEvolutionId } from '../core/skills/evolutions';
 import { getSkill, type SkillDef } from '../core/skills/pool';
 import { chapterGate } from '../core/save/chapter-gate';
-import { withBest } from '../core/save/save-data';
+import { withBest, withSelectedCharacter } from '../core/save/save-data';
 import type { SaveData } from '../core/save/save-data';
 import { applySettings } from '../core/save/settings';
 import type { Settings } from '../core/save/settings';
@@ -102,7 +105,7 @@ import type { SaveRepository } from '../core/save/storage';
 import { preloadSheets } from './assets/texture-cache';
 import { createBanner } from './banner-ui';
 import { BossPhaseBanner, spawnBossForRoom } from './boss-flow';
-import { BulletView } from './bullet-view';
+import { BulletView, resolveClassProjectileLook } from './bullet-view';
 import { CombatLoop, PLAYER_RADIUS_TILES, STRESS_ENEMY_BULLETS, STRESS_ENEMY_COUNT } from './combat-loop';
 import { CoverView } from './cover-view';
 import type { CoverBody } from './cover-view';
@@ -112,6 +115,8 @@ import type { DoorSpot } from './door-view';
 import {
   isDebugEnabled,
   type DebugActionsSnapshot,
+  type DebugAttachmentStateSnapshot,
+  type DebugCharacterStatsSnapshot,
   type DebugDoorSnapshot,
   type DebugSpecialSnapshot,
   type DebugStatus,
@@ -132,10 +137,7 @@ import {
   type XpOrbView,
   type XpOrbVisual,
 } from './xp-orb-view';
-import {
-  enemyProjectileKey,
-  playerProjectileLook,
-} from '../core/vfx/weapon-vfx';
+import { enemyProjectileKey } from '../core/vfx/weapon-vfx';
 import { FeelView } from './feel-view';
 import { FpsMeter } from './fps-meter';
 import { Hud, HEART_SHEET, MAX_EDGE_ARROWS } from './hud';
@@ -780,8 +782,8 @@ export class Bootstrap extends Component {
     this.runSeed = seed;
     // Lock the playable character once when the run starts (M10: one character per run, no mid-run swap).
     this.runCharacter = this.screens.selectedCharacter();
-    // Run baseline = base stats + purchased meta (hearts/damage/fire rate).
-    this.skills.reset(seed, metaBaseline(DEFAULT_COMBAT, save));
+    // Run baseline = Layer 1 class base stats -> Meta upgrades -> Layer 2 class passive.
+    this.skills.resetForRun(seed, save, this.runCharacter.id);
     this.rewards = new RunRewards();
     // A new run starts with no door reward, clean XP state, and no doors on screen (#39).
     this.roomReward = null;
@@ -1081,6 +1083,8 @@ export class Bootstrap extends Component {
           if (entry !== undefined) sheets.add(entry.sheet);
         }
       }
+      const projEntry = manifest.sprites[character.defaultLoadout.defaultProjectileKey];
+      if (projEntry !== undefined) sheets.add(projEntry.sheet);
     }
 
     // Preload every role mapped for this chapter (including WaveScheduler-injected `bomber`/`buffer`).
@@ -1372,10 +1376,13 @@ export class Bootstrap extends Component {
     const node = new CocosNode('bullets');
     node.parent = this.bulletLayer ?? this.node;
 
+    const character = this.runCharacter ?? this.screens.selectedCharacter();
     const bulletView: BulletView = node.addComponent(BulletView);
     await bulletView.init(player.bullets, {
       chapter: () => this.run?.chapter ?? 1,
+      defaultProjectileKey: character.defaultLoadout.defaultProjectileKey,
       isShadowBullet: (bulletId) => this.combat?.isShadowBullet(bulletId) ?? false,
+      signatureSkillForBullet: (bulletId) => this.combat?.signatureSkillForBullet(bulletId) ?? null,
     });
     // Push the look once; `applyLoadout`/`setFeelSettings` push it again when it really changes,
     // so the per-frame sync never builds a loadout map.
@@ -1518,6 +1525,7 @@ export class Bootstrap extends Component {
 
     this.roomClearElapsedMs += deltaMs;
     this.clearClockMs += deltaMs;
+    this.combat?.stepAttachmentHideTimer(deltaMs);
     player.step(this.clearClockMs, deltaMs, [], level);
     this.fx?.update(deltaMs);
     this.updateDepthAndCover(deltaMs);
@@ -1904,6 +1912,7 @@ export class Bootstrap extends Component {
 
     this.doorClockMs += deltaMs;
     this.doorHintElapsedMs += deltaMs;
+    this.combat?.stepAttachmentHideTimer(deltaMs);
     player.step(this.doorClockMs, deltaMs, [], level);
     this.fx?.update(deltaMs);
     this.updateDepthAndCover(deltaMs);
@@ -2600,8 +2609,11 @@ export class Bootstrap extends Component {
         const active = this.runCharacter;
         return active === null ? snap : { ...snap, id: active.id, name: active.name };
       },
-      selectCharacter: (id) => this.screens.selectCharacter(id),
+      selectCharacter: (id) => this.debugSelectCharacter(id),
+      unlockAllCharacters: () => this.debugUnlockAllCharacters(),
       playerAttachment: () => this.player?.getAttachmentSnapshot() ?? null,
+      attachmentState: () => this.debugAttachmentState(),
+      characterStats: () => this.debugCharacterStats(),
       setAttachmentHidden: (hidden) => {
         if (this.player === null) return false;
         this.player.setAttachmentHidden(hidden);
@@ -2629,6 +2641,114 @@ export class Bootstrap extends Component {
       actions: () => this.debugActionsSnapshot(),
       triggerEvolution: (id) => this.debugTriggerEvolution(id),
     });
+  }
+
+  private debugUnlockAllCharacters(): string[] {
+    const save = this.save;
+    const repo = this.saveRepo;
+    if (save === null || repo === null) return Array.from(CHARACTER_IDS);
+
+    const next: SaveData = {
+      ...save,
+      unlockedCharacters: Array.from(CHARACTER_IDS),
+    };
+    try {
+      repo.save(next);
+      this.save = next;
+      if (this.status === 'menu' || this.status === 'won' || this.status === 'lost') {
+        this.screens.selectCharacter(this.screens.selectedCharacter().id);
+      }
+      console.log(`[YokaiField] debug unlockAllCharacters → ${next.unlockedCharacters.join(', ')}.`);
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] Could not unlock all characters: ${errorMessage(error)}`);
+    }
+    return Array.from(next.unlockedCharacters);
+  }
+
+  private debugSelectCharacter(id: string): boolean {
+    if (!isCharacterId(id)) {
+      console.warn(`[YokaiField] debug selectCharacter skipped: unknown character '${id}'.`);
+      return false;
+    }
+    const save = this.save;
+    const repo = this.saveRepo;
+    if (save === null || repo === null) return false;
+
+    try {
+      let next = save;
+      if (!isCharacterUnlocked(id, next)) {
+        next = {
+          ...next,
+          unlockedCharacters: Array.from(new Set([...next.unlockedCharacters, id])),
+        };
+      }
+      next = withSelectedCharacter(next, id);
+      if (next !== save) {
+        repo.save(next);
+        this.save = next;
+      }
+
+      if (this.status === 'menu' || this.status === 'won' || this.status === 'lost') {
+        return this.screens.selectCharacter(id);
+      }
+
+      const nextChar = CHARACTERS[id];
+      this.runCharacter = nextChar;
+      if (this.player !== null && this.combat !== null && this.run !== null) {
+        const prevMax = this.player.maxHearts;
+        this.skills.setCharacterForRun(next, nextChar.id);
+        this.player.switchCharacter(nextChar, this.attachments);
+        this.applyLoadout();
+        if (this.player.maxHearts > prevMax) {
+          this.player.heal(this.player.maxHearts - prevMax);
+        }
+        this.bulletView?.setDefaultProjectileKey(nextChar.defaultLoadout.defaultProjectileKey);
+        this.combat.setSignatureSkill(nextChar.signatureSkillId);
+        this.syncHud();
+      }
+      console.log(`[YokaiField] debug selectCharacter → ${nextChar.id} (${nextChar.name}).`);
+      return true;
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] debug selectCharacter('${id}') failed: ${errorMessage(error)}`);
+      return false;
+    }
+  }
+
+  private debugAttachmentState(): DebugAttachmentStateSnapshot {
+    const snap = this.player?.getAttachmentSnapshot() ?? null;
+    const characterId = this.runCharacter?.id ?? this.screens.selectedCharacter().id;
+    return {
+      characterId,
+      hasNode: snap?.hasNode ?? false,
+      visible: snap?.visible ?? false,
+      hiddenBySkill: snap?.hiddenBySkill ?? false,
+      facing: snap?.direction ?? this.player?.facingDirection ?? 'down',
+      behindBody: snap?.behind ?? false,
+      x: snap?.localX ?? 0,
+      y: snap?.localY ?? 0,
+    };
+  }
+
+  private debugCharacterStats(): DebugCharacterStatsSnapshot {
+    const charDef = this.runCharacter ?? this.screens.selectedCharacter();
+    const stats = this.player?.derivedStats ?? this.skills.stats();
+    const projectileKey =
+      this.bulletView?.projectileKey ??
+      resolveClassProjectileLook(
+        this.skills.snapshot(),
+        charDef.defaultLoadout.defaultProjectileKey,
+      ).key;
+    return {
+      ...stats,
+      characterId: charDef.id,
+      name: charDef.name,
+      signatureSkillId: charDef.signatureSkillId,
+      signatureName: charDef.signatureName,
+      weaponForm: charDef.defaultLoadout.weaponForm,
+      defaultProjectileKey: charDef.defaultLoadout.defaultProjectileKey,
+      projectileKey,
+      hearts: this.player?.hearts ?? stats.maxHearts,
+    };
   }
 
   /** Sync HUD hearts, enemy counter, boss bar, XP bar, and M13 Dash/Active cooldowns without allocating per frame. */
@@ -2829,9 +2949,12 @@ export class Bootstrap extends Component {
   private debugVfx(): DebugVfxSnapshot {
     const owned = this.skills.snapshot();
     const chapter = this.run?.chapter ?? 1;
+    const character = this.runCharacter ?? this.screens.selectedCharacter();
     return {
       effects: this.save?.settings.effects ?? 'full',
-      projectileKey: this.bulletView?.projectileKey ?? playerProjectileLook(owned).key,
+      projectileKey:
+        this.bulletView?.projectileKey ??
+        resolveClassProjectileLook(owned, character.defaultLoadout.defaultProjectileKey).key,
       trailGhostsActive: this.bulletView?.trailGhostsActive ?? 0,
       auraVisible: this.fx?.auraVisible ?? false,
       enemyProjectileKey: this.bulletView?.enemyProjectileKey ?? enemyProjectileKey(chapter),

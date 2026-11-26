@@ -6,9 +6,19 @@
  * lives in one place. This file does not move between rooms — bootstrap still does that
  * after `choose()` returns.
  */
+import {
+  DEFAULT_CHARACTER_ID,
+  resolveSelectedCharacter,
+  type CharacterId,
+} from '../core/characters/roster';
+import { DEFAULT_COMBAT } from '../core/config';
+import {
+  derivedStatsForRun,
+  statsForRun,
+  type RunStatsSource,
+} from '../core/meta/run-stats';
 import { SkillLoadout, type AcquireResult } from '../core/skills/loadout';
 import type { DerivedStats, StatsBaseline } from '../core/skills/derived-stats';
-import { DEFAULT_COMBAT } from '../core/config';
 import type { OwnedSkillStacks, SkillDef } from '../core/skills/pool';
 import {
   createSkillRollRng,
@@ -38,8 +48,10 @@ export interface SkillGrant {
 export class SkillRun {
   private loadout = new SkillLoadout();
   private rng = createSkillRollRng(1);
-  /** Baseline with meta upgrades added (M5); skills stack on top of it. */
+  /** Baseline with class + meta + passive stats added (M5/M14); skills stack on top of it. */
   private base: StatsBaseline = DEFAULT_COMBAT;
+  private characterId: CharacterId = DEFAULT_CHARACTER_ID;
+  private runSave: RunStatsSource | null = null;
   private screen: SkillPickScreen | null = null;
   private offered: readonly SkillDef[] | null = null;
   private rerolls = 0;
@@ -52,7 +64,31 @@ export class SkillRun {
     this.loadout = new SkillLoadout();
     this.rng = createSkillRollRng(seed);
     this.base = base;
+    this.characterId = DEFAULT_CHARACTER_ID;
+    this.runSave = null;
     this.rerolls = 0;
+  }
+
+  /**
+   * Start a new run for `characterId` + `save`: composes Layer 1 class base stats, permanent
+   * Meta upgrades, and Layer 2 class starting passive (`statsForRun` / `derivedStatsForRun`).
+   */
+  resetForRun(seed: number, save: RunStatsSource, characterId?: CharacterId): void {
+    const resolvedId = characterId ?? resolveSelectedCharacter(save).id;
+    this.reset(seed, statsForRun(save, resolvedId));
+    this.characterId = resolvedId;
+    this.runSave = save;
+  }
+
+  /** Debug helper: switch the active character baseline mid-run without resetting owned skills. */
+  setCharacterForRun(save: RunStatsSource, characterId: CharacterId): void {
+    this.characterId = characterId;
+    this.runSave = save;
+    this.base = statsForRun(save, characterId);
+  }
+
+  get activeCharacterId(): CharacterId {
+    return this.characterId;
   }
 
   get entries(): OwnedSkillStacks[] {
@@ -68,6 +104,9 @@ export class SkillRun {
   }
 
   stats(): DerivedStats {
+    if (this.runSave !== null) {
+      return derivedStatsForRun(this.runSave, this.loadout.snapshot(), this.characterId);
+    }
     return this.loadout.stats(this.base);
   }
 
