@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { XP_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import { SeededRng } from '../../assets/scripts/core/rng';
 import { createDefaultSave } from '../../assets/scripts/core/save/save-data';
+import { EVOLUTIONS } from '../../assets/scripts/core/skills/evolutions';
 import { SKILLS } from '../../assets/scripts/core/skills/pool';
 import {
   createSkillRollRng,
@@ -83,7 +84,9 @@ describe('rerollChoices & rollChoices(avoidIds) — fresh reroll offers', () => 
 
   it('guarantees a differing hand when only 4 eligible skills remain (1 fresh + 2 deferred)', () => {
     const rng = createSkillRollRng(77);
-    const owned = new Map<string, number>(SKILLS.map((skill) => [skill.id, skill.maxStacks]));
+    const owned = new Map<string, number>(
+      [...SKILLS, ...EVOLUTIONS].map((skill) => [skill.id, skill.maxStacks]),
+    );
     const keepIds = ['sharpen', 'rapid-fire', 'twin-shot', 'vitality'] as const;
     for (const id of keepIds) owned.delete(id);
 
@@ -101,7 +104,9 @@ describe('rerollChoices & rollChoices(avoidIds) — fresh reroll offers', () => 
 
   it('degrades gracefully without throwing when <= 3 eligible skills remain', () => {
     const rng = createSkillRollRng(77);
-    const owned = new Map<string, number>(SKILLS.map((skill) => [skill.id, skill.maxStacks]));
+    const owned = new Map<string, number>(
+      [...SKILLS, ...EVOLUTIONS].map((skill) => [skill.id, skill.maxStacks]),
+    );
     owned.delete('sharpen');
     owned.delete('rapid-fire');
 

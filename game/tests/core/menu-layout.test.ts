@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { CHARACTER_ROSTER } from '../../assets/scripts/core/characters/roster';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../../assets/scripts/core/level/level-data';
 import { parseWaterLayout, waterAreasFor } from '../../assets/scripts/core/level/water-layout';
-import { SKILLS } from '../../assets/scripts/core/skills/pool';
+import { EVOLUTIONS, evolutionHintsForSkill } from '../../assets/scripts/core/skills/evolutions';
+import { SKILLS, getSkill } from '../../assets/scripts/core/skills/pool';
 import { letterboxRect, worldToUiScale } from '../../assets/scripts/core/view/letterbox';
 import {
   MENU_BACKDROP_ROOM,
@@ -425,7 +426,7 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
     }
   });
 
-  it('fits 3 skill cards with focus rings, all 20 skill labels, and the Gold Reroll button inside 512×288 across all target viewports', () => {
+  it('fits 3 skill cards with focus rings, all skill/Evolution labels, pairing hints, and Gold Reroll inside 512×288 across all viewports', () => {
     const layout = computeSkillCardLayout(3);
     const leftEdge = layout.cardXs[0]! - (layout.cardWidth + FOCUS_RING_EXPAND_PX) / 2;
     const rightEdge = layout.cardXs[2]! + (layout.cardWidth + FOCUS_RING_EXPAND_PX) / 2;
@@ -436,6 +437,11 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
     expect(rightEdge).toBeLessThanOrEqual(DESIGN_WIDTH / 2 - 8);
     expect(bottomEdge).toBeGreaterThanOrEqual(-DESIGN_HEIGHT / 2 + 8);
     expect(topEdge).toBeLessThan(layout.subtitleY - 10);
+
+    // Interior slots stay clear of each other and inside the card well.
+    expect(layout.pairHintY).toBeLessThan(layout.effectY - layout.effectHeight / 2);
+    expect(layout.pairHintY).toBeGreaterThan(layout.stackY + 8);
+    expect(layout.stackY - 6).toBeGreaterThan(-layout.cardHeight / 2 + 5);
 
     // Gold Reroll button sits cleanly below the 3 cards without touching focus rings or bottom edge.
     const rerollTopEdge = layout.rerollY + (layout.rerollHeight + FOCUS_RING_EXPAND_PX) / 2;
@@ -473,9 +479,30 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
       expect(band.height).toBeGreaterThan(0);
     }
 
+    for (const card of [...SKILLS, ...EVOLUTIONS]) {
+      const nameW = card.name.length * 12 * GLYPH_WIDTH_RATIO;
+      expect(nameW, `card "${card.name}"`).toBeLessThanOrEqual(layout.cardWidth - 16);
+    }
+
     for (const skill of SKILLS) {
-      const nameW = skill.name.length * 12 * GLYPH_WIDTH_RATIO;
-      expect(nameW, `skill "${skill.name}"`).toBeLessThanOrEqual(layout.cardWidth - 16);
+      for (const partnerOwned of [false, true]) {
+        const fakeOwned = new Map<string, number>();
+        if (partnerOwned) {
+          for (const hint of evolutionHintsForSkill(skill.id, new Map())) {
+            fakeOwned.set(hint.partnerId, 1);
+          }
+        }
+        for (const hint of evolutionHintsForSkill(skill.id, fakeOwned)) {
+          const hintW = hint.text.length * 8 * GLYPH_WIDTH_RATIO;
+          expect(hintW, `hint "${hint.text}"`).toBeLessThanOrEqual(layout.cardWidth - 18);
+        }
+      }
+    }
+    for (const evo of EVOLUTIONS) {
+      const recipe = `${getSkill(evo.requires[0]).name} + ${getSkill(evo.requires[1]).name}`;
+      expect(recipe.length * 8 * GLYPH_WIDTH_RATIO, recipe).toBeLessThanOrEqual(
+        layout.cardWidth - 18,
+      );
     }
   });
 });

@@ -24,7 +24,8 @@ import {
   view,
 } from 'cc';
 import { describeSkill } from '../core/skills/description';
-import type { SkillDef } from '../core/skills/pool';
+import { evolutionHintsForSkill } from '../core/skills/evolutions';
+import { getSkill, type Rarity, type SkillDef } from '../core/skills/pool';
 import {
   PANEL_SHADOW_EXPAND_PX,
   PANEL_WELL_INSET_PX,
@@ -60,8 +61,20 @@ type UITransform = InstanceType<typeof CocosUITransform>;
 const CARD_RIM_FOCUS_TINT = new CocosColor(255, 244, 224, 255);
 const CARD_RIM_HOVER_TINT = new CocosColor(255, 255, 255, 255);
 const CARD_RIM_PRESSED_TINT = new CocosColor(240, 218, 198, 255);
+const LEGENDARY_GOLD_COLOR = new CocosColor(255, 214, 72, 255);
+const LEGENDARY_RIM_TINT = new CocosColor(255, 216, 92, 255);
+const LEGENDARY_RIM_FOCUS_TINT = new CocosColor(255, 232, 134, 255);
+const LEGENDARY_RIM_HOVER_TINT = new CocosColor(255, 242, 168, 255);
+const LEGENDARY_RIM_PRESSED_TINT = new CocosColor(240, 194, 72, 255);
+const LEGENDARY_WELL_TINT = new CocosColor(64, 48, 24, 255);
+const PAIR_HINT_MUTED_COLOR = new CocosColor(196, 184, 156, 255);
+const PAIR_HINT_READY_COLOR = new CocosColor(255, 214, 72, 255);
 const ICON_SLOT_TINT = new CocosColor(255, 255, 255, 240);
 const HOTKEY_COLOR = new CocosColor(232, 210, 168, 255);
+
+function rarityColorFor(rarity: Rarity): Color {
+  return rarity === 'legendary' ? LEGENDARY_GOLD_COLOR : RARITY_COLORS[rarity];
+}
 
 const HOTKEY_CODES = [KeyCode.KEY_1, KeyCode.KEY_2, KeyCode.KEY_3] as const;
 
@@ -290,7 +303,7 @@ export async function buildSkillPick(
   options.choices.forEach((skill, index) => {
     const x = layout.cardXs[index] ?? 0;
     const stacks = options.owned.get(skill.id) ?? 0;
-    const card = makeCard(root, frames, layout, skill, stacks, index + 1, x, () => {
+    const card = makeCard(root, frames, layout, skill, options.owned, stacks, index + 1, x, () => {
       pressedIndex = null;
       rerollFocused = false;
       focused = index;
@@ -402,11 +415,13 @@ function makeCard(
   frames: MenuFrames,
   layout: SkillCardLayout,
   skill: SkillDef,
+  owned: ReadonlyMap<string, number>,
   stacks: number,
   hotkey: number,
   x: number,
   onPick: () => void,
 ): SkillCardHandle {
+  const isLegendary = skill.rarity === 'legendary';
   const node = new CocosNode(`skill-card-${skill.id}`);
   node.layer = Layers.Enum.UI_2D;
   node.parent = parent;
@@ -417,7 +432,7 @@ function makeCard(
     node.getComponent(CocosUITransform) ?? node.addComponent(CocosUITransform);
   transform.setContentSize(layout.cardWidth, layout.cardHeight);
 
-  // Sibling background layers in strict back-to-front draw order: shadow -> wooden rim -> recessed well.
+  // Sibling background layers in strict back-to-front draw order: shadow -> wooden/gold rim -> recessed well.
   const shadow = addSlicedSpriteNode(
     node,
     'card-shadow',
@@ -428,13 +443,14 @@ function makeCard(
   );
   shadow.node.setPosition(0, -1, 0);
 
+  const restingRimTint = isLegendary ? LEGENDARY_RIM_TINT : PANEL_RIM_TINT;
   const { sprite: rimSprite } = addSlicedSpriteNode(
     node,
     'card-rim',
     frames.normal,
     layout.cardWidth,
     layout.cardHeight,
-    PANEL_RIM_TINT,
+    restingRimTint,
   );
 
   addSlicedSpriteNode(
@@ -443,8 +459,26 @@ function makeCard(
     frames.panel,
     layout.cardWidth - PANEL_WELL_INSET_PX * 2,
     layout.cardHeight - PANEL_WELL_INSET_PX * 2,
-    PANEL_WELL_TINT,
+    isLegendary ? LEGENDARY_WELL_TINT : PANEL_WELL_TINT,
   );
+
+  // Dedicated gold inner frame for Legendary Evolution cards (sibling Graphics node, single colour).
+  if (isLegendary) {
+    const goldFrameNode = new CocosNode('legendary-border');
+    goldFrameNode.layer = Layers.Enum.UI_2D;
+    goldFrameNode.parent = node;
+    const goldGfx: Graphics = goldFrameNode.addComponent(CocosGraphics);
+    goldGfx.strokeColor = LEGENDARY_GOLD_COLOR;
+    goldGfx.lineWidth = 1.5;
+    const inset = PANEL_WELL_INSET_PX;
+    goldGfx.rect(
+      -layout.cardWidth / 2 + inset,
+      -layout.cardHeight / 2 + inset,
+      layout.cardWidth - inset * 2,
+      layout.cardHeight - inset * 2,
+    );
+    goldGfx.stroke();
+  }
 
   // Recessed dark pedestal behind the 48×48 skill icon.
   const iconSlot = addSlicedSpriteNode(
@@ -463,7 +497,7 @@ function makeCard(
   rarityBar.parent = node;
   rarityBar.setPosition(0, layout.accentY, 0);
   const rarityGfx: Graphics = rarityBar.addComponent(CocosGraphics);
-  const rarityColor: Color = RARITY_COLORS[skill.rarity];
+  const rarityColor: Color = rarityColorFor(skill.rarity);
   rarityGfx.fillColor = rarityColor;
   rarityGfx.rect(-20, 0, 40, 2);
   rarityGfx.fill();
@@ -477,7 +511,7 @@ function makeCard(
   const key = createLabel(node, 'hotkey', String(hotkey));
   key.fontSize = 10;
   key.lineHeight = 12;
-  key.color = HOTKEY_COLOR;
+  key.color = isLegendary ? LEGENDARY_GOLD_COLOR : HOTKEY_COLOR;
   key.node.setPosition(layout.hotkeyX, layout.hotkeyY, 0);
 
   const icon = new CocosNode('icon');
@@ -498,10 +532,11 @@ function makeCard(
   const name = createLabel(node, 'name', skill.name);
   name.fontSize = 12;
   name.lineHeight = 14;
-  name.color = MENU_TEXT_COLOR;
+  name.color = isLegendary ? LEGENDARY_GOLD_COLOR : MENU_TEXT_COLOR;
   name.node.setPosition(0, layout.nameY, 0);
 
-  const rarity = createLabel(node, 'rarity', skill.rarity.toUpperCase());
+  const headerText = isLegendary ? 'EVOLUTION' : skill.rarity.toUpperCase();
+  const rarity = createLabel(node, 'rarity', headerText);
   rarity.fontSize = 9;
   rarity.lineHeight = 11;
   rarity.color = rarityColor;
@@ -520,11 +555,34 @@ function makeCard(
   effect.node.setPosition(0, layout.effectY, 0);
   effect.updateRenderData?.(true);
 
-  const stackLine = stacks <= 0 ? 'NEW' : `Stack ${stacks} / ${skill.maxStacks}`;
+  if (isLegendary && skill.requires !== undefined) {
+    const [reqA, reqB] = skill.requires;
+    const recipe = `${getSkill(reqA).name} + ${getSkill(reqB).name}`;
+    const pairHint = createLabel(node, 'pair-hint', recipe);
+    pairHint.fontSize = 8;
+    pairHint.lineHeight = 10;
+    pairHint.color = LEGENDARY_GOLD_COLOR;
+    pairHint.node.setPosition(0, layout.pairHintY, 0);
+  } else if (!isLegendary) {
+    const hint = evolutionHintsForSkill(skill.id, owned)[0];
+    if (hint !== undefined) {
+      const pairHint = createLabel(node, 'pair-hint', hint.text);
+      pairHint.fontSize = 8;
+      pairHint.lineHeight = 10;
+      pairHint.color = hint.ready ? PAIR_HINT_READY_COLOR : PAIR_HINT_MUTED_COLOR;
+      pairHint.node.setPosition(0, layout.pairHintY, 0);
+    }
+  }
+
+  const stackLine = isLegendary
+    ? 'LEGENDARY'
+    : stacks <= 0
+      ? 'NEW'
+      : `Stack ${stacks} / ${skill.maxStacks}`;
   const stack = createLabel(node, 'stack', stackLine);
   stack.fontSize = 9;
   stack.lineHeight = 11;
-  stack.color = stacks > 0 ? rarityColor : MENU_MUTED_COLOR;
+  stack.color = isLegendary || stacks > 0 ? rarityColor : MENU_MUTED_COLOR;
   stack.node.setPosition(0, layout.stackY, 0);
 
   return {
@@ -532,25 +590,25 @@ function makeCard(
     setState(isFocused: boolean, isHovered: boolean, isPressed: boolean): void {
       if (isPressed) {
         rimSprite.spriteFrame = frames.pressed;
-        rimSprite.color = CARD_RIM_PRESSED_TINT;
+        rimSprite.color = isLegendary ? LEGENDARY_RIM_PRESSED_TINT : CARD_RIM_PRESSED_TINT;
         ring.applyStyle('gleam');
         return;
       }
       if (isHovered) {
         rimSprite.spriteFrame = frames.hover;
-        rimSprite.color = CARD_RIM_HOVER_TINT;
+        rimSprite.color = isLegendary ? LEGENDARY_RIM_HOVER_TINT : CARD_RIM_HOVER_TINT;
         ring.applyStyle('gleam');
         return;
       }
       if (isFocused) {
         rimSprite.spriteFrame = frames.hover;
-        rimSprite.color = CARD_RIM_FOCUS_TINT;
+        rimSprite.color = isLegendary ? LEGENDARY_RIM_FOCUS_TINT : CARD_RIM_FOCUS_TINT;
         ring.applyStyle('gold');
         return;
       }
       rimSprite.spriteFrame = frames.normal;
-      rimSprite.color = PANEL_RIM_TINT;
-      ring.applyStyle('none');
+      rimSprite.color = restingRimTint;
+      ring.applyStyle(isLegendary ? 'gold' : 'none');
     },
   };
 }

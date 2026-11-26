@@ -76,7 +76,7 @@ export function shopOffers(
       Math.imul(Math.trunc(room), 0x9e3779b1) ^
       SHOP_SEED_SALT,
   );
-  const skills = rollChoices({ rng, owned: ownedSkills, count: 2 });
+  const skills = rollChoices({ rng, owned: ownedSkills, count: 2, includeEvolutions: false });
 
   const offers: ShopOffer[] = skills.map((skill) => ({
     item: skill.id,

@@ -23,8 +23,7 @@ import {
   view,
 } from 'cc';
 import { describeSkill } from '../core/skills/description';
-import { getSkill } from '../core/skills/pool';
-import type { SkillDef } from '../core/skills/pool';
+import { getSkill, type BaseSkillDef } from '../core/skills/pool';
 import type { ShopOffer } from '../core/run/special-rooms';
 import {
   nextShopFocus,
@@ -501,7 +500,7 @@ function makeCard(
 }
 
 /** `getSkill` throws for an unknown id; a stale offer must not crash the shop. */
-function safeSkill(id: string): SkillDef | null {
+function safeSkill(id: string): BaseSkillDef | null {
   try {
     return getSkill(id);
   } catch {

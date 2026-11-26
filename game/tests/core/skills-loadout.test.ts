@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
 import { describeSkill, skillAbbreviation } from '../../assets/scripts/core/skills/description';
+import { EVOLUTIONS } from '../../assets/scripts/core/skills/evolutions';
 import { SkillLoadout, pickupHeal } from '../../assets/scripts/core/skills/loadout';
 import { SKILLS, getSkill } from '../../assets/scripts/core/skills/pool';
 import { estimateDps } from '../../assets/scripts/core/skills/derived-stats';
@@ -60,31 +61,33 @@ describe('SkillLoadout', () => {
   });
 });
 
-describe('Skill description', () => {
-  it('every skill in the pool has a description and an abbreviation', () => {
-    for (const skill of SKILLS) {
-      expect(describeSkill(skill).length, skill.id).toBeGreaterThan(0);
-      expect(skillAbbreviation(skill), skill.id).toMatch(/^[A-Z0-9?]{1,2}$/);
+describe('Skill & Evolution descriptions', () => {
+  it('every skill and Evolution in the pool has a description and an abbreviation', () => {
+    for (const card of [...SKILLS, ...EVOLUTIONS]) {
+      expect(describeSkill(card).length, card.id).toBeGreaterThan(0);
+      expect(skillAbbreviation(card), card.id).toMatch(/^[A-Z0-9]{2}$/);
     }
   });
 
   it('descriptions take numbers from tags, not hardcoded', () => {
-    // Sharpen 1 stack = +1 damage; 5 stacks keep the same text (the UI appends ×N).
     expect(describeSkill(getSkill('sharpen'))).toContain('+1 damage');
     expect(describeSkill(getSkill('rapid-fire'))).toContain('+25% fire rate');
     expect(describeSkill(getSkill('twin-shot'))).toContain('±12°');
     expect(describeSkill(getSkill('shield'))).toContain('20s');
     expect(describeSkill(getSkill('executioner'))).toContain('30%');
     expect(describeSkill(getSkill('poison'))).toContain('3s');
+    expect(describeSkill(getSkill('ignite'))).toContain('Burn');
+    expect(describeSkill(getSkill('phantom-dash'))).toContain('dash cooldown');
   });
 
-  it('HUD abbreviations are readable and unique', () => {
+  it('HUD abbreviations are readable and strictly unique across all skills & Evolutions', () => {
     expect(skillAbbreviation(getSkill('rapid-fire'))).toBe('RF');
     expect(skillAbbreviation(getSkill('long-iframe'))).toBe('IF');
     expect(skillAbbreviation(getSkill('crit-eye'))).toBe('CE');
 
-    const codes = SKILLS.map(skillAbbreviation);
-    expect(new Set(codes).size).toBe(SKILLS.length);
+    const allCards = [...SKILLS, ...EVOLUTIONS];
+    const codes = allCards.map(skillAbbreviation);
+    expect(new Set(codes).size).toBe(allCards.length);
     for (const code of codes) expect(code).toMatch(/^[A-Z0-9]{2}$/);
   });
 });

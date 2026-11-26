@@ -1,9 +1,8 @@
 /**
- * Display text for skills on the 1/3 pick screen and the HUD.
+ * Display text for skills and Legendary Evolutions on the 1-of-3 pick screen and the HUD.
  *
- * Content derives from the pool's `tags`, not hand-written per skill: adding a skill
- * = adding tags, and the description follows. Numbers come straight from the tag so a tooltip
- * cannot say "15% crit" while derived-stats adds 10%.
+ * Content derives from the pool's `tags`, not hand-written per skill: adding a skill or Evolution
+ * = adding tags, and the description follows automatically.
  */
 import type { SkillDef, SkillTag } from './pool';
 
@@ -11,17 +10,16 @@ import type { SkillDef, SkillTag } from './pool';
 export const TWIN_SPREAD_DEGREES = 12;
 
 /**
- * One description line for **each stack** of a skill. Multiple tags join with " · ".
- * Does not include the current stack count — the UI appends "×N" to keep lines short.
+ * One description line for **each stack** of a skill or Evolution. Multiple tags join with " · ".
+ * Does not include the current stack count — the UI appends "×N" or stack lines separately.
  */
 export function describeSkill(def: SkillDef): string {
   return def.tags.map(describeTag).join(' · ');
 }
 
 /**
- * Short HUD text (2 characters). Comes from `SkillDef.short`, hand-written because automatic
- * initials collide: Sharpen/Shield are both "SH", Swift/Second Wind both "SW",
- * Explosive/Executioner both "EX".
+ * Short HUD text (2 characters). Comes from `SkillDef.short`, hand-written so every
+ * skill and Evolution has a unique 2-character code.
  */
 export function skillAbbreviation(def: SkillDef): string {
   return def.short;
@@ -34,10 +32,15 @@ export function describeTag(tag: SkillTag): string {
       return `+${formatNumber(tag.amount)} damage`;
     case 'fire-rate-mult':
       return `+${formatPercent(tag.amount)} fire rate`;
-    case 'projectile-add':
-      return `+${formatNumber(tag.amount)} projectile (±${TWIN_SPREAD_DEGREES}°)`;
-    case 'pierce-add':
-      return 'Bullets pierce +1 enemy';
+    case 'projectile-add': {
+      const noun = tag.amount === 1 ? 'projectile' : 'projectiles';
+      return `+${formatNumber(tag.amount)} ${noun} (±${TWIN_SPREAD_DEGREES}°)`;
+    }
+    case 'pierce-add': {
+      const amount = tag.amount ?? 1;
+      const noun = amount === 1 ? 'enemy' : 'enemies';
+      return `Bullets pierce +${formatNumber(amount)} ${noun}`;
+    }
     case 'crit-chance':
       return `+${formatPercent(tag.chance)} crit (×${formatNumber(tag.multiplier)})`;
     case 'max-hearts':
@@ -56,20 +59,40 @@ export function describeTag(tag: SkillTag): string {
       return `Hits slow ${formatPercent(1 - tag.factor)} for ${formatSeconds(tag.durationMs)}`;
     case 'poison':
       return `Poison ${formatNumber(tag.dps)}/s for ${formatSeconds(tag.durationMs)}`;
+    case 'burn':
+      return `Burn ${formatNumber(tag.dps)}/s for ${formatSeconds(tag.durationMs)}`;
+    case 'shock-arc':
+      return `Chain lightning ${formatNumber(tag.arcs)} foes (${formatPercent(tag.damageRatio)})`;
+    case 'status-amp':
+      return `+${formatPercent(tag.bonusRatio)} dmg vs afflicted foes`;
     case 'lifesteal':
       return `Heal ${formatPercent(tag.percent)} of damage`;
-    case 'gold-mult':
-      return `+${formatPercent(tag.amount)} gold`;
-    case 'luck-add':
-      return `+${formatPercent(tag.amount)} rare/epic chance`;
     case 'execute':
       return `+${formatPercent(tag.bonus)} damage below ${formatPercent(tag.threshold)} HP`;
-    case 'ricochet-add':
-      return `Bullets bounce to ${formatNumber(tag.bounces)} more enemy`;
+    case 'ricochet-add': {
+      const noun = tag.bounces === 1 ? 'enemy' : 'enemies';
+      return `Bullets bounce to ${formatNumber(tag.bounces)} more ${noun}`;
+    }
     case 'homing-add':
       return 'Bullets home in on enemies';
     case 'explosive':
-      return `Explode ${formatNumber(tag.radiusTiles)} tiles for ${formatPercent(tag.damageRatio)} damage`;
+      return `Explode ${formatNumber(tag.radiusTiles)}t (+${formatPercent(tag.damageRatio)} dmg)`;
+    case 'damage-reduction':
+      return `${formatPercent(tag.chance)} ward chance`;
+    case 'shield-recharge-mult':
+      return `-${formatPercent(1 - tag.factor)} shield cooldown`;
+    case 'dash-cooldown-mult':
+      return `-${formatPercent(1 - tag.factor)} dash cooldown`;
+    case 'dash-speed-mult':
+      return `+${formatPercent(tag.amount)} dash speed`;
+    case 'dash-nova':
+      return `Dash burst ${formatNumber(tag.damage)} dmg (${formatNumber(tag.radiusTiles)}t)`;
+    case 'post-dash-fire-rate':
+      return `+${formatPercent(tag.bonus)} post-dash fire (${formatSeconds(tag.durationMs)})`;
+    case 'active-cooldown-mult':
+      return `-${formatPercent(1 - tag.factor)} active cooldown`;
+    case 'active-power-mult':
+      return `+${formatPercent(tag.amount)} active power`;
   }
 }
 

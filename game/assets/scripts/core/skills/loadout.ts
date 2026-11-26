@@ -1,5 +1,5 @@
 /**
- * A run's loadout: which skills are owned and with how many stacks.
+ * A run's loadout: which skills and Legendary Evolutions are owned and with how many stacks.
  *
  * This is the **only** skill state in a run. Both the game adapter and the
  * simulation go through this class, so the "clamp by `maxStacks`" and "stats
@@ -10,7 +10,12 @@
  */
 import { DEFAULT_COMBAT } from '../config';
 import { computeDerivedStats, type DerivedStats, type StatsBaseline } from './derived-stats';
-import { getSkill, resolveOwnedSkills, type OwnedSkillStacks, type SkillDef } from './pool';
+import {
+  findSkillOrEvolution,
+  resolveOwnedEvolutions,
+  type OwnedEvolutionStacks,
+} from './evolutions';
+import { resolveOwnedSkills, type OwnedSkillStacks, type SkillDef } from './pool';
 
 /** Result of one skill pickup — enough for the UI/run to decide sound, healing, logging. */
 export interface AcquireResult {
@@ -20,12 +25,17 @@ export interface AcquireResult {
   readonly added: number;
   /** Stacks held after the pickup. */
   readonly stacks: number;
-  /** Hearts healed at pickup time (GDD §6: Vitality "heal 1 heart now"). */
+  /** Hearts healed at pickup time (Vitality "heal 1 heart now"). */
   readonly healNow: number;
 }
 
+export interface OwnedCardStacks {
+  readonly def: SkillDef;
+  readonly stacks: number;
+}
+
 /**
- * Current stack count of every skill. The Map is kept **private** so nobody can
+ * Current stack count of every skill and Evolution. The Map is kept **private** so nobody can
  * accidentally write past the cap; changing it must go through `acquire`.
  */
 export class SkillLoadout {
@@ -37,21 +47,34 @@ export class SkillLoadout {
     for (const skill of resolveOwnedSkills(entries)) {
       loadout.owned.set(skill.def.id, skill.stacks);
     }
+    for (const evo of resolveOwnedEvolutions(entries)) {
+      loadout.owned.set(evo.def.id, evo.stacks);
+    }
     return loadout;
   }
 
-  /** Stacks of one skill; 0 when not owned or the id is unknown. */
+  /** Stacks of one skill or Evolution; 0 when not owned or the id is unknown. */
   stacks(id: string): number {
     return this.owned.get(id) ?? 0;
   }
 
-  /** Owned skills in `SKILLS` order (deterministic). */
+  /** Owned base skills in `SKILLS` order (deterministic). */
   get entries(): OwnedSkillStacks[] {
     return resolveOwnedSkills(this.owned);
   }
 
+  /** Owned Legendary Evolutions in `EVOLUTIONS` order (deterministic). */
+  get evolutions(): OwnedEvolutionStacks[] {
+    return resolveOwnedEvolutions(this.owned);
+  }
+
+  /** Owned base skills followed by owned Legendary Evolutions. */
+  get allEntries(): OwnedCardStacks[] {
+    return [...this.entries, ...this.evolutions];
+  }
+
   get size(): number {
-    return this.entries.length;
+    return this.entries.length + this.evolutions.length;
   }
 
   /** Read-only copy — used by `rollChoices`, the HUD and tests. */
@@ -60,14 +83,14 @@ export class SkillLoadout {
   }
 
   /**
-   * Acquire `stacks` stacks of skill `id`.
+   * Acquire `stacks` stacks of skill or Evolution `id`.
    *
    * - An unknown id returns `acquired: false` instead of throwing: an old save/debug must not kill the run.
    * - Clamped by `maxStacks`; picking up when full is a no-op (the UI should not offer a full card).
    * - `healNow` comes from the `max-hearts` tag of **one** stack (Vitality).
    */
   acquire(id: string, stacks = 1): AcquireResult {
-    const def = findSkill(id);
+    const def = findSkillOrEvolution(id);
     if (def === undefined) {
       return { acquired: false, added: 0, stacks: 0, healNow: 0 };
     }
@@ -91,15 +114,6 @@ export class SkillLoadout {
   /** Final stats of the loadout, shared by game and simulation. */
   stats(base: StatsBaseline = DEFAULT_COMBAT): DerivedStats {
     return computeDerivedStats(this.owned, base);
-  }
-}
-
-/** Look up a skill but return `undefined` instead of throwing — `acquire` must tolerate unknown ids. */
-function findSkill(id: string): SkillDef | undefined {
-  try {
-    return getSkill(id);
-  } catch {
-    return undefined;
   }
 }
 

@@ -10,6 +10,7 @@
  * `resolveOwnedSkills`, exactly like stats: unknown ids and 0/negative/NaN stacks are ignored,
  * stacks are clamped to `maxStacks`.
  */
+import { resolveOwnedEvolutions } from '../skills/evolutions';
 import { resolveOwnedSkills } from '../skills/pool';
 import type { Rarity } from '../skills/pool';
 
@@ -134,10 +135,11 @@ export function trailElement(
 }
 
 /**
- * Aura at the player's feet: any Epic skill held, or `AURA_STACK_THRESHOLD` stacks in total
- * (after clamping — 99 Sharpen stacks are still 5).
+ * Aura at the player's feet: any Epic skill or Legendary Evolution held, or
+ * `AURA_STACK_THRESHOLD` stacks in total (after clamping — 99 Sharpen stacks are still 5).
  */
 export function showAura(owned: ReadonlyMap<string, number>): boolean {
+  if (resolveOwnedEvolutions(owned).length > 0) return true;
   let total = 0;
   for (const skill of resolveOwnedSkills(owned)) {
     if (skill.def.rarity === AURA_RARITY) return true;

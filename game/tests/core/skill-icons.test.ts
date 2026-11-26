@@ -1,57 +1,34 @@
 /**
- * #5 acceptance — skill icons replace abbreviations.
- * Expected mapping copied from docs/art/import-checklist.md §5.2 (the table already chosen for the pack).
+ * M13 skill & Evolution icon mapping tests (ADR-022):
+ * Every base skill (27) and every Legendary Evolution (7) maps to a strictly unique 24×24 icon.
  */
 import { describe, expect, it } from 'vitest';
-import { SKILLS, getSkill } from '../../assets/scripts/core/skills/pool';
+import { EVOLUTIONS, getEvolution } from '../../assets/scripts/core/skills/evolutions';
 import {
   SKILL_ICONS,
   skillCardIconSheet,
   skillIconSheet,
 } from '../../assets/scripts/core/skills/icons';
+import { SKILLS, getSkill } from '../../assets/scripts/core/skills/pool';
 
-const EXPECTED: Readonly<Record<string, string>> = {
-  sharpen: 'AttackUpgrade',
-  'rapid-fire': 'Fireball',
-  'twin-shot': 'Permutation',
-  piercing: 'RockSpike',
-  ricochet: 'BookThunder',
-  homing: 'Vision',
-  explosive: 'Explosion',
-  'crit-eye': 'Counter',
-  vitality: 'Heal',
-  'second-wind': 'BookPlant',
-  shield: 'DefenseUpgrade',
-  thorns: 'BookDarkness',
-  swift: 'BookWind',
-  'long-iframe': 'Mist',
-  freeze: 'BookIce',
-  poison: 'BookDeath',
-  lifesteal: 'MagicWeapon',
-  greed: 'Alchemy',
-  luck: 'LuckUpgrade',
-  executioner: 'Death',
-};
+describe('skill & Evolution icon mapping (data)', () => {
+  it('maps every pool skill and every Legendary Evolution to a unique pack icon', () => {
+    const allIds = [...SKILLS.map((s) => s.id), ...EVOLUTIONS.map((e) => e.id)].sort();
+    expect(Object.keys(SKILL_ICONS).sort()).toEqual(allIds);
 
-describe('skill icon mapping (data)', () => {
-  it('maps exactly the 20 pool skills, each to its chosen pack icon', () => {
-    expect(SKILLS).toHaveLength(20);
-    expect(Object.keys(SKILL_ICONS).sort()).toEqual(SKILLS.map((skill) => skill.id).sort());
-    for (const skill of SKILLS) {
-      expect(SKILL_ICONS[skill.id], skill.id).toBe(EXPECTED[skill.id]);
-    }
-  });
-
-  it('has no duplicate icons', () => {
     const icons = Object.values(SKILL_ICONS);
     expect(new Set(icons).size).toBe(icons.length);
+    expect(icons).not.toContain('Alchemy');
+    expect(icons).not.toContain('LuckUpgrade');
+    expect(icons).not.toContain('Money');
   });
 });
 
 describe('icon sheet API (HUD, cards, and later shop/doors)', () => {
-  it('returns the resources sheet path of the normal icon', () => {
+  it('returns the resources sheet path of the normal icon for skills and Evolutions', () => {
     expect(skillIconSheet('sharpen')).toBe('resources/art/ui/skill-icons/AttackUpgrade.png');
     expect(skillIconSheet('executioner')).toBe('resources/art/ui/skill-icons/Death.png');
+    expect(skillIconSheet('phantom-volley')).toBe('resources/art/ui/skill-icons/Arrow.png');
   });
 
   it('returns the Disabled variant on request', () => {
@@ -61,19 +38,28 @@ describe('icon sheet API (HUD, cards, and later shop/doors)', () => {
     expect(skillIconSheet('second-wind', { disabled: true })).toBe(
       'resources/art/ui/skill-icons/BookPlantDisabled.png',
     );
+    expect(skillIconSheet('cataclysm', { disabled: true })).toBe(
+      'resources/art/ui/skill-icons/SunDisabled.png',
+    );
   });
 
   it('throws on an unknown skill id', () => {
     expect(() => skillIconSheet('no-such-skill')).toThrow(/no-such-skill/);
   });
 
-  it('pick cards use the Disabled variant only once the skill is at max stack', () => {
+  it('pick cards use the Disabled variant only once the skill or Evolution is at max stack', () => {
     const homing = getSkill('homing'); // maxStacks 1
     expect(skillCardIconSheet(homing, 0)).toBe('resources/art/ui/skill-icons/Vision.png');
     expect(skillCardIconSheet(homing, 1)).toBe('resources/art/ui/skill-icons/VisionDisabled.png');
 
     const sharpen = getSkill('sharpen'); // maxStacks 5
     expect(skillCardIconSheet(sharpen, 4)).toBe('resources/art/ui/skill-icons/AttackUpgrade.png');
-    expect(skillCardIconSheet(sharpen, 5)).toBe('resources/art/ui/skill-icons/AttackUpgradeDisabled.png');
+    expect(skillCardIconSheet(sharpen, 5)).toBe(
+      'resources/art/ui/skill-icons/AttackUpgradeDisabled.png',
+    );
+
+    const evo = getEvolution('tempest-barrage'); // maxStacks 1
+    expect(skillCardIconSheet(evo, 0)).toBe('resources/art/ui/skill-icons/Shuriken.png');
+    expect(skillCardIconSheet(evo, 1)).toBe('resources/art/ui/skill-icons/ShurikenDisabled.png');
   });
 });

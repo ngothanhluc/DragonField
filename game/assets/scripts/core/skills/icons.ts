@@ -1,9 +1,8 @@
 /**
- * Skill → pack icon mapping (#5).
+ * Skill & Legendary Evolution → pack icon mapping (M13, ADR-022).
  *
- * The mapping is **data** (docs/art/import-checklist.md §5.2): these are the pack's closest
- * matching `Ui/Skill Icon/Spell` icons, not custom art. To change one, swap the file name here
- * and stage the PNG; the skill ids stay the same.
+ * Every base skill (27) and every Legendary Evolution (7) maps to a strictly unique
+ * 24×24 icon in `resources/art/ui/skill-icons/` (plus its `<Name>Disabled.png` variant).
  *
  * Pure module: no `cc`, no file system — the UI adapters (`loadSkillIcon`) turn these sheet
  * paths into `SpriteFrame`s.
@@ -11,33 +10,56 @@
 
 import type { SkillDef } from './pool';
 
-/** Skill id → icon file name in `resources/art/ui/skill-icons/` (no extension, no `Disabled` suffix). */
+/** Skill or Evolution id → icon file name in `resources/art/ui/skill-icons/` (no extension, no `Disabled` suffix). */
 export const SKILL_ICONS: Readonly<Record<string, string>> = {
+  // Weapon / Offense (9)
   sharpen: 'AttackUpgrade',
   'rapid-fire': 'Fireball',
   'twin-shot': 'Permutation',
   piercing: 'RockSpike',
-  ricochet: 'BookThunder',
+  ricochet: 'Hook',
   homing: 'Vision',
   explosive: 'Explosion',
   'crit-eye': 'Counter',
+  executioner: 'Death',
+
+  // Elemental / Status (6)
+  freeze: 'BookIce',
+  poison: 'BookDeath',
+  ignite: 'BookFire',
+  'chain-lightning': 'BookThunder',
+  lifesteal: 'MagicWeapon',
+  corrosive: 'Downgrade',
+
+  // Defense / Survival (6)
   vitality: 'Heal',
   'second-wind': 'BookPlant',
   shield: 'DefenseUpgrade',
   thorns: 'BookDarkness',
-  swift: 'BookWind',
   'long-iframe': 'Mist',
-  freeze: 'BookIce',
-  poison: 'BookDeath',
-  lifesteal: 'MagicWeapon',
-  greed: 'Alchemy',
-  luck: 'LuckUpgrade',
-  executioner: 'Death',
+  'iron-skin': 'Armor',
+
+  // Mobility / Dash & Active (6)
+  swift: 'BookWind',
+  'phantom-dash': 'Camouflage',
+  'dash-nova': 'Cut',
+  'shadow-conduit': 'Amulet',
+  'arcane-surge': 'BookLight',
+  afterimage: 'Boot',
+
+  // Legendary Evolutions (7)
+  'phantom-volley': 'Arrow',
+  cataclysm: 'Sun',
+  blightfrost: 'Snow',
+  'starfall-kunai': 'Kunai',
+  'aegis-retribution': 'Guard',
+  shadowstep: 'Moon',
+  'tempest-barrage': 'Shuriken',
 };
 
 const ICON_DIR = 'resources/art/ui/skill-icons';
 
-/** Resources sheet path of a skill's icon; `disabled` picks the `<Name>Disabled.png` variant. Throws on unknown ids. */
+/** Resources sheet path of a skill/Evolution icon; `disabled` picks the `<Name>Disabled.png` variant. */
 export function skillIconSheet(id: string, options: { readonly disabled?: boolean } = {}): string {
   const icon = SKILL_ICONS[id];
   if (icon === undefined) {

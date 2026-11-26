@@ -45,12 +45,19 @@ export const TYPICAL_LOADOUT: ReadonlyMap<string, number> = new Map([
 ]);
 
 /**
- * Competent-player skill preference order for 1-of-3 XP level-up picks (M12, ADR-021).
- * Prioritises core DPS (`twin-shot`, `sharpen`), premier defense (`shield`, `second-wind`),
- * fire rate & wave-clear (`rapid-fire`, `piercing`, `ricochet`, `explosive`), then sustain and
- * secondary combat modifiers over economy cards (`luck`, `greed`).
+ * Competent-player skill preference order for 1-of-3 XP level-up picks (M12/M13, ADR-021, ADR-022).
+ * Prioritises unlocked Legendary Evolutions first, then core DPS (`twin-shot`, `sharpen`), premier
+ * defense (`shield`, `second-wind`), fire rate & wave-clear (`rapid-fire`, `piercing`, `ricochet`,
+ * `explosive`), then sustain and pure-combat mobility/elemental modifiers.
  */
 const SKILL_PRIORITY: readonly string[] = [
+  'phantom-volley',
+  'cataclysm',
+  'starfall-kunai',
+  'aegis-retribution',
+  'tempest-barrage',
+  'blightfrost',
+  'shadowstep',
   'twin-shot',
   'sharpen',
   'shield',
@@ -67,14 +74,28 @@ const SKILL_PRIORITY: readonly string[] = [
   'freeze',
   'executioner',
   'poison',
+  'chain-lightning',
+  'ignite',
+  'corrosive',
   'long-iframe',
+  'iron-skin',
   'thorns',
-  'luck',
-  'greed',
+  'phantom-dash',
+  'dash-nova',
+  'shadow-conduit',
+  'arcane-surge',
+  'afterimage',
 ];
 
-/** Skills strong enough to accept without spending gold on an M12 reroll. */
+/** Skills strong enough to accept without spending gold on a level-up reroll. */
 const CORE_COMBAT_SKILLS: ReadonlySet<string> = new Set([
+  'phantom-volley',
+  'cataclysm',
+  'starfall-kunai',
+  'aegis-retribution',
+  'tempest-barrage',
+  'blightfrost',
+  'shadowstep',
   'twin-shot',
   'sharpen',
   'shield',
@@ -91,11 +112,15 @@ const TYPICAL_REROLL_MAX_COST = 40;
 
 /**
  * Pick the highest-priority card from a 1-of-3 level-up offer.
- * - While healthy: prioritises core DPS (`twin-shot`, `sharpen` 1–2), then `shield`/`second-wind`,
- *   then further `sharpen`/`rapid-fire`/wave-clear.
+ * - While healthy: prioritises Evolutions, core DPS (`twin-shot`, `sharpen` 1–2), then
+ *   `shield`/`second-wind`, then further `sharpen`/`rapid-fire`/wave-clear, plus a slight
+ *   synergy bonus when a card completes an unlocked Evolution pair.
  * - When low on hearts (`hearts <= 4`): prioritises immediate survival (`second-wind`, `vitality`,
  *   `shield`, `lifesteal`) just as a real player reading their HUD hearts would.
  */
+const SHARPEN_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('second-wind') + 0.5;
+const RAPID_FIRE_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('explosive') + 0.5;
+
 export const typicalSkillChoice: SkillPickPolicy = (
   offers: readonly SkillDef[],
   owned: ReadonlyMap<string, number>,
@@ -103,6 +128,7 @@ export const typicalSkillChoice: SkillPickPolicy = (
   context,
 ): number => {
   const sharpenStacks = owned.get('sharpen') ?? 0;
+  const rapidFireStacks = owned.get('rapid-fire') ?? 0;
   const lowHearts = context.hearts <= 4;
   let bestIndex = 0;
   let bestRank = Number.POSITIVE_INFINITY;
@@ -112,8 +138,11 @@ export const typicalSkillChoice: SkillPickPolicy = (
     const rank = SKILL_PRIORITY.indexOf(skill.id);
     let effectiveRank = rank === -1 ? SKILL_PRIORITY.length : rank;
     if (skill.id === 'sharpen' && sharpenStacks >= 2) {
-      // Ranks behind `shield` (2) and `second-wind` (3) once base damage is already 3+.
-      effectiveRank = 3.5;
+      // Ranks behind `shield` and `second-wind` once base damage is already 3+.
+      effectiveRank = SHARPEN_CAP_AFTER_RANK;
+    }
+    if (skill.id === 'rapid-fire' && rapidFireStacks >= 2) {
+      effectiveRank = RAPID_FIRE_CAP_AFTER_RANK;
     }
     if (lowHearts) {
       if (skill.id === 'second-wind') effectiveRank = -3;
@@ -130,17 +159,23 @@ export const typicalSkillChoice: SkillPickPolicy = (
 };
 
 /**
- * Competent-player M12 gold reroll policy: spend run gold (up to 40g/reroll) only when a
- * level-up hand offers zero core combat/survival cards (`CORE_COMBAT_SKILLS`).
+ * Competent-player gold reroll policy: spend run gold (up to 40g/reroll) when a level-up hand
+ * offers zero non-saturated core combat/survival cards (`CORE_COMBAT_SKILLS`).
  */
 export const typicalRerollPolicy: SkillRerollPolicy = (
   offers: readonly SkillDef[],
-  _owned: ReadonlyMap<string, number>,
+  owned: ReadonlyMap<string, number>,
   _availableGold: number,
   nextCost: number,
 ): boolean => {
   if (nextCost > TYPICAL_REROLL_MAX_COST) return false;
-  return !offers.some((skill) => CORE_COMBAT_SKILLS.has(skill.id));
+  return !offers.some((skill) => {
+    if (!CORE_COMBAT_SKILLS.has(skill.id)) return false;
+    if ((skill.id === 'sharpen' || skill.id === 'rapid-fire') && (owned.get(skill.id) ?? 0) >= 2) {
+      return false;
+    }
+    return true;
+  });
 };
 
 /** No keys pressed: the "standing still" player. */

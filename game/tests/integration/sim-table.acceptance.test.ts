@@ -9,6 +9,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { BOSS_POOLS, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
+import { getEvolution } from '../../assets/scripts/core/skills/evolutions';
 import { getSkill } from '../../assets/scripts/core/skills/pool';
 import {
   LEVEL_UP_TARGET_MAX,
@@ -42,17 +43,22 @@ describe('typical door choice', () => {
 });
 
 describe('typical XP skill & reroll policies', () => {
-  it('picks high-impact DPS/survival cards over economy cards and protects low hearts', () => {
+  it('picks high-impact DPS/survival/Evolution cards over secondary modifiers and protects low hearts', () => {
     const empty = new Map<string, number>();
     const healthy = { hearts: 6, maxHearts: 6 };
     const lowHp = { hearts: 2, maxHearts: 6 };
 
     expect(
-      typicalSkillChoice([getSkill('greed'), getSkill('sharpen'), getSkill('luck')], empty, 2, healthy),
+      typicalSkillChoice(
+        [getSkill('afterimage'), getSkill('sharpen'), getSkill('iron-skin')],
+        empty,
+        2,
+        healthy,
+      ),
     ).toBe(1);
     expect(
       typicalSkillChoice(
-        [getSkill('sharpen'), getSkill('shield'), getSkill('greed')],
+        [getSkill('sharpen'), getSkill('shield'), getSkill('afterimage')],
         new Map([['sharpen', 3]]),
         6,
         healthy,
@@ -66,18 +72,47 @@ describe('typical XP skill & reroll policies', () => {
         lowHp,
       ),
     ).toBe(1);
+    expect(
+      typicalSkillChoice(
+        [getSkill('sharpen'), getEvolution('phantom-volley'), getSkill('twin-shot')],
+        new Map([
+          ['twin-shot', 1],
+          ['piercing', 1],
+        ]),
+        8,
+        healthy,
+      ),
+    ).toBe(1);
   });
 
   it('only rerolls weak hands within the cost cap', () => {
     const empty = new Map<string, number>();
     expect(
-      typicalRerollPolicy([getSkill('greed'), getSkill('luck'), getSkill('thorns')], empty, 50, 10, 0),
+      typicalRerollPolicy(
+        [getSkill('afterimage'), getSkill('iron-skin'), getSkill('thorns')],
+        empty,
+        50,
+        10,
+        0,
+      ),
     ).toBe(true);
     expect(
-      typicalRerollPolicy([getSkill('greed'), getSkill('sharpen'), getSkill('thorns')], empty, 50, 10, 0),
+      typicalRerollPolicy(
+        [getSkill('afterimage'), getSkill('sharpen'), getSkill('thorns')],
+        empty,
+        50,
+        10,
+        0,
+      ),
     ).toBe(false);
     expect(
-      typicalRerollPolicy([getSkill('greed'), getSkill('luck'), getSkill('thorns')], empty, 100, 50, 4),
+      typicalRerollPolicy(
+        [getSkill('afterimage'), getSkill('iron-skin'), getSkill('thorns')],
+        empty,
+        100,
+        50,
+        4,
+      ),
     ).toBe(false);
   });
 });

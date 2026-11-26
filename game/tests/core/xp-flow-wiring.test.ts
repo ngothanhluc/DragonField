@@ -49,6 +49,7 @@ import { WaveScheduler } from '../../assets/scripts/core/enemies/wave-scheduler'
 import { RunRewards } from '../../assets/scripts/core/run/run-rewards';
 import { createDefaultSave, serializeSave, type SaveData } from '../../assets/scripts/core/save/save-data';
 import { MemorySaveStorage, SaveRepository } from '../../assets/scripts/core/save/storage';
+import { EVOLUTIONS } from '../../assets/scripts/core/skills/evolutions';
 import { SKILLS } from '../../assets/scripts/core/skills/pool';
 import { hasAlternativeSkills } from '../../assets/scripts/core/skills/roll';
 import { spendSharedGoldForReroll } from '../../assets/scripts/core/xp/reroll';
@@ -96,7 +97,9 @@ describe('xp door challenge wave setup — extra elites promotion', () => {
 
 describe('hasAlternativeSkills — reroll button availability', () => {
   it('returns true when at least one eligible skill is outside the current offer, false when exhausted', () => {
-    const allMaxed = new Map<string, number>(SKILLS.map((s) => [s.id, s.maxStacks]));
+    const allMaxed = new Map<string, number>(
+      [...SKILLS, ...EVOLUTIONS].map((s) => [s.id, s.maxStacks]),
+    );
     expect(hasAlternativeSkills(allMaxed, [])).toBe(false);
 
     allMaxed.delete('sharpen');

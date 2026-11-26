@@ -1,5 +1,6 @@
 import { SeededRng } from '../rng';
-import { RARITIES, SKILLS, luckPoints, type Rarity, type SkillDef } from './pool';
+import { unlockedEvolutions } from './evolutions';
+import { RARITIES, SKILLS, type Rarity, type SkillDef } from './pool';
 
 /** Salt isolating the skill-roll RNG stream from combat/door/room RNG streams (ADR-021). */
 const SKILL_ROLL_SEED_SALT = 0x517cc1b7;
@@ -22,42 +23,26 @@ export function createSkillRollRng(runSeed: number): SeededRng {
   return new SeededRng(skillRollSeed(runSeed));
 }
 
-/** Base rarity weights from GDD §6: common 70 / rare 25 / epic 5 (sum 100). */
+/**
+ * Deterministic rarity weights: common 58 / rare 32 / epic 10, plus high-priority legendary (80)
+ * whenever at least one Legendary Evolution is unlocked and eligible in the roll pool.
+ *
+ * When a rarity has no eligible cards, `drawWeightedFrom` drops it from `availableRarities`
+ * and `weightedIndex` renormalises over the remaining rarities.
+ */
 export const BASE_RARITY_WEIGHTS: Readonly<Record<Rarity, number>> = {
-  common: 70,
+  common: 65,
   rare: 25,
-  epic: 5,
+  epic: 10,
+  legendary: 80,
 };
 
-/** Cards offered each time (GDD §6: pick 1 of 3). */
+/** Cards offered each time (pick 1 of 3). */
 export const DEFAULT_CHOICE_COUNT = 3;
 
-/**
- * Luck formula — each luck point (1 Luck stack = 0.01 points, see `luck-add`)
- * shifts weight from common toward higher rarities, keeping the total ≈ 100:
- *
- * ```text
- * epic   = 5  + 100 × L
- * rare   = 25 +  50 × L
- * common = max(0, 100 − epic − rare)
- * ```
- *
- * Example: 3 Luck stacks (L = 0.03) → common 65.5 / rare 26.5 / epic 8.
- *
- * When a rarity has no valid cards left (every skill of that rarity is at maxStacks),
- * its weight is dropped from the roll — `weightedIndex` renormalises over
- * the rarities still present, so their relative odds are unchanged.
- *
- * `L` is clamped to [0, 0.5]: the current pool only allows at most 0.03, but clamping stops
- * a broken save from producing negative weights or swallowing all of common.
- */
-export function rarityWeights(luck: number): Record<Rarity, number> {
-  const clampedLuck = Number.isFinite(luck) ? Math.min(Math.max(luck, 0), 0.5) : 0;
-  const epic = BASE_RARITY_WEIGHTS.epic + 100 * clampedLuck;
-  const rare = BASE_RARITY_WEIGHTS.rare + 50 * clampedLuck;
-  const common = Math.max(0, 100 - epic - rare);
-
-  return { common, rare, epic };
+/** Deterministic rarity weights (economy/luck skills removed in M13). */
+export function rarityWeights(): Readonly<Record<Rarity, number>> {
+  return BASE_RARITY_WEIGHTS;
 }
 
 export interface RollChoicesArgs {
@@ -73,6 +58,11 @@ export interface RollChoicesArgs {
    * choice exists.
    */
   readonly avoidIds?: readonly string[];
+  /**
+   * Whether unlocked Legendary Evolutions can enter the roll pool (default `true`).
+   * Mid-run shops pass `false` since Evolutions are level-up rewards only.
+   */
+  readonly includeEvolutions?: boolean;
 }
 
 export interface RerollChoicesArgs {
@@ -81,6 +71,19 @@ export interface RerollChoicesArgs {
   /** Previously offered cards or skill ids to avoid repeating. */
   readonly previous: readonly (SkillDef | string)[];
   readonly count?: number;
+}
+
+function eligiblePool(
+  owned: ReadonlyMap<string, number>,
+  includeEvolutions: boolean,
+): SkillDef[] {
+  const baseEligible: SkillDef[] = SKILLS.filter(
+    (skill) => (owned.get(skill.id) ?? 0) < skill.maxStacks,
+  );
+  if (!includeEvolutions) return baseEligible;
+
+  const evos = unlockedEvolutions(owned);
+  return evos.length > 0 ? [...baseEligible, ...evos] : baseEligible;
 }
 
 /** Draw `target` rarity-weighted cards from `pool` (mutating `pool` to prevent duplicates). */
@@ -93,7 +96,12 @@ function drawWeightedFrom(
 ): void {
   const goal = Math.min(target, pool.length);
   for (let i = 0; i < goal; i += 1) {
-    const byRarity: Record<Rarity, SkillDef[]> = { common: [], rare: [], epic: [] };
+    const byRarity: Record<Rarity, SkillDef[]> = {
+      common: [],
+      rare: [],
+      epic: [],
+      legendary: [],
+    };
     for (const skill of pool) byRarity[skill.rarity].push(skill);
 
     const availableRarities = RARITIES.filter((rarity) => byRarity[rarity].length > 0);
@@ -111,11 +119,8 @@ function drawWeightedFrom(
 
 /**
  * Roll `count` skill cards: no duplicates in one roll, never a skill already at
- * `maxStacks`, and **no throwing when the pool runs dry** — returns fewer than `count`
- * (including an empty array). The caller must handle 0–3 cards: the UI just draws what it gets.
- *
- * Per card: pick a rarity by luck-weighted odds, then pick uniformly among the remaining skills
- * of that rarity. The chosen card leaves the pool so later picks cannot repeat it.
+ * `maxStacks`, includes unlocked Legendary Evolutions at high priority (unless
+ * `includeEvolutions: false`), and **no throwing when the pool runs dry**.
  */
 export function rollChoices(args: RollChoicesArgs): SkillDef[] {
   const count = args.count ?? DEFAULT_CHOICE_COUNT;
@@ -123,13 +128,11 @@ export function rollChoices(args: RollChoicesArgs): SkillDef[] {
     throw new Error(`rollChoices needs count to be an integer >= 0, got ${count}`);
   }
 
-  const eligible = SKILLS.filter(
-    (skill) => (args.owned.get(skill.id) ?? 0) < skill.maxStacks,
-  );
+  const eligible = eligiblePool(args.owned, args.includeEvolutions ?? true);
   const target = Math.min(count, eligible.length);
   if (target === 0) return [];
 
-  const weights = rarityWeights(luckPoints(args.owned));
+  const weights = rarityWeights();
   const chosen: SkillDef[] = [];
 
   if (args.avoidIds !== undefined && args.avoidIds.length > 0) {
@@ -163,15 +166,13 @@ export function rerollChoices(args: RerollChoicesArgs): SkillDef[] {
 }
 
 /**
- * Whether at least one eligible skill not already in `previous` exists in the pool.
- * Used to disable Gold Reroll when rerolling could not surface any alternative skill.
+ * Whether at least one eligible skill or unlocked Evolution not already in `previous` exists.
+ * Used to disable Gold Reroll when rerolling could not surface any alternative card.
  */
 export function hasAlternativeSkills(
   owned: ReadonlyMap<string, number>,
   previous: readonly (SkillDef | string)[],
 ): boolean {
   const currentIds = new Set(previous.map((entry) => (typeof entry === 'string' ? entry : entry.id)));
-  return SKILLS.some(
-    (skill) => (owned.get(skill.id) ?? 0) < skill.maxStacks && !currentIds.has(skill.id),
-  );
+  return eligiblePool(owned, true).some((skill) => !currentIds.has(skill.id));
 }

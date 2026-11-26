@@ -2,14 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
 import { SeededRng } from '../../assets/scripts/core/rng';
 import { computeDerivedStats, estimateDps } from '../../assets/scripts/core/skills/derived-stats';
-import { RARITIES, SKILLS, getSkill } from '../../assets/scripts/core/skills/pool';
-import { DEFAULT_CHOICE_COUNT, rollChoices } from '../../assets/scripts/core/skills/roll';
+import {
+  BASE_RARITIES,
+  RARITIES,
+  SKILLS,
+  SKILL_PILLARS,
+  getSkill,
+  skillsByPillar,
+} from '../../assets/scripts/core/skills/pool';
+import {
+  BASE_RARITY_WEIGHTS,
+  DEFAULT_CHOICE_COUNT,
+  rarityWeights,
+  rollChoices,
+} from '../../assets/scripts/core/skills/roll';
 
 function owned(...entries: readonly (readonly [string, number])[]): ReadonlyMap<string, number> {
   return new Map(entries);
 }
 
-/** A map where every skill in the pool is at maxStacks. */
+/** A map where every base skill in the pool is at maxStacks. */
 function allMaxed(): ReadonlyMap<string, number> {
   return new Map(SKILLS.map((skill) => [skill.id, skill.maxStacks]));
 }
@@ -18,9 +30,28 @@ function ids(skills: readonly { id: string }[]): string[] {
   return skills.map((skill) => skill.id);
 }
 
-describe('Skill pool', () => {
-  it('has exactly 20 skills like GDD §6', () => {
-    expect(SKILLS).toHaveLength(20);
+describe('Pure-combat skill pool (M13, ADR-022)', () => {
+  it('contains 24–28 pure-combat skills (27) across all 4 pillars with zero economy/luck skills', () => {
+    expect(SKILLS.length).toBeGreaterThanOrEqual(24);
+    expect(SKILLS.length).toBeLessThanOrEqual(28);
+    expect(SKILLS).toHaveLength(27);
+
+    expect(skillsByPillar('weapon')).toHaveLength(9);
+    expect(skillsByPillar('elemental')).toHaveLength(6);
+    expect(skillsByPillar('defense')).toHaveLength(6);
+    expect(skillsByPillar('mobility')).toHaveLength(6);
+
+    for (const skill of SKILLS) {
+      expect(SKILL_PILLARS).toContain(skill.pillar);
+      expect(['greed', 'luck', 'gold', 'xp']).not.toContain(skill.id);
+      for (const tag of skill.tags) {
+        expect(tag.kind).not.toBe('gold-mult');
+        expect(tag.kind).not.toBe('luck-add');
+      }
+    }
+
+    expect(() => getSkill('greed')).toThrow();
+    expect(() => getSkill('luck')).toThrow();
   });
 
   it('ids are unique and kebab-case', () => {
@@ -32,8 +63,9 @@ describe('Skill pool', () => {
     }
   });
 
-  it('every rarity is valid and every skill has at least 1 stack', () => {
+  it('every base rarity is valid and every skill has at least 1 stack', () => {
     for (const skill of SKILLS) {
+      expect(BASE_RARITIES).toContain(skill.rarity);
       expect(RARITIES).toContain(skill.rarity);
       expect(skill.maxStacks).toBeGreaterThanOrEqual(1);
       expect(skill.tags.length).toBeGreaterThanOrEqual(1);
@@ -41,12 +73,13 @@ describe('Skill pool', () => {
     }
   });
 
-  it('stack caps match the GDD table', () => {
+  it('stack caps match the pool spec', () => {
     expect(getSkill('sharpen').maxStacks).toBe(5);
     expect(getSkill('twin-shot').maxStacks).toBe(3);
     expect(getSkill('homing').maxStacks).toBe(1);
-    expect(getSkill('greed').maxStacks).toBe(4);
     expect(getSkill('executioner').maxStacks).toBe(2);
+    expect(getSkill('phantom-dash').maxStacks).toBe(3);
+    expect(getSkill('arcane-surge').maxStacks).toBe(2);
   });
 
   it('getSkill returns the right skill and throws on an unknown id', () => {
@@ -101,7 +134,6 @@ describe('RNG', () => {
       else second += 1;
     }
 
-    // Expect 25% / 75%; wide bounds to avoid flakiness.
     expect(first / 10_000).toBeGreaterThan(0.2);
     expect(first / 10_000).toBeLessThan(0.3);
     expect(second / 10_000).toBeGreaterThan(0.7);
@@ -175,15 +207,15 @@ describe('Roll skill', () => {
     const nearlyEmpty = new Map(allMaxed());
     nearlyEmpty.delete('executioner');
 
-    const roll = rollChoices({ rng, owned: nearlyEmpty });
+    const roll = rollChoices({ rng, owned: nearlyEmpty, includeEvolutions: false });
 
     expect(ids(roll)).toEqual(['executioner']);
   });
 
-  it('returns an empty array when every skill is maxed', () => {
+  it('returns an empty array when every skill is maxed (with evolutions disabled)', () => {
     const rng = SeededRng.fromSeed(4);
 
-    expect(rollChoices({ rng, owned: allMaxed() })).toEqual([]);
+    expect(rollChoices({ rng, owned: allMaxed(), includeEvolutions: false })).toEqual([]);
   });
 
   it('count is customisable and a negative count is rejected', () => {
@@ -195,39 +227,20 @@ describe('Roll skill', () => {
     expect(() => rollChoices({ rng, owned: owned(), count: 1.5 })).toThrow();
   });
 
-  it('Luck raises the frequency of high rarities, within sensible bounds', () => {
-    const countRarities = (luckStacks: number): Record<string, number> => {
-      const rng = SeededRng.fromSeed(2026);
-      const ownedMap = luckStacks > 0 ? owned(['luck', luckStacks]) : owned();
-      const counts: Record<string, number> = { common: 0, rare: 0, epic: 0 };
+  it('uses deterministic rarity weights (common > rare > epic) with zero luck dependency', () => {
+    expect(rarityWeights()).toEqual(BASE_RARITY_WEIGHTS);
+    const rng = SeededRng.fromSeed(2026);
+    const counts: Record<string, number> = { common: 0, rare: 0, epic: 0, legendary: 0 };
 
-      for (let i = 0; i < 2000; i += 1) {
-        for (const skill of rollChoices({ rng, owned: ownedMap })) {
-          counts[skill.rarity] = (counts[skill.rarity] ?? 0) + 1;
-        }
+    for (let i = 0; i < 2000; i += 1) {
+      for (const skill of rollChoices({ rng, owned: owned() })) {
+        counts[skill.rarity] = (counts[skill.rarity] ?? 0) + 1;
       }
+    }
 
-      return counts;
-    };
-
-    const withoutLuck = countRarities(0);
-    const withLuck = countRarities(3);
-
-    // 6000 cards: epic expected 300 (5%) → 480 (8%). Wide bounds: this test only needs
-    // to catch "Luck has no effect", not to check the exact number.
-    const withoutLuckEpic = withoutLuck.epic ?? 0;
-    const withLuckEpic = withLuck.epic ?? 0;
-
-    expect(withoutLuckEpic).toBeGreaterThan(240);
-    expect(withoutLuckEpic).toBeLessThan(400);
-    expect(withLuckEpic).toBeGreaterThan(withoutLuckEpic);
-    expect(withLuckEpic / withoutLuckEpic).toBeGreaterThan(1.25);
-    expect(withLuckEpic).toBeGreaterThan(400);
-    expect(withLuckEpic).toBeLessThan(620);
-
-    // Common is still the most frequent rarity.
-    expect(withoutLuck.common ?? 0).toBeGreaterThan(withoutLuck.rare ?? 0);
-    expect(withoutLuck.common ?? 0).toBeGreaterThan(withoutLuck.epic ?? 0);
+    expect(counts.legendary).toBe(0);
+    expect(counts.common ?? 0).toBeGreaterThan(counts.rare ?? 0);
+    expect(counts.rare ?? 0).toBeGreaterThan(counts.epic ?? 0);
   });
 });
 
@@ -248,11 +261,23 @@ describe('Derived stats', () => {
     expect(stats.goldMultiplier).toBe(1);
     expect(stats.executeThreshold).toBe(0);
     expect(stats.executeBonus).toBe(0);
+    expect(stats.dashCooldownMult).toBe(1);
+    expect(stats.dashSpeedMult).toBe(1);
+    expect(stats.activeCooldownMult).toBe(1);
+    expect(stats.activePowerMult).toBe(1);
+    expect(stats.shieldCooldownMult).toBe(1);
+    expect(stats.damageReductionChance).toBe(0);
+    expect(stats.statusDamageBonus).toBe(0);
+    expect(stats.activeEvolutions).toEqual([]);
     expect(stats.slowOnHit).toBeUndefined();
     expect(stats.poisonOnHit).toBeUndefined();
+    expect(stats.burnOnHit).toBeUndefined();
+    expect(stats.shockOnHit).toBeUndefined();
     expect(stats.shield).toBeUndefined();
     expect(stats.thorns).toBeUndefined();
     expect(stats.healPerRoom).toBeUndefined();
+    expect(stats.dashNova).toBeUndefined();
+    expect(stats.postDashFireRate).toBeUndefined();
   });
 
   it('an empty map produces no NaN/Infinity', () => {
@@ -268,7 +293,7 @@ describe('Derived stats', () => {
     expect(Number.isFinite(estimateDps(stats))).toBe(true);
   });
 
-  it('1 stack Sharpen cho +1 damage', () => {
+  it('1 stack Sharpen adds +1 damage', () => {
     const stats = computeDerivedStats(owned(['sharpen', 1]));
 
     expect(stats.damage).toBe(computeDerivedStats(owned()).damage + 1);
@@ -312,9 +337,9 @@ describe('Derived stats', () => {
     expect(stats.critMultiplier).toBe(2);
   });
 
-  it('Vitality, Swift, Greed, Lifesteal stack correctly', () => {
+  it('Vitality, Swift, Lifesteal stack correctly and goldMultiplier stays 1', () => {
     const stats = computeDerivedStats(
-      owned(['vitality', 2], ['swift', 2], ['greed', 2], ['lifesteal', 1]),
+      owned(['vitality', 2], ['swift', 2], ['lifesteal', 1]),
     );
 
     expect(stats.maxHearts).toBe(DEFAULT_COMBAT.playerMaxHearts + 2);
@@ -322,7 +347,7 @@ describe('Derived stats', () => {
       computeDerivedStats(owned()).moveSpeedTilesPerSecond * 1.2,
       10,
     );
-    expect(stats.goldMultiplier).toBeCloseTo(1.5, 10);
+    expect(stats.goldMultiplier).toBe(1);
     expect(stats.lifestealPercent).toBeCloseTo(0.05, 10);
   });
 
@@ -340,6 +365,36 @@ describe('Derived stats', () => {
     expect(stats.healPerRoom).toBe(2);
     expect(stats.slowOnHit).toEqual({ factor: 0.4, durationMs: 1000 });
     expect(stats.poisonOnHit).toEqual({ dps: 2, durationMs: 3000 });
+  });
+
+  it('new Elemental, Defense, and Mobility skills populate DerivedStats cleanly', () => {
+    const stats = computeDerivedStats(
+      owned(
+        ['ignite', 2],
+        ['chain-lightning', 2],
+        ['corrosive', 2],
+        ['iron-skin', 2],
+        ['shield', 1],
+        ['phantom-dash', 2],
+        ['dash-nova', 2],
+        ['shadow-conduit', 2],
+        ['arcane-surge', 2],
+        ['afterimage', 2],
+      ),
+    );
+
+    expect(stats.burnOnHit).toEqual({ dps: 3, durationMs: 2500 });
+    expect(stats.shockOnHit).toEqual({ arcs: 4, damageRatio: 0.45, rangeTiles: 4 });
+    expect(stats.statusDamageBonus).toBeCloseTo(0.5, 10);
+    expect(stats.damageReductionChance).toBeCloseTo(0.24, 10);
+    expect(stats.shieldCooldownMult).toBeCloseTo(0.85 ** 2, 10);
+    expect(stats.shield?.cooldownMs).toBe(Math.round(20_000 * 0.85 ** 2));
+    expect(stats.dashCooldownMult).toBeCloseTo(0.82 ** 2, 10);
+    expect(stats.dashNova).toEqual({ radiusTiles: 2.2, damage: 4 });
+    expect(stats.activeCooldownMult).toBeCloseTo(0.82 ** 2, 10);
+    expect(stats.activePowerMult).toBeCloseTo(1.7, 10);
+    expect(stats.dashSpeedMult).toBeCloseTo(1.3, 10);
+    expect(stats.postDashFireRate).toEqual({ bonus: 0.7, durationMs: 1500 });
   });
 
   it('Executioner adds bonus while keeping the 30% threshold', () => {
@@ -364,7 +419,6 @@ describe('Derived stats', () => {
     const stats = computeDerivedStats(owned(['crit-eye', 3]));
     const base = computeDerivedStats(owned());
 
-    // 45% ×2 → expected factor 1.45.
     expect(estimateDps(stats)).toBeCloseTo(estimateDps(base) * 1.45, 10);
   });
 

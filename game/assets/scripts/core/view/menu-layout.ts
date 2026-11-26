@@ -363,6 +363,8 @@ export interface SkillCardLayout {
   readonly effectY: number;
   readonly effectWidth: number;
   readonly effectHeight: number;
+  /** Compact Evolution pairing hint line between effect description and stack badge (M13). */
+  readonly pairHintY: number;
   readonly stackY: number;
   readonly cardXs: readonly number[];
   /** Centred Gold Reroll button below the 3 cards (M12, ADR-021). */
@@ -373,8 +375,8 @@ export interface SkillCardLayout {
 
 /** Compute the horizontal card positions and interior element anchors for the 1-of-N skill picker. */
 export function computeSkillCardLayout(choiceCount: number): SkillCardLayout {
-  const cardWidth = 144;
-  const cardHeight = 162;
+  const cardWidth = 152;
+  const cardHeight = 168;
   const cardGap = 12;
   const cardY = 0;
   const iconSize = 48;
@@ -396,16 +398,17 @@ export function computeSkillCardLayout(choiceCount: number): SkillCardLayout {
     subtitleY: 99,
     iconFrameSize,
     iconSize,
-    iconY: 41,
+    iconY: 44,
     hotkeyX: -cardWidth / 2 + 14,
     hotkeyY: cardHeight / 2 - 14,
-    nameY: 2,
-    rarityY: -12,
-    accentY: -21,
-    effectY: -41,
+    nameY: 5,
+    rarityY: -9,
+    accentY: -17,
+    effectY: -36,
     effectWidth: cardWidth - 22,
-    effectHeight: 36,
-    stackY: -cardHeight / 2 + 15,
+    effectHeight: 32,
+    pairHintY: -57,
+    stackY: -cardHeight / 2 + 13,
     cardXs,
     rerollY: -114,
     rerollWidth: 236,
