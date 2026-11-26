@@ -543,8 +543,8 @@ function makeCard(
   rarity.node.setPosition(0, layout.rarityY, 0);
 
   const effect = createLabel(node, 'effect', describeSkill(skill));
-  effect.fontSize = 9;
-  effect.lineHeight = 11;
+  effect.fontSize = layout.effectFontSize;
+  effect.lineHeight = layout.effectLineHeight;
   effect.color = MENU_TEXT_COLOR;
   effect.enableWrapText = true;
   effect.overflow = CocosLabel.Overflow.RESIZE_HEIGHT;

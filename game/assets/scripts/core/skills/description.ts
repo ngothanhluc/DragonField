@@ -48,9 +48,9 @@ export function describeTag(tag: SkillTag): string {
     case 'heal-per-room':
       return `Heal ${formatNumber(tag.amount)} hearts on room clear`;
     case 'shield':
-      return `Block 1 hit (back in ${formatSeconds(tag.cooldownMs)})`;
+      return `Block 1 hit (${formatSeconds(tag.cooldownMs)} cd)`;
     case 'thorns':
-      return `Touching enemies take ${formatNumber(tag.damage)} damage`;
+      return `Contact deals ${formatNumber(tag.damage)} dmg`;
     case 'move-speed-mult':
       return `+${formatPercent(tag.amount)} move speed`;
     case 'iframe-mult':

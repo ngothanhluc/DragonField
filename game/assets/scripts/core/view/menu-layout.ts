@@ -363,6 +363,8 @@ export interface SkillCardLayout {
   readonly effectY: number;
   readonly effectWidth: number;
   readonly effectHeight: number;
+  readonly effectFontSize: number;
+  readonly effectLineHeight: number;
   /** Compact Evolution pairing hint line between effect description and stack badge (M13). */
   readonly pairHintY: number;
   readonly stackY: number;
@@ -405,10 +407,12 @@ export function computeSkillCardLayout(choiceCount: number): SkillCardLayout {
     rarityY: -9,
     accentY: -17,
     effectY: -36,
-    effectWidth: cardWidth - 22,
-    effectHeight: 32,
-    pairHintY: -57,
-    stackY: -cardHeight / 2 + 13,
+    effectWidth: cardWidth - 16,
+    effectHeight: 28,
+    effectFontSize: 8,
+    effectLineHeight: 9,
+    pairHintY: -60,
+    stackY: -cardHeight / 2 + 12,
     cardXs,
     rerollY: -114,
     rerollWidth: 236,

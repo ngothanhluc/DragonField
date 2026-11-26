@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { CHARACTER_ROSTER } from '../../assets/scripts/core/characters/roster';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../../assets/scripts/core/level/level-data';
 import { parseWaterLayout, waterAreasFor } from '../../assets/scripts/core/level/water-layout';
+import { describeSkill } from '../../assets/scripts/core/skills/description';
 import { EVOLUTIONS, evolutionHintsForSkill } from '../../assets/scripts/core/skills/evolutions';
 import { SKILLS, getSkill } from '../../assets/scripts/core/skills/pool';
 import { letterboxRect, worldToUiScale } from '../../assets/scripts/core/view/letterbox';
@@ -482,6 +483,26 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
     for (const card of [...SKILLS, ...EVOLUTIONS]) {
       const nameW = card.name.length * 12 * GLYPH_WIDTH_RATIO;
       expect(nameW, `card "${card.name}"`).toBeLessThanOrEqual(layout.cardWidth - 16);
+
+      // Word-wrap the effect description and assert it never collides with accentY or pairHintY.
+      const maxChars = Math.floor(layout.effectWidth / (layout.effectFontSize * GLYPH_WIDTH_RATIO));
+      let lines = 1;
+      let lineLen = 0;
+      for (const word of describeSkill(card).split(/\s+/)) {
+        if (lineLen === 0) lineLen = word.length;
+        else if (lineLen + 1 + word.length <= maxChars) lineLen += 1 + word.length;
+        else {
+          lines += 1;
+          lineLen = word.length;
+        }
+      }
+      const wrappedHeight = lines * layout.effectLineHeight;
+      const effectTop = layout.effectY + wrappedHeight / 2;
+      const effectBottom = layout.effectY - wrappedHeight / 2;
+      expect(effectTop, `effect top for ${card.id}`).toBeLessThanOrEqual(layout.accentY - 2);
+      expect(effectBottom, `effect bottom for ${card.id}`).toBeGreaterThanOrEqual(
+        layout.pairHintY + 5,
+      );
     }
 
     for (const skill of SKILLS) {
