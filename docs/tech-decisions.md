@@ -265,3 +265,53 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 
 **Consequences.** Reloading mid-room restores the player at the start of that room; Title adds a `Continue Run` button whenever a valid `runSave` exists; `runSave` uses its own schema `version` + migration chain and stores zero engine node references.
 
+---
+
+## ADR-024 — Client-side i18n (Vietnamese default) & Vietnamese pixel font (M16)
+
+**Decision.** Add a pure-TypeScript localization module (`core/i18n/`) with **Vietnamese (`'vi'`) as the default locale** and English (`'en'`) toggleable in Settings (persisted in `settings.locale` with automatic migration for v5 saves). Replace `NormalFont.ttf` (which lacks 36/43 Vietnamese diacritics) with an open-source pixel TTF supporting 100% of Vietnamese diacritics.
+
+**Rationale.** Target player base defaults to Vietnamese, and the pack's `NormalFont.ttf` renders broken/fallback glyphs for Vietnamese text. Centralizing copy behind typed keys prevents drift between `core/` data (skills, characters, death causes) and `game/` UI screens.
+
+**Consequences.** Every player-facing string moves to typed i18n dictionaries (`vi` & `en` key parity tested in vitest); HUD/menu containers account for taller Vietnamese diacritics and ~20–30% longer labels across all viewports.
+
+---
+
+## ADR-025 — RPG HP scale, unified top-left HUD & single North Portal (M17)
+
+**Decision.** Replace the 6-heart integer health model with a **`100 HP` base RPG scale** (class deltas `100 / 85 / 85 / 120`, Meta Health `+20 HP/level`, enemy hits `15–35 HP`), rendered as a top-left **HP bar** with a delayed damage-drain trail and the **XP bar + `LV X` badge** stacked directly beneath it. Replace the M9 two-door choice (revises ADR-014) with a **single animated North Portal** on room clear (automatically inserting 1 mid-chapter special room after Room 4 and the red Boss Portal after Room 8), paired with a `+45%` out-of-combat room-clear speed boost and small glowing physical pickups (XP, Gold, rare Health Potion).
+
+**Rationale.** Small integer hearts caused rounding distortion for Lifesteal/healing drops and visually cluttered the HUD; placing XP under HP frees the bottom edge for bullet dodging. Two doors slowed room pacing and created redundant choices once the Village Hub hosts permanent progression; a single North Portal with strong VFX and faster post-clear movement makes room-to-room flow immediate and readable.
+
+**Consequences.** `tuning.json`, `core/combat/`, `core/meta/`, `core/run/doors.ts`, and `run-save.ts` migrate from hearts/2-doors to HP/1-north-portal; `DoorView` upgrades to a pooled multi-layer animated portal.
+
+---
+
+## ADR-026 — Bullet-hell lethality, no enemy knockback & combat clarity (M18)
+
+**Decision.** Amend ADR-008: set enemy hit knockback and hit-stagger to `0` (preserving hit-flash, squash, crit hitstop, and ADR-021's Level-Up safety push wave). Raise enemy speed, bullet speed, and room-by-room density, and add two pressure roles (`dasher`, `gunner`). Amend ADR-019: move wandering `LivingDecor` animals out of combat rooms (reserved for M21 Village Hub), reduce combat weather opacity (`~30–40%`) and density, and enforce high-contrast combat silhouettes (enemy ground shadows + 1 px dark outline; bright-core + dark-rimmed enemy bullets).
+
+**Rationale.** Continuous auto-fire with knockback/stagger trivialized chasing enemies, while vivid falling leaves and wandering animals visually competed with 16 px monsters and round projectiles.
+
+**Consequences.** All tuning changes lock through `bun run sim:table`; enemy sprite staging bakes 1 px dark outlines at build time (zero runtime shaders, keeping ADR-017 and 60 fps).
+
+---
+
+## ADR-027 — Pruned core skill pool, class-exclusive skills & `image-generator` assets (M19–M20)
+
+**Decision.** Prune 6 low-excitement passive skills from `core/skills/pool.ts` (`27 → 21`, rewiring `Aegis Retribution` to `Shield + Vitality`) and add **4 class-exclusive active-mechanic skills + 1 Class Legendary Evolution per playable character** (`16` skills + `4` Evolutions) blended into the level-up roll strictly for that character. Use Antigravity's `image-generator` (with transparent-background cleanup and nearest-neighbor pixel scaling matching `docs/art/gemini-style.md`) to author 64×64 hero/NPC portraits, 24×24 class skill icons, and new class/portal VFX sprites.
+
+**Rationale.** Shared pools alone made all 4 classes converge onto identical mid-run builds, while stat-stick cards diluted exciting picks. Dedicated pixel portraits and icons make every class identity readable in both the HUD and Skill Codex.
+
+**Consequences.** `core/skills/roll.ts` filters class-exclusive pools by `characterId`; `art-files.test.ts` and unique-icon tests cover all newly generated assets; `sim:table` validates all 4 classes with their exclusive pools.
+
+---
+
+## ADR-028 — Playable 2D Village Hub & enterable Shop interior (M21)
+
+**Decision.** Revise v1 out-of-scope hub/NPC/dialog rules: introduce a playable `36×24` **Village Hub** between a streamlined Title Screen and combat runs, featuring wandering villagers & relocated animals, an **enterable `16×12` Shop interior** (`Interior/*` tileset) with RPG `DialogBox` + portrait shopkeeper, an East **Dojo** for live character switching & Skill Codex inspection, and a North **Expedition Gate** for Chapter/Ascension launch (plus quick-access shortcuts).
+
+**Rationale.** Replaces static menu hopping with a tangible world space that showcases the 4 playable characters, gives wandering animals a natural home, and makes Meta progression feel rewarding.
+
+**Consequences.** Reuses existing `TiledMap`, `core/camera/`, `core/movement/`, and `cover-view.ts` infrastructure with auto-fire disabled in hub/interior scenes; adds pure interaction/dialog state machines in `core/` so hub logic remains unit-testable without `cc`.
+

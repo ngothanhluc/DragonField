@@ -23,7 +23,7 @@ Top-down bullet-hell roguelite, 16px pixel art, runs on the web. The player **fi
 
 ## Current status
 
-M0–M10 done and shipped on `master` (see `docs/milestones.md` and GDD §14). M9 balance is proven by the sim table in `docs/research/2026-11-m9-sim-table.md` (`bun run sim:table`). The game runs at **https://yokai.lukeinc.tech**
+M0–M15 done and shipped on `master` (see `docs/milestones.md` and `docs/gdd.md`). Next roadmap **M16–M21** is designed and split into modular docs (`docs/gdd/m16-*.md`…`m21-*.md`, `docs/milestones/m16-m21.md`, `ADR-024`–`ADR-028`). Balance is proven by the sim table (`bun run sim:table`). The game runs at **https://yokai.lukeinc.tech**
 (Cloudflare Worker `yokai-field`, static files only). The showcase page lives in the portfolio:
 https://lukeinc.tech/projects/dragon-field (separate repo `luke-tech`).
 
