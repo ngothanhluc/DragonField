@@ -11,6 +11,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ATMOSPHERE_LAYER_KINDS,
   ATMOSPHERE_LAYER_STYLES,
+  COMBAT_PROP_ALPHA,
+  COMBAT_WEATHER_OPACITY_MAX,
+  COMBAT_WEATHER_OPACITY_MIN,
   PARTICLE_PIXEL_SCALE,
   chapterAtmosphere,
   parseAtmosphereConfig,
@@ -148,7 +151,7 @@ describe('ADR-019 — overlays dropped and chapter weather particles configured 
     });
   });
 
-  it('keeps over-actor weather particles crisp (never washed out to 0.38) and cloud-shadows subtle under-actors', () => {
+  it('keeps over-actor combat weather particles soft (30–40% opacity, alpha 80–102) and cloud-shadows subtle under-actors (M18 ADR-026)', () => {
     const config = loadConfig();
     for (const chapter of [1, 2, 3, 4]) {
       for (const layer of chapterOf(config, chapter).layers) {
@@ -158,9 +161,17 @@ describe('ADR-019 — overlays dropped and chapter weather particles configured 
           expect(layer.depth, `${chapter}/cloud-shadows`).toBe('under-actors');
           expect(layer.opacity, `${chapter}/cloud-shadows`).toBeLessThanOrEqual(0.25);
         } else if (layer.depth === 'over-actors') {
-          // ADR-019: crisp 1:1 particles, never washed out to 0.38 alpha, and sparse enough not to hide bullets.
-          expect(layer.opacity, `${chapter}/${layer.kind} crisp opacity`).toBeGreaterThanOrEqual(0.85);
-          expect(layer.count, `${chapter}/${layer.kind} sparse count`).toBeLessThanOrEqual(32);
+          // M18 (ADR-026): 1:1 pixel scale kept, opacity softened to 30–40% (alpha 80–102) & trimmed count.
+          expect(layer.opacity, `${chapter}/${layer.kind} combat opacity min`).toBeGreaterThanOrEqual(
+            COMBAT_WEATHER_OPACITY_MIN,
+          );
+          expect(layer.opacity, `${chapter}/${layer.kind} combat opacity max`).toBeLessThanOrEqual(
+            COMBAT_WEATHER_OPACITY_MAX,
+          );
+          const alphaByte = Math.round(layer.opacity * 255);
+          expect(alphaByte, `${chapter}/${layer.kind} alpha byte`).toBeGreaterThanOrEqual(76);
+          expect(alphaByte, `${chapter}/${layer.kind} alpha byte`).toBeLessThanOrEqual(102);
+          expect(layer.count, `${chapter}/${layer.kind} trimmed count`).toBeLessThanOrEqual(20);
         } else {
           expect(layer.depth, `${chapter}/${layer.kind}`).toBe('under-actors');
         }
@@ -204,15 +215,21 @@ describe('ADR-019 — overlays dropped and chapter weather particles configured 
 });
 
 describe('Effects setting — Reduced drops secondary layers, cloud shadows, animals, and props', () => {
-  it('Full (the default) keeps every layer, animals and animated props', () => {
+  it('Full in combat rooms (default, M18 ADR-026) disables wandering animals and mutes props to 0.65; non-combat hub/menu keeps animals', () => {
     const config = loadConfig();
     for (const chapter of [1, 2, 3, 4]) {
       const atmosphere = chapterOf(config, chapter);
-      const visible = visibleAtmosphere(atmosphere, DEFAULT_SETTINGS.effects);
+      const combatVisible = visibleAtmosphere(atmosphere, DEFAULT_SETTINGS.effects);
       expect(DEFAULT_SETTINGS.effects).toBe('full');
-      expect(visible.layers).toEqual(atmosphere.layers);
-      expect(visible.animals).toBe(true);
-      expect(visible.animatedProps).toBe(true);
+      expect(combatVisible.layers).toEqual(atmosphere.layers);
+      expect(combatVisible.animals).toBe(false);
+      expect(combatVisible.animatedProps).toBe(true);
+      expect(combatVisible.propAlpha).toBeCloseTo(COMBAT_PROP_ALPHA, 5);
+
+      const hubVisible = visibleAtmosphere(atmosphere, DEFAULT_SETTINGS.effects, { combat: false });
+      expect(hubVisible.animals).toBe(true);
+      expect(hubVisible.animatedProps).toBe(true);
+      expect(hubVisible.propAlpha).toBe(1);
     }
   });
 

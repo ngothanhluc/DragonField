@@ -108,7 +108,20 @@ export interface EliteBufferTuning {
   readonly volleySpreadRadians: number;
 }
 
-/** Every number specific to the elite version (GDD §4 + M3 + M13). */
+/** Elite dasher extra attack: chains `extraCharges` follow-up dashes, re-locking onto the player (M18). */
+export interface EliteDasherTuning {
+  readonly extraCharges: number;
+}
+
+/** Elite gunner extra attack: fires a second staggered alternating fan volley after `staggerDelayMs` (M18). */
+export interface EliteGunnerTuning {
+  /** Delay before the second staggered alternating fan volley fires, ms. */
+  readonly staggerDelayMs: number;
+  /** Fraction of `gunnerSpreadRadians` to shift the second volley so gaps alternate (e.g. `0.5`). */
+  readonly staggerAngleOffsetFactor: number;
+}
+
+/** Every number specific to the elite version (GDD §4 + M3 + M13 + M18). */
 export interface EliteTuning {
   /** Node scale relative to the regular version (GDD §4: 1.15). */
   readonly scale: number;
@@ -117,9 +130,11 @@ export interface EliteTuning {
   readonly tank: EliteTankTuning;
   readonly bomber: EliteBomberTuning;
   readonly buffer: EliteBufferTuning;
+  readonly dasher: EliteDasherTuning;
+  readonly gunner: EliteGunnerTuning;
 }
 
-/** Tier-2 enemy AI escalation parameters (M13, GDD §15.3): predictive aim, bursts, and chaser flanking. */
+/** Tier-2 enemy AI escalation parameters (M13/M18, GDD §15.3): predictive aim, bursts, and flanking. */
 export interface EnemyAiTuning {
   /** First chapter (1-based) where regular casters use predictive lead aim. */
   readonly predictiveMinChapter: number;
@@ -139,7 +154,7 @@ export interface EnemyAiTuning {
   readonly eliteCasterLateMinChapter: number;
   /** Projectiles per late-chapter elite caster fan. */
   readonly eliteCasterLateVolleyShots: number;
-  /** Lateral flank approach angle for chasers, radians. */
+  /** Lateral flank approach angle for chasers/dashers, radians. */
   readonly flankAngleRadians: number;
   /** Below this distance, flanking chasers collapse directly onto the player, tiles. */
   readonly flankMinDistanceTiles: number;
@@ -147,6 +162,14 @@ export interface EnemyAiTuning {
   readonly flankMaxDistanceTiles: number;
   /** Maximum lateral offset distance at mid-range, tiles. */
   readonly flankOffsetTiles: number;
+  /** Projectiles per gunner fan volley in early chapters (M18: 3). */
+  readonly gunnerVolleyShots: number;
+  /** First chapter (1-based) where gunners escalate to the wider fan (M18: 3). */
+  readonly gunnerLateMinChapter: number;
+  /** Projectiles per gunner fan volley in late chapters (M18: 5). */
+  readonly gunnerLateVolleyShots: number;
+  /** Angular spacing between adjacent gunner fan projectiles, radians. */
+  readonly gunnerSpreadRadians: number;
 }
 
 /**
@@ -791,6 +814,10 @@ const ELITE_BUFFER_FIELDS = [
   'volleySpreadRadians',
 ] as const;
 
+const ELITE_DASHER_FIELDS = ['extraCharges'] as const;
+
+const ELITE_GUNNER_FIELDS = ['staggerDelayMs', 'staggerAngleOffsetFactor'] as const;
+
 const ENEMY_AI_FIELDS = [
   'predictiveMinChapter',
   'predictiveLeadFactor',
@@ -805,6 +832,10 @@ const ENEMY_AI_FIELDS = [
   'flankMinDistanceTiles',
   'flankMaxDistanceTiles',
   'flankOffsetTiles',
+  'gunnerVolleyShots',
+  'gunnerLateMinChapter',
+  'gunnerLateVolleyShots',
+  'gunnerSpreadRadians',
 ] as const;
 
 const DASH_FIELDS = [
@@ -1240,6 +1271,8 @@ function zeroElite(): EliteTuning {
       volleyShots: 1,
       volleySpreadRadians: 0,
     },
+    dasher: { extraCharges: 0 },
+    gunner: { staggerDelayMs: 0, staggerAngleOffsetFactor: 0.5 },
   };
 }
 
@@ -1258,6 +1291,10 @@ function zeroEnemyAi(): EnemyAiTuning {
     flankMinDistanceTiles: 0,
     flankMaxDistanceTiles: 0,
     flankOffsetTiles: 0,
+    gunnerVolleyShots: 3,
+    gunnerLateMinChapter: 3,
+    gunnerLateVolleyShots: 5,
+    gunnerSpreadRadians: 0.22,
   };
 }
 
@@ -1391,6 +1428,8 @@ function parseElite(
     'tank',
     'bomber',
     'buffer',
+    'dasher',
+    'gunner',
   ] as const);
   if (elite === undefined) return zeroElite();
 
@@ -1404,6 +1443,10 @@ function parseElite(
     readObject(elite, 'bomber', path, problems, ELITE_BOMBER_FIELDS) ?? {};
   const bufferSource =
     readObject(elite, 'buffer', path, problems, ELITE_BUFFER_FIELDS) ?? {};
+  const dasherSource =
+    readObject(elite, 'dasher', path, problems, ELITE_DASHER_FIELDS) ?? {};
+  const gunnerSource =
+    readObject(elite, 'gunner', path, problems, ELITE_GUNNER_FIELDS) ?? {};
 
   const chaser: EliteChaserTuning = {
     pounceTelegraphMs:
@@ -1496,6 +1539,22 @@ function parseElite(
       readNumber(bufferSource, 'volleySpreadRadians', `${path}.buffer`, problems) ?? 0,
   };
 
+  const dasher: EliteDasherTuning = {
+    extraCharges:
+      readNumber(dasherSource, 'extraCharges', `${path}.dasher`, problems, {
+        integer: true,
+      }) ?? 0,
+  };
+
+  const gunner: EliteGunnerTuning = {
+    staggerDelayMs:
+      readNumber(gunnerSource, 'staggerDelayMs', `${path}.gunner`, problems, {
+        integer: true,
+      }) ?? 0,
+    staggerAngleOffsetFactor:
+      readNumber(gunnerSource, 'staggerAngleOffsetFactor', `${path}.gunner`, problems) ?? 0.5,
+  };
+
   return {
     scale:
       readNumber(elite, 'scale', path, problems, { positive: true }) ?? 1,
@@ -1504,6 +1563,8 @@ function parseElite(
     tank,
     bomber,
     buffer,
+    dasher,
+    gunner,
   };
 }
 
@@ -1549,6 +1610,13 @@ function parseEnemyAi(
     flankMinDistanceTiles,
     flankMaxDistanceTiles,
     flankOffsetTiles: readNumber(ai, 'flankOffsetTiles', path, problems) ?? 0,
+    gunnerVolleyShots:
+      readNumber(ai, 'gunnerVolleyShots', path, problems, { integer: true, positive: true }) ?? 3,
+    gunnerLateMinChapter:
+      readNumber(ai, 'gunnerLateMinChapter', path, problems, { integer: true, positive: true }) ?? 3,
+    gunnerLateVolleyShots:
+      readNumber(ai, 'gunnerLateVolleyShots', path, problems, { integer: true, positive: true }) ?? 5,
+    gunnerSpreadRadians: readNumber(ai, 'gunnerSpreadRadians', path, problems) ?? 0.22,
   };
 }
 

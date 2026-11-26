@@ -210,15 +210,20 @@ describe('stagger — a hit holds the enemy still and delays a committed wind-up
       actionStartedMs: 1000,
     });
 
-    const stagger = staggerAction(1200, DEFAULT_COMBAT.enemyStaggerMs);
+    const stagger = staggerAction(1200, 150);
     expect(stagger).toEqual({ kind: 'stagger', untilMs: 1350 });
 
-    // A bullet hit on a running wind-up delays it by the stun instead of cancelling it (#66):
-    // otherwise constant fire makes every caster harmless and a 64×36 room never sees a shot.
-    const delayed = staggerAfterHit(telegraph, 1200, DEFAULT_COMBAT.enemyStaggerMs);
+    // A bullet hit with positive stagger delays a running wind-up instead of cancelling it (#66).
+    const delayed = staggerAfterHit(telegraph, 1200, 150);
     expect(delayed).toEqual({ kind: 'telegraph', sinceMs: 1150 });
     // Telegraph -> delayed telegraph is not a "shot".
     expect(attackReleased(telegraph, delayed)).toBeNull();
+
+    // M18 (ADR-026): with DEFAULT_COMBAT.enemyStaggerMs === 0, hits do not stagger or delay actions.
+    expect(DEFAULT_COMBAT.enemyStaggerMs).toBe(0);
+    expect(staggerAfterHit(telegraph, 1200, DEFAULT_COMBAT.enemyStaggerMs)).toEqual(telegraph);
+    const walking: EnemyAction = { kind: 'walk', target: player };
+    expect(staggerAfterHit(walking, 1200, DEFAULT_COMBAT.enemyStaggerMs)).toEqual(walking);
 
     // Any other action is staggered: during the stun it holds, then the cooldown gate applies.
     const staggered = { ...state, action: stagger };

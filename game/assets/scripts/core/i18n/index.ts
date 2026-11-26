@@ -210,6 +210,8 @@ const ENEMY_ROLE_KEYS: Readonly<Record<EnemyRole, TranslationKey>> = {
   splitling: 'enemy.splitling',
   bomber: 'enemy.bomber',
   buffer: 'enemy.buffer',
+  dasher: 'enemy.dasher',
+  gunner: 'enemy.gunner',
 };
 
 export function localizeEnemyRole(role: EnemyRole, locale: Locale = currentLocale): string {

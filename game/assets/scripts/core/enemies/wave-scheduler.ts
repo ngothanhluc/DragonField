@@ -194,31 +194,38 @@ export function aliveCapForSlot(slot: number): number {
 }
 
 /**
- * M13 Tier-2 special role mix shares for a normal room slot (`runSlot` is 1-based within the run):
- * - Ch1 slots 1–3 keep classic onboarding roles; slots 4+ introduce `bomber`.
- * - Ch2–Ch3 slot 1 keeps the 0-skill chapter entrance readable; slots 2+ mix `bomber` & `buffer`.
- * - Ch4 mixes `bomber` & `buffer` from slot 1 onward.
+ * M13 + M18 special role mix shares for a normal room slot (`runSlot` is 1-based within the run):
+ * - Ch1: introduces `dasher` early (slot 1+), `gunner` from slot 2+, `bomber` from slot 4+.
+ * - Ch2–Ch4: mixes `dasher`, `gunner`, `bomber`, and `buffer` with escalating pressure.
  */
 export function specialRoleMixForRoom(
   chapter: number,
   runSlot: number,
-): { readonly bomberShare: number; readonly bufferShare: number } {
+): {
+  readonly bomberShare: number;
+  readonly bufferShare: number;
+  readonly dasherShare: number;
+  readonly gunnerShare: number;
+} {
+  // Slot 1 keeps the 0-skill chapter entrance readable; slots 2+ unleash dasher, gunner, bomber & buffer.
+  if (runSlot < 2) {
+    return { bomberShare: 0, bufferShare: 0, dasherShare: 0, gunnerShare: 0 };
+  }
   if (chapter <= 1) {
-    return runSlot >= 4 ? { bomberShare: 0.12, bufferShare: 0 } : { bomberShare: 0, bufferShare: 0 };
+    return {
+      bomberShare: runSlot >= 4 ? 0.1 : 0,
+      bufferShare: 0,
+      dasherShare: 0.12,
+      gunnerShare: 0.1,
+    };
   }
   if (chapter === 2) {
-    return runSlot >= 2
-      ? { bomberShare: 0.12, bufferShare: 0.08 }
-      : { bomberShare: 0, bufferShare: 0 };
+    return { bomberShare: 0.1, bufferShare: 0.08, dasherShare: 0.12, gunnerShare: 0.12 };
   }
   if (chapter === 3) {
-    return runSlot >= 2
-      ? { bomberShare: 0.12, bufferShare: 0.08 }
-      : { bomberShare: 0, bufferShare: 0 };
+    return { bomberShare: 0.1, bufferShare: 0.08, dasherShare: 0.13, gunnerShare: 0.13 };
   }
-  return runSlot >= 2
-    ? { bomberShare: 0.12, bufferShare: 0.1 }
-    : { bomberShare: 0, bufferShare: 0 };
+  return { bomberShare: 0.1, bufferShare: 0.09, dasherShare: 0.14, gunnerShare: 0.14 };
 }
 
 export class WaveScheduler {
@@ -261,13 +268,17 @@ export class WaveScheduler {
   }
 
   /**
-   * Deterministically mix M13 `bomber` and `buffer` roles into post-cycle non-elite slots
-   * (preserving every authored role and elite from the `.tmx` and keeping `roomEnemyTotal` exact).
+   * Deterministically mix M13 (`bomber`, `buffer`) and M18 (`dasher`, `gunner`) roles into
+   * post-cycle non-elite slots (preserving every authored role and elite from the `.tmx` and
+   * keeping `roomEnemyTotal` exact).
    */
   private mixSpecialRoles(authoredCount: number): void {
     if (!usesWaveScheduler(this.level)) return;
-    const { bomberShare, bufferShare } = specialRoleMixForRoom(this.level.chapter, this.runSlot);
-    if (bomberShare <= 0 && bufferShare <= 0) return;
+    const { bomberShare, bufferShare, dasherShare, gunnerShare } = specialRoleMixForRoom(
+      this.level.chapter,
+      this.runSlot,
+    );
+    if (bomberShare <= 0 && bufferShare <= 0 && dasherShare <= 0 && gunnerShare <= 0) return;
 
     const candidates: number[] = [];
     const startIndex = Math.max(authoredCount, 1);
@@ -286,6 +297,8 @@ export class WaveScheduler {
     const total = this.queue.length;
     const bomberTarget = bomberShare > 0 ? Math.max(1, Math.round(total * bomberShare)) : 0;
     const bufferTarget = bufferShare > 0 ? Math.max(1, Math.round(total * bufferShare)) : 0;
+    const dasherTarget = dasherShare > 0 ? Math.max(1, Math.round(total * dasherShare)) : 0;
+    const gunnerTarget = gunnerShare > 0 ? Math.max(1, Math.round(total * gunnerShare)) : 0;
 
     const assign = (role: EnemyRole, count: number): void => {
       const limit = Math.min(count, candidates.length);
@@ -300,6 +313,8 @@ export class WaveScheduler {
       }
     };
 
+    assign('dasher', dasherTarget);
+    assign('gunner', gunnerTarget);
     assign('bomber', bomberTarget);
     assign('buffer', bufferTarget);
   }

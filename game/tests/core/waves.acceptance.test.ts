@@ -53,9 +53,9 @@ describe('room totals', () => {
     });
   }
 
-  it('the alive cap is 24 and lives in tuning', () => {
+  it('the alive cap is 30 (M18) and lives in tuning', () => {
     const waves = (TUNING as unknown as { waves?: { aliveCap: number } }).waves;
-    expect(waves?.aliveCap).toBe(24);
+    expect(waves?.aliveCap).toBe(30);
   });
 });
 

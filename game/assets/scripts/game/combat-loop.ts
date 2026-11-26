@@ -25,7 +25,15 @@ import type { BossDef, BossPhase } from '../core/boss/boss-defs';
 import { BOSS_FEET_OFFSET_TILES } from '../core/boss/boss-defs';
 import { summonedEnemies } from '../core/boss/summon';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
-import { fireEnemyVolley, casterShotPlan, sniperShotPlan } from '../core/combat/enemy-fire';
+import {
+  fireEnemyVolley,
+  casterShotPlan,
+  gunnerShotPlan,
+  scheduleGunnerFollowUp,
+  sniperShotPlan,
+  stepPendingGunnerVolleys,
+  type PendingGunnerVolley,
+} from '../core/combat/enemy-fire';
 import { segmentHitsCircle } from '../core/combat/hitbox';
 import { HitstopClock } from '../core/combat/hitstop';
 import type { KnockbackState } from '../core/combat/knockback';
@@ -305,6 +313,7 @@ export class CombatLoop {
   private activeAttachmentHideRemainingMs = 0;
   private readonly enemyBuffs = new EnemyBuffTracker();
   private pendingBlasts: PendingBomberBlast[] = [];
+  private pendingGunnerVolleys: PendingGunnerVolley[] = [];
   private readonly livingEnemyStates: EnemyState[] = [];
   private readonly shockCandidates: RicochetCandidate[] = [];
   private readonly shockTargetsOut: RicochetTarget[] = [];
@@ -592,6 +601,7 @@ export class CombatLoop {
     this.clearSkillAttachmentHide();
     this.enemyBuffs.clear();
     this.pendingBlasts = [];
+    this.pendingGunnerVolleys = [];
     this.signatureBullets.clear();
   }
 
@@ -952,6 +962,26 @@ export class CombatLoop {
             speedTilesPerSecond: plan.speedTilesPerSecond,
             source: { kind: 'enemy-bullet', role: 'sniper' },
           });
+        } else if (role === 'gunner') {
+          const plan = gunnerShotPlan(enemy.isElite, this.level.chapter);
+          fireEnemyVolley({
+            pool: player.bullets,
+            from: enemy.position,
+            to: player.position,
+            damage: enemy.contactDamage,
+            angles: plan.angles,
+            speedTilesPerSecond: plan.speedTilesPerSecond,
+            source: { kind: 'enemy-bullet', role: 'gunner' },
+          });
+          const followUp = scheduleGunnerFollowUp({
+            enemyId: enemy.id,
+            origin: enemy.position,
+            aimTarget: player.position,
+            damage: enemy.contactDamage,
+            plan,
+            nowMs: this.nowMs,
+          });
+          if (followUp !== null) this.pendingGunnerVolleys.push(followUp);
         } else if (role !== null) {
           fireEnemyVolley({
             pool: player.bullets,
@@ -1019,6 +1049,27 @@ export class CombatLoop {
       this.pendingBlasts = remaining;
       for (const blast of triggered) {
         this.triggerBomberBlast(blast);
+      }
+    }
+
+    if (this.pendingGunnerVolleys.length > 0) {
+      const { triggered, remaining } = stepPendingGunnerVolleys(
+        this.pendingGunnerVolleys,
+        this.nowMs,
+      );
+      this.pendingGunnerVolleys = remaining;
+      for (const volley of triggered) {
+        const shooter = this.enemies.find((e) => e.id === volley.enemyId && !e.isDead);
+        if (shooter === undefined) continue;
+        fireEnemyVolley({
+          pool: player.bullets,
+          from: shooter.position,
+          to: player.position,
+          damage: volley.damage,
+          angles: volley.angles,
+          speedTilesPerSecond: volley.speedTilesPerSecond,
+          source: { kind: 'enemy-bullet', role: 'gunner' },
+        });
       }
     }
 

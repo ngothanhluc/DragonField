@@ -39,6 +39,8 @@ export const ENEMY_ROLES = [
   'splitling',
   'bomber',
   'buffer',
+  'dasher',
+  'gunner',
 ] as const;
 export type EnemyRole = (typeof ENEMY_ROLES)[number];
 

@@ -199,7 +199,8 @@ export interface CasterShotPlanArgs {
 export function casterShotPlan(args: CasterShotPlanArgs): ResolvedEnemyShotPlan {
   const tuning = args.tuning ?? ENEMY_TUNING;
   const chapter = args.chapter ?? 1;
-  const speed = ENEMY_BULLET_SPEED_TILES_PER_SECOND;
+  const speed =
+    tuning.roles.caster.projectileSpeedTilesPerSecond ?? ENEMY_BULLET_SPEED_TILES_PER_SECOND;
   const lead = predictiveLeadFactorFor('caster', args.elite, chapter, tuning);
   const vel = args.targetVel ?? { x: 0, y: 0 };
   const aimTarget = computePredictiveAim(
@@ -241,9 +242,94 @@ export function sniperShotPlan(tuning: EnemiesTuning = ENEMY_TUNING): EnemyShotP
   };
 }
 
-/** Roles whose released attack is a straight bullet (caster and sniper); others charge or pounce. */
+/** Gunner shot plan (M18): 3-bullet fan in Ch1–2, 5-bullet fan in Ch3–4; Elite schedules a staggered alternating follow-up volley. */
+export interface GunnerShotPlan extends EnemyShotPlan {
+  /** Delay before the Elite gunner's staggered alternating second volley, or `null` for regular gunners. */
+  readonly followUpDelayMs: number | null;
+  /** Angle offsets for the staggered alternating second volley (empty when not elite). */
+  readonly followUpAngles: readonly number[];
+}
+
+export interface PendingGunnerVolley {
+  readonly enemyId: string;
+  readonly origin: Vec2;
+  readonly aimTarget: Vec2;
+  readonly damage: number;
+  readonly angles: readonly number[];
+  readonly speedTilesPerSecond: number;
+  readonly triggerAtMs: number;
+}
+
+export function gunnerShotPlan(
+  elite: boolean,
+  chapter = 1,
+  tuning: EnemiesTuning = ENEMY_TUNING,
+): GunnerShotPlan {
+  const speedTilesPerSecond =
+    tuning.roles.gunner.projectileSpeedTilesPerSecond ?? ENEMY_BULLET_SPEED_TILES_PER_SECOND;
+  const shots =
+    chapter >= tuning.ai.gunnerLateMinChapter
+      ? tuning.ai.gunnerLateVolleyShots
+      : tuning.ai.gunnerVolleyShots;
+  const spread = tuning.ai.gunnerSpreadRadians;
+  const angles = symmetricAngles(shots, spread);
+
+  if (!elite || tuning.elite.gunner.staggerDelayMs <= 0) {
+    return { angles, speedTilesPerSecond, followUpDelayMs: null, followUpAngles: [] };
+  }
+
+  const offset = spread * tuning.elite.gunner.staggerAngleOffsetFactor;
+  // Alternating volley shifts each lane by half a spread step so the player must weave between volleys.
+  const followUpAngles = angles.map((angle) => angle + offset);
+  return {
+    angles,
+    speedTilesPerSecond,
+    followUpDelayMs: tuning.elite.gunner.staggerDelayMs,
+    followUpAngles,
+  };
+}
+
+/** Schedule an Elite gunner's staggered follow-up volley if the plan specifies one. */
+export function scheduleGunnerFollowUp(args: {
+  readonly enemyId: string;
+  readonly origin: Vec2;
+  readonly aimTarget: Vec2;
+  readonly damage: number;
+  readonly plan: GunnerShotPlan;
+  readonly nowMs: number;
+}): PendingGunnerVolley | null {
+  if (args.plan.followUpDelayMs === null || args.plan.followUpAngles.length === 0) return null;
+  return {
+    enemyId: args.enemyId,
+    origin: { x: args.origin.x, y: args.origin.y },
+    aimTarget: { x: args.aimTarget.x, y: args.aimTarget.y },
+    damage: args.damage,
+    angles: args.plan.followUpAngles,
+    speedTilesPerSecond: args.plan.speedTilesPerSecond,
+    triggerAtMs: args.nowMs + args.plan.followUpDelayMs,
+  };
+}
+
+/** Split pending Elite gunner follow-up volleys into due (at `nowMs`) and remaining. Pure. */
+export function stepPendingGunnerVolleys(
+  pending: readonly PendingGunnerVolley[],
+  nowMs: number,
+): {
+  readonly triggered: PendingGunnerVolley[];
+  readonly remaining: PendingGunnerVolley[];
+} {
+  const triggered: PendingGunnerVolley[] = [];
+  const remaining: PendingGunnerVolley[] = [];
+  for (const volley of pending) {
+    if (nowMs >= volley.triggerAtMs) triggered.push(volley);
+    else remaining.push(volley);
+  }
+  return { triggered, remaining };
+}
+
+/** Roles whose released attack is a straight bullet (caster, sniper, gunner); others charge or pounce. */
 export function shootsProjectiles(role: EnemyRole): boolean {
-  return role === 'caster' || role === 'sniper';
+  return role === 'caster' || role === 'sniper' || role === 'gunner';
 }
 
 export interface EnemyVolleyArgs {

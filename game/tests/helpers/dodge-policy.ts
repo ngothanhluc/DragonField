@@ -60,12 +60,12 @@ const DODGE_DIRECTIONS: readonly Direction[] = [
 const DODGE_HORIZON_SECONDS = 1.2;
 const DODGE_SAMPLES = 12;
 /** Distance to the nearest enemy the policy aims for: inside the auto-aim range (8), outside contact. */
-const DODGE_ENGAGE_TILES = 6;
+const DODGE_ENGAGE_TILES = 6.8;
 /** A hurt player keeps more distance: still inside the auto-aim range (8), out of contact. */
-const DODGE_ENGAGE_HURT_TILES = 8;
-const DODGE_HURT_HEARTS = 4;
-const DODGE_TOO_CLOSE_TILES = 2.5;
-const DODGE_BULLET_CLEAR_TILES = 1.6;
+const DODGE_ENGAGE_HURT_TILES = 7.8;
+const DODGE_HURT_HEARTS = 65;
+const DODGE_TOO_CLOSE_TILES = 3.2;
+const DODGE_BULLET_CLEAR_TILES = 2.0;
 const MIN_X = 0.5;
 const MIN_Y = 0.5;
 /**
@@ -133,9 +133,7 @@ export function makeDodgePolicy(): InputPolicy {
 
         let enemyGap = Number.POSITIVE_INFINITY;
         for (const enemy of alive) {
-          // A charging tank closes ~2–3 tiles in this horizon; the frozen position below would
-          // make the policy stand in the dash line. Predict the dash instead (a competent player
-          // sidesteps a telegraph), which matters more now that rooms are 64×36 (#66).
+          // Predict charging dashes so the policy sidesteps tank/dasher charge lines.
           const action = enemy.action;
           const moving =
             action.kind === 'charge'
@@ -154,14 +152,15 @@ export function makeDodgePolicy(): InputPolicy {
         }
 
         if (bulletGap < DODGE_BULLET_CLEAR_TILES) {
-          cost += (DODGE_BULLET_CLEAR_TILES - bulletGap) * 4;
+          cost += (DODGE_BULLET_CLEAR_TILES - bulletGap) * 7.5;
         }
         if (enemyGap < tooCloseTiles) {
-          cost += (tooCloseTiles - enemyGap) * 3;
+          cost += (tooCloseTiles - enemyGap) * 6.5;
         }
+
         // Pull to the fighting distance: walk in when far (no clamp — a far enemy must still pull
         // the player in), back off when stacked on one.
-        cost += Math.abs(enemyGap - engageTiles) * 0.3;
+        cost += Math.abs(enemyGap - engageTiles) * 0.25;
         // Do not walk into the room edge: it removes the escape path and melee enemies pin the
         // player there.
         const wallGap = Math.min(x - MIN_X, MAX_X - x, y - MIN_Y, MAX_Y - y);

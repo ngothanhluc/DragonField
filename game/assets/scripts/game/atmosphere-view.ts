@@ -493,6 +493,8 @@ export interface RoomAtmosphereOptions {
   readonly rippleAreas?: readonly RippleArea[];
   /** Player position in tile units (animals flee it); `null` when there is no player. */
   readonly playerOf: () => Vec2 | null;
+  /** True for combat rooms (default, ADR-026: disables wandering animals & mutes decor props). */
+  readonly combat?: boolean;
 }
 
 export interface RoomAtmosphereParts {
@@ -514,7 +516,9 @@ export function attachRoomAtmosphere(options: RoomAtmosphereOptions): RoomAtmosp
   const atmosphere = chapterAtmosphere(options.config, options.level.chapter);
   if (atmosphere === null) return null;
 
-  const visible = visibleAtmosphere(atmosphere, options.effects);
+  const visible = visibleAtmosphere(atmosphere, options.effects, {
+    combat: options.combat ?? true,
+  });
   // Living decor is a world thing: keep the same density per screen when the room is bigger
   // than one screen (#37). A 32×18 room keeps exactly the chapter's number.
   const screens = roomScreens(options.level.size);

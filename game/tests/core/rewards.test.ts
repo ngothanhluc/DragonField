@@ -23,6 +23,9 @@ describe('GOLD — reward table', () => {
       // M13 — bomber/buffer specialist yokai.
       bomber: 2,
       buffer: 2,
+      // M18 — dasher/gunner roles.
+      dasher: 2,
+      gunner: 2,
       eliteMultiplier: 3,
       roomClear: 5,
       boss: 50,

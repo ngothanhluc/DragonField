@@ -168,8 +168,8 @@ describe('#66 enemy counts per room unchanged', () => {
     });
   }
 
-  it('the 24-alive cap and the chapter totals are unchanged', () => {
-    expect(WAVES_TUNING.aliveCap).toBe(24);
+  it('the alive cap (M18: 30) and the chapter totals live in tuning', () => {
+    expect(WAVES_TUNING.aliveCap).toBe(30);
     expect(WAVES_TUNING.chapterTotals).toEqual([
       { min: 24, max: 32 },
       { min: 40, max: 48 },

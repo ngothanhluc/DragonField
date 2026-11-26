@@ -94,6 +94,7 @@ export function staggerAction(nowMs: number, durationMs: number): EnemyAction {
  * Every other action (walk, idle, charge) is replaced by the stagger, as before.
  */
 export function staggerAfterHit(action: EnemyAction, nowMs: number, durationMs: number): EnemyAction {
+  if (!(durationMs > 0)) return action;
   if (action.kind === 'telegraph') {
     return { kind: 'telegraph', sinceMs: action.sinceMs + durationMs };
   }
@@ -146,6 +147,8 @@ export const ATTACK_COOLDOWN_MS: Readonly<Record<EnemyRole, number>> = {
   splitling: ENEMY_TUNING.roles.splitling.attackCooldownMs,
   bomber: ENEMY_TUNING.roles.bomber.attackCooldownMs,
   buffer: ENEMY_TUNING.roles.buffer.attackCooldownMs,
+  dasher: ENEMY_TUNING.roles.dasher.attackCooldownMs,
+  gunner: ENEMY_TUNING.roles.gunner.attackCooldownMs,
 };
 
 /** Fallback direction when the two points coincide (no defined direction). */
@@ -350,6 +353,10 @@ export function decideAction(args: DecideActionArgs): EnemyAction {
         return decideBomber(state, player, nowMs, level, role, fireRateMult);
       case 'buffer':
         return decideBuffer(state, player, nowMs, level, role, fireRateMult);
+      case 'dasher':
+        return decideDasher(state, player, nowMs, level, role, elite.dasher, tuning, fireRateMult);
+      case 'gunner':
+        return decideGunner(state, player, nowMs, level, role, fireRateMult);
     }
   })();
 
@@ -689,6 +696,118 @@ function decideBomber(
  * `attackReleasedForRole`).
  */
 function decideBuffer(
+  state: EnemyState,
+  player: Vec2,
+  nowMs: number,
+  level: LevelData,
+  tuning: EnemyRoleTuning,
+  fireRateMult: number,
+): EnemyAction {
+  const current = state.action;
+
+  if (current.kind === 'telegraph') {
+    if (!isTelegraphElapsed(current.sinceMs, nowMs, tuning.telegraphMs)) {
+      return { kind: 'telegraph', sinceMs: current.sinceMs };
+    }
+    return { kind: 'idle' };
+  }
+
+  const gap = distance(state.position, player);
+  const outsideBand =
+    gap < tuning.preferredRangeMinTiles - RANGE_TOLERANCE_TILES ||
+    gap > tuning.preferredRangeMaxTiles + RANGE_TOLERANCE_TILES;
+  if (outsideBand) {
+    return { kind: 'walk', target: holdRangeTarget(state, player, level, tuning) };
+  }
+
+  if (!hasLineOfSight(level, state.position, player)) {
+    return { kind: 'walk', target: clampToRoom(level, player) };
+  }
+
+  if (isCoolingDown(state, nowMs, tuning, fireRateMult)) return { kind: 'idle' };
+  return { kind: 'telegraph', sinceMs: nowMs };
+}
+
+/**
+ * Dasher (M18, *Ám Sát*): fast diagonal flanker (`~4.0` t/s). When within `preferredRangeMinTiles`..
+ * `preferredRangeMaxTiles` (`3–6` tiles) with line of sight and off cooldown, plays a brief
+ * `350 ms` telegraph then dashes at `9.5` t/s for `280 ms`. Elite chains `extraCharges` follow-up
+ * dashes, re-locking onto the player each time.
+ */
+function decideDasher(
+  state: EnemyState,
+  player: Vec2,
+  nowMs: number,
+  level: LevelData,
+  tuning: EnemyRoleTuning,
+  elite: EnemiesTuning['elite']['dasher'],
+  enemiesTuning: EnemiesTuning,
+  fireRateMult: number,
+): EnemyAction {
+  const current = state.action;
+
+  if (current.kind === 'charge') {
+    if (nowMs < current.untilMs) {
+      return {
+        kind: 'charge',
+        direction: { x: current.direction.x, y: current.direction.y },
+        untilMs: current.untilMs,
+        speedTilesPerSecond: current.speedTilesPerSecond,
+        followUps: current.followUps,
+      };
+    }
+    if (current.followUps > 0) {
+      return {
+        kind: 'charge',
+        direction: directionBetween(state.position, player),
+        untilMs: nowMs + tuning.chargeDurationMs,
+        speedTilesPerSecond: tuning.chargeSpeedTilesPerSecond,
+        followUps: current.followUps - 1,
+      };
+    }
+    return { kind: 'idle' };
+  }
+
+  if (current.kind === 'telegraph') {
+    if (!isTelegraphElapsed(current.sinceMs, nowMs, tuning.telegraphMs)) {
+      return { kind: 'telegraph', sinceMs: current.sinceMs };
+    }
+    return {
+      kind: 'charge',
+      direction: directionBetween(state.position, player),
+      untilMs: nowMs + tuning.chargeDurationMs,
+      speedTilesPerSecond: tuning.chargeSpeedTilesPerSecond,
+      followUps: state.elite ? Math.max(0, elite.extraCharges) : 0,
+    };
+  }
+
+  const gap = distance(state.position, player);
+  const inDashBand =
+    gap >= tuning.preferredRangeMinTiles - RANGE_TOLERANCE_TILES &&
+    gap <= tuning.preferredRangeMaxTiles + RANGE_TOLERANCE_TILES;
+  if (
+    inDashBand &&
+    hasLineOfSight(level, state.position, player) &&
+    !isCoolingDown(state, nowMs, tuning, fireRateMult)
+  ) {
+    return { kind: 'telegraph', sinceMs: nowMs };
+  }
+
+  if (gap <= CHASER_CONTACT_RANGE_TILES && hasLineOfSight(level, state.position, player)) {
+    return { kind: 'idle' };
+  }
+  return {
+    kind: 'walk',
+    target: computeFlankTarget(state.position, player, state.id, level, enemiesTuning),
+  };
+}
+
+/**
+ * Gunner (M18, *Pháo Thủ Chùm*): holds medium range (`5–8` tiles), requires line of sight, plays a
+ * `550 ms` telegraph, then fires a fast 3-bullet fan spread (5-bullet in Ch3–4; Elite chains a
+ * second staggered alternating volley).
+ */
+function decideGunner(
   state: EnemyState,
   player: Vec2,
   nowMs: number,

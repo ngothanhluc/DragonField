@@ -127,6 +127,12 @@ const FROZEN_TINT = new CocosColor(150, 220, 255, 255);
 const BURNED_TINT = new CocosColor(255, 165, 105, 255);
 const POISONED_TINT = new CocosColor(170, 230, 130, 255);
 const HASTED_TINT = new CocosColor(180, 255, 170, 255);
+/** M18 (ADR-026): crisp dark ground shadow under every enemy's feet + stronger Elite ring. */
+const SHADOW_FILL_COLOR = new CocosColor(12, 10, 18, 175);
+const ELITE_SHADOW_RING_COLOR = new CocosColor(255, 198, 72, 220);
+const SHADOW_BASE_RX_TILES = 0.42;
+const SHADOW_BASE_RY_TILES = 0.2;
+const SHADOW_FEET_Y_OFFSET_TILES = 0.06;
 const TELEGRAPH_TINT: Readonly<Record<RoleTelegraphKind, Color>> = {
   chaser: new CocosColor(255, 226, 120, 255),
   caster: new CocosColor(130, 220, 255, 255),
@@ -134,6 +140,8 @@ const TELEGRAPH_TINT: Readonly<Record<RoleTelegraphKind, Color>> = {
   sniper: new CocosColor(255, 120, 120, 255),
   bomber: new CocosColor(255, 110, 60, 255),
   buffer: new CocosColor(150, 255, 170, 255),
+  dasher: new CocosColor(255, 110, 210, 255),
+  gunner: new CocosColor(255, 200, 70, 255),
 };
 
 /** Telegraph ring diameter by role, in tiles (distinguishable at a glance). */
@@ -144,6 +152,8 @@ const RING_DIAMETER_TILES: Readonly<Record<RoleTelegraphKind, number>> = {
   sniper: 2.8,
   bomber: 5,
   buffer: 3.4,
+  dasher: 2.8,
+  gunner: 3.2,
 };
 
 /**
@@ -158,6 +168,8 @@ function telegraphKindFor(role: EnemyRole): RoleTelegraphKind | null {
     case 'sniper':
     case 'bomber':
     case 'buffer':
+    case 'dasher':
+    case 'gunner':
       return role;
     case 'splitter':
     case 'splitling':
@@ -265,6 +277,9 @@ export class EnemyView extends Component {
   private lineNode: Node | null = null;
   private lineGraphics: Graphics | null = null;
   private lineVisible = false;
+  /** M18 (ADR-026): crisp dark ground shadow ellipse drawn strictly under the enemy's feet. */
+  private shadowNode: Node | null = null;
+  private culled = false;
   /** Whether the current dash has dealt damage (once per dash). */
   private chargeHitDone = false;
   /** `untilMs` of the running dash — a new value means a new dash (elites dash repeatedly). */
@@ -324,7 +339,7 @@ export class EnemyView extends Component {
     return this.hitRadius;
   }
 
-  /** Chaser/tank/splitter deal contact damage; the caster and sniper shoot instead. */
+  /** Chaser/tank/splitter/dasher deal contact damage; caster/sniper/gunner shoot instead. */
   get melee(): boolean {
     const state = this.state;
     return (
@@ -332,7 +347,8 @@ export class EnemyView extends Component {
       (state.role === 'chaser' ||
         state.role === 'tank' ||
         state.role === 'splitter' ||
-        state.role === 'splitling')
+        state.role === 'splitling' ||
+        state.role === 'dasher')
     );
   }
 
@@ -385,6 +401,7 @@ export class EnemyView extends Component {
     const sprite: Sprite | null = this.getComponent(CocosSprite);
     this.sprite = sprite;
 
+    this.createGroundShadow(roleScale);
     this.syncNodePosition();
     this.applyScale(1, 0);
     this.playMotion(false, 'down', true);
@@ -511,11 +528,16 @@ export class EnemyView extends Component {
       return;
     }
 
-    state.action = staggerAfterHit(state.action, nowMs, DEFAULT_COMBAT.enemyStaggerMs);
-    // Do not reset `actionStartedMs`: the cooldown must keep running through the stun, or an
-    // enemy under constant fire would never reach its attack beat.
+    if (DEFAULT_COMBAT.enemyStaggerMs > 0) {
+      state.action = staggerAfterHit(state.action, nowMs, DEFAULT_COMBAT.enemyStaggerMs);
+    }
+    // Do not reset `actionStartedMs`: the cooldown must keep running through any stun.
 
-    if (source !== null) {
+    if (
+      source !== null &&
+      DEFAULT_COMBAT.enemyKnockbackDistanceTiles > 0 &&
+      DEFAULT_COMBAT.enemyKnockbackDurationMs > 0
+    ) {
       this.knockback = startKnockback(state.position, source, {
         distanceTiles: DEFAULT_COMBAT.enemyKnockbackDistanceTiles,
         durationMs: DEFAULT_COMBAT.enemyKnockbackDurationMs,
@@ -565,9 +587,15 @@ export class EnemyView extends Component {
    * `Sprite.enabled` flag may change here.
    */
   setCulled(culled: boolean): void {
+    this.culled = culled;
     const sprite = this.sprite;
-    if (sprite === null) return;
-    if (sprite.enabled !== !culled) sprite.enabled = !culled;
+    if (sprite !== null && sprite.enabled !== !culled) {
+      sprite.enabled = !culled;
+    }
+    if (this.shadowNode !== null && this.shadowNode.isValid) {
+      const showShadow = !culled && !this.dead;
+      if (this.shadowNode.active !== showShadow) this.shadowNode.active = showShadow;
+    }
     // The telegraph ring and sniper line are separate nodes; they only show while attacking, and
     // an attack cannot start off screen (#41), so they need no culling of their own.
   }
@@ -617,6 +645,9 @@ export class EnemyView extends Component {
     this.animator?.stop();
     this.hideRing();
     this.hideLine();
+    if (this.shadowNode !== null && this.shadowNode.isValid) {
+      this.shadowNode.active = false;
+    }
     // GDD §12.3: monsters have no death frame — death is pack FX, not a sprite.
     this.fx?.spawn('fx.smoke', this.position);
     this.fx?.spawn('fx.impact', this.position, {
@@ -917,16 +948,72 @@ export class EnemyView extends Component {
     this.lineVisible = false;
   }
 
+  // -------------------------------------------------------------------------
+  // Ground shadow ellipse (M18, ADR-026): drawn once on a shared layer below actors
+  // -------------------------------------------------------------------------
+
+  private createGroundShadow(roleScale: number): void {
+    const actorLayer = this.node.parent;
+    const worldRoot = actorLayer?.parent ?? null;
+    if (actorLayer === null || worldRoot === null) return;
+
+    let shadowLayer = worldRoot.getChildByName('enemy-shadows');
+    if (shadowLayer === null) {
+      shadowLayer = new CocosNode('enemy-shadows');
+      shadowLayer.layer = actorLayer.layer;
+      shadowLayer.parent = worldRoot;
+      shadowLayer.setSiblingIndex(actorLayer.getSiblingIndex());
+    }
+
+    const node = new CocosNode(`shadow-${this.id}`);
+    node.layer = actorLayer.layer;
+    node.parent = shadowLayer;
+
+    const eliteMult = this.isElite ? eliteScale() : 1;
+    const sizeScale = Math.max(0.6, roleScale * eliteMult);
+    const rx = SHADOW_BASE_RX_TILES * sizeScale;
+    const ry = SHADOW_BASE_RY_TILES * sizeScale;
+
+    // One Graphics node for the dark shadow fill (AGENTS.md: one Graphics per fill colour).
+    const fillGraphics: Graphics = node.addComponent(CocosGraphics);
+    fillGraphics.fillColor = SHADOW_FILL_COLOR;
+    fillGraphics.ellipse(0, 0, rx, ry);
+    fillGraphics.fill();
+
+    // Elites get a crisp tinted ground ring so they read instantly even in dense waves.
+    if (this.isElite) {
+      const ringNode = new CocosNode('elite-ring');
+      ringNode.layer = actorLayer.layer;
+      ringNode.parent = node;
+      const ringGraphics: Graphics = ringNode.addComponent(CocosGraphics);
+      ringGraphics.lineWidth = 0.06;
+      ringGraphics.strokeColor = ELITE_SHADOW_RING_COLOR;
+      ringGraphics.ellipse(0, 0, rx + 0.07, ry + 0.05);
+      ringGraphics.stroke();
+    }
+
+    node.active = !this.culled && !this.dead;
+    this.shadowNode = node;
+  }
+
   private syncNodePosition(): void {
     const world = tileToWorld(this.position);
-    this.node.setPosition(world.x, world.y - ACTOR_FEET_OFFSET_TILES, 0);
+    const feetY = world.y - ACTOR_FEET_OFFSET_TILES;
+    this.node.setPosition(world.x, feetY, 0);
+    if (this.shadowNode !== null && this.shadowNode.isValid) {
+      this.shadowNode.setPosition(world.x, feetY + SHADOW_FEET_Y_OFFSET_TILES, 0);
+    }
   }
 
   protected onDestroy(): void {
-    // The line is a sibling in world space, not a child: destroying the enemy must take it too.
+    // Sibling / shadow nodes live outside `this.node`: destroying the enemy must clean them up.
     const line = this.lineNode;
     if (line !== null && line.isValid) line.destroy();
     this.lineNode = null;
     this.lineGraphics = null;
+
+    const shadow = this.shadowNode;
+    if (shadow !== null && shadow.isValid) shadow.destroy();
+    this.shadowNode = null;
   }
 }

@@ -72,7 +72,15 @@ import {
 } from '../enemies/bomber';
 import { EnemyBuffTracker, resolveBufferPulse } from '../enemies/buffer';
 import { nextActionStartedMs } from '../enemies/attack-cycle';
-import { aimDirection, casterShotPlan, sniperShotPlan } from '../combat/enemy-fire';
+import {
+  aimDirection,
+  casterShotPlan,
+  gunnerShotPlan,
+  scheduleGunnerFollowUp,
+  sniperShotPlan,
+  stepPendingGunnerVolleys,
+  type PendingGunnerVolley,
+} from '../combat/enemy-fire';
 import { splitOnDeath } from '../enemies/splitter';
 import {
   RoomNavigation,
@@ -121,7 +129,12 @@ import { WaveScheduler, enemyStateFromSpawn, usesWaveScheduler } from '../enemie
 import { isWaveCleared, spawnWave } from '../enemies/waves';
 import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
 import { distance, type Vec2 } from '../math/vec2';
-import { applyCharacterBaseStats, applyCharacterPassive } from '../meta/run-stats';
+import {
+  applyCharacterBaseStats,
+  applyCharacterPassive,
+  metaBaseline,
+} from '../meta/run-stats';
+import type { UpgradeState } from '../meta/upgrades';
 import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
 import { moveWithCollision } from '../movement/collision';
 import { SeededRng } from '../rng';
@@ -285,6 +298,8 @@ export interface SimulationOptions {
   readonly playerHearts?: number;
   /** Starting skills, `Map<skillId, stacks>` like the game's `RunState` (defaults to empty). */
   readonly skills?: ReadonlyMap<string, number>;
+  /** Optional permanent Meta Shop upgrade levels applied at run start (M18, ADR-026). */
+  readonly meta?: UpgradeState;
   /**
    * Level-up skill pick policy (M12, ADR-021). When provided, each XP level-up rolls 1-of-3
    * from the dedicated `createSkillRollRng(seed)` stream, acquires the chosen skill, and emits
@@ -403,10 +418,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const characterDef = CHARACTERS[characterId];
   const signatureSkillId = characterDef.signatureSkillId;
   const activeConfig = activeSkillConfigFor(signatureSkillId);
-  const characterBase = applyCharacterPassive(
-    applyCharacterBaseStats(DEFAULT_COMBAT, characterId),
-    characterId,
-  );
+  const withClassBase = applyCharacterBaseStats(DEFAULT_COMBAT, characterId);
+  const withMeta =
+    options.meta !== undefined ? metaBaseline(withClassBase, options.meta) : withClassBase;
+  const characterBase = applyCharacterPassive(withMeta, characterId);
 
   const rng = new SeededRng(options.seed);
   /** Dedicated skill-roll RNG stream, strictly decoupled from combat RNG (ADR-021). */
@@ -496,6 +511,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   let enemies: EnemyState[] = [];
   const buffTracker = new EnemyBuffTracker();
   let pendingBlasts: PendingBomberBlast[] = [];
+  let pendingGunnerVolleys: PendingGunnerVolley[] = [];
   let playerVelocity: Vec2 = { x: 0, y: 0 };
 
   /**
@@ -511,6 +527,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     scheduler = null;
     pendingSpawns = [];
     pendingBlasts = [];
+    pendingGunnerVolleys = [];
     buffTracker.clear();
     statuses.clear();
     burns.clear();
@@ -775,6 +792,36 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           ttlMs: ENEMY_BULLET_TTL_MS,
         });
       }
+      return;
+    }
+
+    if (enemy.role === 'gunner') {
+      const plan = gunnerShotPlan(enemy.elite, room.chapter);
+      const direction = aimDirection(enemy.position, player);
+      const baseAngle = Math.atan2(direction.y, direction.x);
+      for (const offset of plan.angles) {
+        const angle = baseAngle + offset;
+        bullets.spawn({
+          position: enemy.position,
+          velocity: {
+            x: Math.cos(angle) * plan.speedTilesPerSecond,
+            y: Math.sin(angle) * plan.speedTilesPerSecond,
+          },
+          radiusTiles: BULLET_RADIUS_TILES,
+          damage,
+          owner: 'enemy',
+          ttlMs: ENEMY_BULLET_TTL_MS,
+        });
+      }
+      const followUp = scheduleGunnerFollowUp({
+        enemyId: enemy.id,
+        origin: enemy.position,
+        aimTarget: player,
+        damage,
+        plan,
+        nowMs: durationMs,
+      });
+      if (followUp !== null) pendingGunnerVolleys.push(followUp);
       return;
     }
 
@@ -1288,6 +1335,33 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       }
     }
 
+    if (pendingGunnerVolleys.length > 0) {
+      const steppedVolleys = stepPendingGunnerVolleys(pendingGunnerVolleys, durationMs);
+      pendingGunnerVolleys = steppedVolleys.remaining;
+      for (const volley of steppedVolleys.triggered) {
+        const shooter = enemies.find(
+          (e) => e.id === volley.enemyId && e.health > 0 && e.action.kind !== 'dead',
+        );
+        if (shooter === undefined) continue;
+        const direction = aimDirection(shooter.position, player);
+        const baseAngle = Math.atan2(direction.y, direction.x);
+        for (const offset of volley.angles) {
+          const angle = baseAngle + offset;
+          bullets.spawn({
+            position: shooter.position,
+            velocity: {
+              x: Math.cos(angle) * volley.speedTilesPerSecond,
+              y: Math.sin(angle) * volley.speedTilesPerSecond,
+            },
+            radiusTiles: BULLET_RADIUS_TILES,
+            damage: volley.damage,
+            owner: 'enemy',
+            ttlMs: ENEMY_BULLET_TTL_MS,
+          });
+        }
+      }
+    }
+
     // What the player can see this frame: one screen, clamped to the room (#41). Enemies are
     // held to it — they never start an attack from off screen, and far ones idle.
     const view = viewAroundPlayer(player, room);
@@ -1421,7 +1495,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         enemy.role === 'chaser' ||
         enemy.role === 'tank' ||
         enemy.role === 'splitter' ||
-        enemy.role === 'splitling';
+        enemy.role === 'splitling' ||
+        enemy.role === 'dasher';
       const contactRange = CONTACT_RANGE_TILES * visualScaleFor(enemy.role);
       if (melee && distance(enemy.position, player) <= contactRange) {
         const hitApplied = damagePlayer(
@@ -1845,7 +1920,7 @@ export const smartDashPolicy: DashPolicy = (world: DashThreatWorld): Vec2 | null
     const rx = player.x - bullet.position.x;
     const ry = player.y - bullet.position.y;
     const dist = Math.hypot(rx, ry);
-    if (dist > 3.6) continue;
+    if (dist > 4.8) continue;
     const speedSq = bullet.velocity.x * bullet.velocity.x + bullet.velocity.y * bullet.velocity.y;
     if (speedSq < 1e-6) continue;
     const tClosest = (rx * bullet.velocity.x + ry * bullet.velocity.y) / speedSq;
@@ -1877,7 +1952,7 @@ export const smartDashPolicy: DashPolicy = (world: DashThreatWorld): Vec2 | null
   for (const enemy of world.enemies) {
     if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
     const gap = distance(player, enemy.position);
-    if (enemy.action.kind === 'charge' && gap <= 4.2) {
+    if (enemy.action.kind === 'charge' && gap <= 5.2) {
       const chargeDir = unitVec(enemy.action.direction.x, enemy.action.direction.y);
       if (chargeDir !== null) {
         const dot =
@@ -1901,8 +1976,9 @@ export const smartDashPolicy: DashPolicy = (world: DashThreatWorld): Vec2 | null
       enemy.role === 'chaser' ||
       enemy.role === 'tank' ||
       enemy.role === 'splitter' ||
-      enemy.role === 'splitling';
-    const panicRange = enemy.id === BOSS_TARGET_ID ? 3.1 : 2.1 * visualScaleFor(enemy.role);
+      enemy.role === 'splitling' ||
+      enemy.role === 'dasher';
+    const panicRange = enemy.id === BOSS_TARGET_ID ? 3.1 : 2.4 * visualScaleFor(enemy.role);
     if (meleeRole && gap <= panicRange && gap < closestMeleeGap) {
       closestMeleeGap = gap;
       closestMelee = enemy;

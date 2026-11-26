@@ -175,11 +175,19 @@ export interface AtmosphereConfig {
 /** What is actually drawn for a chapter under an effects mode. */
 export interface VisibleAtmosphere {
   readonly layers: readonly AtmosphereLayer[];
-  /** Animals are created at all. */
+  /** Animals are created at all (disabled in combat rooms per ADR-026; reserved for M21 Village Hub). */
   readonly animals: boolean;
   /** Animated props (campfires/flags/flowers/plants) are created at all. */
   readonly animatedProps: boolean;
+  /** Opacity multiplier for static/animated background props in combat (`0.65`) vs hub/menu (`1`). */
+  readonly propAlpha: number;
 }
+
+/** M18 (ADR-026): muted opacity for background decor props in combat rooms so enemies/bullets pop. */
+export const COMBAT_PROP_ALPHA = 0.65;
+/** M18 (ADR-026): over-actor combat weather opacity bounds (`30–40%`, i.e. alpha `80–102`). */
+export const COMBAT_WEATHER_OPACITY_MIN = 0.3;
+export const COMBAT_WEATHER_OPACITY_MAX = 0.4;
 
 export const ATMOSPHERE_VERSION = 1;
 
@@ -479,17 +487,34 @@ export function chapterAtmosphere(
   return config.chapters[String(chapter)] ?? null;
 }
 
-/** Full: everything. Reduced: only non-secondary layers, no animals, no animated props. */
+export interface VisibleAtmosphereOptions {
+  /**
+   * True for combat rooms (default, M18 ADR-026): disables wandering `LivingDecor` animals
+   * (reserved for M21 Village Hub) and mutes background animated props to `COMBAT_PROP_ALPHA`.
+   * Pass `false` for non-combat scenes (Village Hub, living menu backdrop).
+   */
+  readonly combat?: boolean;
+}
+
+/** Full: weather + props (animals only outside combat). Reduced: primary weather only, no animals/props. */
 export function visibleAtmosphere(
   atmosphere: ChapterAtmosphere,
   mode: EffectsMode,
+  options: VisibleAtmosphereOptions = {},
 ): VisibleAtmosphere {
+  const combat = options.combat ?? true;
   if (mode !== 'reduced') {
-    return { layers: atmosphere.layers, animals: true, animatedProps: true };
+    return {
+      layers: atmosphere.layers,
+      animals: !combat,
+      animatedProps: true,
+      propAlpha: combat ? COMBAT_PROP_ALPHA : 1,
+    };
   }
   return {
     layers: atmosphere.layers.filter((layer) => !layer.secondary),
     animals: false,
     animatedProps: false,
+    propAlpha: combat ? COMBAT_PROP_ALPHA : 1,
   };
 }

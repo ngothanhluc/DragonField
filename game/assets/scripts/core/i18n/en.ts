@@ -245,6 +245,8 @@ export const EN = {
   'enemy.splitling': 'Splitling',
   'enemy.bomber': 'Bomber',
   'enemy.buffer': 'Buffer',
+  'enemy.dasher': 'Shadow Stalker',
+  'enemy.gunner': 'Volley Gunner',
   'enemy.fallback': 'Enemy',
 
   // --- Boss names & banners ---

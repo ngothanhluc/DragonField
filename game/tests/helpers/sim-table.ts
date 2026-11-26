@@ -19,6 +19,7 @@ import {
 } from '../../assets/scripts/core/characters/roster';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import type { ChapterData } from '../../assets/scripts/core/level/level-data';
+import type { UpgradeState } from '../../assets/scripts/core/meta/upgrades';
 import type { DoorReward } from '../../assets/scripts/core/run/doors';
 import { evolutionHintsForSkill } from '../../assets/scripts/core/skills/evolutions';
 import type { SkillDef } from '../../assets/scripts/core/skills/pool';
@@ -285,9 +286,23 @@ function chapterLevels(chapter: number): ChapterData {
 }
 
 /**
- * One row per (character, chapter, seed): the standing-still run (no Dash/Active/skills) and
- * the dodge + M14 kit (class Layer 1/2 stats + Dash + Signature Active + XP-earned skills &
- * Evolutions) run.
+ * M18 chapter-progression Meta upgrades (ADR-026):
+ * - Ch1: 0-Meta (proves skilled dodging + in-run kit clears Ch1 with zero Meta upgrades).
+ * - Ch2–Ch4: realistic earned Meta progression bought with prior chapter gold
+ *   (Ch2: Lv 2/1/1, Ch3: Lv 3/2/2, Ch4: Lv 5/4/4 full build).
+ */
+function metaForChapter(chapter: number): UpgradeState | undefined {
+  const zeroUtility = { xpMagnet: 0, goldBonus: 0, freeRerolls: 0 };
+  if (chapter <= 1) return undefined;
+  if (chapter === 2) return { upgrades: { hearts: 4, damage: 2, fireRate: 2, ...zeroUtility } };
+  if (chapter === 3) return { upgrades: { hearts: 4, damage: 3, fireRate: 3, ...zeroUtility } };
+  return { upgrades: { hearts: 5, damage: 4, fireRate: 4, ...zeroUtility } };
+}
+
+/**
+ * One row per (character, chapter, seed): the standing-still run (no Dash/Active/skills/Meta) and
+ * the dodge + M14 kit (class Layer 1/2 stats + chapter Meta + Dash + Signature Active + XP-earned
+ * skills & Evolutions) run.
  */
 export function simTableRows(options: {
   readonly chapters: readonly number[];
@@ -306,6 +321,7 @@ export function simTableRows(options: {
     for (const chapter of options.chapters) {
       const level = levelsByChapter.get(chapter);
       if (level === undefined) continue;
+      const meta = metaForChapter(chapter);
 
       for (const seed of balanceSeeds(chapter, options.seedsPerBoss)) {
         const standStillRun = simulateRun({
@@ -326,6 +342,7 @@ export function simTableRows(options: {
           shouldReroll: typicalRerollPolicy,
           chooseDoor: typicalDoorChoice,
           maxDurationMs: SIM_DEFAULT_MAX_DURATION_MS,
+          ...(meta !== undefined ? { meta } : {}),
         });
 
         rows.push({

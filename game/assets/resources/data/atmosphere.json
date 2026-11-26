@@ -22,16 +22,16 @@
           "secondary": false,
           "depth": "over-actors",
           "sprite": "fx.leaf",
-          "opacity": 1,
-          "count": 14
+          "opacity": 0.36,
+          "count": 9
         },
         {
           "kind": "blossoms",
           "secondary": true,
           "depth": "over-actors",
           "sprite": "fx.leaf-pink",
-          "opacity": 1,
-          "count": 10
+          "opacity": 0.34,
+          "count": 6
         }
       ],
       "decor": {
@@ -65,8 +65,8 @@
           "secondary": false,
           "depth": "over-actors",
           "sprite": "fx.rain",
-          "opacity": 0.92,
-          "count": 28
+          "opacity": 0.38,
+          "count": 18
         }
       ],
       "decor": {
@@ -84,8 +84,8 @@
           "secondary": false,
           "depth": "over-actors",
           "sprite": "fx.ash",
-          "opacity": 1,
-          "count": 16
+          "opacity": 0.36,
+          "count": 10
         }
       ],
       "decor": {
@@ -111,8 +111,8 @@
           "secondary": false,
           "depth": "over-actors",
           "sprite": "fx.sand",
-          "opacity": 0.95,
-          "count": 22
+          "opacity": 0.35,
+          "count": 14
         }
       ],
       "decor": {

@@ -173,13 +173,16 @@ describe('knockback — collision and room bounds', () => {
 });
 
 describe('knockback — tuning from config/tuning.json', () => {
-  it('DEFAULT_COMBAT has a positive, valid knockback', () => {
+  it('DEFAULT_COMBAT keeps player knockback positive and disables enemy hit knockback (M18 ADR-026)', () => {
     expect(DEFAULT_COMBAT.playerKnockbackDistanceTiles).toBeGreaterThan(0);
     expect(DEFAULT_COMBAT.playerKnockbackDurationMs).toBeGreaterThan(0);
-    expect(DEFAULT_COMBAT.enemyKnockbackDistanceTiles).toBeGreaterThan(0);
-    expect(DEFAULT_COMBAT.enemyKnockbackDurationMs).toBeGreaterThan(0);
-    expect(DEFAULT_COMBAT.enemyKnockbackDistanceTiles).toBeLessThan(
-      DEFAULT_COMBAT.playerKnockbackDistanceTiles,
-    );
+    expect(DEFAULT_COMBAT.enemyKnockbackDistanceTiles).toBe(0);
+    expect(DEFAULT_COMBAT.enemyKnockbackDurationMs).toBe(0);
+    expect(
+      startKnockback({ x: 10, y: 10 }, { x: 8, y: 10 }, {
+        distanceTiles: DEFAULT_COMBAT.enemyKnockbackDistanceTiles,
+        durationMs: DEFAULT_COMBAT.enemyKnockbackDurationMs,
+      }),
+    ).toBeNull();
   });
 });

@@ -108,11 +108,11 @@ describe('M17-1: RPG 100 HP scale & v1→v2 run-save migration', () => {
   });
 
   it('enemy & boss damage sits in 15–35 HP range so a 0-Meta 100 HP player survives ~4–6 hits', () => {
-    expect(contactDamageFor('chaser', false)).toBe(15);
-    expect(contactDamageFor('caster', false)).toBe(15);
+    expect(contactDamageFor('chaser', false)).toBe(25);
+    expect(contactDamageFor('caster', false)).toBe(18);
     expect(contactDamageFor('sniper', false)).toBe(25);
     expect(contactDamageFor('tank', false)).toBe(30);
-    expect(contactDamageFor('chaser', true)).toBe(Math.round(15 * 1.5));
+    expect(contactDamageFor('chaser', true)).toBe(Math.round(25 * 1.5));
     expect(contactDamageFor('tank', true)).toBe(Math.round(30 * 1.5));
 
     // Boss patterns deal 25–35 HP.

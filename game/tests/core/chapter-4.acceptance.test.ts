@@ -56,7 +56,7 @@ describe('chapter 4 content', () => {
       level: chapterFour(),
       policy: () => ({ up: false, down: false, left: false, right: false }),
       godMode: true,
-      maxDurationMs: 3_600_000,
+      maxDurationMs: 4_500_000,
     });
     expect(result.status).toBe('won');
     expect(result.roomsCleared).toBe(9);

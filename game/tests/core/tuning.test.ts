@@ -271,10 +271,10 @@ describe('tuning — changing the JSON changes behaviour (no hardcoding)', () =>
 });
 
 describe('tuning — M3: hitstop, stagger, elite extra attacks', () => {
-  it('70 ms hitstop and 150 ms stagger come from the JSON, not hardcoded', () => {
+  it('70 ms hitstop and 0 ms stagger (M18 ADR-026) come from the JSON, not hardcoded', () => {
     const rawCombat = (cloneSource().combat as Record<string, unknown>);
     expect(DEFAULT_COMBAT.enemyHitstopMs).toBe(70);
-    expect(DEFAULT_COMBAT.enemyStaggerMs).toBe(150);
+    expect(DEFAULT_COMBAT.enemyStaggerMs).toBe(0);
     expect(rawCombat.enemyHitstopMs).toBe(DEFAULT_COMBAT.enemyHitstopMs);
     expect(rawCombat.enemyStaggerMs).toBe(DEFAULT_COMBAT.enemyStaggerMs);
 

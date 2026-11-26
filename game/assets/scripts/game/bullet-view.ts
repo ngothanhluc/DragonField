@@ -16,6 +16,7 @@ import {
   _decorator,
   Color as CocosColor,
   Component,
+  Graphics as CocosGraphics,
   Node as CocosNode,
   Sprite as CocosSprite,
   UITransform as CocosUITransform,
@@ -43,6 +44,7 @@ const { ccclass } = _decorator;
 
 /** `cc` is an any module in this repo: types must be derived from the import value (see `texture-cache.ts`). */
 type Color = InstanceType<typeof CocosColor>;
+type Graphics = InstanceType<typeof CocosGraphics>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = Awaited<ReturnType<typeof getFrame>>;
@@ -82,6 +84,18 @@ const ROTATING_KEYS: ReadonlySet<string> = new Set([
  */
 const BULLET_NO_TINT = new CocosColor(255, 255, 255, 255);
 const ENEMY_BULLET_TINT = new CocosColor(255, 142, 78, 255);
+/**
+ * M18 (ADR-026): High-contrast enemy bullet layers (pooled once per node, zero per-frame redraws):
+ * - subtle hostile crimson/magenta outer glow halo (hidden under `Effects: Reduced`),
+ * - thick dark outer rim (`#140a16`) so shots pop against bright Ch4 sand and green Ch1 grass,
+ * - bright high-luminance inner core (`#fffbe6`) at the center.
+ */
+const ENEMY_HALO_COLOR = new CocosColor(255, 62, 118, 92);
+const ENEMY_RIM_COLOR = new CocosColor(20, 10, 22, 245);
+const ENEMY_CORE_COLOR = new CocosColor(255, 252, 232, 250);
+const ENEMY_HALO_RADIUS_TILES = 0.44;
+const ENEMY_RIM_RADIUS_TILES = 0.34;
+const ENEMY_CORE_RADIUS_TILES = 0.11;
 /** Signature Active (*Shadow Barrage*) shuriken tint + scale so barrages read immediately. */
 const SHADOW_BULLET_TINT = new CocosColor(195, 130, 255, 255);
 const SHADOW_DRAW_SCALE = 1.35;
@@ -156,13 +170,18 @@ interface KeyData {
 
 interface BulletNode {
   readonly node: Node;
+  readonly spriteNode: Node;
   readonly sprite: Sprite;
+  readonly enemyHalo: Node;
+  readonly enemyRim: Node;
+  readonly enemyCore: Node;
   lastFrame: number;
   lastKey: string;
   lastPlayer: boolean | null;
   lastSignature: SignatureSkillId | null;
   lastRadiusScale: number;
   lastAngle: number;
+  lastHaloEnabled: boolean | null;
 }
 
 interface GhostNode {
@@ -340,28 +359,31 @@ export class BulletView extends Component {
                   ? Math.min(1.6, bullet.radiusTiles / 0.2)
                   : 1;
       const drawScale =
-        (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) *
-        (DRAW_SCALE[key] ?? 1) *
-        radiusScale;
+        (BULLET_DRAW_UNITS / Math.max(data.width, data.height)) * (DRAW_SCALE[key] ?? 1);
+      const showEnemyContrast = !player;
+      const showEnemyHalo = showEnemyContrast && trailOn;
 
       if (
         entry.lastFrame !== frameIndex ||
         entry.lastKey !== key ||
         entry.lastPlayer !== player ||
         entry.lastSignature !== sigSkill ||
-        entry.lastRadiusScale !== radiusScale
+        entry.lastRadiusScale !== radiusScale ||
+        entry.lastHaloEnabled !== showEnemyHalo
       ) {
         entry.lastFrame = frameIndex;
         entry.lastKey = key;
         entry.lastPlayer = player;
         entry.lastSignature = sigSkill;
         entry.lastRadiusScale = radiusScale;
+        entry.lastHaloEnabled = showEnemyHalo;
         entry.sprite.spriteFrame = frame;
 
-        const transform = entry.node.getComponent(CocosUITransform);
+        const transform = entry.spriteNode.getComponent(CocosUITransform);
         // `sizeMode = CUSTOM` takes its size from UITransform — set the sliced frame size.
         if (transform !== null) transform.setContentSize(data.width, data.height);
-        entry.node.setScale(drawScale, drawScale, 1);
+        entry.node.setScale(radiusScale, radiusScale, 1);
+        entry.spriteNode.setScale(drawScale, drawScale, 1);
         entry.sprite.color =
           sigSkill === 'shadow-barrage'
             ? SHADOW_BULLET_TINT
@@ -370,6 +392,10 @@ export class BulletView extends Component {
               : player
                 ? playerTint
                 : enemyTint;
+
+        entry.enemyHalo.active = showEnemyHalo;
+        entry.enemyRim.active = showEnemyContrast;
+        entry.enemyCore.active = showEnemyContrast;
       }
 
       this.applyPosition(entry.node, bullet.position);
@@ -383,7 +409,7 @@ export class BulletView extends Component {
           : 0;
       if (entry.lastAngle !== angle) {
         entry.lastAngle = angle;
-        entry.node.angle = angle;
+        entry.spriteNode.angle = angle;
       }
 
       if (player && trailOn) {
@@ -398,7 +424,7 @@ export class BulletView extends Component {
                   ? 'crit'
                   : baseTrail;
         if (element !== null) {
-          this.spawnGhost(bullet, data, frameIndex, element, angle, drawScale);
+          this.spawnGhost(bullet, data, frameIndex, element, angle, drawScale * radiusScale);
         }
       }
     }
@@ -496,23 +522,48 @@ export class BulletView extends Component {
     if (this.nodes.length >= this.limit) return null;
 
     const node = new CocosNode(`bullet-${index}`);
-    const sprite: Sprite = node.addComponent(CocosSprite);
-    sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     node.parent = this.node;
     node.active = false;
 
+    // Pre-built high-contrast layers for enemy bullets (one Graphics per colour, drawn once).
+    const enemyHalo = this.createCircleNode('enemy-halo', node, ENEMY_HALO_RADIUS_TILES, ENEMY_HALO_COLOR);
+    const enemyRim = this.createCircleNode('enemy-rim', node, ENEMY_RIM_RADIUS_TILES, ENEMY_RIM_COLOR);
+
+    const spriteNode = new CocosNode('sprite');
+    spriteNode.parent = node;
+    const sprite: Sprite = spriteNode.addComponent(CocosSprite);
+    sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
+
+    const enemyCore = this.createCircleNode('enemy-core', node, ENEMY_CORE_RADIUS_TILES, ENEMY_CORE_COLOR);
+
     const entry: BulletNode = {
       node,
+      spriteNode,
       sprite,
+      enemyHalo,
+      enemyRim,
+      enemyCore,
       lastFrame: -1,
       lastKey: '',
       lastPlayer: null,
       lastSignature: null,
       lastRadiusScale: 1,
       lastAngle: Number.NaN,
+      lastHaloEnabled: null,
     };
     this.nodes.push(entry);
     return entry;
+  }
+
+  private createCircleNode(name: string, parent: Node, radius: number, color: Color): Node {
+    const node = new CocosNode(name);
+    node.parent = parent;
+    const graphics: Graphics = node.addComponent(CocosGraphics);
+    graphics.fillColor = color;
+    graphics.circle(0, 0, radius);
+    graphics.fill();
+    node.active = false;
+    return node;
   }
 
   private createGhost(index: number): GhostNode {

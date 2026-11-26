@@ -435,12 +435,12 @@ describe('Buffer role — haste aura, solo defensive orb, and EnemyBuffTracker',
 
 describe('WaveScheduler M13 role mixing', () => {
   it('mixes bomber in late Ch1 and bomber + buffer in Ch2–Ch4 without changing chapter totals', () => {
-    expect(specialRoleMixForRoom(1, 1)).toEqual({ bomberShare: 0, bufferShare: 0 });
+    expect(specialRoleMixForRoom(1, 1)).toMatchObject({ bomberShare: 0, bufferShare: 0 });
     expect(specialRoleMixForRoom(1, 4).bomberShare).toBeGreaterThan(0);
-    expect(specialRoleMixForRoom(2, 1)).toEqual({ bomberShare: 0, bufferShare: 0 });
+    expect(specialRoleMixForRoom(2, 1)).toMatchObject({ bomberShare: 0, bufferShare: 0 });
     expect(specialRoleMixForRoom(2, 2).bomberShare).toBeGreaterThan(0);
     expect(specialRoleMixForRoom(2, 2).bufferShare).toBeGreaterThan(0);
-    expect(specialRoleMixForRoom(4, 1)).toEqual({ bomberShare: 0, bufferShare: 0 });
+    expect(specialRoleMixForRoom(4, 1)).toMatchObject({ bomberShare: 0, bufferShare: 0 });
     expect(specialRoleMixForRoom(4, 2).bomberShare).toBeGreaterThan(0);
     expect(specialRoleMixForRoom(4, 2).bufferShare).toBeGreaterThan(0);
 

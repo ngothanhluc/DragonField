@@ -11,6 +11,7 @@
  */
 import {
   _decorator,
+  Color as CocosColor,
   Component,
   Node as CocosNode,
   Sprite as CocosSprite,
@@ -110,7 +111,8 @@ export class LivingDecor extends Component {
       }
       if (!this.isValid) return { animals: 0, props: 0 };
 
-      const animated = this.createSprite(item.sprite, entry, frames, item.at);
+      const propAlpha = item.kind === 'prop' ? visible.propAlpha : 1;
+      const animated = this.createSprite(item.sprite, entry, frames, item.at, propAlpha);
       if (item.kind === 'animal') {
         this.animals.push({ ...animated, state: createAnimal(item.at) });
       } else {
@@ -167,6 +169,7 @@ export class LivingDecor extends Component {
     entry: SpriteEntry,
     frames: readonly SpriteFrame[],
     at: Vec2,
+    alpha = 1,
   ): AnimatedSprite {
     const node = new CocosNode(key);
     node.parent = this.node;
@@ -175,6 +178,10 @@ export class LivingDecor extends Component {
     sprite.sizeMode = CocosSprite.SizeMode.CUSTOM;
     sprite.trim = false;
     sprite.spriteFrame = frames[0]!;
+    if (alpha < 1) {
+      const clamped = Math.max(0, Math.min(255, Math.round(alpha * 255)));
+      sprite.color = new CocosColor(255, 255, 255, clamped);
+    }
 
     const transform: UITransform | null = node.getComponent(CocosUITransform);
     // CUSTOM takes its size from UITransform (defaults to 100×100, ~3× too big otherwise).

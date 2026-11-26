@@ -13,23 +13,23 @@
     "targetingRangeTiles": 8,
     "playerKnockbackDistanceTiles": 1.5,
     "playerKnockbackDurationMs": 180,
-    "enemyKnockbackDistanceTiles": 0.35,
-    "enemyKnockbackDurationMs": 120,
+    "enemyKnockbackDistanceTiles": 0,
+    "enemyKnockbackDurationMs": 0,
     "enemyHitstopMs": 70,
-    "enemyStaggerMs": 150
+    "enemyStaggerMs": 0
   },
   "chapters": {
     "enemyHealthMultipliers": [
       1,
-      1.1,
-      1.18,
-      1.28
+      1.15,
+      1.28,
+      1.42
     ],
     "enemyDamageMultipliers": [
       1,
-      1,
-      1,
-      1.05
+      1.05,
+      1.12,
+      1.2
     ]
   },
   "enemies": {
@@ -40,7 +40,7 @@
       "scale": 1.15,
       "chaser": {
         "pounceTelegraphMs": 300,
-        "pounceSpeedTilesPerSecond": 6.2,
+        "pounceSpeedTilesPerSecond": 7.8,
         "pounceDurationMs": 300,
         "pounceCooldownMs": 1050,
         "pounceRangeTiles": 6
@@ -62,6 +62,13 @@
         "buffSpeedMultiplier": 1.45,
         "volleyShots": 3,
         "volleySpreadRadians": 0.28
+      },
+      "dasher": {
+        "extraCharges": 1
+      },
+      "gunner": {
+        "staggerDelayMs": 260,
+        "staggerAngleOffsetFactor": 0.5
       }
     },
     "ai": {
@@ -77,49 +84,54 @@
       "flankAngleRadians": 0.48,
       "flankMinDistanceTiles": 2.6,
       "flankMaxDistanceTiles": 9,
-      "flankOffsetTiles": 2.2
+      "flankOffsetTiles": 2.2,
+      "gunnerVolleyShots": 3,
+      "gunnerLateMinChapter": 3,
+      "gunnerLateVolleyShots": 5,
+      "gunnerSpreadRadians": 0.22
     },
     "roles": {
       "chaser": {
         "health": 6,
-        "speedTilesPerSecond": 2.75,
+        "speedTilesPerSecond": 3.45,
         "attackCooldownMs": 0,
         "telegraphMs": 0,
         "preferredRangeMinTiles": 0.75,
         "preferredRangeMaxTiles": 0.75,
-        "contactDamage": 15,
+        "contactDamage": 25,
         "chargeSpeedTilesPerSecond": 0,
         "chargeDurationMs": 0,
         "scale": 1
       },
       "caster": {
         "health": 4,
-        "speedTilesPerSecond": 1.6,
-        "attackCooldownMs": 2800,
+        "speedTilesPerSecond": 2.1,
+        "attackCooldownMs": 2600,
         "telegraphMs": 500,
         "preferredRangeMinTiles": 4,
         "preferredRangeMaxTiles": 6,
-        "contactDamage": 15,
+        "contactDamage": 18,
         "chargeSpeedTilesPerSecond": 0,
         "chargeDurationMs": 0,
-        "scale": 1
+        "scale": 1,
+        "projectileSpeedTilesPerSecond": 6.2
       },
       "tank": {
         "health": 10,
-        "speedTilesPerSecond": 1.2,
+        "speedTilesPerSecond": 1.55,
         "attackCooldownMs": 2000,
         "telegraphMs": 700,
         "preferredRangeMinTiles": 0,
         "preferredRangeMaxTiles": 8,
         "contactDamage": 30,
-        "chargeSpeedTilesPerSecond": 6.6,
+        "chargeSpeedTilesPerSecond": 8,
         "chargeDurationMs": 260,
         "scale": 1.75
       },
       "sniper": {
         "health": 4,
-        "speedTilesPerSecond": 1.1,
-        "attackCooldownMs": 3700,
+        "speedTilesPerSecond": 1.45,
+        "attackCooldownMs": 3500,
         "telegraphMs": 900,
         "preferredRangeMinTiles": 8,
         "preferredRangeMaxTiles": 12,
@@ -127,16 +139,16 @@
         "chargeSpeedTilesPerSecond": 0,
         "chargeDurationMs": 0,
         "scale": 1,
-        "projectileSpeedTilesPerSecond": 10
+        "projectileSpeedTilesPerSecond": 13.5
       },
       "splitter": {
         "health": 8,
-        "speedTilesPerSecond": 1.85,
+        "speedTilesPerSecond": 2.35,
         "attackCooldownMs": 0,
         "telegraphMs": 0,
         "preferredRangeMinTiles": 0.75,
         "preferredRangeMaxTiles": 0.75,
-        "contactDamage": 18,
+        "contactDamage": 20,
         "chargeSpeedTilesPerSecond": 0,
         "chargeDurationMs": 0,
         "scale": 1,
@@ -144,19 +156,19 @@
       },
       "splitling": {
         "health": 2,
-        "speedTilesPerSecond": 2.9,
+        "speedTilesPerSecond": 3.65,
         "attackCooldownMs": 0,
         "telegraphMs": 0,
         "preferredRangeMinTiles": 0.6,
         "preferredRangeMaxTiles": 0.6,
-        "contactDamage": 15,
+        "contactDamage": 18,
         "chargeSpeedTilesPerSecond": 0,
         "chargeDurationMs": 0,
         "scale": 0.7
       },
       "bomber": {
         "health": 7,
-        "speedTilesPerSecond": 2.55,
+        "speedTilesPerSecond": 3.25,
         "attackCooldownMs": 2400,
         "telegraphMs": 900,
         "preferredRangeMinTiles": 0,
@@ -170,8 +182,8 @@
       },
       "buffer": {
         "health": 6,
-        "speedTilesPerSecond": 1.45,
-        "attackCooldownMs": 3500,
+        "speedTilesPerSecond": 1.9,
+        "attackCooldownMs": 3400,
         "telegraphMs": 700,
         "preferredRangeMinTiles": 4.5,
         "preferredRangeMaxTiles": 6.8,
@@ -179,10 +191,35 @@
         "chargeSpeedTilesPerSecond": 0,
         "chargeDurationMs": 0,
         "scale": 1.05,
-        "projectileSpeedTilesPerSecond": 3.2,
+        "projectileSpeedTilesPerSecond": 5,
         "buffRadiusTiles": 6,
         "buffSpeedMultiplier": 1.35,
         "buffDurationMs": 3500
+      },
+      "dasher": {
+        "health": 6,
+        "speedTilesPerSecond": 4,
+        "attackCooldownMs": 1800,
+        "telegraphMs": 350,
+        "preferredRangeMinTiles": 3,
+        "preferredRangeMaxTiles": 6,
+        "contactDamage": 20,
+        "chargeSpeedTilesPerSecond": 9.5,
+        "chargeDurationMs": 280,
+        "scale": 1
+      },
+      "gunner": {
+        "health": 7,
+        "speedTilesPerSecond": 2,
+        "attackCooldownMs": 2300,
+        "telegraphMs": 550,
+        "preferredRangeMinTiles": 5,
+        "preferredRangeMaxTiles": 6.8,
+        "contactDamage": 18,
+        "chargeSpeedTilesPerSecond": 0,
+        "chargeDurationMs": 0,
+        "scale": 1.05,
+        "projectileSpeedTilesPerSecond": 7.5
       }
     }
   },
@@ -202,15 +239,15 @@
     "lookAheadRate": 4
   },
   "waves": {
-    "aliveCap": 24,
-    "aliveCapStart": 4,
-    "aliveCapStepPerRoom": 3,
-    "spawnIntervalMs": 1800,
+    "aliveCap": 30,
+    "aliveCapStart": 7,
+    "aliveCapStepPerRoom": 4,
+    "spawnIntervalMs": 1500,
     "spawnBatchSize": 4,
     "spawnJitterTiles": 3,
-    "telegraphMs": 800,
+    "telegraphMs": 400,
     "minSpawnDistanceTiles": 6,
-    "maxSpawnDistanceTiles": 18,
+    "maxSpawnDistanceTiles": 10.5,
     "aggroRadiusTiles": 160,
     "chapterTotals": [
       {
@@ -352,7 +389,9 @@
       "splitter": 16,
       "splitling": 0,
       "bomber": 16,
-      "buffer": 18
+      "buffer": 18,
+      "dasher": 14,
+      "gunner": 15
     },
     "eliteMultiplier": 2.5,
     "orbs": {

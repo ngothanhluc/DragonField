@@ -243,6 +243,8 @@ export const VI: Readonly<Record<TranslationKey, string>> = {
   'enemy.splitling': 'Phân Thể Nhỏ',
   'enemy.bomber': 'Cảm Tử',
   'enemy.buffer': 'Hỗ Trợ',
+  'enemy.dasher': 'Ám Sát',
+  'enemy.gunner': 'Pháo Thủ Chùm',
   'enemy.fallback': 'Quái vật',
 
   // --- Boss names & banners ---

@@ -24,6 +24,9 @@ export const GOLD = {
   /** M13 roles: bomber and buffer are high-priority specialist yokai. */
   bomber: 2,
   buffer: 2,
+  /** M18 roles: dasher (Shadow Stalker) and gunner (Volley Gunner). */
+  dasher: 2,
+  gunner: 2,
   /** Elites are ×3 the regular version (GDD §4: elites only change health/damage). */
   eliteMultiplier: 3,
   roomClear: 5,
