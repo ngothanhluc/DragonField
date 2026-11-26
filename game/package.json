@@ -14,6 +14,8 @@
     "gen:splitlings": "bun run scripts/gen-splitlings.ts",
     "stage:art": "bun run scripts/stage-m6-assets.ts",
     "stage:m9": "bun run scripts/stage-m9-monsters.ts",
+    "stage:m18": "bun run scripts/stage-m18-monsters.ts",
+    "outline:monsters": "bun run scripts/outline-monsters.ts",
     "stage:audio": "bun run scripts/stage-m8-audio.ts",
     "stage:gen": "bun run scripts/stage-gemini-art.ts",
     "build:room": "bun run scripts/build-room.ts",

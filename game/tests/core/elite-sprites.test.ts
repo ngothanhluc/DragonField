@@ -41,6 +41,14 @@ const MONSTERS = [
   'lanterngreen',
   'spirit2',
   'owl2',
+  // M18 — dasher and gunner monsters (`spirit` already listed above).
+  'owl',
+  'reptile',
+  'beast',
+  'lizard',
+  'octopus2',
+  'skull',
+  'dragon',
 ] as const;
 const CLIPS = ['idle', 'walk'] as const;
 const DIRS = ['down', 'up', 'left', 'right'] as const;

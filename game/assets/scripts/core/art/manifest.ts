@@ -114,6 +114,14 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
   lanterngreen: monsterAnimations('lanterngreen'),
   spirit2: monsterAnimations('spirit2'),
   owl2: monsterAnimations('owl2'),
+  // M18 — dasher and gunner monsters (Ch1–Ch4; `spirit` already listed above).
+  owl: monsterAnimations('owl'),
+  reptile: monsterAnimations('reptile'),
+  beast: monsterAnimations('beast'),
+  lizard: monsterAnimations('lizard'),
+  octopus2: monsterAnimations('octopus2'),
+  skull: monsterAnimations('skull'),
+  dragon: monsterAnimations('dragon'),
   tengu: ['tengu.idle', 'tengu.walk', 'tengu.attack', 'tengu.hit', 'tengu.trans'],
   squid: [
     'squid.idle',

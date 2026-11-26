@@ -40,6 +40,14 @@ const MONSTERS = [
   'lanterngreen',
   'spirit2',
   'owl2',
+  // M18 — dasher and gunner monsters (staged from the pack; `spirit` already listed above).
+  'owl',
+  'reptile',
+  'beast',
+  'lizard',
+  'octopus2',
+  'skull',
+  'dragon',
 ] as const;
 const BOSSES = ['tengu', 'squid', 'samurai', 'frog', 'slime', 'bamboo', 'racoon', 'redtengu'] as const;
 
