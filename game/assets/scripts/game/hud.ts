@@ -1,7 +1,8 @@
 /**
- * In-game HUD (M11 T4): high-contrast pixel backing plates + crisp pack icons, anchored to the
- * visible room band via `WorldCamera.hudScale` and leaving bottom-left / bottom-centre safe bands
- * clear for M13 (Dash + Active) and M12 (XP bar + level badge).
+ * In-game HUD (M11 T4 + M12 T2): high-contrast pixel backing plates + crisp pack icons, anchored
+ * to the visible room band via `WorldCamera.hudScale`, with an event-driven bottom-centre XP bar +
+ * `LV X` badge (`m12XpBar`), a 20-slot (10×2) bottom-right skill grid, and a clean bottom-left
+ * reserve for M13 (Dash + Active).
  *
  * Real UI (`Canvas` + `UI_2D` camera), laid out in 512×288 design pixels via pure geometry in
  * `core/view/hud-layout.ts`.
@@ -40,7 +41,14 @@ import {
   HUD_PLATE_SLICE_INSETS,
   HUD_ROOM_ICON_SIZE_PX,
   HUD_SKILL_SLOTS,
+  HUD_XP_LEVEL_FONT_SIZE,
+  HUD_XP_LEVEL_LINE_HEIGHT,
+  HUD_XP_PROGRESS_FONT_SIZE,
+  HUD_XP_PROGRESS_LINE_HEIGHT,
   computeHudLayout,
+  computeHudXpFillRatio,
+  formatHudLevelText,
+  formatHudXpProgressText,
   type HudArrowLimits,
   type HudLayout,
   type HudRect,
@@ -112,6 +120,17 @@ const DEFAULT_LABEL_FONT_SIZE = 12;
  */
 const PLATE_TINT = new CocosColor(44, 52, 68, 232);
 const PLATE_BORDER_COLOR = new CocosColor(196, 152, 96, 215);
+
+/**
+ * M12 XP bar & level badge colours (AGENTS.md rule: strictly ONE `Graphics` node per colour).
+ */
+const XP_BADGE_BG_COLOR = new CocosColor(24, 20, 16, 240);
+const XP_BADGE_BORDER_COLOR = new CocosColor(232, 190, 96, 235);
+const XP_TRACK_BG_COLOR = new CocosColor(16, 22, 32, 245);
+const XP_TRACK_BORDER_COLOR = new CocosColor(78, 112, 140, 225);
+const XP_FILL_CYAN_COLOR = new CocosColor(68, 218, 255, 255);
+const XP_FILL_HIGHLIGHT_COLOR = new CocosColor(196, 248, 255, 235);
+const XP_FILL_FULL_GOLD_COLOR = new CocosColor(255, 214, 92, 255);
 
 /** Rarity colours shared by skill cards and the HUD skill row. */
 export const RARITY_COLORS = {
@@ -218,10 +237,24 @@ export class Hud extends Component {
   private cachedArrowLimits: HudArrowLimits = {
     halfWidth: HUD_DESIGN_WIDTH / 2 - 14,
     top: HUD_DESIGN_HEIGHT / 2 - 59,
-    bottom: HUD_DESIGN_HEIGHT / 2 - 28,
+    bottom: HUD_DESIGN_HEIGHT / 2 - 32,
   };
 
-  /** HUD skill slots: icon + stack, framed by rarity. Created once, hidden when empty. */
+  /** M12 bottom-centre XP bar + `LV X` badge: event-driven, zero per-frame geometry rebuilds. */
+  private xpRoot: Node | null = null;
+  private xpFillRoot: Node | null = null;
+  private xpFillCyanNode: Node | null = null;
+  private xpFillGoldNode: Node | null = null;
+  private xpLevelLabel: Label | null = null;
+  private xpProgressLabel: Label | null = null;
+  private shownXpLevel = -1;
+  private shownXpCurrent = Number.NaN;
+  private shownXpRequired = Number.NaN;
+  private shownXpLevelText = '';
+  private shownXpProgressText = '';
+  private shownXpRatio = -1;
+
+  /** HUD skill slots (up to 20 in a 10×2 grid): icon + stack, framed by rarity. */
   private readonly skillSlots: SkillSlot[] = [];
   private skillStripPlate: HudPlateHandle | null = null;
   private shownSkillCount = -1;
@@ -282,6 +315,7 @@ export class Hud extends Component {
 
     this.createTopLeftGroup(goldCoinFrame, plateFrame, maxHearts, layout);
     this.createTopRightGroup(roomIconFrame, enemyIconFrame, plateFrame, layout);
+    this.createXpBar(plateFrame, layout);
     this.createSkillRow(plateFrame, layout);
     this.createBossBar(barFrame, plateFrame, layout);
     this.createArrows();
@@ -292,6 +326,7 @@ export class Hud extends Component {
     this.setHearts(maxHearts);
     this.setGold(0);
     this.setEnemiesLeft(null);
+    this.setXp(1, 0, 0);
     this.setSkills([]);
   }
 
@@ -361,13 +396,89 @@ export class Hud extends Component {
     }
   }
 
+  /** Current XP state displayed on the HUD, exposed for `hud-sync` coherence checks. */
+  get activeXpLevel(): number {
+    return this.shownXpLevel;
+  }
+
+  get activeXpCurrent(): number {
+    return this.shownXpCurrent;
+  }
+
+  get activeXpRequired(): number {
+    return this.shownXpRequired;
+  }
+
   /**
-   * Skills picked up: icon + stack count (up to 8 slots), framed by rarity inside a compact
-   * bottom-right plate that leaves M12's XP bar and M13's Dash/Active bands completely clear.
+   * Event-driven XP bar + `LV X` badge setter (M12 T2).
+   *
+   * Skips label/scale updates whenever `(level, currentXp, requiredXp)` is unchanged; when XP
+   * advances within a level, only the fill bar scale and compact progress string update.
+   */
+  setXp(level: number, currentXp: number, requiredXp: number): void {
+    if (this.xpRoot === null) return;
+    if (
+      Object.is(level, this.shownXpLevel) &&
+      Object.is(currentXp, this.shownXpCurrent) &&
+      Object.is(requiredXp, this.shownXpRequired)
+    ) {
+      return;
+    }
+
+    this.shownXpLevel = level;
+    this.shownXpCurrent = currentXp;
+    this.shownXpRequired = requiredXp;
+
+    const levelText = formatHudLevelText(level);
+    if (levelText !== this.shownXpLevelText) {
+      this.shownXpLevelText = levelText;
+      if (this.xpLevelLabel !== null) {
+        this.xpLevelLabel.string = levelText;
+      }
+    }
+
+    const ratio = computeHudXpFillRatio(currentXp, requiredXp);
+    if (ratio !== this.shownXpRatio) {
+      this.shownXpRatio = ratio;
+      const fill = this.xpFillRoot;
+      if (fill !== null) {
+        if (ratio <= 0) {
+          if (fill.active) fill.active = false;
+        } else {
+          if (!fill.active) fill.active = true;
+          fill.setScale(ratio, 1, 1);
+          const isFull = ratio >= 1;
+          if (this.xpFillCyanNode !== null && this.xpFillCyanNode.active !== !isFull) {
+            this.xpFillCyanNode.active = !isFull;
+          }
+          if (this.xpFillGoldNode !== null && this.xpFillGoldNode.active !== isFull) {
+            this.xpFillGoldNode.active = isFull;
+          }
+        }
+      }
+    }
+
+    const progressText = formatHudXpProgressText(currentXp, requiredXp);
+    if (progressText !== this.shownXpProgressText) {
+      this.shownXpProgressText = progressText;
+      if (this.xpProgressLabel !== null) {
+        this.xpProgressLabel.string = progressText;
+        const visible = progressText !== '';
+        if (this.xpProgressLabel.node.active !== visible) {
+          this.xpProgressLabel.node.active = visible;
+        }
+      }
+    }
+  }
+
+  /**
+   * Skills picked up: icon + stack count (up to 20 distinct slots in a 10×2 grid), framed by rarity
+   * inside a compact bottom-right plate above M12's XP bar and clear of M13's Dash/Active band.
    */
   setSkills(entries: readonly OwnedSkillStacks[]): void {
     const shownCount = Math.min(HUD_SKILL_SLOTS, entries.length);
-    const extra = Math.max(0, entries.length - HUD_SKILL_SLOTS);
+    const hasOverflow = entries.length > HUD_SKILL_SLOTS;
+    const extra = hasOverflow ? entries.length - (HUD_SKILL_SLOTS - 1) : 0;
     if (this.skillsMatch(entries, shownCount, extra)) return;
 
     const countChanged = shownCount !== this.shownSkillCount;
@@ -918,6 +1029,94 @@ export class Hud extends Component {
     this.doorHintRoot = root;
   }
 
+  /**
+   * M12 bottom-centre XP bar + `LV X` badge inside `m12XpBar`.
+   *
+   * Built with sibling dark 9-slice plate + single-colour `Graphics` nodes (strictly one colour per
+   * `Graphics` node per AGENTS.md) so `setXp` only updates `setScale` and label strings on XP events.
+   */
+  private createXpBar(plateFrame: SpriteFrame, layout: HudLayout): void {
+    const group = new CocosNode('hud-xp-bar');
+    group.layer = Layers.Enum.UI_2D;
+    group.parent = this.node;
+    this.xpRoot = group;
+
+    const { plate, badge, barTrack, barFillMax, levelLabel, progressLabel } = layout.xpBar;
+    createHudPlate(group, 'xp-plate', plateFrame, plate);
+
+    // `LV X` badge pill: dedicated fill node + dedicated 1px gold border node.
+    createFilledRectNode(group, 'xp-badge-bg', badge, XP_BADGE_BG_COLOR);
+    createStrokedRectNode(group, 'xp-badge-border', badge, XP_BADGE_BORDER_COLOR);
+
+    // XP progress track trough: dedicated fill node + dedicated 1px frame node.
+    createFilledRectNode(group, 'xp-track-bg', barTrack, XP_TRACK_BG_COLOR);
+    createStrokedRectNode(group, 'xp-track-border', barTrack, XP_TRACK_BORDER_COLOR);
+
+    // Left-anchored XP fill group (`setScale(ratio, 1, 1)` avoids any runtime Graphics redraws).
+    const fillRoot = new CocosNode('xp-fill');
+    fillRoot.layer = Layers.Enum.UI_2D;
+    fillRoot.parent = group;
+    fillRoot.setPosition(barFillMax.left, barFillMax.centerY, 0);
+    fillRoot.active = false;
+    this.xpFillRoot = fillRoot;
+
+    const cyanGroup = new CocosNode('xp-fill-cyan');
+    cyanGroup.layer = Layers.Enum.UI_2D;
+    cyanGroup.parent = fillRoot;
+    createLeftAnchoredFillNode(
+      cyanGroup,
+      'xp-fill-cyan-main',
+      barFillMax.width,
+      barFillMax.height,
+      0,
+      XP_FILL_CYAN_COLOR,
+    );
+    const highlightHeight = Math.min(2, barFillMax.height);
+    createLeftAnchoredFillNode(
+      cyanGroup,
+      'xp-fill-cyan-shine',
+      barFillMax.width,
+      highlightHeight,
+      (barFillMax.height - highlightHeight) / 2,
+      XP_FILL_HIGHLIGHT_COLOR,
+    );
+    this.xpFillCyanNode = cyanGroup;
+
+    const goldNode = createLeftAnchoredFillNode(
+      fillRoot,
+      'xp-fill-gold',
+      barFillMax.width,
+      barFillMax.height,
+      0,
+      XP_FILL_FULL_GOLD_COLOR,
+    );
+    goldNode.active = false;
+    this.xpFillGoldNode = goldNode;
+
+    const lvLabel = createStyledLabel(
+      group,
+      'xp-level',
+      layout.xpBar.levelText,
+      HUD_XP_LEVEL_FONT_SIZE,
+      HUD_XP_LEVEL_LINE_HEIGHT,
+      GOLD_TEXT_COLOR,
+    );
+    lvLabel.node.setPosition(levelLabel.x, levelLabel.y, 0);
+    this.xpLevelLabel = lvLabel;
+
+    const progLabel = createStyledLabel(
+      group,
+      'xp-progress',
+      '',
+      HUD_XP_PROGRESS_FONT_SIZE,
+      HUD_XP_PROGRESS_LINE_HEIGHT,
+      TEXT_COLOR,
+    );
+    progLabel.node.setPosition(progressLabel.x, progressLabel.y, 0);
+    progLabel.node.active = false;
+    this.xpProgressLabel = progLabel;
+  }
+
   private createSkillRow(plateFrame: SpriteFrame, layout: HudLayout): void {
     const group = new CocosNode('hud-skill-strip');
     group.layer = Layers.Enum.UI_2D;
@@ -1055,6 +1254,56 @@ export class Hud extends Component {
       this.heartNodes.push(node);
     }
   }
+}
+
+/** Single-colour filled rectangle `Graphics` node positioned at `rect.centerX/Y` (one colour per node). */
+function createFilledRectNode(parent: Node, name: string, rect: HudRect, color: Color): Node {
+  const node = new CocosNode(name);
+  node.layer = Layers.Enum.UI_2D;
+  node.parent = parent;
+  node.setPosition(rect.centerX, rect.centerY, 0);
+
+  const graphics: Graphics = node.addComponent(CocosGraphics);
+  graphics.fillColor = color;
+  graphics.rect(-rect.width / 2, -rect.height / 2, rect.width, rect.height);
+  graphics.fill();
+  return node;
+}
+
+/** Single-colour 1 px stroked rectangle `Graphics` node positioned at `rect.centerX/Y`. */
+function createStrokedRectNode(parent: Node, name: string, rect: HudRect, color: Color): Node {
+  const node = new CocosNode(name);
+  node.layer = Layers.Enum.UI_2D;
+  node.parent = parent;
+  node.setPosition(rect.centerX, rect.centerY, 0);
+
+  const graphics: Graphics = node.addComponent(CocosGraphics);
+  graphics.lineWidth = 1;
+  graphics.strokeColor = color;
+  graphics.rect(-rect.width / 2 + 0.5, -rect.height / 2 + 0.5, rect.width - 1, rect.height - 1);
+  graphics.stroke();
+  return node;
+}
+
+/** Left-anchored single-colour filled rectangle `[0..width]` so `parent.setScale(ratio, 1, 1)` scales cleanly. */
+function createLeftAnchoredFillNode(
+  parent: Node,
+  name: string,
+  width: number,
+  height: number,
+  offsetY: number,
+  color: Color,
+): Node {
+  const node = new CocosNode(name);
+  node.layer = Layers.Enum.UI_2D;
+  node.parent = parent;
+  node.setPosition(0, offsetY, 0);
+
+  const graphics: Graphics = node.addComponent(CocosGraphics);
+  graphics.fillColor = color;
+  graphics.rect(0, -height / 2, width, height);
+  graphics.fill();
+  return node;
 }
 
 /** Slice a 9-patch `SpriteFrame` with explicit corner insets so `SLICED` sprites never distort edges. */

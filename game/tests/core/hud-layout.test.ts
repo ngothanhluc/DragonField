@@ -21,13 +21,25 @@ import {
   HUD_PLATE_SLICE_INSETS,
   HUD_ROOM_ICON_SIZE_PX,
   HUD_SKILL_ICON_PX,
+  HUD_SKILL_MAX_COLS,
+  HUD_SKILL_MAX_ROWS,
   HUD_SKILL_SLOTS,
+  HUD_SKILL_STRIP_HEIGHT_PX,
+  HUD_SKILL_STRIP_MAX_HEIGHT_PX,
+  HUD_XP_BADGE_GAP_PX,
+  HUD_XP_LEVEL_FONT_SIZE,
+  HUD_XP_LEVEL_LINE_HEIGHT,
+  HUD_XP_PROGRESS_FONT_SIZE,
+  HUD_XP_PROGRESS_LINE_HEIGHT,
   computeHudLayout,
+  computeHudXpFillRatio,
   diffCombatHudSnapshot,
   estimateHudLabelWidth,
   formatHudEnemiesText,
   formatHudGoldText,
+  formatHudLevelText,
   formatHudRoomText,
+  formatHudXpProgressText,
   hudRectInside,
   hudRectOnCanvas,
   hudRectsOverlap,
@@ -155,48 +167,165 @@ describe('HUD backing plates and internal element containment', () => {
     expect(enemiesLabelRect.left).toBeGreaterThanOrEqual(enemyIconRect.right + 2);
   });
 
-  it('keeps the skill strip hidden at 0 skills and wraps 1..8 skills cleanly on the bottom-right', () => {
+  it('expands the bottom-right skill grid cleanly across 0..20 distinct skills (10×2) with zero truncation or slot overlap', () => {
+    expect(HUD_SKILL_MAX_COLS).toBe(10);
+    expect(HUD_SKILL_MAX_ROWS).toBe(2);
+    expect(HUD_SKILL_SLOTS).toBe(20);
+
     const empty = computeHudLayout({ skillCount: 0 });
     expect(empty.skillStrip.activePlate).toBeNull();
+    expect(empty.skillStrip.shownCount).toBe(0);
+    expect(empty.skillStrip.rowCount).toBe(0);
+    expect(empty.skillStrip.slotCenters).toHaveLength(HUD_SKILL_SLOTS);
 
-    let prevWidth = 0;
+    let prevSingleRowWidth = 0;
     for (let count = 1; count <= HUD_SKILL_SLOTS; count += 1) {
       const layout = computeHudLayout({ skillCount: count });
-      const active = layout.skillStrip.activePlate;
-      expect(active).not.toBeNull();
-      expect(active!.right).toBe(layout.safeArea.right);
-      expect(active!.width).toBeGreaterThan(prevWidth);
-      expect(hudRectInside(active!, layout.skillStrip.maxPlate)).toBe(true);
-      prevWidth = active!.width;
+      const { activePlate, maxPlate, shownCount, rowCount, colCount, slotCenters } =
+        layout.skillStrip;
 
+      // Zero silent truncation for up to 20 distinct skills (easily covering 12–16 M12 picks).
+      expect(shownCount).toBe(count);
+      expect(activePlate).not.toBeNull();
+      expect(activePlate!.right).toBe(layout.safeArea.right);
+      expect(hudRectInside(activePlate!, maxPlate)).toBe(true);
+
+      if (count <= HUD_SKILL_MAX_COLS) {
+        expect(rowCount).toBe(1);
+        expect(colCount).toBe(count);
+        expect(activePlate!.height).toBe(HUD_SKILL_STRIP_HEIGHT_PX);
+        expect(activePlate!.width).toBeGreaterThan(prevSingleRowWidth);
+        prevSingleRowWidth = activePlate!.width;
+      } else {
+        expect(rowCount).toBe(2);
+        expect(colCount).toBe(HUD_SKILL_MAX_COLS);
+        expect(activePlate!.height).toBe(HUD_SKILL_STRIP_MAX_HEIGHT_PX);
+        expect(activePlate!).toEqual(maxPlate);
+      }
+
+      const slotRects: Array<readonly [string, HudRect]> = [];
       for (let slot = 0; slot < count; slot += 1) {
-        const center = layout.skillStrip.slotCenters[slot]!;
+        const center = slotCenters[slot]!;
         const slotRect = makeHudRect(
           center.x - (HUD_SKILL_ICON_PX + 2) / 2,
           center.y - (HUD_SKILL_ICON_PX + 2) / 2,
           HUD_SKILL_ICON_PX + 2,
           HUD_SKILL_ICON_PX + 2,
         );
-        expect(hudRectInside(slotRect, active!)).toBe(true);
+        expect(hudRectInside(slotRect, activePlate!)).toBe(true);
+        expect(hudRectInside(slotRect, maxPlate)).toBe(true);
+        slotRects.push([`skill-${slot}`, slotRect]);
+      }
+      assertPairwiseSeparated(slotRects, 2);
+    }
+  });
+
+  it('encloses M12 XP bar track, fill, LV badge, and progress text inside m12XpBar without clipping', () => {
+    for (const [xpLevel, xpCurrent, xpRequired] of [
+      [1, 0, 0],
+      [1, 0, 20],
+      [8, 45, 90],
+      [16, 240, 240],
+      [99, 9999, 9999],
+    ] as const) {
+      const layout = computeHudLayout({ xpLevel, xpCurrent, xpRequired });
+      const { xpBar, m12XpBar, safeArea } = layout;
+
+      expect(xpBar.plate).toEqual(m12XpBar);
+      expect(hudRectInside(xpBar.plate, safeArea)).toBe(true);
+      expect(hudRectInside(xpBar.badge, xpBar.plate)).toBe(true);
+      expect(hudRectInside(xpBar.barTrack, xpBar.plate)).toBe(true);
+      expect(hudRectInside(xpBar.barFillMax, xpBar.barTrack)).toBe(true);
+      expect(hudRectsOverlap(xpBar.badge, xpBar.barTrack, HUD_XP_BADGE_GAP_PX)).toBe(false);
+
+      // Verify `LV X` badge label fits strictly inside both `badge` and `plate` under `ui-text.ts` metrics.
+      const levelUiWidth = xpBar.levelText.length * HUD_XP_LEVEL_FONT_SIZE * 0.62;
+      const levelEstWidth = estimateHudLabelWidth(xpBar.levelText.length, HUD_XP_LEVEL_FONT_SIZE);
+      for (const width of [levelUiWidth, levelEstWidth]) {
+        const levelRect = makeHudRect(
+          xpBar.levelLabel.x - width / 2,
+          xpBar.levelLabel.y - HUD_XP_LEVEL_LINE_HEIGHT / 2,
+          width,
+          HUD_XP_LEVEL_LINE_HEIGHT,
+        );
+        expect(hudRectInside(levelRect, xpBar.badge)).toBe(true);
+        expect(hudRectInside(levelRect, xpBar.plate)).toBe(true);
+      }
+
+      if (xpBar.progressText !== '') {
+        const progUiWidth = xpBar.progressText.length * HUD_XP_PROGRESS_FONT_SIZE * 0.62;
+        const progEstWidth = estimateHudLabelWidth(
+          xpBar.progressText.length,
+          HUD_XP_PROGRESS_FONT_SIZE,
+        );
+        for (const width of [progUiWidth, progEstWidth]) {
+          const progRect = makeHudRect(
+            xpBar.progressLabel.x - width / 2,
+            xpBar.progressLabel.y - HUD_XP_PROGRESS_LINE_HEIGHT / 2,
+            width,
+            HUD_XP_PROGRESS_LINE_HEIGHT,
+          );
+          expect(hudRectInside(progRect, xpBar.barTrack)).toBe(true);
+          expect(hudRectInside(progRect, xpBar.plate)).toBe(true);
+        }
       }
     }
   });
 });
 
-describe('non-overlap across active HUD plates and M12 / M13 reserved bands', () => {
-  it('never overlaps top-left, boss bar / door hint, top-right, skill strip, M12 XP bar, or M13 Dash/Active', () => {
+describe('M12 XP fill ratio clamping and badge/progress formatting', () => {
+  it('clamps XP fill ratio cleanly to [0, 1] and guards requiredXp <= 0 or non-finite values', () => {
+    expect(computeHudXpFillRatio(0, 20)).toBe(0);
+    expect(computeHudXpFillRatio(5, 20)).toBeCloseTo(0.25, 6);
+    expect(computeHudXpFillRatio(20, 20)).toBe(1);
+    expect(computeHudXpFillRatio(35, 20)).toBe(1);
+    expect(computeHudXpFillRatio(-10, 20)).toBe(0);
+
+    // `required <= 0` and non-finite edge cases never divide by zero or return NaN.
+    expect(computeHudXpFillRatio(0, 0)).toBe(0);
+    expect(computeHudXpFillRatio(15, 0)).toBe(0);
+    expect(computeHudXpFillRatio(15, -8)).toBe(0);
+    expect(computeHudXpFillRatio(Number.NaN, 20)).toBe(0);
+    expect(computeHudXpFillRatio(10, Number.NaN)).toBe(0);
+    expect(computeHudXpFillRatio(Number.POSITIVE_INFINITY, 20)).toBe(0);
+    expect(computeHudXpFillRatio(10, Number.POSITIVE_INFINITY)).toBe(0);
+  });
+
+  it('formats level badge and compact XP progress text deterministically', () => {
+    expect(formatHudLevelText(1)).toBe('LV 1');
+    expect(formatHudLevelText(16)).toBe('LV 16');
+    expect(formatHudLevelText(14.9)).toBe('LV 14');
+    expect(formatHudLevelText(0)).toBe('LV 1');
+    expect(formatHudLevelText(-3)).toBe('LV 1');
+    expect(formatHudLevelText(Number.NaN)).toBe('LV 1');
+
+    expect(formatHudXpProgressText(0, 20)).toBe('0/20');
+    expect(formatHudXpProgressText(14.8, 35.9)).toBe('14/35');
+    expect(formatHudXpProgressText(-5, 20)).toBe('0/20');
+    expect(formatHudXpProgressText(0, 0)).toBe('');
+    expect(formatHudXpProgressText(12, 0)).toBe('');
+    expect(formatHudXpProgressText(12, -10)).toBe('');
+    expect(formatHudXpProgressText(12, Number.NaN)).toBe('');
+  });
+});
+
+describe('non-overlap across active HUD plates, 16–20 skill grid, M12 XP bar, and M13 reserve', () => {
+  it('never overlaps top-left, boss bar / door hint, top-right, 0..20 skill strip, M12 XP bar, or M13 Dash/Active', () => {
     for (const maxHearts of [3, 6, 8, 12, 14]) {
-      for (const skillCount of [0, 1, 4, 8]) {
+      for (const skillCount of [0, 1, 4, 8, 10, 12, 16, 20]) {
         const combat = computeHudLayout({
           maxHearts,
           gold: 9999,
           roomLabel: '8/9',
           enemiesLeft: 64,
           skillCount,
+          xpLevel: 15,
+          xpCurrent: 80,
+          xpRequired: 120,
         });
 
         // Combat mode regions (doorHint + top-left + top-right + skillStrip + M12 + M13)
-        const combatRegions: ReadonlyArray<readonly [string, HudRect]> = [
+        const combatRegions: Array<readonly [string, HudRect]> = [
           ['topLeft', combat.topLeft.plate],
           ['doorHint', combat.doorHint],
           ['topRight', combat.topRight.plate],
@@ -206,6 +335,20 @@ describe('non-overlap across active HUD plates and M12 / M13 reserved bands', ()
         ];
         assertPairwiseSeparated(combatRegions, HUD_MIN_SEPARATION_PX);
 
+        if (combat.skillStrip.activePlate !== null) {
+          assertPairwiseSeparated(
+            [
+              ['topLeft', combat.topLeft.plate],
+              ['doorHint', combat.doorHint],
+              ['topRight', combat.topRight.plate],
+              ['activeSkillStrip', combat.skillStrip.activePlate],
+              ['m12XpBar', combat.m12XpBar],
+              ['m13DashActive', combat.m13DashActive],
+            ],
+            HUD_MIN_SEPARATION_PX,
+          );
+        }
+
         // Boss mode regions (bossBar + top-left + top-right + skillStrip + M12 + M13)
         const boss = computeHudLayout({
           maxHearts,
@@ -213,6 +356,9 @@ describe('non-overlap across active HUD plates and M12 / M13 reserved bands', ()
           roomLabel: '9/9',
           enemiesLeft: null,
           skillCount,
+          xpLevel: 16,
+          xpCurrent: 110,
+          xpRequired: 120,
         });
         const bossRegions: ReadonlyArray<readonly [string, HudRect]> = [
           ['topLeft', boss.topLeft.plate],
@@ -233,18 +379,23 @@ describe('non-overlap across active HUD plates and M12 / M13 reserved bands', ()
   });
 
   it('positions M12 XP bar at bottom-centre and M13 Dash/Active at bottom-left inside safeArea', () => {
-    const layout = computeHudLayout();
-    expect(layout.m12XpBar.centerX).toBe(0);
-    expect(layout.m12XpBar.bottom).toBe(layout.safeArea.bottom);
-    expect(hudRectInside(layout.m12XpBar, layout.safeArea)).toBe(true);
+    const singleRowLayout = computeHudLayout({ skillCount: 10 });
+    expect(singleRowLayout.m12XpBar.centerX).toBe(0);
+    expect(singleRowLayout.m12XpBar.bottom).toBe(singleRowLayout.safeArea.bottom);
+    expect(hudRectInside(singleRowLayout.m12XpBar, singleRowLayout.safeArea)).toBe(true);
 
-    expect(layout.m13DashActive.left).toBe(layout.safeArea.left);
-    expect(layout.m13DashActive.bottom).toBe(layout.safeArea.bottom);
-    expect(hudRectInside(layout.m13DashActive, layout.safeArea)).toBe(true);
+    expect(singleRowLayout.m13DashActive.left).toBe(singleRowLayout.safeArea.left);
+    expect(singleRowLayout.m13DashActive.bottom).toBe(singleRowLayout.safeArea.bottom);
+    expect(hudRectInside(singleRowLayout.m13DashActive, singleRowLayout.safeArea)).toBe(true);
 
-    // Clear central gameplay window between top and bottom HUD bands.
-    const combatWindowHeight = layout.topLeft.plate.bottom - layout.skillStrip.maxPlate.top;
-    expect(combatWindowHeight).toBeGreaterThanOrEqual(160);
+    // 1..10 skills keeps >= 175 px central window; full 20-skill 2-row grid still keeps >= 150 px.
+    const oneRowWindow =
+      singleRowLayout.topLeft.plate.bottom - singleRowLayout.skillStrip.activePlate!.top;
+    expect(oneRowWindow).toBeGreaterThanOrEqual(175);
+
+    const fullGridWindow =
+      singleRowLayout.topLeft.plate.bottom - singleRowLayout.skillStrip.maxPlate.top;
+    expect(fullGridWindow).toBeGreaterThanOrEqual(150);
   });
 
   it('clamps off-screen edge arrows below top HUD plates and above the M12 XP bar', () => {
@@ -256,9 +407,9 @@ describe('non-overlap across active HUD plates and M12 / M13 reserved bands', ()
   });
 });
 
-describe('viewport scaling across 16:9, 16:10, 4:3, and ultrawide', () => {
+describe('viewport scaling across 16:9, 16:10, 4:3, and 21:9 ultrawide', () => {
   it.each(SUPPORTED_VIEWPORTS)(
-    '$label ($width×$height): every HUD plate & M12/M13 band stays inside the room band and canvas',
+    '$label ($width×$height): 16–20 skill grid, M12 XP bar, and all HUD plates stay inside the room band and canvas with zero overlap',
     ({ width, height }) => {
       const hudScale = worldToUiScale(width, height, HUD_DESIGN_WIDTH, HUD_DESIGN_HEIGHT);
       expect(hudScale).toBeGreaterThan(0);
@@ -279,53 +430,73 @@ describe('viewport scaling across 16:9, 16:10, 4:3, and ultrawide', () => {
         HUD_DESIGN_HEIGHT,
       );
 
-      const layout = computeHudLayout({
-        maxHearts: 8,
-        gold: 4321,
-        roomLabel: '9/9',
-        enemiesLeft: 32,
-        skillCount: 8,
-      });
+      for (const skillCount of [8, 12, 16, 20]) {
+        const layout = computeHudLayout({
+          maxHearts: 8,
+          gold: 4321,
+          roomLabel: '9/9',
+          enemiesLeft: 32,
+          skillCount,
+          xpLevel: 16,
+          xpCurrent: 75,
+          xpRequired: 100,
+        });
 
-      const rects: ReadonlyArray<HudRect> = [
-        layout.topLeft.plate,
-        layout.bossBar.plate,
-        layout.doorHint,
-        layout.topRight.plate,
-        layout.skillStrip.maxPlate,
-        layout.m12XpBar,
-        layout.m13DashActive,
-      ];
+        const rects: ReadonlyArray<HudRect> = [
+          layout.topLeft.plate,
+          layout.bossBar.plate,
+          layout.doorHint,
+          layout.topRight.plate,
+          layout.skillStrip.maxPlate,
+          layout.skillStrip.activePlate!,
+          layout.m12XpBar,
+          layout.m13DashActive,
+        ];
 
-      const projected: HudRect[] = [];
-      for (const rect of rects) {
-        // UI Canvas (`collectUiText` `insideCanvas`) check after multiplying by `hudScale`.
-        const inUi = scaleHudRectToUi(rect, hudScale);
-        expect(hudRectInside(inUi, uiBandDesign, 0.5)).toBe(true);
+        const projected: HudRect[] = [];
+        for (const rect of rects) {
+          // UI Canvas (`collectUiText` `insideCanvas`) check after multiplying by `hudScale`.
+          const inUi = scaleHudRectToUi(rect, hudScale);
+          expect(hudRectInside(inUi, uiBandDesign, 0.5)).toBe(true);
 
-        // Actual browser canvas pixel rect hugs the pixel-perfect room band with safe margin.
-        const onCanvas = hudRectOnCanvas(rect, width, height);
-        expect(hudRectInside(onCanvas, worldBandPx, 0.5)).toBe(true);
-        expect(hudRectInside(onCanvas, canvasPx, 0.5)).toBe(true);
+          // Actual browser canvas pixel rect hugs the pixel-perfect room band with safe margin.
+          const onCanvas = hudRectOnCanvas(rect, width, height);
+          expect(hudRectInside(onCanvas, worldBandPx, 0.5)).toBe(true);
+          expect(hudRectInside(onCanvas, canvasPx, 0.5)).toBe(true);
 
-        const minMarginPx = Math.floor(HUD_EDGE_MARGIN_PX * (worldBandPx.width / HUD_DESIGN_WIDTH));
-        expect(onCanvas.left - worldBandPx.left).toBeGreaterThanOrEqual(minMarginPx - 0.5);
-        expect(worldBandPx.right - onCanvas.right).toBeGreaterThanOrEqual(minMarginPx - 0.5);
-        expect(onCanvas.bottom - worldBandPx.bottom).toBeGreaterThanOrEqual(minMarginPx - 0.5);
-        expect(worldBandPx.top - onCanvas.top).toBeGreaterThanOrEqual(minMarginPx - 0.5);
-        projected.push(onCanvas);
+          const minMarginPx = Math.floor(HUD_EDGE_MARGIN_PX * (worldBandPx.width / HUD_DESIGN_WIDTH));
+          expect(onCanvas.left - worldBandPx.left).toBeGreaterThanOrEqual(minMarginPx - 0.5);
+          expect(worldBandPx.right - onCanvas.right).toBeGreaterThanOrEqual(minMarginPx - 0.5);
+          expect(onCanvas.bottom - worldBandPx.bottom).toBeGreaterThanOrEqual(minMarginPx - 0.5);
+          expect(worldBandPx.top - onCanvas.top).toBeGreaterThanOrEqual(minMarginPx - 0.5);
+          projected.push(onCanvas);
+        }
+
+        // Verify all 16–20 individual skill slot frames project cleanly inside the active plate & canvas.
+        for (let slot = 0; slot < skillCount; slot += 1) {
+          const center = layout.skillStrip.slotCenters[slot]!;
+          const slotDesign = makeHudRect(
+            center.x - (HUD_SKILL_ICON_PX + 2) / 2,
+            center.y - (HUD_SKILL_ICON_PX + 2) / 2,
+            HUD_SKILL_ICON_PX + 2,
+            HUD_SKILL_ICON_PX + 2,
+          );
+          const slotCanvas = hudRectOnCanvas(slotDesign, width, height);
+          expect(hudRectInside(slotCanvas, projected[5]!, 0.5)).toBe(true);
+          expect(hudRectInside(slotCanvas, canvasPx, 0.5)).toBe(true);
+        }
+
+        // Projected top-left, bossBar, top-right, active skillStrip, M12, M13 remain separated in canvas px.
+        const nonOverlappingCanvas: ReadonlyArray<readonly [string, HudRect]> = [
+          ['topLeft', projected[0]!],
+          ['bossBar', projected[1]!],
+          ['topRight', projected[3]!],
+          ['skillStrip', projected[5]!],
+          ['m12XpBar', projected[6]!],
+          ['m13DashActive', projected[7]!],
+        ];
+        assertPairwiseSeparated(nonOverlappingCanvas, 2);
       }
-
-      // Projected top-left, bossBar, top-right, skillStrip, M12, M13 remain non-overlapping in canvas px.
-      const nonOverlappingCanvas: ReadonlyArray<readonly [string, HudRect]> = [
-        ['topLeft', projected[0]!],
-        ['bossBar', projected[1]!],
-        ['topRight', projected[3]!],
-        ['skillStrip', projected[4]!],
-        ['m12XpBar', projected[5]!],
-        ['m13DashActive', projected[6]!],
-      ];
-      assertPairwiseSeparated(nonOverlappingCanvas, 2);
     },
   );
 });
@@ -398,26 +569,30 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
     readonly hearts: ReturnType<typeof vi.fn>;
     readonly enemiesLeft: ReturnType<typeof vi.fn>;
     readonly bossState: ReturnType<typeof vi.fn>;
+    readonly xp: ReturnType<typeof vi.fn>;
   } {
     const maxHearts = vi.fn();
     const hearts = vi.fn();
     const enemiesLeft = vi.fn();
     const bossState = vi.fn();
+    const xp = vi.fn();
     return {
       target: {
         setMaxHearts: maxHearts,
         setHearts: hearts,
         setEnemiesLeft: enemiesLeft,
         setBossState: bossState,
+        setXp: xp,
       },
       maxHearts,
       hearts,
       enemiesLeft,
       bossState,
+      xp,
     };
   }
 
-  it('pushes initial state once on connect and performs 0 calls on unchanged frames', () => {
+  it('pushes initial state once on connect and performs 0 calls on unchanged frames (with or without XP)', () => {
     const mock = makeMockHud();
     const initial: CombatHudSnapshot = {
       maxHearts: 6,
@@ -434,6 +609,8 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
     expect(mock.hearts).toHaveBeenCalledTimes(1);
     expect(mock.enemiesLeft).toHaveBeenCalledTimes(1);
     expect(mock.bossState).toHaveBeenCalledTimes(1);
+    // Legacy callers omitting XP fields never overwrite XP state.
+    expect(mock.xp).toHaveBeenCalledTimes(0);
 
     // Simulate 120 unchanged frames: zero HUD setter calls.
     for (let frame = 0; frame < 120; frame += 1) {
@@ -443,6 +620,75 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
     expect(mock.hearts).toHaveBeenCalledTimes(1);
     expect(mock.enemiesLeft).toHaveBeenCalledTimes(1);
     expect(mock.bossState).toHaveBeenCalledTimes(1);
+    expect(mock.xp).toHaveBeenCalledTimes(0);
+  });
+
+  it('updates only setXp when XP level, current, or required changes, and skips identical XP frames', () => {
+    const mock = makeMockHud();
+    const initialWithXp: CombatHudSnapshot = {
+      maxHearts: 6,
+      hearts: 6,
+      enemiesLeft: 24,
+      bossName: null,
+      bossHp: 0,
+      bossMaxHp: 0,
+      bossPhase: 0,
+      xpLevel: 1,
+      xpCurrent: 0,
+      xpRequired: 20,
+    };
+
+    applyCombatHudSnapshot(mock.target, initialWithXp);
+    expect(mock.xp).toHaveBeenCalledTimes(1);
+    expect(mock.xp).toHaveBeenLastCalledWith(1, 0, 20);
+
+    // 120 identical frames with XP present → 0 calls across all HUD setters.
+    for (let frame = 0; frame < 120; frame += 1) {
+      applyCombatHudSnapshot(mock.target, { ...initialWithXp });
+    }
+    expect(mock.xp).toHaveBeenCalledTimes(1);
+    expect(mock.hearts).toHaveBeenCalledTimes(1);
+    expect(mock.enemiesLeft).toHaveBeenCalledTimes(1);
+
+    // XP orb picked up (`xpCurrent` changes) → ONLY `setXp` fires.
+    const afterPickup: CombatHudSnapshot = { ...initialWithXp, xpCurrent: 8 };
+    expect(diffCombatHudSnapshot(initialWithXp, afterPickup)).toEqual({
+      maxHeartsChanged: false,
+      heartsChanged: false,
+      enemiesLeftChanged: false,
+      bossChanged: false,
+      xpChanged: true,
+    });
+    applyCombatHudSnapshot(mock.target, afterPickup);
+    expect(mock.xp).toHaveBeenCalledTimes(2);
+    expect(mock.xp).toHaveBeenLastCalledWith(1, 8, 20);
+    expect(mock.hearts).toHaveBeenCalledTimes(1);
+    expect(mock.enemiesLeft).toHaveBeenCalledTimes(1);
+    expect(mock.bossState).toHaveBeenCalledTimes(1);
+
+    // Level-up via nested `xp: { level, current, required }` form → ONLY `setXp` fires, then stabilizes.
+    const afterLevelUp: CombatHudSnapshot = {
+      maxHearts: 6,
+      hearts: 6,
+      enemiesLeft: 24,
+      bossName: null,
+      bossHp: 0,
+      bossMaxHp: 0,
+      bossPhase: 0,
+      xp: { level: 2, current: 3, required: 28 },
+    };
+    applyCombatHudSnapshot(mock.target, afterLevelUp);
+    expect(mock.xp).toHaveBeenCalledTimes(3);
+    expect(mock.xp).toHaveBeenLastCalledWith(2, 3, 28);
+
+    // Equivalent scalar vs nested representation with identical values produces `xpChanged: false`.
+    applyCombatHudSnapshot(mock.target, {
+      ...initialWithXp,
+      xpLevel: 2,
+      xpCurrent: 3,
+      xpRequired: 28,
+    });
+    expect(mock.xp).toHaveBeenCalledTimes(3);
   });
 
   it('updates only the exact field that changed (hearts, enemiesLeft, Vitality cap, boss HP/phase)', () => {
@@ -497,22 +743,41 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
       heartsChanged: false,
       enemiesLeftChanged: false,
       bossChanged: true,
+      xpChanged: false,
     });
   });
 
-  it('re-syncs boss state if Hud was cleared directly between sync calls', () => {
+  it('re-syncs boss and XP state if Hud was modified directly between sync calls', () => {
     let liveBoss: string | null = null;
+    let liveXpLevel = 1;
+    let liveXpCurrent = 0;
+    let liveXpRequired = 0;
     const bossState = vi.fn((name: string | null) => {
       liveBoss = name;
+    });
+    const setXp = vi.fn((level: number, current: number, required: number) => {
+      liveXpLevel = level;
+      liveXpCurrent = current;
+      liveXpRequired = required;
     });
     const target: CombatHudTarget = {
       get activeBossName() {
         return liveBoss;
       },
+      get activeXpLevel() {
+        return liveXpLevel;
+      },
+      get activeXpCurrent() {
+        return liveXpCurrent;
+      },
+      get activeXpRequired() {
+        return liveXpRequired;
+      },
       setMaxHearts: vi.fn(),
       setHearts: vi.fn(),
       setEnemiesLeft: vi.fn(),
       setBossState: bossState,
+      setXp,
     };
 
     const snap: CombatHudSnapshot = {
@@ -523,14 +788,22 @@ describe('event-driven HUD sync (diffCombatHudSnapshot & applyCombatHudSnapshot)
       bossHp: 120,
       bossMaxHp: 120,
       bossPhase: 1,
+      xpLevel: 4,
+      xpCurrent: 12,
+      xpRequired: 40,
     };
     applyCombatHudSnapshot(target, snap);
     expect(bossState).toHaveBeenCalledTimes(1);
+    expect(setXp).toHaveBeenCalledTimes(1);
 
-    // Direct `hud.setBoss(null)` on room transition invalidates cached snapshot.
+    // Direct `hud.setBoss(null)` or `hud.setXp(1, 0, 0)` invalidates cached snapshot cleanly.
     liveBoss = null;
     applyCombatHudSnapshot(target, snap);
     expect(bossState).toHaveBeenCalledTimes(2);
+
+    liveXpCurrent = 0;
+    applyCombatHudSnapshot(target, snap);
+    expect(setXp).toHaveBeenCalledTimes(2);
   });
 
   it('formats HUD text helpers deterministically', () => {

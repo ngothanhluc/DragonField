@@ -1,5 +1,5 @@
 /**
- * Pure HUD layout and safe-band geometry (M11 T4).
+ * Pure HUD layout and safe-band geometry (M11 T4 + M12 T2).
  *
  * The UI Canvas runs at a 512×288 design resolution (`ResolutionPolicy.SHOW_ALL`, origin `(0, 0)`
  * at screen centre, +x right, +y up). `WorldCamera` scales the world to integer multiples of
@@ -7,11 +7,14 @@
  * (`worldToUiScale ≤ 1`) so every HUD plate hugs the actual visible room edges across 16:9,
  * 16:10, 4:3, and ultrawide viewports without drifting into letterbox bars or clipping.
  *
- * In addition to active M11 HUD plates (top-left Hearts + Gold, top-right Room + Enemies,
- * top-centre Boss HP bar / Door hint, bottom-right Skill strip, and the edge-arrow band), this
- * module explicitly reserves non-overlapping anchor bands for:
- * - **M12**: bottom-centre XP bar + level badge (`m12XpBar`);
- * - **M13**: bottom-left Dash + Signature Active cooldown indicators (`m13DashActive`).
+ * Active HUD plates and reserved safe bands:
+ * - Top-left: Hearts + Gold (`topLeft`);
+ * - Top-right: Room + Enemies (`topRight`);
+ * - Top-centre: Boss HP bar (`bossBar`) / Door hint (`doorHint`);
+ * - Bottom-centre (M12): Event-driven XP bar + `LV X` badge (`xpBar` / `m12XpBar`);
+ * - Bottom-right (M12): Wrapped 10×2 owned skill grid holding up to 20 distinct skills (`skillStrip`);
+ * - Bottom-left (reserved for M13): Dash + Signature Active cooldown indicators (`m13DashActive`);
+ * - Clamped off-screen enemy / door edge-arrow band (`arrowLimits`).
  *
  * Pure arithmetic — no `cc` import.
  */
@@ -70,16 +73,35 @@ export const HUD_BOSS_PLATE_HEIGHT_PX = 30;
 export const HUD_DOOR_HINT_WIDTH_PX = 120;
 export const HUD_DOOR_HINT_HEIGHT_PX = 22;
 
-/** Bottom-right owned skill strip (`SKILL_SLOTS = 8` of 24×24 icons + 1 px rarity frame). */
-export const HUD_SKILL_SLOTS = 8;
+/**
+ * Bottom-right owned skill grid (M12: up to 20 distinct skills = 10 columns × 2 rows of 24×24 icons
+ * + 1 px rarity frame, expanding from 1 compact row for 1..10 skills to 2 rows for 11..20 skills).
+ */
+export const HUD_SKILL_MAX_COLS = 10;
+export const HUD_SKILL_MAX_ROWS = 2;
+export const HUD_SKILL_SLOTS = HUD_SKILL_MAX_COLS * HUD_SKILL_MAX_ROWS;
 export const HUD_SKILL_ICON_PX = 24;
 export const HUD_SKILL_SLOT_STEP_PX = 28;
+export const HUD_SKILL_ROW_STEP_PX = 28;
 export const HUD_SKILL_STRIP_PAD_X_PX = 4;
+export const HUD_SKILL_STRIP_PAD_Y_PX = 3;
 export const HUD_SKILL_STRIP_HEIGHT_PX = 32;
+export const HUD_SKILL_STRIP_MAX_HEIGHT_PX = 60;
 
-/** M12 bottom-centre XP bar + level badge safe anchor reserve. */
+/** M12 bottom-centre XP bar + `LV X` badge plate and internal geometry. */
 export const HUD_M12_XP_BAR_WIDTH_PX = 200;
-export const HUD_M12_XP_BAR_HEIGHT_PX = 14;
+export const HUD_M12_XP_BAR_HEIGHT_PX = 18;
+export const HUD_XP_PLATE_PAD_X_PX = 5;
+export const HUD_XP_BADGE_WIDTH_PX = 44;
+export const HUD_XP_BADGE_HEIGHT_PX = 12;
+export const HUD_XP_BADGE_GAP_PX = 6;
+export const HUD_XP_BAR_WIDTH_PX = 140;
+export const HUD_XP_BAR_HEIGHT_PX = 10;
+export const HUD_XP_BAR_INSET_PX = 1;
+export const HUD_XP_LEVEL_FONT_SIZE = 10;
+export const HUD_XP_LEVEL_LINE_HEIGHT = 11;
+export const HUD_XP_PROGRESS_FONT_SIZE = 9;
+export const HUD_XP_PROGRESS_LINE_HEIGHT = 10;
 
 /** M13 bottom-left Dash + Signature Active cooldown safe anchor reserve. */
 export const HUD_M13_DASH_ACTIVE_WIDTH_PX = 84;
@@ -87,8 +109,9 @@ export const HUD_M13_DASH_ACTIVE_HEIGHT_PX = 32;
 
 /** Off-screen enemy / door arrow clamping insets inside the HUD design band. */
 export const HUD_ARROW_SIDE_INSET_PX = 14;
-export const HUD_ARROW_BOTTOM_INSET_PX = 28;
+export const HUD_ARROW_BOTTOM_INSET_PX = 32;
 const ARROW_CLEARANCE_BELOW_TOP_PLATE_PX = 10;
+const ARROW_CLEARANCE_ABOVE_XP_BAR_PX = 8;
 
 /** Axis-aligned rectangle in HUD design px (origin at centre, +x right, +y up) or canvas px. */
 export interface HudRect {
@@ -136,12 +159,28 @@ export interface HudBossBarLayout {
   readonly barHeight: number;
 }
 
+export interface HudXpBarLayout {
+  readonly plate: HudRect;
+  readonly badge: HudRect;
+  readonly barTrack: HudRect;
+  readonly barFillMax: HudRect;
+  /** Centered (`anchor = (0.5, 0.5)`) inside `badge`. */
+  readonly levelLabel: Vec2;
+  /** Centered (`anchor = (0.5, 0.5)`) inside `barTrack`. */
+  readonly progressLabel: Vec2;
+  readonly levelText: string;
+  readonly progressText: string;
+  readonly fillRatio: number;
+}
+
 export interface HudSkillStripLayout {
-  /** Maximum 8-slot reservation on the bottom-right, used for non-overlap checks. */
+  /** Maximum 20-slot (10×2) reservation on the bottom-right, used for non-overlap checks. */
   readonly maxPlate: HudRect;
   /** Compact active backdrop wrapping `shownCount` slots (`null` when 0 skills are owned). */
   readonly activePlate: HudRect | null;
   readonly shownCount: number;
+  readonly rowCount: number;
+  readonly colCount: number;
   /** Centre of each of the `HUD_SKILL_SLOTS` slots in HUD design space. */
   readonly slotCenters: readonly Vec2[];
 }
@@ -161,6 +200,9 @@ export interface HudLayoutInput {
   /** `null` hides the enemies row (boss rooms, special rooms, menus). */
   readonly enemiesLeft?: number | null;
   readonly skillCount?: number;
+  readonly xpLevel?: number;
+  readonly xpCurrent?: number;
+  readonly xpRequired?: number;
 }
 
 export interface HudLayout {
@@ -171,7 +213,9 @@ export interface HudLayout {
   readonly bossBar: HudBossBarLayout;
   readonly doorHint: HudRect;
   readonly skillStrip: HudSkillStripLayout;
-  /** Reserved for M12: bottom-centre XP bar + level badge. */
+  /** M12 bottom-centre XP bar + level badge detailed geometry (`xpBar.plate === m12XpBar`). */
+  readonly xpBar: HudXpBarLayout;
+  /** Bottom-centre XP bar + level badge bounding plate (`xpBar.plate`). */
   readonly m12XpBar: HudRect;
   /** Reserved for M13: bottom-left Dash + Signature Active cooldown widgets. */
   readonly m13DashActive: HudRect;
@@ -220,7 +264,43 @@ export function formatHudEnemiesText(enemiesLeft: number): string {
   return `Enemies ${safe}`;
 }
 
-/** Compute the complete HUD layout and M12/M13 reserved anchor bands in design coordinates. */
+/** Normalize a player XP level to an integer `>= 1`. */
+export function normalizeHudXpLevel(level: number): number {
+  return Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+}
+
+/** Normalize an XP counter (`current` or `required`) to an integer `>= 0`. */
+export function normalizeHudXpValue(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+/**
+ * Clamp XP bar progress ratio to `[0, 1]`. Returns `0` when `requiredXp <= 0` or inputs are
+ * non-finite so max-level / uninitialized states never divide by zero or produce `NaN`.
+ */
+export function computeHudXpFillRatio(currentXp: number, requiredXp: number): number {
+  if (!Number.isFinite(requiredXp) || requiredXp <= 0) return 0;
+  if (!Number.isFinite(currentXp) || currentXp <= 0) return 0;
+  return Math.min(1, Math.max(0, currentXp / requiredXp));
+}
+
+/** Format the level badge text (`LV 1`, `LV 12`, …). */
+export function formatHudLevelText(level: number): string {
+  return `LV ${normalizeHudXpLevel(level)}`;
+}
+
+/**
+ * Format compact XP progress readout (`14/35`). Returns `''` when `requiredXp <= 0` so pre-XP or
+ * capped states show a clean track without a meaningless `0/0`.
+ */
+export function formatHudXpProgressText(currentXp: number, requiredXp: number): string {
+  if (!Number.isFinite(requiredXp) || requiredXp <= 0) return '';
+  const safeCurrent = normalizeHudXpValue(currentXp);
+  const safeRequired = Math.max(1, Math.floor(requiredXp));
+  return `${safeCurrent}/${safeRequired}`;
+}
+
+/** Compute the complete HUD layout, M12 XP bar, 20-slot skill grid, and M13 reserve in design coordinates. */
 export function computeHudLayout(input: HudLayoutInput = {}): HudLayout {
   const designWidth = input.designWidth ?? HUD_DESIGN_WIDTH;
   const designHeight = input.designHeight ?? HUD_DESIGN_HEIGHT;
@@ -278,12 +358,13 @@ export function computeHudLayout(input: HudLayoutInput = {}): HudLayout {
     HUD_M13_DASH_ACTIVE_HEIGHT_PX,
   );
 
-  const m12XpBar = makeHudRect(
-    -HUD_M12_XP_BAR_WIDTH_PX / 2,
+  const xpBar = computeXpBarLayout(
     safeArea.bottom,
-    HUD_M12_XP_BAR_WIDTH_PX,
-    HUD_M12_XP_BAR_HEIGHT_PX,
+    input.xpLevel ?? 1,
+    input.xpCurrent ?? 0,
+    input.xpRequired ?? 0,
   );
+  const m12XpBar = xpBar.plate;
 
   const skillStrip = computeSkillStripLayout(
     safeArea.right,
@@ -293,10 +374,14 @@ export function computeHudLayout(input: HudLayoutInput = {}): HudLayout {
 
   const topPlateHeight = Math.max(topLeft.plate.height, topRight.plate.height);
   const arrowTopInset = HUD_EDGE_MARGIN_PX + topPlateHeight + ARROW_CLEARANCE_BELOW_TOP_PLATE_PX;
+  const arrowBottomInset = Math.max(
+    HUD_ARROW_BOTTOM_INSET_PX,
+    HUD_EDGE_MARGIN_PX + m12XpBar.height + ARROW_CLEARANCE_ABOVE_XP_BAR_PX,
+  );
   const arrowLimits: HudArrowLimits = {
     halfWidth: Math.max(0, halfW - HUD_ARROW_SIDE_INSET_PX),
     top: Math.max(0, halfH - arrowTopInset),
-    bottom: Math.max(0, halfH - HUD_ARROW_BOTTOM_INSET_PX),
+    bottom: Math.max(0, halfH - arrowBottomInset),
   };
 
   return {
@@ -307,9 +392,57 @@ export function computeHudLayout(input: HudLayoutInput = {}): HudLayout {
     bossBar,
     doorHint,
     skillStrip,
+    xpBar,
     m12XpBar,
     m13DashActive,
     arrowLimits,
+  };
+}
+
+function computeXpBarLayout(
+  bottom: number,
+  xpLevel: number,
+  xpCurrent: number,
+  xpRequired: number,
+): HudXpBarLayout {
+  const plate = makeHudRect(
+    -HUD_M12_XP_BAR_WIDTH_PX / 2,
+    bottom,
+    HUD_M12_XP_BAR_WIDTH_PX,
+    HUD_M12_XP_BAR_HEIGHT_PX,
+  );
+
+  const badge = makeHudRect(
+    plate.left + HUD_XP_PLATE_PAD_X_PX,
+    plate.centerY - HUD_XP_BADGE_HEIGHT_PX / 2,
+    HUD_XP_BADGE_WIDTH_PX,
+    HUD_XP_BADGE_HEIGHT_PX,
+  );
+
+  const barTrack = makeHudRect(
+    badge.right + HUD_XP_BADGE_GAP_PX,
+    plate.centerY - HUD_XP_BAR_HEIGHT_PX / 2,
+    HUD_XP_BAR_WIDTH_PX,
+    HUD_XP_BAR_HEIGHT_PX,
+  );
+
+  const barFillMax = makeHudRect(
+    barTrack.left + HUD_XP_BAR_INSET_PX,
+    barTrack.bottom + HUD_XP_BAR_INSET_PX,
+    barTrack.width - HUD_XP_BAR_INSET_PX * 2,
+    barTrack.height - HUD_XP_BAR_INSET_PX * 2,
+  );
+
+  return {
+    plate,
+    badge,
+    barTrack,
+    barFillMax,
+    levelLabel: { x: badge.centerX, y: badge.centerY },
+    progressLabel: { x: barTrack.centerX, y: barTrack.centerY },
+    levelText: formatHudLevelText(xpLevel),
+    progressText: formatHudXpProgressText(xpCurrent, xpRequired),
+    fillRatio: computeHudXpFillRatio(xpCurrent, xpRequired),
   };
 }
 
@@ -421,35 +554,62 @@ function computeSkillStripLayout(
   bottom: number,
   rawSkillCount: number,
 ): HudSkillStripLayout {
-  const slotVisualWidth = HUD_SKILL_ICON_PX + 2;
-  const stepGap = HUD_SKILL_SLOT_STEP_PX - slotVisualWidth;
-  const maxContentWidth = HUD_SKILL_SLOTS * HUD_SKILL_SLOT_STEP_PX - stepGap;
+  const slotVisualSize = HUD_SKILL_ICON_PX + 2;
+  const stepGapX = HUD_SKILL_SLOT_STEP_PX - slotVisualSize;
+  const stepGapY = HUD_SKILL_ROW_STEP_PX - slotVisualSize;
+
+  const maxContentWidth = HUD_SKILL_MAX_COLS * HUD_SKILL_SLOT_STEP_PX - stepGapX;
+  const maxContentHeight = HUD_SKILL_MAX_ROWS * HUD_SKILL_ROW_STEP_PX - stepGapY;
   const maxWidth = maxContentWidth + HUD_SKILL_STRIP_PAD_X_PX * 2;
-  const maxPlate = makeHudRect(right - maxWidth, bottom, maxWidth, HUD_SKILL_STRIP_HEIGHT_PX);
+  const maxHeight = maxContentHeight + HUD_SKILL_STRIP_PAD_Y_PX * 2;
+  const maxPlate = makeHudRect(right - maxWidth, bottom, maxWidth, maxHeight);
 
   const shownCount = Math.min(HUD_SKILL_SLOTS, Math.max(0, Math.floor(rawSkillCount)));
-  const activeCount = shownCount > 0 ? shownCount : HUD_SKILL_SLOTS;
-  const activeContentWidth = activeCount * HUD_SKILL_SLOT_STEP_PX - stepGap;
+  const rowCount = shownCount === 0 ? 0 : Math.ceil(shownCount / HUD_SKILL_MAX_COLS);
+  const colCount = shownCount === 0 ? 0 : Math.min(HUD_SKILL_MAX_COLS, shownCount);
+
+  const layoutCols = colCount > 0 ? colCount : HUD_SKILL_MAX_COLS;
+  const layoutRows = rowCount > 0 ? rowCount : HUD_SKILL_MAX_ROWS;
+  const activeContentWidth = layoutCols * HUD_SKILL_SLOT_STEP_PX - stepGapX;
+  const activeContentHeight = layoutRows * HUD_SKILL_ROW_STEP_PX - stepGapY;
   const activeWidth = activeContentWidth + HUD_SKILL_STRIP_PAD_X_PX * 2;
+  const activeHeight = activeContentHeight + HUD_SKILL_STRIP_PAD_Y_PX * 2;
   const activeLeft = right - activeWidth;
 
   const activePlate =
-    shownCount > 0
-      ? makeHudRect(activeLeft, bottom, activeWidth, HUD_SKILL_STRIP_HEIGHT_PX)
-      : null;
+    shownCount > 0 ? makeHudRect(activeLeft, bottom, activeWidth, activeHeight) : null;
 
   const slotCenters: Vec2[] = [];
+  const bottomRowCenterY = bottom + HUD_SKILL_STRIP_PAD_Y_PX + slotVisualSize / 2;
+  const topRowCenterY = bottomRowCenterY + HUD_SKILL_ROW_STEP_PX;
+
   for (let index = 0; index < HUD_SKILL_SLOTS; index += 1) {
-    slotCenters.push({
-      x: activeLeft + HUD_SKILL_STRIP_PAD_X_PX + slotVisualWidth / 2 + index * HUD_SKILL_SLOT_STEP_PX,
-      y: maxPlate.centerY,
-    });
+    const col = index % HUD_SKILL_MAX_COLS;
+    const row = Math.floor(index / HUD_SKILL_MAX_COLS);
+    if (layoutRows === 1) {
+      const baseLeft = row === 0 ? activeLeft : maxPlate.left;
+      slotCenters.push({
+        x: baseLeft + HUD_SKILL_STRIP_PAD_X_PX + slotVisualSize / 2 + col * HUD_SKILL_SLOT_STEP_PX,
+        y: bottomRowCenterY,
+      });
+    } else {
+      slotCenters.push({
+        x:
+          maxPlate.left +
+          HUD_SKILL_STRIP_PAD_X_PX +
+          slotVisualSize / 2 +
+          col * HUD_SKILL_SLOT_STEP_PX,
+        y: row === 0 ? topRowCenterY : bottomRowCenterY,
+      });
+    }
   }
 
   return {
     maxPlate,
     activePlate,
     shownCount,
+    rowCount,
+    colCount,
     slotCenters,
   };
 }
@@ -509,6 +669,13 @@ export function hudRectInside(inner: HudRect, outer: HudRect, epsilon = 1e-6): b
   );
 }
 
+/** Compact XP state carried in `CombatHudSnapshot` (optional until Wave 2 wires live XP). */
+export interface HudXpSnapshot {
+  readonly level: number;
+  readonly current: number;
+  readonly required: number;
+}
+
 /** Snapshot of combat-driven HUD fields for event-driven diffing (`hud-sync.ts`). */
 export interface CombatHudSnapshot {
   readonly maxHearts: number;
@@ -518,6 +685,10 @@ export interface CombatHudSnapshot {
   readonly bossHp: number;
   readonly bossMaxHp: number;
   readonly bossPhase: number;
+  readonly xpLevel?: number;
+  readonly xpCurrent?: number;
+  readonly xpRequired?: number;
+  readonly xp?: HudXpSnapshot;
 }
 
 export interface CombatHudDiff {
@@ -525,6 +696,29 @@ export interface CombatHudDiff {
   readonly heartsChanged: boolean;
   readonly enemiesLeftChanged: boolean;
   readonly bossChanged: boolean;
+  readonly xpChanged: boolean;
+}
+
+/** True when `snap` carries explicit XP fields (either scalar `xpLevel/Current/Required` or `xp`). */
+export function hasSnapshotXp(snap: CombatHudSnapshot): boolean {
+  return (
+    snap.xp !== undefined ||
+    snap.xpLevel !== undefined ||
+    snap.xpCurrent !== undefined ||
+    snap.xpRequired !== undefined
+  );
+}
+
+export function snapshotXpLevel(snap: CombatHudSnapshot): number {
+  return snap.xp?.level ?? snap.xpLevel ?? 1;
+}
+
+export function snapshotXpCurrent(snap: CombatHudSnapshot): number {
+  return snap.xp?.current ?? snap.xpCurrent ?? 0;
+}
+
+export function snapshotXpRequired(snap: CombatHudSnapshot): number {
+  return snap.xp?.required ?? snap.xpRequired ?? 0;
 }
 
 /** Pure diff between two `CombatHudSnapshot`s so `hud-sync` only mutates HUD nodes on transitions. */
@@ -538,8 +732,18 @@ export function diffCombatHudSnapshot(
       heartsChanged: true,
       enemiesLeftChanged: true,
       bossChanged: true,
+      xpChanged: hasSnapshotXp(next),
     };
   }
+  const prevHasXp = hasSnapshotXp(prev);
+  const nextHasXp = hasSnapshotXp(next);
+  const xpChanged =
+    prevHasXp !== nextHasXp ||
+    (nextHasXp &&
+      (!Object.is(snapshotXpLevel(prev), snapshotXpLevel(next)) ||
+        !Object.is(snapshotXpCurrent(prev), snapshotXpCurrent(next)) ||
+        !Object.is(snapshotXpRequired(prev), snapshotXpRequired(next))));
+
   return {
     maxHeartsChanged: prev.maxHearts !== next.maxHearts,
     heartsChanged: prev.hearts !== next.hearts || prev.maxHearts !== next.maxHearts,
@@ -549,5 +753,6 @@ export function diffCombatHudSnapshot(
       prev.bossHp !== next.bossHp ||
       prev.bossMaxHp !== next.bossMaxHp ||
       prev.bossPhase !== next.bossPhase,
+    xpChanged,
   };
 }
