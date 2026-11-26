@@ -92,7 +92,7 @@ export const EVOLUTIONS: readonly EvolutionDef[] = [
     name: 'Aegis Retribution',
     rarity: 'legendary',
     maxStacks: 1,
-    requires: ['shield', 'thorns'],
+    requires: ['shield', 'vitality'],
     minStacksEach: 1,
     tags: [
       { kind: 'shield', cooldownMs: 12_000 },

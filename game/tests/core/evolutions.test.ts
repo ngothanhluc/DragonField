@@ -79,6 +79,41 @@ describe('Legendary Evolutions (M13, ADR-022)', () => {
         ]),
       ).map((evo) => evo.id),
     ).toEqual(['phantom-volley', 'blightfrost']);
+
+    // M19 (ADR-027): `aegis-retribution` requires `['shield', 'vitality']` (not `thorns`).
+    const aegis = getEvolution('aegis-retribution');
+    expect(aegis.requires).toEqual(['shield', 'vitality']);
+    expect(isEvolutionUnlocked(aegis, new Map([['shield', 1]]))).toBe(false);
+    expect(
+      isEvolutionUnlocked(
+        aegis,
+        new Map([
+          ['shield', 1],
+          ['thorns', 3],
+        ]),
+      ),
+    ).toBe(false);
+    expect(
+      isEvolutionUnlocked(
+        aegis,
+        new Map([
+          ['shield', 1],
+          ['vitality', 1],
+        ]),
+      ),
+    ).toBe(true);
+    expect(evolutionHintsForSkill('shield', new Map(), 'vi')[0]).toMatchObject({
+      partnerId: 'vitality',
+      partnerName: 'Sinh Lực',
+      ready: false,
+      text: 'Ghép: Sinh Lực',
+    });
+    expect(evolutionHintsForSkill('shield', new Map([['vitality', 1]]), 'en')[0]).toMatchObject({
+      partnerId: 'vitality',
+      partnerOwned: true,
+      ready: true,
+      text: 'Ready: Aegis Retribution',
+    });
   });
 
   it('provides accurate pairing hints for prerequisite skill cards in Vietnamese (default) and English', () => {
@@ -203,7 +238,7 @@ describe('Legendary Evolutions (M13, ADR-022)', () => {
         ['poison', 1],
         ['blightfrost', 1],
         ['shield', 1],
-        ['thorns', 1],
+        ['vitality', 1],
         ['aegis-retribution', 1],
         ['swift', 1],
         ['phantom-dash', 1],
@@ -223,8 +258,9 @@ describe('Legendary Evolutions (M13, ADR-022)', () => {
     expect(fullEvoStats.explosive?.radiusTiles).toBe(2.5);
     expect(fullEvoStats.burnOnHit?.dps).toBe(2);
     expect(fullEvoStats.statusDamageBonus).toBeCloseTo(0.35, 10);
-    expect(fullEvoStats.thorns?.damage).toBe(7);
+    expect(fullEvoStats.thorns?.damage).toBe(5);
     expect(fullEvoStats.shield?.charges).toBe(2);
+    expect(fullEvoStats.shield?.cooldownMs).toBe(9000);
     expect(fullEvoStats.dashNova?.damage).toBe(4);
     expect(fullEvoStats.activePowerMult).toBeCloseTo(1.5, 10);
   });

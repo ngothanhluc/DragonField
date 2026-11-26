@@ -49,10 +49,12 @@ export const HUD_BOSS_TITLE_LINE_HEIGHT = 12;
 /** Slightly above `ui-text.ts`'s 0.62 glyph width estimate so labels always stay inside plates. */
 const GLYPH_WIDTH_ESTIMATE = 0.65;
 
-/** M17 unified top-left plate: reserved 28×28 portrait slot + HP bar + XP bar + Gold counter. */
+/** M17/M19 unified top-left plate: 28×28 hero portrait frame + HP bar + XP bar + Gold counter. */
 export const HUD_TOP_LEFT_PAD_X_PX = 5;
 export const HUD_TOP_LEFT_PAD_Y_PX = 4;
 export const HUD_PORTRAIT_SIZE_PX = 28;
+export const HUD_PORTRAIT_INNER_INSET_PX = 1;
+export const HUD_PORTRAIT_SPRITE_SIZE_PX = HUD_PORTRAIT_SIZE_PX - HUD_PORTRAIT_INNER_INSET_PX * 2;
 export const HUD_PORTRAIT_GAP_PX = 5;
 export const HUD_HP_BAR_WIDTH_PX = 103;
 export const HUD_HP_BAR_HEIGHT_PX = 13;

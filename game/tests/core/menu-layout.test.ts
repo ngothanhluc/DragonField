@@ -939,6 +939,17 @@ describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock b
         `${vp.label} backdrop hero right edge clear of Character Select plaque`,
       ).toBeLessThanOrEqual(layout.stageRightX - 6);
 
+      // M19 64×64 portrait plaque sits in the upper-left stage, clear of the live hero & right panel.
+      const portraitLeft = layout.portraitFrame.x - layout.portraitFrame.frameSize / 2;
+      const portraitRight = layout.portraitFrame.x + layout.portraitFrame.frameSize / 2;
+      const portraitTop = layout.portraitFrame.y + layout.portraitFrame.frameSize / 2;
+      const portraitBottom = layout.portraitFrame.y - layout.portraitFrame.frameSize / 2;
+      expect(layout.portraitFrame.spriteSize).toBe(64);
+      expect(portraitLeft).toBeGreaterThanOrEqual(-halfW);
+      expect(portraitRight).toBeLessThanOrEqual(layout.stageRightX - 6);
+      expect(portraitTop).toBeLessThanOrEqual(halfH);
+      expect(portraitBottom).toBeGreaterThan(0);
+
       const panelTop = layout.panelY + layout.panelHeight / 2;
       const panelBottom = layout.panelY - layout.panelHeight / 2;
       expect(layout.titleY + (layout.titleFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThanOrEqual(
@@ -1349,6 +1360,17 @@ describe('M15 Rich Results / Death screen layout & summary bounds audit', () => 
         expect(layout.subtitleY + subHalfH).toBeLessThan(layout.titleY - titleHalfH);
         expect(layout.dividerY).toBeLessThan(layout.subtitleY - subHalfH);
         expect(layout.lineYs[0]! + lineHalfH).toBeLessThan(layout.dividerY);
+
+        // M19 64×64 Result portrait sits inside the top-left header, above dividerY and clear of title/subtitle.
+        const pLeft = layout.portraitFrame.x - layout.portraitFrame.frameSize / 2;
+        const pRight = layout.portraitFrame.x + layout.portraitFrame.frameSize / 2;
+        const pTop = layout.portraitFrame.y + layout.portraitFrame.frameSize / 2;
+        const pBottom = layout.portraitFrame.y - layout.portraitFrame.frameSize / 2;
+        expect(layout.portraitFrame.spriteSize).toBe(64);
+        expect(pLeft).toBeGreaterThanOrEqual(-layout.dividerWidth / 2);
+        expect(pTop).toBeLessThanOrEqual(panelTop - 4);
+        expect(pBottom).toBeGreaterThan(layout.dividerY);
+        expect(pRight).toBeLessThan(layout.headerTextX - layout.headerTextSafeWidth / 2);
 
         for (let i = 0; i < worstWin.lines.length; i += 1) {
           const line = worstWin.lines[i]!;

@@ -79,7 +79,6 @@ describe('Skill & Evolution descriptions', () => {
     expect(describeSkill(getSkill('rapid-fire'), 'en')).toContain('+25% fire rate');
     expect(describeSkill(getSkill('twin-shot'), 'en')).toContain('±12°');
     expect(describeSkill(getSkill('shield'), 'en')).toContain('20s');
-    expect(describeSkill(getSkill('executioner'), 'en')).toContain('30%');
     expect(describeSkill(getSkill('poison'), 'en')).toContain('3s');
     expect(describeSkill(getSkill('ignite'), 'en')).toContain('Burn');
     expect(describeSkill(getSkill('phantom-dash'), 'en')).toContain('dash cooldown');
@@ -87,7 +86,7 @@ describe('Skill & Evolution descriptions', () => {
 
   it('HUD abbreviations are readable and strictly unique across all skills & Evolutions', () => {
     expect(skillAbbreviation(getSkill('rapid-fire'))).toBe('RF');
-    expect(skillAbbreviation(getSkill('long-iframe'))).toBe('IF');
+    expect(skillAbbreviation(getSkill('shield'))).toBe('SD');
     expect(skillAbbreviation(getSkill('crit-eye'))).toBe('CE');
 
     const allCards = [...SKILLS, ...EVOLUTIONS];

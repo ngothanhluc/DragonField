@@ -11,7 +11,7 @@
  *
  * Unlock milestones and early-buy gold prices are read from `CHARACTERS_TUNING` (`config/tuning.json`).
  */
-import type { AnimationManifest, Direction } from '../art/manifest';
+import { resolve, type AnimationManifest, type Direction, type SpriteEntry } from '../art/manifest';
 import { CHARACTERS_TUNING } from '../enemies/tuning';
 import { getLocale, t, type Locale } from '../i18n';
 import type { SignatureSkillId } from '../input/active-skill';
@@ -24,6 +24,12 @@ export type CharacterId = (typeof CHARACTER_IDS)[number];
 
 /** Default playable character (always unlocked from the start). */
 export const DEFAULT_CHARACTER_ID: CharacterId = 'ninja';
+
+/** Source texel dimensions of M19 character & NPC pixel-art portraits (`64×64`). */
+export const PORTRAIT_SOURCE_SIZE_PX = 64;
+
+/** Default fallback portrait manifest key (`icon.portrait-ninja`). */
+export const DEFAULT_PORTRAIT_KEY = 'icon.portrait-ninja';
 
 /**
  * Visual weapon form (GDD §14).
@@ -65,6 +71,8 @@ export interface CharacterDef {
   readonly subtitle: string;
   /** Prefix in `animations.json` (`'player'` for NinjaGreen, `'archer'`, `'mage'`, `'cultivator'`). */
   readonly animPrefix: string;
+  /** Logical 64×64 portrait key in `animations.json` (`icon.portrait-<id>`, M19 ADR-027). */
+  readonly portraitKey: string;
   /**
    * Character id in `attachments.json` (`characters[rigId]`), or `null` when the character
    * has no attachment rig (baked / projectile-only body).
@@ -113,6 +121,7 @@ export const CHARACTER_ROSTER: readonly CharacterDef[] = [
     name: 'Ninja',
     subtitle: 'Shuriken & kunai',
     animPrefix: 'player',
+    portraitKey: 'icon.portrait-ninja',
     rigId: null,
     defaultLoadout: {
       weaponForm: 'projectile',
@@ -134,6 +143,7 @@ export const CHARACTER_ROSTER: readonly CharacterDef[] = [
     name: 'Archer',
     subtitle: 'Hand bow · keen sight',
     animPrefix: 'archer',
+    portraitKey: 'icon.portrait-archer',
     rigId: 'archer',
     defaultLoadout: {
       weaponForm: 'attachment',
@@ -155,6 +165,7 @@ export const CHARACTER_ROSTER: readonly CharacterDef[] = [
     name: 'Mage',
     subtitle: 'Hand staff · arcane nova',
     animPrefix: 'mage',
+    portraitKey: 'icon.portrait-mage',
     rigId: 'mage',
     defaultLoadout: {
       weaponForm: 'attachment',
@@ -176,6 +187,7 @@ export const CHARACTER_ROSTER: readonly CharacterDef[] = [
     name: 'Cultivator',
     subtitle: 'Back sword · sword heart',
     animPrefix: 'cultivator',
+    portraitKey: 'icon.portrait-cultivator',
     rigId: 'cultivator',
     defaultLoadout: {
       weaponForm: 'attachment',
@@ -313,4 +325,43 @@ export function resolveCharacterAnimKey(
   if (manifest.sprites[key] !== undefined) return key;
   if (manifest.sprites[fallback] !== undefined) return fallback;
   return `${character.animPrefix}.idle.down`;
+}
+
+/** Manifest-verified 64×64 portrait sheet table (1:1 parity enforced by `art-files.test.ts`). */
+export const HERO_PORTRAIT_SHEETS: Readonly<Record<CharacterId, string>> = {
+  ninja: 'resources/art/generated/portraits/portrait-ninja.png',
+  archer: 'resources/art/generated/portraits/portrait-archer.png',
+  mage: 'resources/art/generated/portraits/portrait-mage.png',
+  cultivator: 'resources/art/generated/portraits/portrait-cultivator.png',
+};
+
+/** Logical `animations.json` portrait key (`icon.portrait-<id>`) for a playable character, falling back to Ninja. */
+export function characterPortraitKey(id: CharacterId | string | undefined): string {
+  if (id !== undefined && isCharacterId(id)) {
+    return CHARACTERS[id].portraitKey;
+  }
+  return DEFAULT_PORTRAIT_KEY;
+}
+
+/** Resolve a character's 64×64 `SpriteEntry` from `animations.json` with `icon.portrait-ninja` fallback. */
+export function resolveCharacterPortraitEntry(
+  manifest: AnimationManifest,
+  id: CharacterId | string | undefined,
+): SpriteEntry {
+  return resolve(manifest, characterPortraitKey(id), DEFAULT_PORTRAIT_KEY);
+}
+
+/**
+ * Resources sheet path for a character's 64×64 portrait (`animations.json` primary when `manifest`
+ * is provided, falling back to the manifest-verified `HERO_PORTRAIT_SHEETS` table for standalone UI).
+ */
+export function characterPortraitSheet(
+  id: CharacterId | string | undefined,
+  manifest?: AnimationManifest | null,
+): string {
+  if (manifest !== undefined && manifest !== null) {
+    return resolveCharacterPortraitEntry(manifest, id).sheet;
+  }
+  const resolvedId = id !== undefined && isCharacterId(id) ? id : DEFAULT_CHARACTER_ID;
+  return HERO_PORTRAIT_SHEETS[resolvedId];
 }

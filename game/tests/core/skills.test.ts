@@ -4,10 +4,12 @@ import { SeededRng } from '../../assets/scripts/core/rng';
 import { computeDerivedStats, estimateDps } from '../../assets/scripts/core/skills/derived-stats';
 import {
   BASE_RARITIES,
+  PRUNED_M19_SKILL_IDS,
   RARITIES,
   SKILLS,
   SKILL_PILLARS,
   getSkill,
+  resolveOwnedSkills,
   skillsByPillar,
 } from '../../assets/scripts/core/skills/pool';
 import {
@@ -30,20 +32,27 @@ function ids(skills: readonly { id: string }[]): string[] {
   return skills.map((skill) => skill.id);
 }
 
-describe('Pure-combat skill pool (M13, ADR-022)', () => {
-  it('contains 24–28 pure-combat skills (27) across all 4 pillars with zero economy/luck skills', () => {
-    expect(SKILLS.length).toBeGreaterThanOrEqual(24);
-    expect(SKILLS.length).toBeLessThanOrEqual(28);
-    expect(SKILLS).toHaveLength(27);
+describe('Pure-combat shared skill pool (M13 ADR-022, M19 ADR-027)', () => {
+  it('contains exactly 21 high-impact shared skills across all 4 pillars and none of the 6 pruned skills', () => {
+    expect(SKILLS).toHaveLength(21);
 
-    expect(skillsByPillar('weapon')).toHaveLength(9);
-    expect(skillsByPillar('elemental')).toHaveLength(6);
-    expect(skillsByPillar('defense')).toHaveLength(6);
+    expect(skillsByPillar('weapon')).toHaveLength(8);
+    expect(skillsByPillar('elemental')).toHaveLength(5);
+    expect(skillsByPillar('defense')).toHaveLength(2);
     expect(skillsByPillar('mobility')).toHaveLength(6);
+
+    expect(PRUNED_M19_SKILL_IDS).toEqual([
+      'long-iframe',
+      'thorns',
+      'iron-skin',
+      'corrosive',
+      'second-wind',
+      'executioner',
+    ]);
 
     for (const skill of SKILLS) {
       expect(SKILL_PILLARS).toContain(skill.pillar);
-      expect(['greed', 'luck', 'gold', 'xp']).not.toContain(skill.id);
+      expect(['greed', 'luck', 'gold', 'xp', ...PRUNED_M19_SKILL_IDS]).not.toContain(skill.id);
       for (const tag of skill.tags) {
         expect(tag.kind).not.toBe('gold-mult');
         expect(tag.kind).not.toBe('luck-add');
@@ -52,6 +61,23 @@ describe('Pure-combat skill pool (M13, ADR-022)', () => {
 
     expect(() => getSkill('greed')).toThrow();
     expect(() => getSkill('luck')).toThrow();
+    for (const prunedId of PRUNED_M19_SKILL_IDS) {
+      expect(() => getSkill(prunedId)).toThrow();
+    }
+
+    // Legacy owned maps containing removed M19 skills resolve cleanly without throwing.
+    const resolved = resolveOwnedSkills(
+      owned(
+        ['sharpen', 2],
+        ['long-iframe', 2],
+        ['thorns', 3],
+        ['iron-skin', 3],
+        ['corrosive', 2],
+        ['second-wind', 2],
+        ['executioner', 2],
+      ),
+    );
+    expect(resolved.map((entry) => [entry.def.id, entry.stacks])).toEqual([['sharpen', 2]]);
   });
 
   it('ids are unique and kebab-case', () => {
@@ -77,7 +103,7 @@ describe('Pure-combat skill pool (M13, ADR-022)', () => {
     expect(getSkill('sharpen').maxStacks).toBe(5);
     expect(getSkill('twin-shot').maxStacks).toBe(3);
     expect(getSkill('homing').maxStacks).toBe(1);
-    expect(getSkill('executioner').maxStacks).toBe(2);
+    expect(getSkill('ricochet').maxStacks).toBe(2);
     expect(getSkill('phantom-dash').maxStacks).toBe(3);
     expect(getSkill('arcane-surge').maxStacks).toBe(2);
   });
@@ -205,11 +231,11 @@ describe('Roll skill', () => {
   it('returns fewer than count when the pool nearly runs out instead of throwing', () => {
     const rng = SeededRng.fromSeed(4);
     const nearlyEmpty = new Map(allMaxed());
-    nearlyEmpty.delete('executioner');
+    nearlyEmpty.delete('ricochet');
 
     const roll = rollChoices({ rng, owned: nearlyEmpty, includeEvolutions: false });
 
-    expect(ids(roll)).toEqual(['executioner']);
+    expect(ids(roll)).toEqual(['ricochet']);
   });
 
   it('returns an empty array when every skill is maxed (with evolutions disabled)', () => {
@@ -353,29 +379,21 @@ describe('Derived stats', () => {
     expect(stats.lifestealPercent).toBeCloseTo(0.05, 10);
   });
 
-  it('Long i-frame 1 stack takes the i-frame from 0.8 to 1.1 s', () => {
-    expect(computeDerivedStats(owned(['long-iframe', 1])).invulnerabilityMs).toBeCloseTo(1100, 10);
-  });
-
   it('skills with side effects turn on the right flags', () => {
     const stats = computeDerivedStats(
-      owned(['shield', 2], ['thorns', 1], ['second-wind', 1], ['freeze', 1], ['poison', 2]),
+      owned(['shield', 2], ['freeze', 1], ['poison', 2]),
     );
 
     expect(stats.shield).toEqual({ charges: 2, cooldownMs: 20_000 });
-    expect(stats.thorns).toEqual({ damage: 2 });
-    expect(stats.healPerRoom).toBe(30);
     expect(stats.slowOnHit).toEqual({ factor: 0.4, durationMs: 1000 });
     expect(stats.poisonOnHit).toEqual({ dps: 2, durationMs: 3000 });
   });
 
-  it('new Elemental, Defense, and Mobility skills populate DerivedStats cleanly', () => {
+  it('Elemental, Defense, and Mobility skills populate DerivedStats cleanly', () => {
     const stats = computeDerivedStats(
       owned(
         ['ignite', 2],
         ['chain-lightning', 2],
-        ['corrosive', 2],
-        ['iron-skin', 2],
         ['shield', 1],
         ['phantom-dash', 2],
         ['dash-nova', 2],
@@ -387,23 +405,13 @@ describe('Derived stats', () => {
 
     expect(stats.burnOnHit).toEqual({ dps: 3, durationMs: 2500 });
     expect(stats.shockOnHit).toEqual({ arcs: 4, damageRatio: 0.45, rangeTiles: 4 });
-    expect(stats.statusDamageBonus).toBeCloseTo(0.5, 10);
-    expect(stats.damageReductionChance).toBeCloseTo(0.24, 10);
-    expect(stats.shieldCooldownMult).toBeCloseTo(0.85 ** 2, 10);
-    expect(stats.shield?.cooldownMs).toBe(Math.round(20_000 * 0.85 ** 2));
+    expect(stats.shield?.cooldownMs).toBe(20_000);
     expect(stats.dashCooldownMult).toBeCloseTo(0.82 ** 2, 10);
     expect(stats.dashNova).toEqual({ radiusTiles: 2.2, damage: 4 });
     expect(stats.activeCooldownMult).toBeCloseTo(0.82 ** 2, 10);
     expect(stats.activePowerMult).toBeCloseTo(1.7, 10);
     expect(stats.dashSpeedMult).toBeCloseTo(1.3, 10);
     expect(stats.postDashFireRate).toEqual({ bonus: 0.7, durationMs: 1500 });
-  });
-
-  it('Executioner adds bonus while keeping the 30% threshold', () => {
-    const stats = computeDerivedStats(owned(['executioner', 2]));
-
-    expect(stats.executeThreshold).toBeCloseTo(0.3, 10);
-    expect(stats.executeBonus).toBeCloseTo(1, 10);
   });
 
   it('estimateDps rises with damage and with fire rate', () => {

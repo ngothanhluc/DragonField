@@ -21,7 +21,18 @@ import {
   view,
 } from 'cc';
 import { loadPixelTexture } from './assets/texture-cache';
+import {
+  cachedCharacterPortrait,
+  createPortraitSpriteNode,
+  loadCharacterPortrait,
+} from './assets/portrait-icon';
 import { cachedSkillIcon, loadSkillIcon, SKILL_ICON_SIZE_PX } from './assets/skill-icon';
+import type { AnimationManifest } from '../core/art/manifest';
+import {
+  DEFAULT_CHARACTER_ID,
+  isCharacterId,
+  type CharacterId,
+} from '../core/characters/roster';
 import { localizeBossDisplayName, t } from '../core/i18n';
 import type { OwnedSkillStacks } from '../core/skills/pool';
 import { skillAbbreviation } from '../core/skills/description';
@@ -47,6 +58,7 @@ import {
   HUD_LABEL_FONT_SIZE,
   HUD_LABEL_LINE_HEIGHT,
   HUD_PLATE_SLICE_INSETS,
+  HUD_PORTRAIT_SPRITE_SIZE_PX,
   HUD_ROOM_ICON_SIZE_PX,
   HUD_SKILL_SLOTS,
   HUD_XP_LEVEL_FONT_SIZE,
@@ -297,6 +309,11 @@ export class Hud extends Component {
 
   private topLeftRoot: Node | null = null;
   private topLeftPlate: HudPlateHandle | null = null;
+  private portraitInnerNode: Node | null = null;
+  private portraitSpriteNode: Node | null = null;
+  private portraitSprite: Sprite | null = null;
+  private shownCharacterId: CharacterId = DEFAULT_CHARACTER_ID;
+  private manifestRef: AnimationManifest | null = null;
   private hpTrailRoot: Node | null = null;
   private hpFillRoot: Node | null = null;
   private hpFillHighNode: Node | null = null;
@@ -379,15 +396,33 @@ export class Hud extends Component {
    * Build the HUD. This `node` must be a child of a `Canvas` (created by bootstrap), or
    * nothing will be drawn.
    */
-  async init(maxHp: number, roomText: string): Promise<void> {
-    const [barTexture, plateTexture, goldCoinTexture, roomIconTexture, enemyIconTexture] =
-      await Promise.all([
-        loadPixelTexture(BAR_SHEET),
-        loadPixelTexture(HUD_PLATE_SHEET),
-        loadPixelTexture(GOLD_COIN_SHEET),
-        loadPixelTexture(ROOM_ICON_SHEET),
-        loadPixelTexture(ENEMY_ICON_SHEET),
-      ]);
+  async init(
+    maxHp: number,
+    roomText: string,
+    characterId: CharacterId = DEFAULT_CHARACTER_ID,
+    manifest: AnimationManifest | null = null,
+  ): Promise<void> {
+    const initialCharId: CharacterId = isCharacterId(characterId)
+      ? characterId
+      : DEFAULT_CHARACTER_ID;
+    this.manifestRef = manifest;
+    this.shownCharacterId = initialCharId;
+
+    const [
+      barTexture,
+      plateTexture,
+      goldCoinTexture,
+      roomIconTexture,
+      enemyIconTexture,
+      initialPortraitFrame,
+    ] = await Promise.all([
+      loadPixelTexture(BAR_SHEET),
+      loadPixelTexture(HUD_PLATE_SHEET),
+      loadPixelTexture(GOLD_COIN_SHEET),
+      loadPixelTexture(ROOM_ICON_SHEET),
+      loadPixelTexture(ENEMY_ICON_SHEET),
+      loadCharacterPortrait(initialCharId, manifest).catch(() => null),
+    ]);
 
     const plateFrame = sliceSlicedFrame(plateTexture, PLATE_RECT, HUD_PLATE_SLICE_INSETS);
     const barFrame = sliceFrame(barTexture, BAR_RECT);
@@ -404,7 +439,7 @@ export class Hud extends Component {
     const layout = this.computeLayout(safeMaxHp, safeMaxHp, 0, roomText, null, 0);
     this.cachedArrowLimits = layout.arrowLimits;
 
-    this.createTopLeftGroup(goldCoinFrame, plateFrame, layout);
+    this.createTopLeftGroup(goldCoinFrame, plateFrame, initialPortraitFrame, layout);
     this.createTopRightGroup(roomIconFrame, enemyIconFrame, plateFrame, layout);
     this.createDashActiveGroup(plateFrame, layout);
     this.createSkillRow(plateFrame, layout);
@@ -420,6 +455,58 @@ export class Hud extends Component {
     this.setXp(1, 0, 0);
     this.setActions(1, 0, 1, 0);
     this.setSkills([]);
+    // If `setCharacter` was called while `init` was awaiting textures, sync to the latest hero.
+    if (this.shownCharacterId !== initialCharId) {
+      const target = this.shownCharacterId;
+      this.shownCharacterId = initialCharId;
+      this.setCharacter(target, this.manifestRef);
+    }
+  }
+
+  /** Playable hero currently displayed in the top-left HUD portrait frame (M19). */
+  get activeCharacterId(): CharacterId {
+    return this.shownCharacterId;
+  }
+
+  /**
+   * Update the active hero's 64×64 nearest-filtered portrait in the top-left HUD slot (M19).
+   * Uses synchronous cache hit when preloaded and guards async resolution against stale updates.
+   */
+  setCharacter(
+    characterId: CharacterId | string,
+    manifest: AnimationManifest | null = this.manifestRef,
+  ): void {
+    const normalized: CharacterId = isCharacterId(characterId) ? characterId : DEFAULT_CHARACTER_ID;
+    if (manifest !== null) this.manifestRef = manifest;
+
+    const sprite = this.portraitSprite;
+    const spriteNode = this.portraitSpriteNode;
+    if (normalized === this.shownCharacterId && sprite?.spriteFrame !== null) {
+      return;
+    }
+    this.shownCharacterId = normalized;
+    if (!this.ready || sprite === null || spriteNode === null) return;
+
+    const cached = cachedCharacterPortrait(normalized, this.manifestRef);
+    if (cached !== undefined) {
+      sprite.spriteFrame = cached;
+      spriteNode.active = true;
+      if (this.portraitInnerNode !== null) this.portraitInnerNode.active = false;
+      return;
+    }
+
+    void loadCharacterPortrait(normalized, this.manifestRef)
+      .then((frame) => {
+        if (!spriteNode.isValid || this.shownCharacterId !== normalized) return;
+        sprite.spriteFrame = frame;
+        spriteNode.active = true;
+        if (this.portraitInnerNode !== null) this.portraitInnerNode.active = false;
+      })
+      .catch(() => {
+        if (!spriteNode.isValid || this.shownCharacterId !== normalized) return;
+        spriteNode.active = false;
+        if (this.portraitInnerNode !== null) this.portraitInnerNode.active = true;
+      });
   }
 
   /**
@@ -1000,6 +1087,7 @@ export class Hud extends Component {
   private createTopLeftGroup(
     goldCoinFrame: SpriteFrame,
     plateFrame: SpriteFrame,
+    initialPortraitFrame: SpriteFrame | null,
     layout: HudLayout,
   ): void {
     const group = new CocosNode('hud-top-left');
@@ -1009,11 +1097,10 @@ export class Hud extends Component {
 
     this.topLeftPlate = createHudPlate(group, 'top-left-plate', plateFrame, layout.topLeft.plate);
 
-    // Reserved 28×28 character portrait frame slot (ready for M19 character avatars).
+    // M17/M19 28×28 hero portrait frame: dark well + crisp 26×26 nearest-filtered portrait + 1px gold rim.
     const { portraitSlot, hpBar, xpBar } = layout.topLeft;
     createFilledRectNode(group, 'portrait-slot-bg', portraitSlot, PORTRAIT_BG_COLOR);
-    createStrokedRectNode(group, 'portrait-slot-border', portraitSlot, PORTRAIT_BORDER_COLOR);
-    createStrokedRectNode(
+    const portraitInner = createStrokedRectNode(
       group,
       'portrait-slot-inner',
       {
@@ -1028,6 +1115,22 @@ export class Hud extends Component {
       },
       PORTRAIT_INNER_COLOR,
     );
+    portraitInner.active = initialPortraitFrame === null;
+    this.portraitInnerNode = portraitInner;
+
+    const portraitBuilt = createPortraitSpriteNode(
+      group,
+      'portrait-sprite',
+      HUD_PORTRAIT_SPRITE_SIZE_PX,
+      HUD_PORTRAIT_SPRITE_SIZE_PX,
+      initialPortraitFrame,
+    );
+    portraitBuilt.node.setPosition(portraitSlot.centerX, portraitSlot.centerY, 0);
+    portraitBuilt.node.active = initialPortraitFrame !== null;
+    this.portraitSpriteNode = portraitBuilt.node;
+    this.portraitSprite = portraitBuilt.sprite;
+
+    createStrokedRectNode(group, 'portrait-slot-border', portraitSlot, PORTRAIT_BORDER_COLOR);
 
     // 100-HP pixel bar: trough + border + white delayed damage-drain trail + colour-tiered fill + numeric label.
     createFilledRectNode(group, 'hp-track-bg', hpBar.barTrack, HP_TRACK_BG_COLOR);

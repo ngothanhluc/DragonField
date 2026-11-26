@@ -140,6 +140,40 @@ describe('ActiveRunSave — serialize & migrate round-trip (ADR-023)', () => {
     expect(migrated?.ownedSkills['crit-eye']).toBeUndefined();
   });
 
+  it('safely loads legacy pre-M19 runSave payloads containing any of the 6 pruned skill IDs without crashing', () => {
+    const legacyPayload = {
+      ...sampleRunSave({
+        hearts: 85,
+        maxHearts: 125,
+      }),
+      ownedSkills: {
+        sharpen: 3,
+        shield: 2,
+        vitality: 1,
+        'aegis-retribution': 1,
+        'long-iframe': 2,
+        thorns: 3,
+        'iron-skin': 3,
+        corrosive: 2,
+        'second-wind': 2,
+        executioner: 2,
+      },
+    };
+
+    const storage = new MemorySaveStorage(JSON.stringify(legacyPayload));
+    const repo = new RunSaveRepository(storage);
+    expect(repo.hasRun()).toBe(true);
+    const loaded = repo.load();
+    expect(loaded).not.toBeNull();
+    expect(repo.lastLoadError).toBeNull();
+    expect(loaded?.ownedSkills).toEqual({
+      'aegis-retribution': 1,
+      sharpen: 3,
+      shield: 2,
+      vitality: 1,
+    });
+  });
+
   it('rejects dead runs (hearts <= 0) to enforce strict permadeath (ADR-023)', () => {
     expect(migrateRunSave(sampleRunSave({ hearts: 0 }))).toBeNull();
     expect(migrateRunSave(sampleRunSave({ hearts: -2 }))).toBeNull();

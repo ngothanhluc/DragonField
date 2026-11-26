@@ -55,7 +55,7 @@ describe('typical XP skill & reroll policies', () => {
 
     expect(
       typicalSkillChoice(
-        [getSkill('afterimage'), getSkill('sharpen'), getSkill('iron-skin')],
+        [getSkill('afterimage'), getSkill('sharpen'), getSkill('dash-nova')],
         empty,
         2,
         healthy,
@@ -103,16 +103,17 @@ describe('typical XP skill & reroll policies', () => {
     const empty = new Map<string, number>();
     expect(
       typicalRerollPolicy(
-        [getSkill('afterimage'), getSkill('iron-skin'), getSkill('thorns')],
+        [getSkill('afterimage'), getSkill('dash-nova'), getSkill('vitality')],
         empty,
         50,
         10,
         0,
       ),
     ).toBe(true);
+    // `vitality` completes `aegis-retribution` when `shield` is already owned (M19 ADR-027).
     expect(
       typicalRerollPolicy(
-        [getSkill('afterimage'), getSkill('iron-skin'), getSkill('thorns')],
+        [getSkill('afterimage'), getSkill('dash-nova'), getSkill('vitality')],
         new Map([['shield', 1]]),
         50,
         10,
@@ -121,7 +122,7 @@ describe('typical XP skill & reroll policies', () => {
     ).toBe(false);
     expect(
       typicalRerollPolicy(
-        [getSkill('afterimage'), getSkill('sharpen'), getSkill('thorns')],
+        [getSkill('afterimage'), getSkill('sharpen'), getSkill('vitality')],
         empty,
         50,
         10,
@@ -130,7 +131,7 @@ describe('typical XP skill & reroll policies', () => {
     ).toBe(false);
     expect(
       typicalRerollPolicy(
-        [getSkill('afterimage'), getSkill('iron-skin'), getSkill('thorns')],
+        [getSkill('afterimage'), getSkill('dash-nova'), getSkill('vitality')],
         empty,
         100,
         50,

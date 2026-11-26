@@ -478,6 +478,17 @@ export interface CharacterCardSlot extends MenuButtonBox {
   readonly col: number;
 }
 
+/** Crisp 1:1 64×64 hero portrait plaque geometry shared by Character Select & Results (M19). */
+export interface MenuPortraitFrameBox {
+  readonly x: number;
+  readonly y: number;
+  readonly frameSize: number;
+  readonly spriteSize: number;
+}
+
+export const CHARACTER_SELECT_PORTRAIT_SIZE_PX = 64;
+export const CHARACTER_SELECT_PORTRAIT_FRAME_PX = 72;
+
 export interface CharacterSelectLayoutInput {
   readonly visibleWidth?: number;
   readonly visibleHeight?: number;
@@ -486,6 +497,8 @@ export interface CharacterSelectLayoutInput {
 export interface CharacterSelectLayout {
   /** Right X boundary of the open living-backdrop preview stage on the left (`[-visibleWidth/2, stageRightX]`). */
   readonly stageRightX: number;
+  /** Top-left 64×64 hero portrait plaque over the open left stage, above the live preview actor (M19). */
+  readonly portraitFrame: MenuPortraitFrameBox;
   readonly panelX: number;
   readonly panelY: number;
   readonly panelWidth: number;
@@ -574,8 +587,17 @@ export function computeCharacterSelectLayout(
   const backWidth = 108;
   const primaryWidth = summaryWidth - backWidth - actionGap;
 
+  const stageCenterX = Math.round((-visibleWidth / 2 + stageRightX) / 2);
+  const portraitFrame: MenuPortraitFrameBox = {
+    x: stageCenterX,
+    y: Math.round(panelHeight / 2 - CHARACTER_SELECT_PORTRAIT_FRAME_PX / 2 - 6),
+    frameSize: CHARACTER_SELECT_PORTRAIT_FRAME_PX,
+    spriteSize: CHARACTER_SELECT_PORTRAIT_SIZE_PX,
+  };
+
   return {
     stageRightX,
+    portraitFrame,
     panelX,
     panelY,
     panelWidth,
@@ -1514,6 +1536,9 @@ export function formatResultScreenSummary(
   return { title, subtitle, lines };
 }
 
+export const RESULT_PORTRAIT_SIZE_PX = 64;
+export const RESULT_PORTRAIT_FRAME_PX = 68;
+
 export interface ResultScreenLayoutInput {
   readonly visibleWidth?: number;
   readonly visibleHeight?: number;
@@ -1526,6 +1551,12 @@ export interface ResultScreenLayout {
   readonly panelY: number;
   readonly panelWidth: number;
   readonly panelHeight: number;
+  /** Top-left 64×64 hero portrait frame inside the Result header (M19). */
+  readonly portraitFrame: MenuPortraitFrameBox;
+  /** Horizontal center X for `result-title` and `result-subtitle` beside `portraitFrame`. */
+  readonly headerTextX: number;
+  /** Safe horizontal width for header title/subtitle clear of `portraitFrame` and right border. */
+  readonly headerTextSafeWidth: number;
   readonly titleFontSize: number;
   readonly titleY: number;
   readonly subtitleFontSize: number;
@@ -1544,9 +1575,9 @@ export interface ResultScreenLayout {
 }
 
 /**
- * Pure 512×288 modal layout for the Rich Result / Death screen (M15):
- * wraps header + up to 7 rich summary lines + optional `Continue Endless` banner button +
- * 3-button footer bar inside `panelHeight <= 236` px with zero label clipping or overlap.
+ * Pure 512×288 modal layout for the Rich Result / Death screen (M15, M19 64×64 portrait header):
+ * wraps 64×64 hero portrait + header + up to 7 rich summary lines + optional `Continue Endless`
+ * banner button + 3-button footer bar inside `panelHeight <= 265` px with zero clipping or overlap.
  */
 export function computeResultScreenLayout(input: ResultScreenLayoutInput): ResultScreenLayout {
   const visibleWidth = input.visibleWidth ?? 512;
@@ -1558,10 +1589,12 @@ export function computeResultScreenLayout(input: ResultScreenLayoutInput): Resul
   const dividerWidth = Math.max(120, panelWidth - PANEL_WELL_INSET_PX * 2 - 20);
   const innerWidth = panelWidth - 34;
 
-  const titleOffset = 17;
-  const subtitleOffset = 38;
-  const dividerOffset = 48;
-  const firstLineOffset = 59;
+  const portraitTopPad = 8;
+  const portraitCenterOffset = portraitTopPad + RESULT_PORTRAIT_FRAME_PX / 2;
+  const titleOffset = 28;
+  const subtitleOffset = 54;
+  const dividerOffset = portraitTopPad + RESULT_PORTRAIT_FRAME_PX + 4; // 80
+  const firstLineOffset = dividerOffset + 10; // 90
   const lineStep = 12.5;
 
   const lineOffsets: number[] = [];
@@ -1593,8 +1626,15 @@ export function computeResultScreenLayout(input: ResultScreenLayoutInput): Resul
 
   const hintOffset = buttonsBottomOffset + 12;
   const rawHeight = Math.ceil(hintOffset + 11);
-  const panelHeight = Math.min(Math.round(visibleHeight - 8), Math.max(136, rawHeight));
+  const panelHeight = Math.min(Math.round(visibleHeight - 8), Math.max(156, rawHeight));
   const panelTop = panelHeight / 2;
+
+  const portraitX = Math.round(-dividerWidth / 2 + RESULT_PORTRAIT_FRAME_PX / 2);
+  const portraitRight = portraitX + RESULT_PORTRAIT_FRAME_PX / 2;
+  const headerRight = dividerWidth / 2;
+  const headerLeft = portraitRight + 10;
+  const headerTextX = Math.round((headerLeft + headerRight) / 2);
+  const headerTextSafeWidth = Math.max(120, headerRight - headerLeft);
 
   const footerY = Math.round((panelTop - footerCenterOffset) * 2) / 2;
   const footerButtons: readonly [MenuButtonBox, MenuButtonBox, MenuButtonBox] = [
@@ -1608,6 +1648,14 @@ export function computeResultScreenLayout(input: ResultScreenLayoutInput): Resul
     panelY: 0,
     panelWidth,
     panelHeight,
+    portraitFrame: {
+      x: portraitX,
+      y: Math.round(panelTop - portraitCenterOffset),
+      frameSize: RESULT_PORTRAIT_FRAME_PX,
+      spriteSize: RESULT_PORTRAIT_SIZE_PX,
+    },
+    headerTextX,
+    headerTextSafeWidth,
     titleFontSize: 18,
     titleY: Math.round(panelTop - titleOffset),
     subtitleFontSize: 9,

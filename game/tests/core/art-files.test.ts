@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,10 +13,18 @@ import {
 } from '../../assets/scripts/core/art/manifest';
 import { entryAnchorY } from '../../assets/scripts/core/art/runtime';
 import { BOSSES, BOSS_IDS } from '../../assets/scripts/core/boss/boss-defs';
+import {
+  CHARACTER_ROSTER,
+  HERO_PORTRAIT_SHEETS,
+  PORTRAIT_SOURCE_SIZE_PX,
+  characterPortraitKey,
+  characterPortraitSheet,
+} from '../../assets/scripts/core/characters/roster';
 import { EVOLUTIONS } from '../../assets/scripts/core/skills/evolutions';
 import { SKILLS } from '../../assets/scripts/core/skills/pool';
 import { skillIconSheet } from '../../assets/scripts/core/skills/icons';
 import { bottomPadding, readPng } from '../../scripts/lib/png';
+import { CLASS_SKILL_ICON_IDS, PORTRAIT_IDS } from '../../scripts/stage-m19-art';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(HERE, '..', '..', 'assets');
@@ -362,5 +371,97 @@ describe('M16 FX slicing audit (no mid-frame rectangular cuts)', () => {
       expect(entry, `${key} missing`).toBeDefined();
       expect([entry?.frameWidth, entry?.frameHeight, entry?.frames], key).toEqual([fw, fh, frames]);
     }
+  });
+});
+
+describe('M19 hero/NPC portraits & class skill icons (ADR-027)', () => {
+  it('resolves all 4 hero portrait keys + 2 NPC portrait keys as 64×64 nearest-filtered PNGs matching roster helpers', () => {
+    expect(PORTRAIT_IDS).toEqual([
+      'ninja',
+      'archer',
+      'mage',
+      'cultivator',
+      'shopkeeper',
+      'dojo-master',
+    ]);
+
+    for (const char of CHARACTER_ROSTER) {
+      expect(char.portraitKey).toBe(characterPortraitKey(char.id));
+      const entry = manifest.sprites[char.portraitKey];
+      expect(entry, `${char.id} missing ${char.portraitKey}`).toBeDefined();
+      expect(entry?.sheet).toBe(HERO_PORTRAIT_SHEETS[char.id]);
+      expect(characterPortraitSheet(char.id, manifest)).toBe(HERO_PORTRAIT_SHEETS[char.id]);
+      expect(characterPortraitSheet(char.id, null)).toBe(HERO_PORTRAIT_SHEETS[char.id]);
+    }
+
+    for (const id of PORTRAIT_IDS) {
+      const key = `icon.portrait-${id}`;
+      const entry = manifest.sprites[key];
+      expect(entry, `${key} missing from animations.json`).toBeDefined();
+      if (entry === undefined) continue;
+
+      const fullPath = sheetPath(entry);
+      expect(existsSync(fullPath), `${key} → ${entry.sheet} missing`).toBe(true);
+      const png = readPng(fullPath);
+      expect([png.width, png.height], key).toEqual([
+        PORTRAIT_SOURCE_SIZE_PX,
+        PORTRAIT_SOURCE_SIZE_PX,
+      ]);
+
+      const meta = JSON.parse(readFileSync(`${fullPath}.meta`, 'utf8')) as {
+        importer?: string;
+        subMetas?: Record<string, { userData?: Record<string, unknown> }>;
+      };
+      expect(meta.importer, `${key} .meta importer`).toBe('image');
+      expect(meta.subMetas?.['6c48a']?.userData?.['minfilter'], `${key} minfilter`).toBe('nearest');
+      expect(meta.subMetas?.['6c48a']?.userData?.['magfilter'], `${key} magfilter`).toBe('nearest');
+    }
+  });
+
+  it('gives all 21 shared skills + 7 Evolutions + 20 class skills (48 active icons + 48 disabled) unique 24×24 pixel art', () => {
+    expect(SKILLS).toHaveLength(21);
+    expect(EVOLUTIONS).toHaveLength(7);
+    expect(CLASS_SKILL_ICON_IDS).toHaveLength(20);
+
+    const activeHashes = new Map<string, string>();
+
+    for (const card of [...SKILLS, ...EVOLUTIONS]) {
+      const sheet = skillIconSheet(card.id);
+      const png = readPng(join(ASSETS, sheet));
+      const hash = createHash('sha256').update(png.data).digest('hex');
+      const duplicate = activeHashes.get(hash);
+      expect(duplicate, `${card.id} duplicates icon pixels of ${duplicate}`).toBeUndefined();
+      activeHashes.set(hash, card.id);
+    }
+
+    for (const id of CLASS_SKILL_ICON_IDS) {
+      for (const suffix of ['', '-disabled'] as const) {
+        const key = `icon.${id}${suffix}`;
+        const entry = manifest.sprites[key];
+        expect(entry, `${key} missing from manifest`).toBeDefined();
+        if (entry === undefined) continue;
+        const fullPath = sheetPath(entry);
+        expect(existsSync(fullPath), `${key} missing on disk`).toBe(true);
+        const png = readPng(fullPath);
+        expect([png.width, png.height], key).toEqual([24, 24]);
+
+        const meta = JSON.parse(readFileSync(`${fullPath}.meta`, 'utf8')) as {
+          importer?: string;
+          subMetas?: Record<string, { userData?: Record<string, unknown> }>;
+        };
+        expect(meta.importer).toBe('image');
+        expect(meta.subMetas?.['6c48a']?.userData?.['minfilter']).toBe('nearest');
+        expect(meta.subMetas?.['6c48a']?.userData?.['magfilter']).toBe('nearest');
+
+        if (suffix === '') {
+          const hash = createHash('sha256').update(png.data).digest('hex');
+          const duplicate = activeHashes.get(hash);
+          expect(duplicate, `class icon ${id} duplicates icon pixels of ${duplicate}`).toBeUndefined();
+          activeHashes.set(hash, id);
+        }
+      }
+    }
+
+    expect(activeHashes.size).toBe(48);
   });
 });

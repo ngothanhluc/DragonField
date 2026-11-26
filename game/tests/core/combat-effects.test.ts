@@ -91,8 +91,12 @@ describe('planVolley — the skill DPS formula', () => {
 });
 
 describe('execute / lifesteal', () => {
-  it('Executioner only adds below the health threshold', () => {
-    const stats = statsOf(['executioner', 2]);
+  it('execute bonus only adds below the health threshold', () => {
+    const stats = computeDerivedStats(new Map(), {
+      ...DEFAULT_COMBAT,
+      executeThreshold: 0.3,
+      executeBonus: 1,
+    });
     expect(damageAfterExecute(stats, 1, 0.5)).toBe(1);
     expect(damageAfterExecute(stats, 1, 0.29)).toBeCloseTo(2, 10);
     expect(damageAfterExecute(stats, 1, 0.3)).toBe(1);
@@ -269,9 +273,9 @@ describe('M13 burn, status amp, and shock arcs', () => {
   });
 
   it('damageWithStatusBonus scales damage only when target is afflicted and bonus > 0', () => {
-    const stats = statsOf(['corrosive', 2]); // +50%
+    const stats = statsOf(['blightfrost', 1]); // +35%
     expect(damageWithStatusBonus(stats, 4, false)).toBe(4);
-    expect(damageWithStatusBonus(stats, 4, true)).toBeCloseTo(6, 10);
+    expect(damageWithStatusBonus(stats, 4, true)).toBeCloseTo(5.4, 10);
     expect(damageWithStatusBonus(statsOf(), 4, true)).toBe(4);
   });
 

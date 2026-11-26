@@ -45,6 +45,7 @@ import {
   isCharacterId,
   isCharacterUnlocked,
   resolveCharacterAnimKey,
+  resolveCharacterPortraitEntry,
   type CharacterAnimKind,
   type CharacterDef,
 } from '../core/characters/roster';
@@ -1757,6 +1758,7 @@ export class Bootstrap extends Component {
       }
       const projEntry = manifest.sprites[character.defaultLoadout.defaultProjectileKey];
       if (projEntry !== undefined) sheets.add(projEntry.sheet);
+      sheets.add(resolveCharacterPortraitEntry(manifest, character.id).sheet);
     }
 
     // Preload every role mapped for this chapter (including WaveScheduler-injected `bomber`/`buffer`).
@@ -2079,7 +2081,13 @@ export class Bootstrap extends Component {
     node.parent = canvas;
 
     const hud: Hud = node.addComponent(Hud);
-    await hud.init(this.player?.maxHearts ?? DEFAULT_COMBAT.playerBaseMaxHp, this.hudRoomText());
+    const activeCharId = this.runCharacter?.id ?? this.screens.selectedCharacter().id;
+    await hud.init(
+      this.player?.maxHearts ?? DEFAULT_COMBAT.playerBaseMaxHp,
+      this.hudRoomText(),
+      activeCharId,
+      this.manifest,
+    );
     // World draws at integer multiples so it can be smaller than the UI band; shrink the HUD to hug the room edges.
     const hudScale = this.camera?.hudScale ?? 1;
     node.setScale(hudScale, hudScale, 1);
@@ -3691,6 +3699,7 @@ export class Bootstrap extends Component {
         }
         this.bulletView?.setDefaultProjectileKey(nextChar.defaultLoadout.defaultProjectileKey);
         this.combat.setSignatureSkill(nextChar.signatureSkillId);
+        this.hud?.setCharacter(nextChar.id, this.manifest);
         this.syncHud();
       }
       console.log(`[YokaiField] debug selectCharacter → ${nextChar.id} (${nextChar.name}).`);

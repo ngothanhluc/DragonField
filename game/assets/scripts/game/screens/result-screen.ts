@@ -5,11 +5,21 @@
  * cleanly), Unlocks earned (`formatRunUnlocks`), optional `Continue Endless` button on victory,
  * and `Meta shop` / `Chapter select` / `Title` actions.
  */
-import { Button as CocosButton, Layers, Node as CocosNode } from 'cc';
-import type { CharacterId } from '../../core/characters/roster';
+import {
+  Button as CocosButton,
+  Color as CocosColor,
+  Layers,
+  Node as CocosNode,
+} from 'cc';
+import {
+  DEFAULT_CHARACTER_ID,
+  isCharacterId,
+  type CharacterId,
+} from '../../core/characters/roster';
 import { t } from '../../core/i18n';
 import type { DeathCause, RunUnlocksSummary } from '../../core/run/run-summary';
 import {
+  PANEL_WELL_INSET_PX,
   computeResultScreenLayout,
   formatDuration,
   formatResultScreenSummary,
@@ -18,6 +28,10 @@ import {
   type RunResultOwnedSkills,
   type SkillSummaryEntry,
 } from '../../core/view/menu-layout';
+import {
+  createPortraitSpriteNode,
+  loadCharacterPortrait,
+} from '../assets/portrait-icon';
 import { playSfx } from '../audio/sfx';
 import { createLabel } from '../hud';
 import {
@@ -26,6 +40,9 @@ import {
   MENU_MUTED_COLOR,
   MENU_TEXT_COLOR,
   MENU_TITLE_COLOR,
+  PANEL_SHADOW_TINT,
+  PANEL_WELL_TINT,
+  addSlicedSpriteNode,
   createMenuButton,
   createMenuPanel,
   createScreenBackdrop,
@@ -137,9 +154,20 @@ export async function buildResultScreen(options: ResultScreenOptions): Promise<M
   };
   document.addEventListener('keydown', onKey, true);
 
+  const heroId: CharacterId =
+    result.characterId !== undefined && isCharacterId(result.characterId)
+      ? result.characterId
+      : DEFAULT_CHARACTER_ID;
+
   let frames: MenuFrames;
+  let portraitSpriteFrame: Awaited<ReturnType<typeof loadCharacterPortrait>> | null = null;
   try {
-    frames = await loadMenuFrames();
+    const [loadedMenuFrames, loadedPortrait] = await Promise.all([
+      loadMenuFrames(),
+      loadCharacterPortrait(heroId).catch(() => null),
+    ]);
+    frames = loadedMenuFrames;
+    portraitSpriteFrame = loadedPortrait;
   } catch (error: unknown) {
     removeListeners();
     throw error;
@@ -185,17 +213,50 @@ export async function buildResultScreen(options: ResultScreenOptions): Promise<M
   );
   panel.setPosition(layout.panelX, layout.panelY, 0);
 
+  // M19 crisp 1:1 64×64 hero portrait inside a recessed pedestal in the top-left Result header.
+  const portraitPedestal = new CocosNode('result-portrait-frame');
+  portraitPedestal.layer = Layers.Enum.UI_2D;
+  portraitPedestal.parent = root;
+  portraitPedestal.setPosition(layout.portraitFrame.x, layout.portraitFrame.y, 0);
+  addSlicedSpriteNode(
+    portraitPedestal,
+    'result-portrait-rim',
+    frames.shadow,
+    layout.portraitFrame.frameSize,
+    layout.portraitFrame.frameSize,
+    result.won ? new CocosColor(255, 226, 118, 255) : PANEL_SHADOW_TINT,
+  );
+  addSlicedSpriteNode(
+    portraitPedestal,
+    'result-portrait-well',
+    frames.panel,
+    Math.max(16, layout.portraitFrame.frameSize - PANEL_WELL_INSET_PX + 1),
+    Math.max(16, layout.portraitFrame.frameSize - PANEL_WELL_INSET_PX + 1),
+    PANEL_WELL_TINT,
+  );
+  const portraitBuilt = createPortraitSpriteNode(
+    portraitPedestal,
+    'result-portrait',
+    layout.portraitFrame.spriteSize,
+    layout.portraitFrame.spriteSize,
+    portraitSpriteFrame,
+  );
+  portraitBuilt.node.active = portraitSpriteFrame !== null;
+  portraitBuilt.sprite.color = result.won
+    ? new CocosColor(255, 255, 255, 255)
+    : new CocosColor(224, 206, 206, 255);
+
   const title = createLabel(root, 'result-title', summary.title);
   title.fontSize = layout.titleFontSize;
   title.lineHeight = layout.titleFontSize + 4;
   title.color = result.won ? MENU_TITLE_COLOR : MENU_DANGER;
-  title.node.setPosition(0, layout.titleY, 0);
+  title.node.setPosition(layout.headerTextX, layout.titleY, 0);
 
   const subtitle = createLabel(root, 'result-subtitle', summary.subtitle);
   subtitle.fontSize = layout.subtitleFontSize;
   subtitle.lineHeight = layout.subtitleFontSize + 4;
   subtitle.color = result.won ? MENU_TEXT_COLOR : MENU_DANGER;
-  subtitle.node.setPosition(0, layout.subtitleY, 0);
+  subtitle.node.setPosition(layout.headerTextX, layout.subtitleY, 0);
 
   summary.lines.forEach((line, index) => {
     const lbl = createLabel(root, `result-info-${index}`, line.text);

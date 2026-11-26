@@ -314,7 +314,7 @@ export const VI: Readonly<Record<TranslationKey, string>> = {
   'runShop.unavailable': 'TIỆM CHƯA SẴN SÀNG',
   'runShop.couldNotSave': 'KHÔNG LƯU ĐƯỢC',
 
-  // --- Base skill names (27) ---
+  // --- Base skill names (21) ---
   'skill.sharpen': 'Mài Sắc',
   'skill.rapid-fire': 'Liên Xạ',
   'skill.twin-shot': 'Song Tiễn',
@@ -323,19 +323,13 @@ export const VI: Readonly<Record<TranslationKey, string>> = {
   'skill.homing': 'Truy Đuổi',
   'skill.explosive': 'Đạn Nổ',
   'skill.crit-eye': 'Chí Mạng',
-  'skill.executioner': 'Hành Quyết',
   'skill.freeze': 'Đóng Băng',
   'skill.poison': 'Trúng Độc',
   'skill.ignite': 'Thiêu Đốt',
   'skill.chain-lightning': 'Sét Lan',
   'skill.lifesteal': 'Hút Máu',
-  'skill.corrosive': 'Ăn Mòn',
   'skill.vitality': 'Sinh Lực',
-  'skill.second-wind': 'Hồi Sức',
   'skill.shield': 'Khiên Năng Lượng',
-  'skill.thorns': 'Giáp Gai',
-  'skill.long-iframe': 'Bất Tử Lâu',
-  'skill.iron-skin': 'Da Sắt',
   'skill.swift': 'Thần Tốc',
   'skill.phantom-dash': 'Lướt Ảo Ảnh',
   'skill.dash-nova': 'Lướt Bùng Nổ',

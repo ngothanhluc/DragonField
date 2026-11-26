@@ -143,7 +143,7 @@ describe('aura rule — ≥ 8 total stacks or an Epic skill held', () => {
   });
 
   it('any single Epic skill (1 stack) shows the aura', () => {
-    for (const epic of ['ricochet', 'homing', 'second-wind', 'lifesteal', 'executioner']) {
+    for (const epic of ['ricochet', 'homing', 'chain-lightning', 'lifesteal', 'arcane-surge']) {
       expect(showAura(owned({ [epic]: 1 })), epic).toBe(true);
     }
   });

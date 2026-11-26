@@ -46,6 +46,10 @@ import {
   type MenuButtonBox,
   type MenuGridDirection,
 } from '../../core/view/menu-layout';
+import {
+  createPortraitSpriteNode,
+  loadCharacterPortrait,
+} from '../assets/portrait-icon';
 import { playSfx } from '../audio/sfx';
 import { createLabel } from '../hud';
 import {
@@ -54,6 +58,7 @@ import {
   MENU_MUTED_COLOR,
   MENU_TEXT_COLOR,
   MENU_TITLE_COLOR,
+  PANEL_RIM_TINT,
   addPanelDivider,
   addSlicedSpriteNode,
   createFocusFrame,
@@ -96,6 +101,9 @@ const INK_DETAIL = new CocosColor(62, 28, 10, 255);
 const INK_DETAIL_FOCUS = new CocosColor(78, 30, 8, 255);
 const INK_LOCKED = new CocosColor(58, 34, 20, 255);
 const INK_DISABLED_DETAIL = new CocosColor(202, 190, 176, 255);
+const PORTRAIT_UNLOCKED_TINT = new CocosColor(255, 255, 255, 255);
+const PORTRAIT_LOCKED_TINT = new CocosColor(156, 162, 178, 255);
+const PORTRAIT_SELECTED_RIM_TINT = new CocosColor(255, 226, 118, 255);
 
 export interface CharacterSelectOptions {
   readonly parent: Node;
@@ -299,8 +307,21 @@ export async function buildCharacterSelectScreen(
   notifyHighlight(highlightedCardIndex);
 
   let frames: MenuFrames;
+  const portraitFrames = new Map<CharacterId, Awaited<ReturnType<typeof loadCharacterPortrait>>>();
   try {
-    frames = await loadMenuFrames();
+    const [loadedMenuFrames, ...loadedPortraits] = await Promise.all([
+      loadMenuFrames(),
+      ...CHARACTER_ROSTER.map((character) =>
+        loadCharacterPortrait(character.id).catch(() => null),
+      ),
+    ]);
+    frames = loadedMenuFrames;
+    CHARACTER_ROSTER.forEach((character, idx) => {
+      const frame = loadedPortraits[idx];
+      if (frame !== null && frame !== undefined) {
+        portraitFrames.set(character.id, frame);
+      }
+    });
   } catch (error: unknown) {
     removeListeners();
     throw error;
@@ -329,6 +350,27 @@ export async function buildCharacterSelectScreen(
   root.parent = options.parent;
 
   createScreenBackdrop(root, CHARACTER_BACKDROP_ALPHA);
+
+  // M19 crisp 1:1 64×64 hero portrait plaque on the top-left stage above the live preview actor.
+  const portraitPlaque = createMenuPanel(
+    root,
+    'character-portrait-plaque',
+    frames,
+    layout.portraitFrame.frameSize,
+    layout.portraitFrame.frameSize,
+  );
+  portraitPlaque.setPosition(layout.portraitFrame.x, layout.portraitFrame.y, 0);
+  const portraitRimSprite: Sprite | null =
+    portraitPlaque.children[1]?.getComponent(CocosSprite) ?? null;
+
+  const initialPortraitHero = CHARACTER_ROSTER[highlightedCardIndex] ?? CHARACTER_ROSTER[0]!;
+  const portraitBuilt = createPortraitSpriteNode(
+    portraitPlaque,
+    'character-portrait',
+    layout.portraitFrame.spriteSize,
+    layout.portraitFrame.spriteSize,
+    portraitFrames.get(initialPortraitHero.id) ?? null,
+  );
 
   const panel = createMenuPanel(
     root,
@@ -514,6 +556,22 @@ export async function buildCharacterSelectScreen(
     });
 
     const hero = CHARACTER_ROSTER[highlightedCardIndex] ?? CHARACTER_ROSTER[0]!;
+    const heroUnlocked = isCharacterUnlocked(hero.id, currentSave);
+    const portraitFrame = portraitFrames.get(hero.id);
+    if (portraitFrame !== undefined) {
+      portraitBuilt.sprite.spriteFrame = portraitFrame;
+      portraitBuilt.node.active = true;
+    } else {
+      portraitBuilt.node.active = false;
+    }
+    portraitBuilt.sprite.color = heroUnlocked ? PORTRAIT_UNLOCKED_TINT : PORTRAIT_LOCKED_TINT;
+    if (portraitRimSprite !== null) {
+      portraitRimSprite.color =
+        heroUnlocked && resolveSelectedCharacter(currentSave).id === hero.id
+          ? PORTRAIT_SELECTED_RIM_TINT
+          : PANEL_RIM_TINT;
+    }
+
     const summary = formatCharacterSummaryLines(hero, currentSave);
     statusLabel.string = summary.statusLine;
     statusLabel.color =

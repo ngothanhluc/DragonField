@@ -124,7 +124,7 @@ describe('M16 core/i18n — dictionary parity, interpolation & locale switching'
     expect(seen).toEqual(['en', 'vi']);
   });
 
-  it('localizes all 27 base skills, 7 Evolutions, 4 characters, 8 bosses, rarities, upgrades, doors, and roles', () => {
+  it('localizes all 21 base skills, 7 Evolutions, 4 characters, 8 bosses, rarities, upgrades, doors, and roles', () => {
     for (const skill of SKILLS) {
       expect(localizeSkillName(skill.id, skill.name, 'vi').length).toBeGreaterThan(0);
       expect(localizeSkillName(skill.id, skill.name, 'en')).toBe(skill.name);

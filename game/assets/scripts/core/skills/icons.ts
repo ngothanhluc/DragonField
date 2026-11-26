@@ -1,7 +1,7 @@
 /**
- * Skill & Legendary Evolution → pack icon mapping (M13, ADR-022).
+ * Skill & Legendary Evolution → pack icon mapping (M13 ADR-022, M19 ADR-027).
  *
- * Every base skill (27) and every Legendary Evolution (7) maps to a strictly unique
+ * Every base skill (21) and every Legendary Evolution (7) maps to a strictly unique
  * 24×24 icon in `resources/art/ui/skill-icons/` (plus its `<Name>Disabled.png` variant).
  *
  * Pure module: no `cc`, no file system — the UI adapters (`loadSkillIcon`) turn these sheet
@@ -12,7 +12,7 @@ import type { SkillDef } from './pool';
 
 /** Skill or Evolution id → icon file name in `resources/art/ui/skill-icons/` (no extension, no `Disabled` suffix). */
 export const SKILL_ICONS: Readonly<Record<string, string>> = {
-  // Weapon / Offense (9)
+  // Weapon / Offense (8)
   sharpen: 'AttackUpgrade',
   'rapid-fire': 'Fireball',
   'twin-shot': 'Permutation',
@@ -21,23 +21,17 @@ export const SKILL_ICONS: Readonly<Record<string, string>> = {
   homing: 'Vision',
   explosive: 'Explosion',
   'crit-eye': 'Counter',
-  executioner: 'Death',
 
-  // Elemental / Status (6)
+  // Elemental / Status (5)
   freeze: 'BookIce',
   poison: 'BookDeath',
   ignite: 'BookFire',
   'chain-lightning': 'BookThunder',
   lifesteal: 'MagicWeapon',
-  corrosive: 'Downgrade',
 
-  // Defense / Survival (6)
+  // Defense / Survival (2)
   vitality: 'Heal',
-  'second-wind': 'BookPlant',
   shield: 'DefenseUpgrade',
-  thorns: 'BookDarkness',
-  'long-iframe': 'Mist',
-  'iron-skin': 'Armor',
 
   // Mobility / Dash & Active (6)
   swift: 'BookWind',

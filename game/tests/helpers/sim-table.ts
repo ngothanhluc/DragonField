@@ -52,10 +52,11 @@ export const TYPICAL_LOADOUT: ReadonlyMap<string, number> = new Map([
 ]);
 
 /**
- * Competent-player skill preference order for 1-of-3 XP level-up picks (M12/M13, ADR-021, ADR-022).
- * Prioritises unlocked Legendary Evolutions first, then core DPS (`twin-shot`, `sharpen`), premier
- * defense (`shield`, `second-wind`), fire rate & wave-clear (`rapid-fire`, `piercing`, `ricochet`,
- * `explosive`), then sustain and pure-combat mobility/elemental modifiers.
+ * Competent-player skill preference order for 1-of-3 XP level-up picks (M12/M13/M19, ADR-021,
+ * ADR-022, ADR-027). Prioritises unlocked Legendary Evolutions first, then core DPS (`twin-shot`,
+ * `sharpen`), premier defense (`shield`), fire rate & wave-clear (`rapid-fire`, `piercing`,
+ * `ricochet`, `explosive`), then sustain and pure-combat mobility/elemental modifiers across the
+ * pruned 21-skill shared pool.
  */
 const SKILL_PRIORITY: readonly string[] = [
   'phantom-volley',
@@ -68,7 +69,6 @@ const SKILL_PRIORITY: readonly string[] = [
   'twin-shot',
   'sharpen',
   'shield',
-  'second-wind',
   'rapid-fire',
   'piercing',
   'ricochet',
@@ -79,14 +79,9 @@ const SKILL_PRIORITY: readonly string[] = [
   'homing',
   'swift',
   'freeze',
-  'executioner',
   'poison',
   'chain-lightning',
   'ignite',
-  'corrosive',
-  'long-iframe',
-  'iron-skin',
-  'thorns',
   'phantom-dash',
   'dash-nova',
   'shadow-conduit',
@@ -106,7 +101,6 @@ const CORE_COMBAT_SKILLS: ReadonlySet<string> = new Set([
   'twin-shot',
   'sharpen',
   'shield',
-  'second-wind',
   'rapid-fire',
   'piercing',
   'ricochet',
@@ -120,14 +114,14 @@ const TYPICAL_REROLL_MAX_COST = 40;
 /**
  * Pick the highest-priority card from a 1-of-3 level-up offer.
  * - While healthy: prioritises Evolutions, core DPS (`twin-shot`, `sharpen` 1–2), then
- *   `shield`/`second-wind`, then further `sharpen`/`rapid-fire`/wave-clear, plus a slight
- *   synergy bonus when a card completes an unlocked Evolution pair.
- * - When low on hearts (`hearts <= 4`): prioritises immediate survival (`second-wind`, `vitality`,
- *   `shield`, `lifesteal`) just as a real player reading their HUD hearts would.
+ *   `shield`, then further `sharpen`/`rapid-fire`/wave-clear, plus a slight synergy bonus when a
+ *   card completes an unlocked Evolution pair.
+ * - When low on hearts (`hearts <= 60%`): prioritises immediate survival (`vitality`, `shield`,
+ *   `lifesteal`) just as a real player reading their HUD HP bar would.
  */
-const SHARPEN_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('second-wind') + 0.5;
+const SHARPEN_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('shield') + 0.5;
 const RAPID_FIRE_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('explosive') + 0.5;
-const EVOLUTION_PAIR_READY_RANK = SKILL_PRIORITY.indexOf('second-wind') + 0.25;
+const EVOLUTION_PAIR_READY_RANK = SKILL_PRIORITY.indexOf('shield') + 0.25;
 
 function completesEvolutionPair(skill: SkillDef, owned: ReadonlyMap<string, number>): boolean {
   if (skill.rarity === 'legendary') return false;
@@ -151,7 +145,7 @@ export const typicalSkillChoice: SkillPickPolicy = (
     const rank = SKILL_PRIORITY.indexOf(skill.id);
     let effectiveRank = rank === -1 ? SKILL_PRIORITY.length : rank;
     if (skill.id === 'sharpen' && sharpenStacks >= 2) {
-      // Ranks behind `shield` and `second-wind` once base damage is already 3+.
+      // Ranks behind `shield` once base damage is already stacked 2+.
       effectiveRank = SHARPEN_CAP_AFTER_RANK;
     }
     if (skill.id === 'rapid-fire' && rapidFireStacks >= 2) {
@@ -161,8 +155,7 @@ export const typicalSkillChoice: SkillPickPolicy = (
       effectiveRank = Math.min(effectiveRank, EVOLUTION_PAIR_READY_RANK);
     }
     if (lowHearts) {
-      if (skill.id === 'second-wind') effectiveRank = -3;
-      else if (skill.id === 'vitality') effectiveRank = -2;
+      if (skill.id === 'vitality') effectiveRank = -2;
       else if (skill.id === 'shield') effectiveRank = -1;
       else if (skill.id === 'lifesteal') effectiveRank = 0.5;
     }

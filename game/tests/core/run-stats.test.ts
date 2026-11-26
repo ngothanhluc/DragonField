@@ -191,10 +191,16 @@ describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
     expect(derived.executeThreshold).toBeCloseTo(0.3, 6);
     expect(derived.executeBonus).toBeCloseTo(0.1, 6);
 
-    // Executioner stacks its +50% execute bonus on top of Sword Heart's +10% -> +60%.
-    const stacked = derivedStatsForRun(save, new Map([['executioner', 1]]), 'cultivator');
-    expect(stacked.executeThreshold).toBeCloseTo(0.3, 6);
-    expect(stacked.executeBonus).toBeCloseTo(0.6, 6);
+    // M19 pruned the shared `executioner` skill (ADR-027): Sword Heart's execute passive is
+    // exclusive to Cultivator (`0` on other classes) and ignores stale `'executioner'` entries.
+    expect(derivedStatsForRun(save, new Map(), 'ninja').executeBonus).toBe(0);
+    const withLegacyExecutioner = derivedStatsForRun(
+      save,
+      new Map([['executioner', 1]]),
+      'cultivator',
+    );
+    expect(withLegacyExecutioner.executeThreshold).toBeCloseTo(0.3, 6);
+    expect(withLegacyExecutioner.executeBonus).toBeCloseTo(0.1, 6);
   });
 
   it('statsForRun composes Layer 1 -> Meta upgrades -> Layer 2 without mutating inputs', () => {

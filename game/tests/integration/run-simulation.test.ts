@@ -883,7 +883,7 @@ describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', 
     expect(surgedActive.durationMs).toBeLessThan(baseActive.durationMs);
   });
 
-  it('Burn DoT (ignite), Chain Lightning (chain-lightning), Status Amp (corrosive), and Iron Skin ward work in combat', () => {
+  it('Burn DoT (ignite), Chain Lightning (chain-lightning), Blightfrost status-amp, and Aegis Retribution work in combat', () => {
     const clusterRoom: LevelData = parseLevelData({
       id: 'm13-elemental-room',
       chapter: 1,
@@ -918,13 +918,13 @@ describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', 
       skills: new Map([['ignite', 2]]),
       godMode: true,
     });
-    const burnCorrosive = simulateRun({
+    const burnBlightfrost = simulateRun({
       seed: 9,
       level: { chapter: 1, rooms: [clusterRoom] },
       policy: standStill,
       skills: new Map([
         ['ignite', 2],
-        ['corrosive', 2],
+        ['blightfrost', 1],
       ]),
       godMode: true,
     });
@@ -937,19 +937,29 @@ describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', 
     });
 
     expect(burn.durationMs).toBeLessThan(plain.durationMs);
-    expect(burnCorrosive.durationMs).toBeLessThan(burn.durationMs);
+    expect(burnBlightfrost.durationMs).toBeLessThan(burn.durationMs);
     expect(shock.durationMs).toBeLessThan(plain.durationMs);
 
-    const warded = simulateRun({
+    // `aegis-retribution` (unlocked by `shield` + `vitality`) absorbs contact hits & retaliates.
+    const aegis = simulateRun({
       seed: 1,
       level: meleeChapter,
       policy: standStill,
       skills: new Map([
-        ['iron-skin', 3],
+        ['shield', 1],
         ['vitality', 5],
+        ['aegis-retribution', 1],
       ]),
     });
-    expect(warded.events.some((event) => event.kind === 'ward-block')).toBe(true);
+    const unshielded = simulateRun({
+      seed: 1,
+      level: meleeChapter,
+      policy: standStill,
+      skills: new Map([['vitality', 5]]),
+    });
+    expect(aegis.status).toBe('won');
+    expect(unshielded.status).toBe('lost');
+    expect(aegis.roomsCleared).toBeGreaterThan(unshielded.roomsCleared);
   });
 
   it('acquires Legendary Evolutions and exercises Dash + Active during a full Chapter 1 run', () => {

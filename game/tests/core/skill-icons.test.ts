@@ -27,7 +27,7 @@ describe('skill & Evolution icon mapping (data)', () => {
 describe('icon sheet API (HUD, cards, and later shop/doors)', () => {
   it('returns the resources sheet path of the normal icon for skills and Evolutions', () => {
     expect(skillIconSheet('sharpen')).toBe('resources/art/ui/skill-icons/AttackUpgrade.png');
-    expect(skillIconSheet('executioner')).toBe('resources/art/ui/skill-icons/Death.png');
+    expect(skillIconSheet('ricochet')).toBe('resources/art/ui/skill-icons/Hook.png');
     expect(skillIconSheet('phantom-volley')).toBe('resources/art/ui/skill-icons/Arrow.png');
   });
 
@@ -35,8 +35,8 @@ describe('icon sheet API (HUD, cards, and later shop/doors)', () => {
     expect(skillIconSheet('sharpen', { disabled: true })).toBe(
       'resources/art/ui/skill-icons/AttackUpgradeDisabled.png',
     );
-    expect(skillIconSheet('second-wind', { disabled: true })).toBe(
-      'resources/art/ui/skill-icons/BookPlantDisabled.png',
+    expect(skillIconSheet('shield', { disabled: true })).toBe(
+      'resources/art/ui/skill-icons/DefenseUpgradeDisabled.png',
     );
     expect(skillIconSheet('cataclysm', { disabled: true })).toBe(
       'resources/art/ui/skill-icons/SunDisabled.png',

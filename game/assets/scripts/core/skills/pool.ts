@@ -1,5 +1,5 @@
 /**
- * Pure-combat skill pool — 27 skills across 4 pillars (M13, ADR-022).
+ * Pure-combat shared skill pool — 21 skills across 4 pillars (M13 ADR-022, pruned 27→21 in M19 ADR-027).
  *
  * Zero economy, gold, XP, or luck cards live here: every card directly advances combat
  * offense, elemental status, defense, or mobility/dash & signature active skills.
@@ -21,6 +21,16 @@ export type BaseRarity = (typeof BASE_RARITIES)[number];
 export const RARITIES = ['common', 'rare', 'epic', 'legendary'] as const;
 
 export type Rarity = (typeof RARITIES)[number];
+
+/** Six low-excitement passive stat-stick skills pruned from the shared pool in M19 (ADR-027). */
+export const PRUNED_M19_SKILL_IDS = [
+  'long-iframe',
+  'thorns',
+  'iron-skin',
+  'corrosive',
+  'second-wind',
+  'executioner',
+] as const;
 
 /**
  * One mechanical effect of a skill or Evolution. Every tag means "each stack adds this much";
@@ -105,21 +115,21 @@ export interface SkillDef {
   readonly minStacksEach?: number;
 }
 
-/** One of the 27 base pure-combat skills organized by pillar. */
+/** One of the 21 base pure-combat skills organized by pillar. */
 export interface BaseSkillDef extends SkillDef {
   readonly pillar: SkillPillar;
   readonly rarity: BaseRarity;
 }
 
 /**
- * The 27 pure-combat skills across 4 pillars:
- * - Weapon / Offense (9)
- * - Elemental / Status (6)
- * - Defense / Survival (6)
+ * The 21 high-impact shared pure-combat skills across 4 pillars (M19 ADR-027):
+ * - Weapon / Offense (8)
+ * - Elemental / Status (5)
+ * - Defense / Survival (2)
  * - Mobility / Dash & Active (6)
  */
 export const SKILLS: readonly BaseSkillDef[] = [
-  // --- Pillar 1: Weapon / Offense (9) ---
+  // --- Pillar 1: Weapon / Offense (8) ---
   {
     id: 'sharpen',
     short: 'SH',
@@ -192,17 +202,8 @@ export const SKILLS: readonly BaseSkillDef[] = [
     maxStacks: 3,
     tags: [{ kind: 'crit-chance', chance: 0.15, multiplier: 2 }],
   },
-  {
-    id: 'executioner',
-    short: 'EX',
-    name: 'Executioner',
-    pillar: 'weapon',
-    rarity: 'epic',
-    maxStacks: 2,
-    tags: [{ kind: 'execute', threshold: 0.3, bonus: 0.5 }],
-  },
 
-  // --- Pillar 2: Elemental / Status (6) ---
+  // --- Pillar 2: Elemental / Status (5) ---
   {
     id: 'freeze',
     short: 'FR',
@@ -248,17 +249,8 @@ export const SKILLS: readonly BaseSkillDef[] = [
     maxStacks: 2,
     tags: [{ kind: 'lifesteal', percent: 0.05 }],
   },
-  {
-    id: 'corrosive',
-    short: 'CO',
-    name: 'Corrosive',
-    pillar: 'elemental',
-    rarity: 'rare',
-    maxStacks: 2,
-    tags: [{ kind: 'status-amp', bonusRatio: 0.25 }],
-  },
 
-  // --- Pillar 3: Defense / Survival (6) ---
+  // --- Pillar 3: Defense / Survival (2) ---
   {
     id: 'vitality',
     short: 'VI',
@@ -269,15 +261,6 @@ export const SKILLS: readonly BaseSkillDef[] = [
     tags: [{ kind: 'max-hearts', amount: 25 }],
   },
   {
-    id: 'second-wind',
-    short: '2W',
-    name: 'Second Wind',
-    pillar: 'defense',
-    rarity: 'epic',
-    maxStacks: 2,
-    tags: [{ kind: 'heal-per-room', amount: 30 }],
-  },
-  {
     id: 'shield',
     short: 'SD',
     name: 'Shield',
@@ -285,36 +268,6 @@ export const SKILLS: readonly BaseSkillDef[] = [
     rarity: 'rare',
     maxStacks: 3,
     tags: [{ kind: 'shield', cooldownMs: 20_000 }],
-  },
-  {
-    id: 'thorns',
-    short: 'TH',
-    name: 'Thorns',
-    pillar: 'defense',
-    rarity: 'rare',
-    maxStacks: 3,
-    tags: [{ kind: 'thorns', damage: 2 }],
-  },
-  {
-    id: 'long-iframe',
-    short: 'IF',
-    name: 'Long i-frame',
-    pillar: 'defense',
-    rarity: 'rare',
-    maxStacks: 2,
-    tags: [{ kind: 'iframe-mult', amount: 1.375 }],
-  },
-  {
-    id: 'iron-skin',
-    short: 'IS',
-    name: 'Iron Skin',
-    pillar: 'defense',
-    rarity: 'common',
-    maxStacks: 3,
-    tags: [
-      { kind: 'damage-reduction', chance: 0.12 },
-      { kind: 'shield-recharge-mult', factor: 0.85 },
-    ],
   },
 
   // --- Pillar 4: Mobility / Dash & Active (6) ---

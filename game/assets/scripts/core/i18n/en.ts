@@ -316,7 +316,7 @@ export const EN = {
   'runShop.unavailable': 'SHOP UNAVAILABLE',
   'runShop.couldNotSave': 'COULD NOT SAVE',
 
-  // --- Base skill names (27) ---
+  // --- Base skill names (21) ---
   'skill.sharpen': 'Sharpen',
   'skill.rapid-fire': 'Rapid Fire',
   'skill.twin-shot': 'Twin Shot',
@@ -325,19 +325,13 @@ export const EN = {
   'skill.homing': 'Homing',
   'skill.explosive': 'Explosive',
   'skill.crit-eye': 'Crit Eye',
-  'skill.executioner': 'Executioner',
   'skill.freeze': 'Freeze',
   'skill.poison': 'Poison',
   'skill.ignite': 'Ignite',
   'skill.chain-lightning': 'Chain Lightning',
   'skill.lifesteal': 'Lifesteal',
-  'skill.corrosive': 'Corrosive',
   'skill.vitality': 'Vitality',
-  'skill.second-wind': 'Second Wind',
   'skill.shield': 'Shield',
-  'skill.thorns': 'Thorns',
-  'skill.long-iframe': 'Long i-frame',
-  'skill.iron-skin': 'Iron Skin',
   'skill.swift': 'Swift',
   'skill.phantom-dash': 'Phantom Dash',
   'skill.dash-nova': 'Dash Nova',
