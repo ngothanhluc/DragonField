@@ -1,20 +1,26 @@
 /**
- * Settings (GDD §9, §13.1, M14): volume, fullscreen, accessibility (shake, damage numbers),
- * Effects Full/Reduced, and read-only keybinds.
+ * Settings (GDD §9, §13.1, §15.5, M15): independent Music & SFX 10%-step sliders, fullscreen,
+ * accessibility (shake, damage numbers), Effects Full/Reduced, and read-only keybinds.
  *
- * Volume steps by 10% and is written to the save immediately (`onVolume`), so reopening after
- * a reload shows the right value. Accessibility and effects toggles apply immediately.
- * Legacy `cultivatorEnabled` (M10 preview toggle) was retired in M14 in favour of the 4-class
- * Character Select & chapter/gold unlock system.
+ * Music and SFX step independently by 10% (`stepMusicVolume` / `stepSfxVolume`) and persist
+ * immediately via `onMusicVolume` / `onSfxVolume` (falling back to `onVolume` when omitted).
  */
-import { stepVolume, type Settings } from '../../core/save/settings';
+import {
+  applySettings,
+  stepMusicVolume,
+  stepSfxVolume,
+  type Settings,
+} from '../../core/save/settings';
 import { buildMenuScreen, type MenuItem, type MenuScreen } from './menu';
 import type { TitleScreenOptions } from './title-screen';
 
 export interface SettingsScreenOptions {
   readonly parent: TitleScreenOptions['parent'];
   readonly settings: Settings;
-  readonly onVolume: (volume: number) => void;
+  readonly onMusicVolume?: (volume: number) => void;
+  readonly onSfxVolume?: (volume: number) => void;
+  /** Backwards-compatible fallback when `onMusicVolume` / `onSfxVolume` is omitted. */
+  readonly onVolume?: (volume: number) => void;
   readonly onToggleFullscreen: () => void;
   readonly onToggleScreenShake: () => void;
   readonly onToggleDamageNumbers: () => void;
@@ -24,6 +30,14 @@ export interface SettingsScreenOptions {
 
 export function formatVolume(volume: number): string {
   return `Volume   ${Math.round(volume * 100)}%`;
+}
+
+export function formatMusicVolume(volume: number): string {
+  return `Music   ${Math.round(volume * 100)}%`;
+}
+
+export function formatSfxVolume(volume: number): string {
+  return `SFX   ${Math.round(volume * 100)}%`;
 }
 
 export function formatFullscreen(on: boolean): string {
@@ -41,37 +55,55 @@ export function formatEffects(mode: 'full' | 'reduced'): string {
 }
 
 export function buildSettingsScreen(options: SettingsScreenOptions): Promise<MenuScreen> {
-  let current = options.settings;
+  let current = applySettings(options.settings);
   let screen: MenuScreen | null = null;
 
-  const changeVolume = (delta: number): void => {
-    current = { ...current, volume: stepVolume(current.volume, delta) };
-    options.onVolume(current.volume);
-    screen?.updateItem(0, formatVolume(current.volume));
+  const changeMusicVolume = (delta: number): void => {
+    current = stepMusicVolume(current, delta);
+    if (options.onMusicVolume !== undefined) {
+      options.onMusicVolume(current.musicVolume);
+    } else {
+      options.onVolume?.(current.musicVolume);
+    }
+    screen?.updateItem(0, formatMusicVolume(current.musicVolume));
+  };
+
+  const changeSfxVolume = (delta: number): void => {
+    current = stepSfxVolume(current, delta);
+    if (options.onSfxVolume !== undefined) {
+      options.onSfxVolume(current.sfxVolume);
+    } else {
+      options.onVolume?.(current.sfxVolume);
+    }
+    screen?.updateItem(1, formatSfxVolume(current.sfxVolume));
   };
 
   const toggleScreenShake = (): void => {
     current = { ...current, screenShake: !current.screenShake };
     options.onToggleScreenShake();
-    screen?.updateItem(2, formatToggle('Screen shake', current.screenShake));
+    screen?.updateItem(3, formatToggle('Screen shake', current.screenShake));
   };
 
   const toggleDamageNumbers = (): void => {
     current = { ...current, damageNumbers: !current.damageNumbers };
     options.onToggleDamageNumbers();
-    screen?.updateItem(3, formatToggle('Damage numbers', current.damageNumbers));
+    screen?.updateItem(4, formatToggle('Damage numbers', current.damageNumbers));
   };
 
   const toggleEffects = (): void => {
     current = { ...current, effects: current.effects === 'full' ? 'reduced' : 'full' };
     options.onToggleEffects();
-    screen?.updateItem(4, formatEffects(current.effects));
+    screen?.updateItem(5, formatEffects(current.effects));
   };
 
   const items: MenuItem[] = [
     {
-      label: formatVolume(current.volume),
-      activate: () => changeVolume(1),
+      label: formatMusicVolume(current.musicVolume),
+      activate: () => changeMusicVolume(1),
+    },
+    {
+      label: formatSfxVolume(current.sfxVolume),
+      activate: () => changeSfxVolume(1),
     },
     {
       label: formatFullscreen(current.fullscreen),
@@ -102,14 +134,15 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     items,
     onBack: options.onBack,
     onAdjust: (index, delta) => {
-      if (index === 0) changeVolume(delta);
+      if (index === 0) changeMusicVolume(delta);
+      else if (index === 1) changeSfxVolume(delta);
     },
-    hint: '↑/↓ select · ←/→ adjust volume · Esc back',
+    hint: '↑/↓ select · ←/→ adjust audio · Esc back',
     panelWidth: 452,
     buttonWidth: 316,
-    buttonHeight: 24,
-    buttonGap: 4,
-    buttonFontSize: 11,
+    buttonHeight: 22,
+    buttonGap: 3,
+    buttonFontSize: 10,
   });
 
   return task.then((built) => {

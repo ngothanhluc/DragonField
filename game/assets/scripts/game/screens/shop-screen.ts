@@ -1,26 +1,25 @@
 /**
- * Meta shop (GDD §7, §9, §15.4, M14-T3):
- * - Left column (`STAT UPGRADES`): 3 permanent upgrade tracks (`Hearts`, `Damage`, `Fire rate`).
- * - Right column (`HERO UNLOCKS`): 3 early character unlocks (`Archer 120g`, `Mage 220g`,
- *   `Cultivator 350g`), wired to `canBuyCharacter` / `buyCharacter`.
- * - Bottom row: optional `Character Select` shortcut + `Back` button.
+ * Expanded 3-column Meta Shop (GDD §7, §9, §15.4, §15.5, M15):
+ * - Column 1 (`STAT UPGRADES`): `Hearts`, `Damage`, `Fire rate`.
+ * - Column 2 (`UTILITY UPGRADES`): `XP magnet`, `Gold bonus`, `Free rerolls` (NO Revive!).
+ * - Column 3 (`HERO UNLOCKS`): `Archer 120g`, `Mage 220g`, `Cultivator 350g`.
+ * - Bottom row: optional `Character select` shortcut + `Back` button.
  *
- * Every button is **disabled with a clear reason** when gold is short, a stat track is maxed, or
+ * Every button is **disabled with a clear reason** when gold is short, a track is maxed, or
  * a hero is already unlocked. Purchase rules live in `core/meta/upgrades.ts` and
  * `core/save/save-data.ts`; `ScreenFlow` performs and persists mutations safely.
  */
 import { Button as CocosButton, Layers, Node as CocosNode } from 'cc';
 import type { CharacterId } from '../../core/characters/roster';
-import {
-  UPGRADE_TRACKS,
-  applyUpgrades,
-  type UpgradeTrack,
-} from '../../core/meta/upgrades';
+import { UPGRADE_TRACKS, type UpgradeTrack } from '../../core/meta/upgrades';
 import type { SaveData } from '../../core/save/save-data';
 import {
+  SHOP_CHARACTER_START_INDEX,
+  SHOP_CHAR_SELECT_BUTTON_INDEX,
   SHOP_UNLOCK_CHARACTER_IDS,
   characterShopRow,
   computeShopScreenLayout,
+  formatShopBonusSummary,
   nextShopScreenFocus,
   upgradeRow,
   type MenuGridDirection,
@@ -43,7 +42,14 @@ import {
 } from './menu';
 import type { TitleScreenOptions } from './title-screen';
 
-export { SHOP_UNLOCK_CHARACTER_IDS, characterShopRow, upgradeRow, type ShopRowText };
+export {
+  SHOP_CHARACTER_START_INDEX,
+  SHOP_CHAR_SELECT_BUTTON_INDEX,
+  SHOP_UNLOCK_CHARACTER_IDS,
+  characterShopRow,
+  upgradeRow,
+  type ShopRowText,
+};
 
 export interface ShopScreenOptions {
   readonly parent: TitleScreenOptions['parent'];
@@ -58,7 +64,7 @@ export interface ShopScreenOptions {
 export async function buildShopScreen(options: ShopScreenOptions): Promise<MenuScreen> {
   const { save } = options;
   const hasCharacterSelect = options.onOpenCharacterSelect !== undefined;
-  const maxIndex = hasCharacterSelect ? 7 : 6;
+  const maxIndex = hasCharacterSelect ? 10 : 9;
 
   let destroyed = false;
   let focused = Math.min(maxIndex, Math.max(0, options.initialFocus ?? 0));
@@ -171,36 +177,38 @@ export async function buildShopScreen(options: ShopScreenOptions): Promise<MenuS
   const subtitle = createLabel(
     root,
     'shop-subtitle',
-    `Gold: ${save.gold}g · Permanent upgrades & early hero unlocks`,
+    `Gold: ${save.gold}g · Permanent stat, utility & hero unlocks`,
   );
   subtitle.fontSize = layout.subtitleFontSize;
   subtitle.lineHeight = layout.subtitleFontSize + 2;
   subtitle.color = MENU_TEXT_COLOR;
   subtitle.node.setPosition(0, layout.subtitleY, 0);
 
-  const bonuses = applyUpgrades(save);
-  const infoText =
-    `Bonus: +${bonuses.maxHeartsBonus} hearts · +${Math.round((bonuses.damageMultiplier - 1) * 100)}% damage · ` +
-    `+${Math.round((bonuses.fireRateMultiplier - 1) * 100)}% fire rate`;
-  const info = createLabel(root, 'shop-info-0', infoText);
+  const info = createLabel(root, 'shop-info-0', formatShopBonusSummary(save));
   info.fontSize = layout.infoFontSize;
   info.lineHeight = layout.infoFontSize + 2;
   info.color = MENU_MUTED_COLOR;
   info.node.setPosition(0, layout.infoY, 0);
 
-  const leftHeader = createLabel(root, 'shop-col-upgrades', 'STAT UPGRADES');
-  leftHeader.fontSize = layout.sectionHeaderFontSize;
-  leftHeader.lineHeight = layout.sectionHeaderFontSize + 2;
-  leftHeader.color = MENU_TITLE_COLOR;
-  leftHeader.node.setPosition(layout.leftHeaderX, layout.sectionHeaderY, 0);
+  const statHeader = createLabel(root, 'shop-col-stat', 'STAT UPGRADES');
+  statHeader.fontSize = layout.sectionHeaderFontSize;
+  statHeader.lineHeight = layout.sectionHeaderFontSize + 2;
+  statHeader.color = MENU_TITLE_COLOR;
+  statHeader.node.setPosition(layout.statHeaderX, layout.sectionHeaderY, 0);
 
-  const rightHeader = createLabel(root, 'shop-col-heroes', 'HERO UNLOCKS');
-  rightHeader.fontSize = layout.sectionHeaderFontSize;
-  rightHeader.lineHeight = layout.sectionHeaderFontSize + 2;
-  rightHeader.color = MENU_TITLE_COLOR;
-  rightHeader.node.setPosition(layout.rightHeaderX, layout.sectionHeaderY, 0);
+  const utilHeader = createLabel(root, 'shop-col-utility', 'UTILITY UPGRADES');
+  utilHeader.fontSize = layout.sectionHeaderFontSize;
+  utilHeader.lineHeight = layout.sectionHeaderFontSize + 2;
+  utilHeader.color = MENU_TITLE_COLOR;
+  utilHeader.node.setPosition(layout.utilityHeaderX, layout.sectionHeaderY, 0);
 
-  // Indices 0..2: Stat upgrade tracks.
+  const heroHeader = createLabel(root, 'shop-col-heroes', 'HERO UNLOCKS');
+  heroHeader.fontSize = layout.sectionHeaderFontSize;
+  heroHeader.lineHeight = layout.sectionHeaderFontSize + 2;
+  heroHeader.color = MENU_TITLE_COLOR;
+  heroHeader.node.setPosition(layout.heroHeaderX, layout.sectionHeaderY, 0);
+
+  // Indices 0..5: Stat (`0..2`) & Utility (`3..5`) upgrade tracks.
   UPGRADE_TRACKS.forEach((track, idx) => {
     const row = upgradeRow(save, track);
     const box = layout.upgradeSlots[idx]!;
@@ -220,7 +228,7 @@ export async function buildShopScreen(options: ShopScreenOptions): Promise<MenuS
     handles.push(handle);
   });
 
-  // Indices 3..5: Early character unlocks (`archer`, `mage`, `cultivator`).
+  // Indices 6..8: Early character unlocks (`archer`, `mage`, `cultivator`).
   SHOP_UNLOCK_CHARACTER_IDS.forEach((characterId, idx) => {
     const row = characterShopRow(save, characterId);
     const box = layout.characterSlots[idx]!;
@@ -240,7 +248,7 @@ export async function buildShopScreen(options: ShopScreenOptions): Promise<MenuS
     handles.push(handle);
   });
 
-  // Index 6 (optional): Character Select shortcut.
+  // Index 9 (optional): Character Select shortcut.
   if (layout.characterSelectButton !== null && options.onOpenCharacterSelect !== undefined) {
     const box = layout.characterSelectButton;
     const openSelect = options.onOpenCharacterSelect;

@@ -1,40 +1,76 @@
 /**
- * Pause (GDD §9): Resume, Restart run, Volume, Quit to title.
+ * Pause (GDD §9, §15.5, M15): Resume, Restart run, independent Music & SFX sliders, Quit to title.
  *
  * It stops nothing itself — bootstrap switches `status` to `paused` before building this
  * screen, and `update()` only runs while `status === 'playing'`, so enemies, bullets,
  * telegraphs, hitstop and shield/i-frame timers all stand still (the sim clock does not advance).
  */
-import { stepVolume } from '../../core/save/settings';
+import {
+  applySettings,
+  stepMusicVolume,
+  stepSfxVolume,
+} from '../../core/save/settings';
 import { buildMenuScreen, type MenuItem, type MenuScreen } from './menu';
+import { formatMusicVolume, formatSfxVolume } from './settings-screen';
 import type { TitleScreenOptions } from './title-screen';
 
 export interface PauseScreenOptions {
   readonly parent: TitleScreenOptions['parent'];
-  readonly volume: number;
+  readonly musicVolume?: number;
+  readonly sfxVolume?: number;
+  /** Legacy fallback initial volume when `musicVolume` / `sfxVolume` is omitted. */
+  readonly volume?: number;
   readonly onResume: () => void;
   readonly onRestart: () => void;
   readonly onQuit: () => void;
-  readonly onVolume: (volume: number) => void;
+  readonly onMusicVolume?: (volume: number) => void;
+  readonly onSfxVolume?: (volume: number) => void;
+  /** Backwards-compatible fallback when `onMusicVolume` / `onSfxVolume` is omitted. */
+  readonly onVolume?: (volume: number) => void;
 }
 
+const SLIDER_DETAIL = 'Left / Right or click (+10%)';
+
 export function buildPauseScreen(options: PauseScreenOptions): Promise<MenuScreen> {
-  let volume = options.volume;
+  let audio = applySettings({
+    ...(options.volume !== undefined ? { volume: options.volume } : {}),
+    ...(options.musicVolume !== undefined ? { musicVolume: options.musicVolume } : {}),
+    ...(options.sfxVolume !== undefined ? { sfxVolume: options.sfxVolume } : {}),
+  });
   let screen: MenuScreen | null = null;
 
-  const changeVolume = (delta: number): void => {
-    volume = stepVolume(volume, delta);
-    options.onVolume(volume);
-    screen?.updateItem(2, `Volume   ${Math.round(volume * 100)}%`, 'Left / Right or click (+10%)');
+  const changeMusicVolume = (delta: number): void => {
+    audio = stepMusicVolume(audio, delta);
+    if (options.onMusicVolume !== undefined) {
+      options.onMusicVolume(audio.musicVolume);
+    } else {
+      options.onVolume?.(audio.musicVolume);
+    }
+    screen?.updateItem(2, formatMusicVolume(audio.musicVolume), SLIDER_DETAIL);
+  };
+
+  const changeSfxVolume = (delta: number): void => {
+    audio = stepSfxVolume(audio, delta);
+    if (options.onSfxVolume !== undefined) {
+      options.onSfxVolume(audio.sfxVolume);
+    } else {
+      options.onVolume?.(audio.sfxVolume);
+    }
+    screen?.updateItem(3, formatSfxVolume(audio.sfxVolume), SLIDER_DETAIL);
   };
 
   const items: MenuItem[] = [
     { label: 'Resume', detail: 'Esc', activate: options.onResume },
     { label: 'Restart run', detail: 'New run, keep gold earned', activate: options.onRestart },
     {
-      label: `Volume   ${Math.round(volume * 100)}%`,
-      detail: 'Left / Right or click (+10%)',
-      activate: () => changeVolume(1),
+      label: formatMusicVolume(audio.musicVolume),
+      detail: SLIDER_DETAIL,
+      activate: () => changeMusicVolume(1),
+    },
+    {
+      label: formatSfxVolume(audio.sfxVolume),
+      detail: SLIDER_DETAIL,
+      activate: () => changeSfxVolume(1),
     },
     { label: 'Quit to title', detail: 'Keep gold earned', activate: options.onQuit },
   ];
@@ -47,15 +83,16 @@ export function buildPauseScreen(options: PauseScreenOptions): Promise<MenuScree
     items,
     onBack: options.onResume,
     onAdjust: (index, delta) => {
-      if (index === 2) changeVolume(delta);
+      if (index === 2) changeMusicVolume(delta);
+      else if (index === 3) changeSfxVolume(delta);
     },
-    hint: '↑/↓ select · ←/→ adjust volume · Esc resume',
+    hint: '↑/↓ select · ←/→ adjust audio · Esc resume',
     backdropAlpha: 184,
     panelWidth: 364,
     buttonWidth: 312,
-    buttonHeight: 36,
-    buttonGap: 6,
-    buttonFontSize: 12,
+    buttonHeight: 31,
+    buttonGap: 5,
+    buttonFontSize: 11,
   }).then((built) => {
     screen = built;
     return built;

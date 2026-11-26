@@ -1,6 +1,7 @@
 /**
  * Pure layout, padding, text-formatting, and button visual-state helpers for the `Theme Wood`
- * menu UI (M11 T5, extended in M14 T3 for 4-class Character Select & Meta Shop early unlocks).
+ * menu UI (M11 T5, M14 T3, extended in M15 for Continue Run, Ascension 0–5, 6-track Meta Shop,
+ * and Rich Run Results).
  *
  * Zero `cc` imports (`no-restricted-imports` enforced), so vitest verifies:
  * - distinct button states (`normal`, `focused`, `hovered`, `pressed`, `disabled`, `disabled-focused`),
@@ -10,26 +11,42 @@
  */
 import {
   CHARACTERS,
+  DEFAULT_CHARACTER_ID,
   characterUnlockReason,
+  isCharacterId,
   isCharacterUnlocked,
   resolveSelectedCharacter,
   type CharacterDef,
   type CharacterId,
 } from '../characters/roster';
 import {
+  STAT_UPGRADE_TRACKS,
+  UPGRADE_TRACKS,
+  UTILITY_UPGRADE_TRACKS,
+  applyUpgrades,
+  applyUtilityUpgrades,
   canBuy,
   costFor,
   maxLevelFor,
   type UpgradeTrack,
 } from '../meta/upgrades';
-import { canBuyCharacter, type SaveData } from '../save/save-data';
+import { MAX_ASCENSION, ascensionLabel, clampAscension } from '../run/ascension';
+import {
+  formatBuildSummary,
+  formatDeathCause,
+  formatRunUnlocks,
+  type DeathCause,
+  type RunUnlocksSummary,
+} from '../run/run-summary';
+import type { ActiveRunSave } from '../save/run-save';
+import { canBuyCharacter, type BestProgress, type SaveData } from '../save/save-data';
 
 /**
  * Width of the centred column on Title and Chapter Select (design px).
  *
  * At 512×288 design resolution, 252 px keeps the exact same integer tile keep-out footprint as
  * 240 px (`16` tiles at `worldScale = 1.0`, `20` tiles at `worldScale = 0.8`) while giving
- * long subtitles (`Default ninja (Settings to unlock)`) comfortable horizontal padding.
+ * long subtitles comfortable horizontal padding.
  */
 export const MENU_COLUMN_WIDTH = 252;
 
@@ -162,7 +179,10 @@ export interface MenuButtonTextLayout {
 export function computeMenuButtonTextLayout(
   input: MenuButtonTextLayoutInput,
 ): MenuButtonTextLayout {
-  const safeTextWidth = Math.max(0, input.width - (THEME_WOOD_BORDERS.button.left + THEME_WOOD_BORDERS.button.right + 8));
+  const safeTextWidth = Math.max(
+    0,
+    input.width - (THEME_WOOD_BORDERS.button.left + THEME_WOOD_BORDERS.button.right + 8),
+  );
   const labelFontSize = input.fontSize;
   const labelLineHeight = labelFontSize + 2;
 
@@ -231,8 +251,8 @@ export interface MenuScreenLayout {
  *
  * - Full-height columns (Title / Chapter Select) span `visibleHeight - 8` (`[-140, +140]`) with
  *   the hint anchored near the bottom of the column well.
- * - Floating modal plaques (Shop / Settings / Pause / Result / Credits) wrap tightly around
- *   header + divider + buttons + hint and centre vertically on screen.
+ * - Floating modal plaques (Settings / Pause / Credits) wrap tightly around header + divider +
+ *   buttons + hint and centre vertically on screen.
  */
 export function computeMenuScreenLayout(input: MenuScreenLayoutInput): MenuScreenLayout {
   const panelWidth = Math.round(
@@ -609,10 +629,6 @@ export type MenuGridDirection = 'up' | 'down' | 'left' | 'right';
  * - `0..3`: 2×2 character cards (`Ninja`, `Archer`, `Mage`, `Cultivator`)
  * - `4`: Primary Select / Unlock Early button
  * - `5`: Back button
- *
- * `left`/`right` on `0..3` cycles cleanly through all 4 classes (`0 ↔ 1 ↔ 2 ↔ 3`); moving `up`
- * from the action bar (`4` or `5`) returns directly to `highlightedCard` so inspecting and
- * unlocking `Archer` (`1`) never strands or swaps your highlighted class.
  */
 export function nextCharacterSelectFocus(
   current: number,
@@ -644,6 +660,264 @@ export function nextCharacterSelectFocus(
   return clampedCard;
 }
 
+// ---------------------------------------------------------------------------
+// M15: Continue Run (Title Screen)
+// ---------------------------------------------------------------------------
+
+/**
+ * Concise `Continue Run` subtitle showing Hero, `Ch<N> R<M>`, and optional `A<X>` / `E<Y>` tags.
+ * Fits cleanly inside Title's `224 × 29` button (`safeTextWidth = 208` px).
+ */
+export function formatContinueRunDetail(run: ActiveRunSave): string {
+  const hero = isCharacterId(run.characterId)
+    ? CHARACTERS[run.characterId].name
+    : CHARACTERS[DEFAULT_CHARACTER_ID].name;
+  const parts = [hero, `Ch${run.chapter} R${run.roomIndex}`];
+  if (run.ascension > 0) {
+    parts.push(`A${clampAscension(run.ascension)}`);
+  }
+  if (run.endlessLoop > 0) {
+    parts.push(`E${Math.trunc(run.endlessLoop)}`);
+  }
+  return parts.join(' · ');
+}
+
+/** Compact best-depth summary for single-line Title header when `Continue Run` is shown. */
+export function formatTitleCompactBest(best: BestProgress): string {
+  if (best.chapter <= 0 || best.room <= 0) return 'Best: —';
+  return `Best Ch${best.chapter} R${best.room}`;
+}
+
+/**
+ * Header info lines for Title:
+ * - Standard 5-button Title: 2 lines (`Gold <N>`, `Best: chapter <C> · room <R>`).
+ * - 6-button Title with `Continue Run`: 1 compact line (`Gold <N> · Best Ch<C> R<R>`) so all 6
+ *   two-line buttons fit inside the `252 × 280` column with generous focus-ring clearance.
+ */
+export function formatTitleInfoLines(
+  gold: number,
+  best: BestProgress,
+  fullBestText: string,
+  hasContinueRun: boolean,
+): readonly string[] {
+  if (!hasContinueRun) {
+    return [`Gold ${gold}`, fullBestText];
+  }
+  return [`Gold ${gold} · ${formatTitleCompactBest(best)}`];
+}
+
+// ---------------------------------------------------------------------------
+// M15: Chapter Select + Ascension 0–5 Selector
+// ---------------------------------------------------------------------------
+
+/** Maximum characters per Ascension summary line inside the `252` px Chapter Select column. */
+export const ASCENSION_SUMMARY_MAX_CHARS = 44;
+
+export interface ChapterSelectLayoutInput {
+  readonly visibleWidth?: number;
+  readonly visibleHeight?: number;
+  readonly chapterCount?: number;
+}
+
+export interface ChapterSelectLayout {
+  readonly panelWidth: number;
+  readonly panelHeight: number;
+  readonly panelY: number;
+  readonly titleFontSize: number;
+  readonly titleY: number;
+  readonly bestFontSize: number;
+  readonly bestY: number;
+  readonly dividerY: number;
+  readonly dividerWidth: number;
+  readonly chapterSlots: readonly MenuButtonBox[];
+  readonly ascensionRowY: number;
+  readonly ascensionPrevButton: MenuButtonBox;
+  readonly ascensionNextButton: MenuButtonBox;
+  readonly ascensionLabelX: number;
+  readonly ascensionLabelY: number;
+  readonly ascensionLabelFontSize: number;
+  readonly ascensionLabelSafeWidth: number;
+  readonly summaryFontSize: number;
+  readonly summarySafeWidth: number;
+  readonly summaryLineYs: readonly [number, number, number];
+  readonly backButton: MenuButtonBox;
+  readonly hintFontSize: number;
+  readonly hintY: number;
+}
+
+/**
+ * Pure 512×288 layout for Chapter Select with Ascension 0–5 `<` / `>` selector inside the centred
+ * `MENU_COLUMN_WIDTH` (`252 × 280`) column so the living chapter backdrop and hero stay uncovered.
+ */
+export function computeChapterSelectLayout(
+  input: ChapterSelectLayoutInput = {},
+): ChapterSelectLayout {
+  const visibleWidth = input.visibleWidth ?? 512;
+  const visibleHeight = input.visibleHeight ?? 288;
+  const count = Math.max(1, Math.min(4, Math.trunc(input.chapterCount ?? 4)));
+
+  const panelWidth = Math.round(
+    Math.min(MENU_COLUMN_WIDTH, Math.max(180, visibleWidth - 24)),
+  );
+  const panelHeight = Math.max(240, Math.min(280, Math.round(visibleHeight - 8)));
+  const innerWidth = panelWidth - 28;
+  const dividerWidth = Math.max(64, panelWidth - PANEL_WELL_INSET_PX * 2 - 20);
+
+  const chapterHeight = 29;
+  const chapterGap = 2.5;
+  const chapterFontSize = 10;
+  const firstChapterY = 82.5;
+
+  const chapterSlots: MenuButtonBox[] = [];
+  for (let i = 0; i < count; i += 1) {
+    chapterSlots.push({
+      x: 0,
+      y: firstChapterY - i * (chapterHeight + chapterGap),
+      width: innerWidth,
+      height: chapterHeight,
+      fontSize: chapterFontSize,
+    });
+  }
+
+  const ascensionRowY = -44.5;
+  const arrowWidth = 28;
+  const arrowHeight = 22;
+  const arrowOffset = innerWidth / 2 - arrowWidth / 2;
+
+  return {
+    panelWidth,
+    panelHeight,
+    panelY: 0,
+    titleFontSize: 14,
+    titleY: 126,
+    bestFontSize: 8,
+    bestY: 109,
+    dividerY: 102,
+    dividerWidth,
+    chapterSlots,
+    ascensionRowY,
+    ascensionPrevButton: {
+      x: -arrowOffset,
+      y: ascensionRowY,
+      width: arrowWidth,
+      height: arrowHeight,
+      fontSize: 10,
+    },
+    ascensionNextButton: {
+      x: arrowOffset,
+      y: ascensionRowY,
+      width: arrowWidth,
+      height: arrowHeight,
+      fontSize: 10,
+    },
+    ascensionLabelX: 0,
+    ascensionLabelY: ascensionRowY,
+    ascensionLabelFontSize: 10,
+    ascensionLabelSafeWidth: Math.max(64, innerWidth - arrowWidth * 2 - 12),
+    summaryFontSize: 8,
+    summarySafeWidth: innerWidth,
+    summaryLineYs: [-65, -77.5, -90],
+    backButton: {
+      x: 0,
+      y: -110.5,
+      width: innerWidth,
+      height: 22,
+      fontSize: 10,
+    },
+    hintFontSize: 8,
+    hintY: -131.5,
+  };
+}
+
+/** Subtitle on a Chapter Select button reflecting playable state and active/unlocked Ascension. */
+export function formatChapterButtonDetail(
+  playable: boolean,
+  hasData: boolean,
+  isSelectedChapter: boolean,
+  selectedAscension: number,
+  maxAscension: number,
+): string {
+  if (!playable) {
+    return hasData ? 'Locked — clear previous' : 'No data';
+  }
+  const clampedSel = clampAscension(selectedAscension);
+  const clampedMax = clampAscension(maxAscension);
+  if (isSelectedChapter) {
+    return clampedSel > 0 ? `Enter · Ascension ${clampedSel}` : 'Enter chapter';
+  }
+  return clampedMax > 0 ? `Enter · Max A${clampedMax}` : 'Enter chapter';
+}
+
+/** Subtle bottom hint explaining how higher Ascension tiers unlock on clear. */
+export function formatChapterAscensionHint(
+  playable: boolean,
+  maxUnlocked: number,
+): string {
+  if (!playable) {
+    return 'Clear previous chapter to unlock';
+  }
+  const clampedMax = clampAscension(maxUnlocked);
+  if (clampedMax >= MAX_ASCENSION) {
+    return 'All Ascension tiers (1–5) unlocked';
+  }
+  if (clampedMax === 0) {
+    return 'Clear Normal to unlock Ascension 1';
+  }
+  return `Clear A${clampedMax} to unlock Ascension ${clampedMax + 1}`;
+}
+
+/**
+ * Focus navigation across Chapter Select controls:
+ * - `0 .. chapterCount - 1`: Chapter rows
+ * - `chapterCount`: Ascension `<` button
+ * - `chapterCount + 1`: Ascension `>` button
+ * - `chapterCount + 2`: `Back` button
+ */
+export function nextChapterSelectFocus(
+  current: number,
+  direction: MenuGridDirection,
+  chapterCount = 4,
+): number {
+  const count = Math.max(1, Math.trunc(chapterCount));
+  const prevIdx = count;
+  const nextIdx = count + 1;
+  const backIdx = count + 2;
+  const index = Math.min(backIdx, Math.max(0, Math.trunc(current)));
+
+  if (direction === 'left' || direction === 'right') {
+    if (index === prevIdx) return nextIdx;
+    if (index === nextIdx) return prevIdx;
+    return index;
+  }
+
+  if (direction === 'down') {
+    if (index < count - 1) return index + 1;
+    if (index === count - 1) return prevIdx;
+    if (index === prevIdx || index === nextIdx) return backIdx;
+    return 0;
+  }
+
+  // direction === 'up'
+  if (index === 0) return backIdx;
+  if (index < count) return index - 1;
+  if (index === prevIdx || index === nextIdx) return count - 1;
+  return prevIdx;
+}
+
+// ---------------------------------------------------------------------------
+// M15: Expanded 3-Column Meta Shop (STAT + UTILITY + HERO UNLOCKS)
+// ---------------------------------------------------------------------------
+
+/** Unlockable classes shown in the Meta Shop's `HERO UNLOCKS` column, in progression order. */
+export const SHOP_UNLOCK_CHARACTER_IDS = ['archer', 'mage', 'cultivator'] as const;
+
+/** Button index of the first `HERO UNLOCKS` row (`Archer`), right after all 6 upgrade tracks. */
+export const SHOP_CHARACTER_START_INDEX = UPGRADE_TRACKS.length;
+
+/** Button index of the optional `Character select` shortcut in the Meta Shop footer. */
+export const SHOP_CHAR_SELECT_BUTTON_INDEX =
+  UPGRADE_TRACKS.length + SHOP_UNLOCK_CHARACTER_IDS.length;
+
 export interface ShopScreenLayoutInput {
   readonly visibleWidth?: number;
   readonly visibleHeight?: number;
@@ -663,57 +937,80 @@ export interface ShopScreenLayout {
   readonly infoY: number;
   readonly dividerY: number;
   readonly dividerWidth: number;
+  readonly statHeaderX: number;
+  readonly utilityHeaderX: number;
+  readonly heroHeaderX: number;
+  /** Alias for `statHeaderX` (leftmost column). */
   readonly leftHeaderX: number;
+  /** Alias for `heroHeaderX` (rightmost column). */
   readonly rightHeaderX: number;
   readonly sectionHeaderY: number;
   readonly sectionHeaderFontSize: number;
   readonly colWidth: number;
+  readonly colGap: number;
   readonly rowHeight: number;
   readonly rowFontSize: number;
-  /** Stat upgrade track slots (`0..2`: Hearts, Damage, Fire rate) on the left column. */
+  /** Stat upgrade track slots (`0..2`: `hearts`, `damage`, `fireRate`). */
+  readonly statSlots: readonly MenuButtonBox[];
+  /** Utility upgrade track slots (`3..5`: `xpMagnet`, `goldBonus`, `freeRerolls`). */
+  readonly utilitySlots: readonly MenuButtonBox[];
+  /** All 6 upgrade track slots (`0..5` in `UPGRADE_TRACKS` order: Stat then Utility). */
   readonly upgradeSlots: readonly MenuButtonBox[];
-  /** Early character unlock slots (`3..5`: Archer, Mage, Cultivator) on the right column. */
+  /** Early character unlock slots (`6..8`: `archer`, `mage`, `cultivator`). */
   readonly characterSlots: readonly MenuButtonBox[];
-  /** Optional `Character Select` navigation button (`index 6`) on the bottom-left. */
+  /** Optional `Character select` navigation button (`index 9`) on the bottom-left. */
   readonly characterSelectButton: MenuButtonBox | null;
-  /** `Back` button (`index 7` when `characterSelectButton` exists, otherwise `index 6`). */
+  /** `Back` button (`index 10` when `characterSelectButton` exists, otherwise `index 9`). */
   readonly backButton: MenuButtonBox;
   readonly hintFontSize: number;
   readonly hintY: number;
 }
 
 /**
- * Pure 512×288 two-column layout for the Meta Shop (M14-T3):
- * - Left column: 3 permanent stat tracks (`Hearts`, `Damage`, `Fire rate`).
- * - Right column: 3 early character unlocks (`Archer`, `Mage`, `Cultivator`).
- * - Footer row: optional `Character Select` shortcut + `Back` button.
+ * Pure 512×288 three-column layout for the Expanded Meta Shop (M15):
+ * - Column 1 (`STAT UPGRADES`): `Hearts`, `Damage`, `Fire rate`.
+ * - Column 2 (`UTILITY UPGRADES`): `XP magnet`, `Gold bonus`, `Free rerolls` (NO Revive!).
+ * - Column 3 (`HERO UNLOCKS`): `Archer`, `Mage`, `Cultivator`.
+ * - Footer row: optional `Character select` shortcut + `Back` button.
  */
 export function computeShopScreenLayout(input: ShopScreenLayoutInput = {}): ShopScreenLayout {
   const visibleWidth = input.visibleWidth ?? 512;
   const visibleHeight = input.visibleHeight ?? 288;
   const hasCharacterSelect = input.hasCharacterSelect === true;
 
-  const panelWidth = Math.min(476, Math.max(360, Math.round(visibleWidth - 36)));
+  const panelWidth = Math.min(504, Math.max(380, Math.round(visibleWidth - 8)));
   const panelHeight = Math.min(272, Math.max(240, Math.round(visibleHeight - 16)));
-  const colGap = 12;
-  const colWidth = Math.floor((panelWidth - 32 - colGap) / 2);
-  const colOffset = (colWidth + colGap) / 2;
+  const colGap = 8;
+  const colWidth = Math.floor((panelWidth - 20 - colGap * 2) / 3);
+  const colSpan = colWidth + colGap;
+  const statHeaderX = -colSpan;
+  const utilityHeaderX = 0;
+  const heroHeaderX = colSpan;
+
   const rowHeight = 35;
   const rowGap = 5;
-  const rowFontSize = 11;
+  const rowFontSize = 10;
   const rowYs = [40, 40 - (rowHeight + rowGap), 40 - 2 * (rowHeight + rowGap)] as const;
 
-  const upgradeSlots: MenuButtonBox[] = rowYs.map((y) => ({
-    x: -colOffset,
-    y,
+  const statSlots: MenuButtonBox[] = STAT_UPGRADE_TRACKS.map((_, i) => ({
+    x: statHeaderX,
+    y: rowYs[i] ?? 0,
     width: colWidth,
     height: rowHeight,
     fontSize: rowFontSize,
   }));
 
-  const characterSlots: MenuButtonBox[] = rowYs.map((y) => ({
-    x: colOffset,
-    y,
+  const utilitySlots: MenuButtonBox[] = UTILITY_UPGRADE_TRACKS.map((_, i) => ({
+    x: utilityHeaderX,
+    y: rowYs[i] ?? 0,
+    width: colWidth,
+    height: rowHeight,
+    fontSize: rowFontSize,
+  }));
+
+  const characterSlots: MenuButtonBox[] = SHOP_UNLOCK_CHARACTER_IDS.map((_, i) => ({
+    x: heroHeaderX,
+    y: rowYs[i] ?? 0,
     width: colWidth,
     height: rowHeight,
     fontSize: rowFontSize,
@@ -721,7 +1018,10 @@ export function computeShopScreenLayout(input: ShopScreenLayoutInput = {}): Shop
 
   const bottomY = -83;
   const bottomHeight = 28;
-  const bottomFontSize = 11;
+  const bottomFontSize = 10;
+  const bottomGap = 12;
+  const bottomWidth = Math.min(200, colWidth + 28);
+  const bottomOffset = (bottomWidth + bottomGap) / 2;
 
   return {
     panelX: 0,
@@ -735,29 +1035,35 @@ export function computeShopScreenLayout(input: ShopScreenLayoutInput = {}): Shop
     infoFontSize: 8,
     infoY: 86,
     dividerY: 78,
-    dividerWidth: colWidth * 2 + colGap,
-    leftHeaderX: -colOffset,
-    rightHeaderX: colOffset,
+    dividerWidth: colWidth * 3 + colGap * 2,
+    statHeaderX,
+    utilityHeaderX,
+    heroHeaderX,
+    leftHeaderX: statHeaderX,
+    rightHeaderX: heroHeaderX,
     sectionHeaderY: 68,
     sectionHeaderFontSize: 9,
     colWidth,
+    colGap,
     rowHeight,
     rowFontSize,
-    upgradeSlots,
+    statSlots,
+    utilitySlots,
+    upgradeSlots: [...statSlots, ...utilitySlots],
     characterSlots,
     characterSelectButton: hasCharacterSelect
       ? {
-          x: -colOffset,
+          x: -bottomOffset,
           y: bottomY,
-          width: colWidth,
+          width: bottomWidth,
           height: bottomHeight,
           fontSize: bottomFontSize,
         }
       : null,
     backButton: {
-      x: hasCharacterSelect ? colOffset : 0,
+      x: hasCharacterSelect ? bottomOffset : 0,
       y: bottomY,
-      width: colWidth,
+      width: bottomWidth,
       height: bottomHeight,
       fontSize: bottomFontSize,
     },
@@ -767,37 +1073,65 @@ export function computeShopScreenLayout(input: ShopScreenLayoutInput = {}): Shop
 }
 
 /**
- * 2D focus navigation for the two-column Meta Shop:
+ * 2D focus navigation for the three-column Meta Shop:
  * - `0..2`: left column stat tracks (`Hearts`, `Damage`, `Fire rate`)
- * - `3..5`: right column character early unlocks (`Archer`, `Mage`, `Cultivator`)
- * - `6` (and `7` when `hasCharacterSelect`): bottom row (`Character Select`, `Back`).
+ * - `3..5`: middle column utility tracks (`XP magnet`, `Gold bonus`, `Free rerolls`)
+ * - `6..8`: right column character early unlocks (`Archer`, `Mage`, `Cultivator`)
+ * - `9` (and `10` when `hasCharacterSelect`): bottom row (`Character select`, `Back`).
  */
 export function nextShopScreenFocus(
   current: number,
   direction: MenuGridDirection,
   hasCharacterSelect: boolean,
 ): number {
-  const maxIndex = hasCharacterSelect ? 7 : 6;
+  const maxIndex = hasCharacterSelect ? 10 : 9;
   const index = Math.min(maxIndex, Math.max(0, Math.trunc(current)));
 
   if (direction === 'left' || direction === 'right') {
-    if (index <= 2) return index + 3;
-    if (index <= 5) return index - 3;
-    if (hasCharacterSelect) return index === 6 ? 7 : 6;
-    return 6;
+    const delta = direction === 'left' ? -1 : 1;
+    if (index <= 8) {
+      const col = Math.floor(index / 3);
+      const row = index % 3;
+      const nextCol = (col + delta + 3) % 3;
+      return nextCol * 3 + row;
+    }
+    if (hasCharacterSelect) return index === 9 ? 10 : 9;
+    return 9;
   }
 
-  const leftCol = hasCharacterSelect ? [0, 1, 2, 6] : [0, 1, 2, 6];
-  const rightCol = hasCharacterSelect ? [3, 4, 5, 7] : [3, 4, 5, 6];
-  const inRight = (index >= 3 && index <= 5) || index === 7;
-  const col = inRight ? rightCol : leftCol;
+  const statCol = [0, 1, 2, 9];
+  const utilCol = [3, 4, 5, 9];
+  const heroCol = [6, 7, 8, hasCharacterSelect ? 10 : 9];
+
+  let col: readonly number[];
+  if (index >= 6 && index <= 8) {
+    col = heroCol;
+  } else if (index === 10) {
+    col = heroCol;
+  } else if (index >= 3 && index <= 5) {
+    col = utilCol;
+  } else {
+    col = statCol;
+  }
+
   const pos = col.indexOf(index);
   const step = direction === 'down' ? 1 : -1;
   return col[(pos + step + col.length) % col.length] ?? 0;
 }
 
-/** Unlockable classes shown in the Meta Shop's `HERO UNLOCKS` column, in progression order. */
-export const SHOP_UNLOCK_CHARACTER_IDS = ['archer', 'mage', 'cultivator'] as const;
+/** Compact one-line summary of all 6 Stat + Utility Meta bonuses for the Shop header. */
+export function formatShopBonusSummary(save: SaveData): string {
+  const stat = applyUpgrades(save);
+  const util = applyUtilityUpgrades(save);
+  const dmgPct = Math.round((stat.damageMultiplier - 1) * 100);
+  const ratePct = Math.round((stat.fireRateMultiplier - 1) * 100);
+  const magPct = Math.round((util.xpMagnetMult - 1) * 100);
+  const goldPct = Math.round((util.goldBonusMult - 1) * 100);
+  return (
+    `Bonus: +${stat.maxHeartsBonus} HP · +${dmgPct}% DMG · +${ratePct}% rate · ` +
+    `+${magPct}% magnet · +${goldPct}% gold · ${util.freeRerolls} rerolls`
+  );
+}
 
 export interface ShopRowText {
   readonly label: string;
@@ -814,7 +1148,7 @@ const SHOP_TRACK_NAMES: Readonly<Record<UpgradeTrack, string>> = {
   freeRerolls: 'Free rerolls',
 };
 
-/** Label + detail for one permanent stat track (`216 × 35` button). */
+/** Label + detail for one permanent Stat or Utility upgrade track (`156 × 35` button). */
 export function upgradeRow(save: SaveData, track: UpgradeTrack): ShopRowText {
   const level = save.upgrades[track];
   const max = maxLevelFor(track);
@@ -830,12 +1164,12 @@ export function upgradeRow(save: SaveData, track: UpgradeTrack): ShopRowText {
   const short = Math.max(0, price - save.gold);
   return {
     label,
-    detail: affordable ? `Next: ${price} gold` : `Next: ${price}g — need ${short}g more`,
+    detail: affordable ? `Next: ${price} gold` : `Next: ${price}g · need ${short}g`,
     disabled: !affordable,
   };
 }
 
-/** Label + detail for one early character unlock row in Meta Shop (`216 × 35` button). */
+/** Label + detail for one early character unlock row in Meta Shop (`156 × 35` button). */
 export function characterShopRow(save: SaveData, characterId: CharacterId): ShopRowText {
   const def = CHARACTERS[characterId];
   if (isCharacterUnlocked(characterId, save)) {
@@ -853,10 +1187,410 @@ export function characterShopRow(save: SaveData, characterId: CharacterId): Shop
     label: `${def.name} — ${cost}g`,
     detail: affordable
       ? `Buy early (or clear Ch${def.unlockChapter})`
-      : `Need ${short}g more (or clear Ch${def.unlockChapter})`,
+      : `Need ${short}g (or clear Ch${def.unlockChapter})`,
     disabled: !affordable,
   };
 }
+
+// ---------------------------------------------------------------------------
+// M15: Rich Results / Death Screen Layout & Formatting
+// ---------------------------------------------------------------------------
+
+/** Maximum characters per summary line on the `476` px Rich Result plaque (`safeWidth = 446` px). */
+export const RESULT_LINE_MAX_CHARS = 64;
+
+export interface SkillSummaryEntry {
+  readonly id: string;
+  readonly stacks: number;
+}
+
+/**
+ * Flexible skill-map input accepted by `RunResultData`:
+ * - `ReadonlyMap<string, number>` (exact input type of `formatBuildSummary` / `SkillRun.snapshot()`)
+ * - `Readonly<Record<string, number>>` (`ActiveRunSave['ownedSkills']`)
+ * - `readonly SkillSummaryEntry[]` (`{ id, stacks }[]`)
+ */
+export type RunResultOwnedSkills =
+  | ReadonlyMap<string, number>
+  | Readonly<Record<string, number>>
+  | readonly SkillSummaryEntry[];
+
+export interface ResultSummaryInput {
+  readonly chapter: number;
+  readonly roomReached: number;
+  readonly roomsTotal: number;
+  readonly goldEarned: number;
+  readonly goldTotal: number;
+  readonly durationMs: number;
+  readonly kills: number;
+  readonly won: boolean;
+  readonly unlockedChapter?: number;
+  readonly seed?: number;
+  readonly ascension?: number;
+  readonly endlessLoop?: number;
+  readonly characterId?: CharacterId;
+  readonly deathCause?: DeathCause;
+  readonly ownedSkills?: RunResultOwnedSkills;
+  readonly unlocks?: RunUnlocksSummary;
+  readonly canContinueEndless?: boolean;
+}
+
+export type ResultLineKind = 'meta' | 'stats' | 'evolution' | 'skills' | 'unlock';
+
+export interface ResultSummaryLine {
+  readonly text: string;
+  readonly kind: ResultLineKind;
+}
+
+export interface ResultSummaryOutput {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly lines: readonly ResultSummaryLine[];
+}
+
+/** mm:ss, seconds rounded down. */
+export function formatDuration(durationMs: number): string {
+  const total = Number.isFinite(durationMs) ? Math.max(0, Math.floor(durationMs / 1000)) : 0;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** Normalize any `RunResultOwnedSkills` representation into a `ReadonlyMap<string, number>`. */
+export function toOwnedSkillsMap(
+  ownedSkills: RunResultOwnedSkills | undefined,
+): ReadonlyMap<string, number> {
+  if (ownedSkills === undefined) return new Map();
+  if (ownedSkills instanceof Map) return ownedSkills;
+  if (Array.isArray(ownedSkills)) {
+    const out = new Map<string, number>();
+    for (const entry of ownedSkills) {
+      out.set(entry.id, entry.stacks);
+    }
+    return out;
+  }
+  if ('forEach' in ownedSkills && typeof ownedSkills.forEach === 'function') {
+    const out = new Map<string, number>();
+    (ownedSkills as ReadonlyMap<string, number>).forEach((stacks, id) => {
+      out.set(id, stacks);
+    });
+    return out;
+  }
+  const out = new Map<string, number>();
+  const record = ownedSkills as Readonly<Record<string, number>>;
+  for (const id of Object.keys(record)) {
+    const stacks = record[id];
+    if (stacks !== undefined) out.set(id, stacks);
+  }
+  return out;
+}
+
+function packTokensToLines(
+  tokens: readonly string[],
+  separator: string,
+  maxLineLength: number,
+  maxLines: number,
+): string[] {
+  if (tokens.length === 0 || maxLines <= 0) return [];
+  const lines: string[] = [];
+  let current = '';
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (current.length === 0) {
+      current = token.length <= maxLineLength ? token : `${token.slice(0, maxLineLength - 1)}…`;
+      continue;
+    }
+    const remaining = tokens.length - i;
+    const isLastLine = lines.length === maxLines - 1;
+    const suffix = isLastLine && tokens.length - i - 1 > 0 ? ` (+${tokens.length - i - 1} more)` : '';
+    const candidate = `${current}${separator}${token}`;
+
+    if (candidate.length + suffix.length <= maxLineLength) {
+      current = candidate;
+    } else if (isLastLine) {
+      const overflow = `${current} (+${remaining} more)`;
+      lines.push(
+        overflow.length <= maxLineLength ? overflow : `${current.slice(0, maxLineLength - 8)} (+${remaining})`,
+      );
+      return lines;
+    } else {
+      lines.push(current);
+      current = token.length <= maxLineLength ? token : `${token.slice(0, maxLineLength - 1)}…`;
+    }
+  }
+
+  if (current.length > 0) lines.push(current);
+  return lines;
+}
+
+function capBuildLines(rawLines: readonly string[], maxLineLength: number): ResultSummaryLine[] {
+  const capped: ResultSummaryLine[] = [];
+  const evoLines = rawLines.filter((line) => line.startsWith('Evolutions:'));
+  const otherLines = rawLines.filter((line) => !line.startsWith('Evolutions:'));
+
+  if (evoLines.length > 0) {
+    // Keep Evolutions to 1 crisp line so total build lines never exceed 3 even with 7 Evolutions.
+    const joinedEvos = evoLines
+      .map((line, idx) => (idx === 0 ? line.replace(/^Evolutions:\s*/, '') : line))
+      .join(', ')
+      .split(', ')
+      .filter((s) => s.length > 0);
+    const packedEvo = packTokensToLines(
+      joinedEvos.map((name, idx) => (idx === 0 ? `Evolutions: ${name}` : name)),
+      ', ',
+      maxLineLength,
+      1,
+    );
+    if (packedEvo[0] !== undefined) {
+      capped.push({ text: packedEvo[0], kind: 'evolution' });
+    }
+  }
+
+  const maxSkillCount = Math.max(1, 3 - capped.length);
+  for (let i = 0; i < Math.min(maxSkillCount, otherLines.length); i += 1) {
+    const text = otherLines[i]!;
+    capped.push({
+      text: text.length <= maxLineLength ? text : `${text.slice(0, maxLineLength - 1)}…`,
+      kind: 'skills',
+    });
+  }
+
+  return capped;
+}
+
+/**
+ * Format title, cause-of-death / clear subtitle, and compact non-overflowing summary lines
+ * (`<= 7` lines, `<= 64` chars each) for `ResultScreen`.
+ */
+export function formatResultScreenSummary(result: ResultSummaryInput): ResultSummaryOutput {
+  const title = result.won ? 'CHAPTER CLEAR' : 'RUN OVER';
+
+  let subtitle: string;
+  if (result.won) {
+    if (result.canContinueEndless === true) {
+      subtitle = 'Chapter cleared — Endless Mode awaits!';
+    } else {
+      subtitle = 'The chapter is cleared.';
+    }
+  } else if (result.deathCause !== undefined && result.deathCause.kind !== 'victory') {
+    subtitle = formatDeathCause(result.deathCause);
+  } else {
+    subtitle = formatDeathCause({ kind: 'unknown' });
+  }
+
+  const lines: ResultSummaryLine[] = [];
+
+  // Line 1: Hero + Chapter/Room depth + Ascension + Endless loop tag.
+  const metaParts: string[] = [];
+  if (result.characterId !== undefined && isCharacterId(result.characterId)) {
+    metaParts.push(`Hero: ${CHARACTERS[result.characterId].name}`);
+  }
+  const hasRichTags =
+    result.characterId !== undefined ||
+    (result.ascension !== undefined && result.ascension > 0) ||
+    (result.endlessLoop !== undefined && result.endlessLoop > 0);
+  metaParts.push(
+    hasRichTags
+      ? `Ch${result.chapter} Room ${result.roomReached}/${result.roomsTotal}`
+      : `Chapter ${result.chapter} · Room ${result.roomReached}/${result.roomsTotal}`,
+  );
+  if (result.ascension !== undefined && result.ascension > 0) {
+    metaParts.push(ascensionLabel(result.ascension));
+  }
+  if (result.endlessLoop !== undefined && result.endlessLoop > 0) {
+    metaParts.push(`Endless Loop ${Math.trunc(result.endlessLoop)}`);
+  }
+  lines.push({ text: metaParts.join(' · '), kind: 'meta' });
+
+  // Line 2: Run Seed + Gold + Time + Kills.
+  const statsParts: string[] = [];
+  if (result.seed !== undefined && Number.isFinite(result.seed)) {
+    statsParts.push(`Seed ${Math.trunc(result.seed) >>> 0}`);
+    statsParts.push(`Gold +${result.goldEarned} (${result.goldTotal}g)`);
+    statsParts.push(`${formatDuration(result.durationMs)}`);
+    statsParts.push(`${result.kills} kills`);
+  } else {
+    statsParts.push(`Gold +${result.goldEarned} (total ${result.goldTotal})`);
+    statsParts.push(`Time ${formatDuration(result.durationMs)}`);
+    statsParts.push(`Kills ${result.kills}`);
+  }
+  lines.push({ text: statsParts.join(' · '), kind: 'stats' });
+
+  // Lines 3..5: Build + Legendary Evolutions summary (when `ownedSkills` is supplied).
+  if (result.ownedSkills !== undefined) {
+    const rawBuild = formatBuildSummary(toOwnedSkillsMap(result.ownedSkills), {
+      maxLineLength: RESULT_LINE_MAX_CHARS,
+      maxSkillLines: 2,
+    });
+    lines.push(...capBuildLines(rawBuild, RESULT_LINE_MAX_CHARS));
+  }
+
+  // Lines 6..7: Unlocks earned (merges `unlocks` with legacy `unlockedChapter`).
+  const mergedUnlocks: RunUnlocksSummary = {
+    ...(result.unlocks ?? {}),
+    ...(result.unlocks?.unlockedChapter === undefined && result.unlockedChapter !== undefined
+      ? { unlockedChapter: result.unlockedChapter }
+      : {}),
+  };
+  const unlockTokens = formatRunUnlocks(mergedUnlocks);
+  if (unlockTokens.length > 0) {
+    const packedUnlocks = packTokensToLines(unlockTokens, ' · ', RESULT_LINE_MAX_CHARS, 2);
+    for (const text of packedUnlocks) {
+      lines.push({ text, kind: 'unlock' });
+    }
+  }
+
+  return { title, subtitle, lines };
+}
+
+export interface ResultScreenLayoutInput {
+  readonly visibleWidth?: number;
+  readonly visibleHeight?: number;
+  readonly lineCount: number;
+  readonly hasContinueEndless: boolean;
+}
+
+export interface ResultScreenLayout {
+  readonly panelX: number;
+  readonly panelY: number;
+  readonly panelWidth: number;
+  readonly panelHeight: number;
+  readonly titleFontSize: number;
+  readonly titleY: number;
+  readonly subtitleFontSize: number;
+  readonly subtitleY: number;
+  readonly dividerY: number;
+  readonly dividerWidth: number;
+  readonly lineFontSize: number;
+  readonly lineSafeWidth: number;
+  readonly lineYs: readonly number[];
+  /** Optional `Continue Endless` primary button (`index 0` when present). */
+  readonly continueEndlessButton: MenuButtonBox | null;
+  /** Bottom 3-button action bar (`Meta shop`, `Chapter select`, `Title`). */
+  readonly footerButtons: readonly [MenuButtonBox, MenuButtonBox, MenuButtonBox];
+  readonly hintFontSize: number;
+  readonly hintY: number;
+}
+
+/**
+ * Pure 512×288 modal layout for the Rich Result / Death screen (M15):
+ * wraps header + up to 7 rich summary lines + optional `Continue Endless` banner button +
+ * 3-button footer bar inside `panelHeight <= 236` px with zero label clipping or overlap.
+ */
+export function computeResultScreenLayout(input: ResultScreenLayoutInput): ResultScreenLayout {
+  const visibleWidth = input.visibleWidth ?? 512;
+  const visibleHeight = input.visibleHeight ?? 288;
+  const lineCount = Math.max(1, Math.min(7, Math.trunc(input.lineCount)));
+  const hasContinueEndless = input.hasContinueEndless === true;
+
+  const panelWidth = Math.min(476, Math.max(360, Math.round(visibleWidth - 36)));
+  const dividerWidth = Math.max(120, panelWidth - PANEL_WELL_INSET_PX * 2 - 20);
+  const innerWidth = panelWidth - 34;
+
+  const titleOffset = 17;
+  const subtitleOffset = 38;
+  const dividerOffset = 48;
+  const firstLineOffset = 59;
+  const lineStep = 12.5;
+
+  const lineOffsets: number[] = [];
+  for (let i = 0; i < lineCount; i += 1) {
+    lineOffsets.push(firstLineOffset + i * lineStep);
+  }
+  const lastLineOffset = lineOffsets[lineOffsets.length - 1] ?? firstLineOffset;
+  const firstButtonTopOffset = lastLineOffset + 13;
+
+  const footerGap = 8;
+  const footerWidth = Math.floor((innerWidth - footerGap * 2) / 3);
+  const footerSpan = footerWidth + footerGap;
+  const continueHeight = 29;
+  const footerHeight = hasContinueEndless ? 29 : 31;
+
+  let continueCenterOffset: number | null = null;
+  let footerCenterOffset: number;
+  let buttonsBottomOffset: number;
+
+  if (hasContinueEndless) {
+    continueCenterOffset = firstButtonTopOffset + continueHeight / 2;
+    const footerTopOffset = firstButtonTopOffset + continueHeight + 6;
+    footerCenterOffset = footerTopOffset + footerHeight / 2;
+    buttonsBottomOffset = footerTopOffset + footerHeight;
+  } else {
+    footerCenterOffset = firstButtonTopOffset + footerHeight / 2;
+    buttonsBottomOffset = firstButtonTopOffset + footerHeight;
+  }
+
+  const hintOffset = buttonsBottomOffset + 12;
+  const rawHeight = Math.ceil(hintOffset + 11);
+  const panelHeight = Math.min(Math.round(visibleHeight - 8), Math.max(136, rawHeight));
+  const panelTop = panelHeight / 2;
+
+  const footerY = Math.round((panelTop - footerCenterOffset) * 2) / 2;
+  const footerButtons: readonly [MenuButtonBox, MenuButtonBox, MenuButtonBox] = [
+    { x: -footerSpan, y: footerY, width: footerWidth, height: footerHeight, fontSize: 10 },
+    { x: 0, y: footerY, width: footerWidth, height: footerHeight, fontSize: 10 },
+    { x: footerSpan, y: footerY, width: footerWidth, height: footerHeight, fontSize: 10 },
+  ];
+
+  return {
+    panelX: 0,
+    panelY: 0,
+    panelWidth,
+    panelHeight,
+    titleFontSize: 18,
+    titleY: Math.round(panelTop - titleOffset),
+    subtitleFontSize: 9,
+    subtitleY: Math.round(panelTop - subtitleOffset),
+    dividerY: Math.round(panelTop - dividerOffset),
+    dividerWidth,
+    lineFontSize: 8,
+    lineSafeWidth: dividerWidth,
+    lineYs: lineOffsets.map((offset) => Math.round((panelTop - offset) * 2) / 2),
+    continueEndlessButton:
+      continueCenterOffset !== null
+        ? {
+            x: 0,
+            y: Math.round((panelTop - continueCenterOffset) * 2) / 2,
+            width: footerWidth * 3 + footerGap * 2,
+            height: continueHeight,
+            fontSize: 10,
+          }
+        : null,
+    footerButtons,
+    hintFontSize: 8,
+    hintY: Math.round(panelTop - hintOffset),
+  };
+}
+
+/**
+ * 2D focus navigation for `ResultScreen`:
+ * - Without `Continue Endless`: `0 = Meta shop`, `1 = Chapter select`, `2 = Title`.
+ * - With `Continue Endless`: `0 = Continue Endless` (top), `1..3 = Meta shop / Chapter select / Title` (bottom).
+ */
+export function nextResultScreenFocus(
+  current: number,
+  direction: MenuGridDirection,
+  hasContinueEndless: boolean,
+): number {
+  if (!hasContinueEndless) {
+    const idx = Math.min(2, Math.max(0, Math.trunc(current)));
+    const delta = direction === 'left' || direction === 'up' ? -1 : 1;
+    return (idx + delta + 3) % 3;
+  }
+
+  const idx = Math.min(3, Math.max(0, Math.trunc(current)));
+  if (direction === 'up' || direction === 'down') {
+    return idx === 0 ? 1 : 0;
+  }
+  const delta = direction === 'left' ? -1 : 1;
+  if (idx === 0) return delta < 0 ? 3 : 1;
+  return ((idx - 1 + delta + 3) % 3) + 1;
+}
+
+// ---------------------------------------------------------------------------
+// Title & Character Select Text Helpers (M14)
+// ---------------------------------------------------------------------------
 
 export function formatTitleCharacterLabel(character: CharacterDef): string {
   return `Character: ${character.name}`;

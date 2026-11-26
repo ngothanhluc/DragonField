@@ -2,13 +2,26 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { BOSS_IDS } from '../../assets/scripts/core/boss/boss-defs';
 import { CHARACTER_ROSTER } from '../../assets/scripts/core/characters/roster';
-import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../../assets/scripts/core/level/level-data';
+import { ENEMY_ROLES, ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../../assets/scripts/core/level/level-data';
 import { parseWaterLayout, waterAreasFor } from '../../assets/scripts/core/level/water-layout';
-import { UPGRADE_TRACKS, maxLevelFor } from '../../assets/scripts/core/meta/upgrades';
+import {
+  STAT_UPGRADE_TRACKS,
+  UPGRADE_TRACKS,
+  UTILITY_UPGRADE_TRACKS,
+  maxLevelFor,
+} from '../../assets/scripts/core/meta/upgrades';
+import {
+  MAX_ASCENSION,
+  ascensionLabel,
+  ascensionSummaryLines,
+} from '../../assets/scripts/core/run/ascension';
+import { RUN_SAVE_VERSION, type ActiveRunSave } from '../../assets/scripts/core/save/run-save';
 import {
   buyCharacter,
   createDefaultSave,
+  unlockChapterAscension,
   unlockNextChapter,
   withSelectedCharacter,
 } from '../../assets/scripts/core/save/save-data';
@@ -23,26 +36,41 @@ import {
   type TileRect,
 } from '../../assets/scripts/core/view/menu-backdrop';
 import {
+  ASCENSION_SUMMARY_MAX_CHARS,
   FOCUS_RING_EXPAND_PX,
   MENU_COLUMN_WIDTH,
   PANEL_SHADOW_EXPAND_PX,
+  RESULT_LINE_MAX_CHARS,
+  SHOP_CHARACTER_START_INDEX,
+  SHOP_CHAR_SELECT_BUTTON_INDEX,
   SHOP_UNLOCK_CHARACTER_IDS,
   THEME_WOOD_BORDERS,
   characterShopRow,
+  computeChapterSelectLayout,
   computeCharacterSelectLayout,
   computeMenuButtonTextLayout,
   computeMenuScreenLayout,
+  computeResultScreenLayout,
   computeShopScreenLayout,
   computeSkillCardLayout,
+  formatChapterAscensionHint,
+  formatChapterButtonDetail,
   formatCharacterCardText,
   formatCharacterPrimaryAction,
   formatCharacterSelectSubtitle,
   formatCharacterSummaryLines,
+  formatContinueRunDetail,
+  formatResultScreenSummary,
+  formatShopBonusSummary,
   formatTitleCharacterDetail,
   formatTitleCharacterLabel,
+  formatTitleInfoLines,
+  nextChapterSelectFocus,
   nextCharacterSelectFocus,
+  nextResultScreenFocus,
   nextShopScreenFocus,
   resolveMenuButtonVisualState,
+  toOwnedSkillsMap,
   upgradeRow,
 } from '../../assets/scripts/core/view/menu-layout';
 import { readPng } from '../../scripts/lib/png';
@@ -81,6 +109,34 @@ function clearOf(point: { readonly x: number; readonly y: number }, rect: TileRe
     point.y <= rect.y - margin ||
     point.y >= rect.y + rect.height + margin
   );
+}
+
+function makeSampleActiveRun(overrides: Partial<ActiveRunSave> = {}): ActiveRunSave {
+  return {
+    version: RUN_SAVE_VERSION,
+    seed: 123456789,
+    chapter: 3,
+    roomIndex: 6,
+    chosenDoor: 'xp',
+    drawnRooms: [1, 2, 3, 4, 5, 6, 7, 8, 17],
+    bossId: 'samurai',
+    characterId: 'cultivator',
+    hearts: 5,
+    maxHearts: 7,
+    xpLevel: 8,
+    xpCurrent: 12,
+    xpTotal: 190,
+    pendingLevelUps: 0,
+    ownedSkills: { sharpen: 2 },
+    rerollsUsed: 1,
+    freeRerollsLeft: 2,
+    goldEarned: 145,
+    kills: 112,
+    elapsedMs: 185000,
+    ascension: 4,
+    endlessLoop: 2,
+    ...overrides,
+  };
 }
 
 describe('Theme Wood UI assets & 9-slice invariants', () => {
@@ -220,57 +276,104 @@ describe('resolveMenuButtonVisualState — unmistakable button states', () => {
 describe('computeMenuButtonTextLayout — internal padding and subtitle fit', () => {
   const TWO_LINE_CASES = [
     {
-      screen: 'Title',
+      screen: 'Title (standard 5 buttons)',
       width: MENU_COLUMN_WIDTH - 28,
       height: 31,
       fontSize: 11,
-      labels: ['Play', ...CHARACTER_ROSTER.map((c) => formatTitleCharacterLabel(c)), 'Meta shop', 'Settings', 'Credits'],
+      labels: [
+        'Play',
+        ...CHARACTER_ROSTER.map((c) => formatTitleCharacterLabel(c)),
+        'Meta shop',
+        'Settings',
+        'Credits',
+      ],
       details: [
         'Choose a chapter',
         ...CHARACTER_ROSTER.map((c) => formatTitleCharacterDetail(c, 1)),
         ...CHARACTER_ROSTER.map((c) => formatTitleCharacterDetail(c, 4)),
-        'Upgrades & character unlocks',
-        'Volume, fullscreen, effects',
+        'Stats, utilities & heroes',
+        'Music, SFX, display, effects',
+      ],
+    },
+    {
+      screen: 'Title (with Continue Run, 6 buttons)',
+      width: MENU_COLUMN_WIDTH - 28,
+      height: 29,
+      fontSize: 10,
+      labels: [
+        'Continue Run',
+        'Play',
+        ...CHARACTER_ROSTER.map((c) => formatTitleCharacterLabel(c)),
+        'Meta shop',
+        'Settings',
+        'Credits',
+      ],
+      details: [
+        ...CHARACTER_ROSTER.map((c) =>
+          formatContinueRunDetail(
+            makeSampleActiveRun({
+              characterId: c.id,
+              chapter: 4,
+              roomIndex: 9,
+              ascension: 5,
+              endlessLoop: 12,
+            }),
+          ),
+        ),
+        'Choose a chapter',
+        'Stats, utilities & heroes',
+        'Music, SFX, display, effects',
       ],
     },
     {
       screen: 'Chapter Select',
       width: MENU_COLUMN_WIDTH - 28,
-      height: 33,
-      fontSize: 11,
+      height: 29,
+      fontSize: 10,
       labels: ['Chapter 1', 'Chapter 4'],
-      details: ['Enter chapter', 'Locked — clear previous', 'No data'],
+      details: [
+        'Enter chapter',
+        'Enter · Ascension 5',
+        'Enter · Max A5',
+        'Locked — clear previous',
+        'No data',
+      ],
     },
     {
-      screen: 'Meta Shop (two-column rows)',
-      width: 216,
+      screen: 'Meta Shop (three-column rows)',
+      width: 156,
       height: 35,
-      fontSize: 11,
-      labels: ['Fire rate   Lv 10/10', 'Cultivator — UNLOCKED', 'Cultivator — 350g'],
+      fontSize: 10,
+      labels: [
+        'Fire rate   Lv 10/10',
+        'Free rerolls   Lv 3/3',
+        'Cultivator — UNLOCKED',
+        'Cultivator — 350g',
+      ],
       details: [
-        'Next: 999g — need 999g more',
-        'Next: 999 gold',
+        'Next: 500g · need 500g',
+        'Next: 500 gold',
         'Maxed out',
         'Buy early (or clear Ch3)',
-        'Need 350g more (or clear Ch3)',
+        'Need 350g (or clear Ch3)',
         'Unlocked (Chapter 3 cleared)',
       ],
     },
     {
-      screen: 'Pause',
+      screen: 'Pause (Music & SFX rows)',
       width: 312,
-      height: 36,
-      fontSize: 12,
-      labels: ['Restart run', 'Volume   100%'],
+      height: 31,
+      fontSize: 11,
+      labels: ['Restart run', 'Music   100%', 'SFX   100%'],
       details: ['New run, keep gold earned', 'Left / Right or click (+10%)'],
     },
     {
-      screen: 'Result',
-      width: 328,
-      height: 35,
-      fontSize: 12,
-      labels: ['Chapter select'],
-      details: ['Spend the gold you earned', 'Back to the main menu'],
+      screen: 'Result (Continue Endless & footer buttons)',
+      width: 138,
+      height: 29,
+      fontSize: 10,
+      labels: ['Meta shop', 'Chapter select', 'Title'],
+      details: ['Spend gold earned', 'Try another chapter', 'Back to main menu'],
     },
   ] as const;
 
@@ -310,15 +413,16 @@ describe('computeMenuButtonTextLayout — internal padding and subtitle fit', ()
     }
   });
 
-  it('centres single-line buttons cleanly (Settings 22/24px, Back 28px, Credits 30px)', () => {
-    for (const [height, fontSize] of [
-      [22, 10],
-      [24, 11],
-      [28, 11],
-      [30, 11],
+  it('centres single-line buttons cleanly (Settings 22px, Ascension < / > 28×22, Back 28px, Credits 30px)', () => {
+    for (const [width, height, fontSize, sampleText] of [
+      [28, 22, 10, '<'],
+      [316, 22, 10, 'Damage numbers   OFF'],
+      [280, 24, 11, 'Music   100%'],
+      [184, 28, 10, 'Character select'],
+      [280, 30, 11, 'Back'],
     ] as const) {
       const layout = computeMenuButtonTextLayout({
-        width: 280,
+        width,
         height,
         fontSize,
         hasDetail: false,
@@ -326,6 +430,9 @@ describe('computeMenuButtonTextLayout — internal padding and subtitle fit', ()
       expect(layout.labelY).toBe(0);
       const labelHalfH = (layout.labelFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
       expect(labelHalfH).toBeLessThanOrEqual(height / 2 - 2);
+      expect(sampleText.length * layout.labelFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+        layout.safeTextWidth,
+      );
     }
   });
 });
@@ -333,7 +440,7 @@ describe('computeMenuButtonTextLayout — internal padding and subtitle fit', ()
 describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds audit', () => {
   const SCREEN_SPECS = [
     {
-      name: 'Title',
+      name: 'Title (no activeRun)',
       hasSubtitle: true,
       infoCount: 2,
       buttonHeights: [31, 31, 31, 31, 31],
@@ -342,40 +449,32 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
       panelFullHeight: true,
     },
     {
-      name: 'Chapter Select',
+      name: 'Title (with Continue Run)',
+      titleFontSize: 20,
       hasSubtitle: true,
       infoCount: 1,
-      buttonHeights: [33, 33, 33, 33, 28],
-      buttonGap: 5,
+      buttonHeights: [29, 29, 29, 29, 29, 29],
+      buttonGap: 3,
       panelWidth: MENU_COLUMN_WIDTH,
       panelFullHeight: true,
     },
     {
-      name: 'Settings',
+      name: 'Settings (7 rows: Music + SFX + toggles)',
       titleFontSize: 20,
       hasSubtitle: true,
       infoCount: 1,
-      buttonHeights: [24, 24, 24, 24, 24, 24],
-      buttonGap: 4,
+      buttonHeights: [22, 22, 22, 22, 22, 22, 22],
+      buttonGap: 3,
       panelWidth: 452,
       panelFullHeight: false,
     },
     {
-      name: 'Pause',
+      name: 'Pause (5 rows: Resume, Restart, Music, SFX, Quit)',
       hasSubtitle: true,
       infoCount: 0,
-      buttonHeights: [36, 36, 36, 36],
-      buttonGap: 6,
-      panelWidth: 364,
-      panelFullHeight: false,
-    },
-    {
-      name: 'Result (with unlock)',
-      hasSubtitle: true,
-      infoCount: 4,
-      buttonHeights: [35, 35, 35],
+      buttonHeights: [31, 31, 31, 31, 31],
       buttonGap: 5,
-      panelWidth: 384,
+      panelWidth: 364,
       panelFullHeight: false,
     },
     {
@@ -391,7 +490,6 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
 
   it('keeps every menu plaque, shadow, header, button, and hint strictly inside the UI band at 1920×1080, 1280×720, 1280×800, and 1024×768', () => {
     for (const vp of TARGET_VIEWPORTS) {
-      // SHOW_ALL preserves the 512×288 design visible size inside the letterboxed viewport band.
       const band = letterboxRect(vp.width, vp.height, DESIGN_WIDTH, DESIGN_HEIGHT);
       expect(band.width).toBeGreaterThan(0);
       expect(band.height).toBeGreaterThan(0);
@@ -446,6 +544,35 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
     }
   });
 
+  it('formats Continue Run subtitle and Title info lines within column bounds', () => {
+    expect(
+      formatContinueRunDetail(
+        makeSampleActiveRun({ characterId: 'ninja', chapter: 1, roomIndex: 2, ascension: 0, endlessLoop: 0 }),
+      ),
+    ).toBe('Ninja · Ch1 R2');
+    expect(
+      formatContinueRunDetail(
+        makeSampleActiveRun({ characterId: 'archer', chapter: 2, roomIndex: 5, ascension: 3, endlessLoop: 0 }),
+      ),
+    ).toBe('Archer · Ch2 R5 · A3');
+    expect(
+      formatContinueRunDetail(
+        makeSampleActiveRun({ characterId: 'cultivator', chapter: 4, roomIndex: 9, ascension: 5, endlessLoop: 2 }),
+      ),
+    ).toBe('Cultivator · Ch4 R9 · A5 · E2');
+
+    const compactInfo = formatTitleInfoLines(
+      99999,
+      { chapter: 4, room: 9 },
+      'Best: chapter 4 · room 9',
+      true,
+    );
+    expect(compactInfo).toEqual(['Gold 99999 · Best Ch4 R9']);
+    expect(compactInfo[0]!.length * 9 * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+      MENU_COLUMN_WIDTH - 30,
+    );
+  });
+
   it('fits 3 skill cards with focus rings, all skill/Evolution labels, pairing hints, and Gold Reroll inside 512×288 across all viewports', () => {
     const layout = computeSkillCardLayout(3);
     const leftEdge = layout.cardXs[0]! - (layout.cardWidth + FOCUS_RING_EXPAND_PX) / 2;
@@ -458,12 +585,10 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
     expect(bottomEdge).toBeGreaterThanOrEqual(-DESIGN_HEIGHT / 2 + 8);
     expect(topEdge).toBeLessThan(layout.subtitleY - 10);
 
-    // Interior slots stay clear of each other and inside the card well.
     expect(layout.pairHintY).toBeLessThan(layout.effectY - layout.effectHeight / 2);
     expect(layout.pairHintY).toBeGreaterThan(layout.stackY + 8);
     expect(layout.stackY - 6).toBeGreaterThan(-layout.cardHeight / 2 + 5);
 
-    // Gold Reroll button sits cleanly below the 3 cards without touching focus rings or bottom edge.
     const rerollTopEdge = layout.rerollY + (layout.rerollHeight + FOCUS_RING_EXPAND_PX) / 2;
     const rerollBottomEdge = layout.rerollY - (layout.rerollHeight + FOCUS_RING_EXPAND_PX) / 2;
     expect(rerollTopEdge).toBeLessThanOrEqual(bottomEdge - 4);
@@ -478,7 +603,12 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
       fontSize: 11,
       hasDetail: true,
     });
-    for (const labelText of ['Reroll (R) — 10g', 'Reroll (R) — 120g', 'Reroll (R)']) {
+    for (const labelText of [
+      'Free Reroll (R) · 3 left',
+      'Reroll (R) — 10g',
+      'Reroll (R) — 120g',
+      'Reroll (R)',
+    ]) {
       expect(labelText.length * rerollText.labelFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
         rerollText.safeTextWidth,
       );
@@ -503,7 +633,6 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
       const nameW = card.name.length * 12 * GLYPH_WIDTH_RATIO;
       expect(nameW, `card "${card.name}"`).toBeLessThanOrEqual(layout.cardWidth - 16);
 
-      // Word-wrap the effect description and assert it never collides with accentY or pairHintY.
       const maxChars = Math.floor(layout.effectWidth / (layout.effectFontSize * GLYPH_WIDTH_RATIO));
       let lines = 1;
       let lineLen = 0;
@@ -582,7 +711,6 @@ describe('menuBackdropFrame & menuFramedPlayerSpot — living scene framing acro
         expect(frame.height).toBe(ROOM_ROWS);
         expect(Number.isInteger(frame.x)).toBe(true);
         expect(Number.isInteger(frame.y)).toBe(true);
-        // Never include the 2-tile outer wall/door-cutout border of 64×36 rooms.
         expect(frame.x, `ch${chapter} frame.x`).toBeGreaterThanOrEqual(3);
         expect(frame.x + frame.width, `ch${chapter} frame right`).toBeLessThanOrEqual(
           room.size.cols - 3,
@@ -596,7 +724,6 @@ describe('menuBackdropFrame & menuFramedPlayerSpot — living scene framing acro
         const viewX = spot.x - frame.x;
         const viewY = spot.y - frame.y;
 
-        // Character stands visibly inside the 32×18 viewport and clear of the centred menu column.
         expect(viewX, `ch${chapter} ${vp.label} viewX`).toBeGreaterThanOrEqual(2);
         expect(viewX, `ch${chapter} ${vp.label} viewX`).toBeLessThanOrEqual(ROOM_COLS - 2);
         expect(viewY, `ch${chapter} ${vp.label} viewY`).toBeGreaterThanOrEqual(3);
@@ -614,6 +741,117 @@ describe('menuBackdropFrame & menuFramedPlayerSpot — living scene framing acro
         }
       }
     }
+  });
+});
+
+describe('M15 Chapter Select + Ascension 0–5 selector layout & bounds audit', () => {
+  it('fits 4 chapters, < / > Ascension selector, 3 summary lines, Back, and hint inside MENU_COLUMN_WIDTH across all 4 viewports with zero overlap', () => {
+    for (const vp of TARGET_VIEWPORTS) {
+      const band = letterboxRect(vp.width, vp.height, DESIGN_WIDTH, DESIGN_HEIGHT);
+      expect(band.width).toBeGreaterThan(0);
+
+      const layout = computeChapterSelectLayout({
+        visibleWidth: DESIGN_WIDTH,
+        visibleHeight: DESIGN_HEIGHT,
+        chapterCount: 4,
+      });
+
+      expect(layout.panelWidth).toBe(MENU_COLUMN_WIDTH);
+      const panelTop = layout.panelY + layout.panelHeight / 2;
+      const panelBottom = layout.panelY - layout.panelHeight / 2;
+
+      const titleTop = layout.titleY + (layout.titleFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+      const titleBottom = layout.titleY - (layout.titleFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+      const bestTop = layout.bestY + (layout.bestFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+      const bestBottom = layout.bestY - (layout.bestFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+
+      expect(titleTop, `${vp.label} titleTop`).toBeLessThanOrEqual(panelTop - 2);
+      expect(bestTop, `${vp.label} best below title`).toBeLessThan(titleBottom);
+      expect(layout.dividerY, `${vp.label} divider below best`).toBeLessThan(bestBottom);
+
+      const ch0TopRing =
+        layout.chapterSlots[0]!.y + (layout.chapterSlots[0]!.height + FOCUS_RING_EXPAND_PX) / 2;
+      const ch3BottomRing =
+        layout.chapterSlots[3]!.y - (layout.chapterSlots[3]!.height + FOCUS_RING_EXPAND_PX) / 2;
+      expect(ch0TopRing).toBeLessThanOrEqual(layout.dividerY - 2);
+
+      const ascTopRing =
+        layout.ascensionPrevButton.y +
+        (layout.ascensionPrevButton.height + FOCUS_RING_EXPAND_PX) / 2;
+      const ascBottomRing =
+        layout.ascensionPrevButton.y -
+        (layout.ascensionPrevButton.height + FOCUS_RING_EXPAND_PX) / 2;
+      expect(ascTopRing, `${vp.label} ascension below ch4`).toBeLessThan(ch3BottomRing);
+
+      // Horizontal clearance between < button, Ascension label, and > button.
+      const prevRight =
+        layout.ascensionPrevButton.x +
+        (layout.ascensionPrevButton.width + FOCUS_RING_EXPAND_PX) / 2;
+      const nextLeft =
+        layout.ascensionNextButton.x -
+        (layout.ascensionNextButton.width + FOCUS_RING_EXPAND_PX) / 2;
+      expect(nextLeft - prevRight).toBeGreaterThanOrEqual(layout.ascensionLabelSafeWidth - 8);
+
+      const summaryHalfH = (layout.summaryFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+      expect(layout.summaryLineYs[0] + summaryHalfH).toBeLessThan(ascBottomRing);
+      expect(layout.summaryLineYs[1] + summaryHalfH).toBeLessThan(
+        layout.summaryLineYs[0] - summaryHalfH,
+      );
+      expect(layout.summaryLineYs[2] + summaryHalfH).toBeLessThan(
+        layout.summaryLineYs[1] - summaryHalfH,
+      );
+
+      const backTopRing =
+        layout.backButton.y + (layout.backButton.height + FOCUS_RING_EXPAND_PX) / 2;
+      const backBottomRing =
+        layout.backButton.y - (layout.backButton.height + FOCUS_RING_EXPAND_PX) / 2;
+      expect(backTopRing).toBeLessThan(layout.summaryLineYs[2] - summaryHalfH);
+
+      const hintHalfH = (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+      expect(layout.hintY + hintHalfH).toBeLessThan(backBottomRing);
+      expect(layout.hintY - hintHalfH).toBeGreaterThanOrEqual(panelBottom + 2);
+    }
+  });
+
+  it('fits every Ascension tier label, summary line (0..5), chapter detail, and unlock hint without horizontal clipping', () => {
+    const layout = computeChapterSelectLayout({ chapterCount: 4 });
+
+    for (let tier = 0; tier <= MAX_ASCENSION; tier += 1) {
+      const label = ascensionLabel(tier);
+      expect(
+        label.length * layout.ascensionLabelFontSize * GLYPH_WIDTH_RATIO,
+        `ascension label "${label}"`,
+      ).toBeLessThanOrEqual(layout.ascensionLabelSafeWidth);
+
+      const lines = ascensionSummaryLines(tier, ASCENSION_SUMMARY_MAX_CHARS);
+      expect(lines.length).toBeLessThanOrEqual(3);
+      for (const line of lines) {
+        expect(
+          line.length * layout.summaryFontSize * GLYPH_WIDTH_RATIO,
+          `tier ${tier} summary "${line}"`,
+        ).toBeLessThanOrEqual(layout.summarySafeWidth);
+      }
+
+      const hint = formatChapterAscensionHint(true, tier);
+      expect(hint.length * layout.hintFontSize * GLYPH_WIDTH_RATIO, `hint "${hint}"`).toBeLessThanOrEqual(
+        layout.dividerWidth,
+      );
+    }
+
+    const lockedHint = formatChapterAscensionHint(false, 0);
+    expect(lockedHint.length * layout.hintFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+      layout.dividerWidth,
+    );
+    expect(formatChapterButtonDetail(true, true, true, 3, 5)).toBe('Enter · Ascension 3');
+    expect(formatChapterButtonDetail(true, true, false, 3, 4)).toBe('Enter · Max A4');
+    expect(formatChapterButtonDetail(false, true, false, 0, 0)).toBe('Locked — clear previous');
+
+    // Focus navigation across chapters, <, >, and Back.
+    expect(nextChapterSelectFocus(0, 'down', 4)).toBe(1);
+    expect(nextChapterSelectFocus(3, 'down', 4)).toBe(4); // <
+    expect(nextChapterSelectFocus(4, 'right', 4)).toBe(5); // >
+    expect(nextChapterSelectFocus(5, 'down', 4)).toBe(6); // Back
+    expect(nextChapterSelectFocus(6, 'up', 4)).toBe(4);
   });
 });
 
@@ -651,7 +889,6 @@ describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock b
       expect(shadowBottom, `${vp.label} shadowBottom`).toBeGreaterThanOrEqual(-halfH);
       expect(layout.stageRightX).toBe(shadowLeft);
 
-      // Living backdrop hero (16px sprite) on the left stage must stay uncovered by the plaque.
       const worldScale = worldToUiScale(vp.width, vp.height, DESIGN_WIDTH, DESIGN_HEIGHT);
       const localKeepOut = localKeepOutForScale(worldScale);
       const frame = menuBackdropFrame(ch1Room1, {
@@ -666,7 +903,6 @@ describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock b
         `${vp.label} backdrop hero right edge clear of Character Select plaque`,
       ).toBeLessThanOrEqual(layout.stageRightX - 6);
 
-      // Header -> divider -> Row 0 -> Row 1 -> Summary well -> Action buttons -> Hint ordering.
       const panelTop = layout.panelY + layout.panelHeight / 2;
       const panelBottom = layout.panelY - layout.panelHeight / 2;
       expect(layout.titleY + (layout.titleFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThanOrEqual(
@@ -825,18 +1061,15 @@ describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock b
   });
 
   it('navigates all 6 Character Select controls via 2D arrows and restores the highlighted card from the action bar', () => {
-    // Left/Right cycles all 4 class cards in roster order.
     expect(nextCharacterSelectFocus(0, 'right', 0)).toBe(1);
     expect(nextCharacterSelectFocus(1, 'right', 1)).toBe(2);
     expect(nextCharacterSelectFocus(2, 'right', 2)).toBe(3);
     expect(nextCharacterSelectFocus(3, 'right', 3)).toBe(0);
     expect(nextCharacterSelectFocus(0, 'left', 0)).toBe(3);
 
-    // Left/Right toggles Primary <-> Back on the bottom row.
     expect(nextCharacterSelectFocus(4, 'right', 1)).toBe(5);
     expect(nextCharacterSelectFocus(5, 'left', 1)).toBe(4);
 
-    // Down steps row 0 -> row 1 -> primary action, and Up from primary/back returns to highlightedCard.
     expect(nextCharacterSelectFocus(0, 'down', 0)).toBe(2);
     expect(nextCharacterSelectFocus(1, 'down', 1)).toBe(3);
     expect(nextCharacterSelectFocus(2, 'down', 2)).toBe(4);
@@ -846,45 +1079,66 @@ describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock b
   });
 });
 
-describe('M14 Meta Shop two-column layout — stat tracks & early character unlocks', () => {
-  it('fits stat tracks, character unlock buttons, section headers, and bottom buttons inside 512×288 across all 4 viewports', () => {
-    for (const hasCharacterSelect of [true, false]) {
-      const layout = computeShopScreenLayout({
-        visibleWidth: DESIGN_WIDTH,
-        visibleHeight: DESIGN_HEIGHT,
-        hasCharacterSelect,
-      });
+describe('M15 Expanded 3-column Meta Shop layout — STAT, UTILITY & HERO UNLOCKS', () => {
+  it('groups all 6 tracks into STAT (3) + UTILITY (3, NO Revive) + HERO UNLOCKS (3) inside 512×288 across all 4 viewports', () => {
+    expect(STAT_UPGRADE_TRACKS).toEqual(['hearts', 'damage', 'fireRate']);
+    expect(UTILITY_UPGRADE_TRACKS).toEqual(['xpMagnet', 'goldBonus', 'freeRerolls']);
+    expect(UPGRADE_TRACKS).toHaveLength(6);
+    expect(UPGRADE_TRACKS).not.toContain('revive');
+    expect(SHOP_CHARACTER_START_INDEX).toBe(6);
+    expect(SHOP_CHAR_SELECT_BUTTON_INDEX).toBe(9);
 
-      const halfW = DESIGN_WIDTH / 2;
-      const halfH = DESIGN_HEIGHT / 2;
-      const shadowHalfW = (layout.panelWidth + PANEL_SHADOW_EXPAND_PX) / 2;
-      const shadowTop = layout.panelY + (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
-      const shadowBottom = layout.panelY - (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
+    for (const vp of TARGET_VIEWPORTS) {
+      const band = letterboxRect(vp.width, vp.height, DESIGN_WIDTH, DESIGN_HEIGHT);
+      expect(band.width).toBeGreaterThan(0);
 
-      expect(shadowHalfW).toBeLessThanOrEqual(halfW);
-      expect(shadowTop).toBeLessThanOrEqual(halfH);
-      expect(shadowBottom).toBeGreaterThanOrEqual(-halfH);
+      for (const hasCharacterSelect of [true, false]) {
+        const layout = computeShopScreenLayout({
+          visibleWidth: DESIGN_WIDTH,
+          visibleHeight: DESIGN_HEIGHT,
+          hasCharacterSelect,
+        });
 
-      expect(layout.upgradeSlots).toHaveLength(3);
-      expect(layout.characterSlots).toHaveLength(3);
-      expect(layout.characterSlots[0]!.x - layout.upgradeSlots[0]!.x - layout.colWidth).toBeGreaterThanOrEqual(10);
+        const halfW = DESIGN_WIDTH / 2;
+        const halfH = DESIGN_HEIGHT / 2;
+        const shadowHalfW = (layout.panelWidth + PANEL_SHADOW_EXPAND_PX) / 2;
+        const shadowTop = layout.panelY + (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
+        const shadowBottom = layout.panelY - (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
 
-      const topRowRing = layout.upgradeSlots[0]!.y + (layout.rowHeight + FOCUS_RING_EXPAND_PX) / 2;
-      const headerBottom =
-        layout.sectionHeaderY - (layout.sectionHeaderFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
-      expect(topRowRing).toBeLessThan(headerBottom);
+        expect(shadowHalfW, `${vp.label} shop width`).toBeLessThanOrEqual(halfW);
+        expect(shadowTop, `${vp.label} shop top`).toBeLessThanOrEqual(halfH);
+        expect(shadowBottom, `${vp.label} shop bottom`).toBeGreaterThanOrEqual(-halfH);
 
-      const bottomRowTopRing =
-        layout.backButton.y + (layout.backButton.height + FOCUS_RING_EXPAND_PX) / 2;
-      const lastTrackBottom = layout.upgradeSlots[2]!.y - layout.rowHeight / 2;
-      expect(bottomRowTopRing).toBeLessThan(lastTrackBottom - 2);
-      expect(layout.hintY + (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThan(
-        layout.backButton.y - (layout.backButton.height + FOCUS_RING_EXPAND_PX) / 2 - 4,
-      );
+        expect(layout.statSlots).toHaveLength(3);
+        expect(layout.utilitySlots).toHaveLength(3);
+        expect(layout.upgradeSlots).toHaveLength(6);
+        expect(layout.characterSlots).toHaveLength(3);
+
+        // Non-overlapping horizontal columns (including focus rings).
+        expect(
+          layout.utilitySlots[0]!.x - layout.statSlots[0]!.x - layout.colWidth,
+        ).toBeGreaterThanOrEqual(FOCUS_RING_EXPAND_PX + 2);
+        expect(
+          layout.characterSlots[0]!.x - layout.utilitySlots[0]!.x - layout.colWidth,
+        ).toBeGreaterThanOrEqual(FOCUS_RING_EXPAND_PX + 2);
+
+        const topRowRing = layout.upgradeSlots[0]!.y + (layout.rowHeight + FOCUS_RING_EXPAND_PX) / 2;
+        const headerBottom =
+          layout.sectionHeaderY - (layout.sectionHeaderFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+        expect(topRowRing).toBeLessThan(headerBottom);
+
+        const bottomRowTopRing =
+          layout.backButton.y + (layout.backButton.height + FOCUS_RING_EXPAND_PX) / 2;
+        const lastTrackBottom = layout.upgradeSlots[2]!.y - layout.rowHeight / 2;
+        expect(bottomRowTopRing).toBeLessThan(lastTrackBottom - 2);
+        expect(layout.hintY + (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThan(
+          layout.backButton.y - (layout.backButton.height + FOCUS_RING_EXPAND_PX) / 2 - 4,
+        );
+      }
     }
   });
 
-  it('formats every upgradeRow and characterShopRow cleanly with disabled reasons and non-overflowing text', () => {
+  it('formats every upgradeRow (all 6 tracks), characterShopRow (all 3 heroes), and bonus header with zero text overflow', () => {
     const layout = computeShopScreenLayout({ hasCharacterSelect: true });
     const rowTextLayout = computeMenuButtonTextLayout({
       width: layout.colWidth,
@@ -894,7 +1148,7 @@ describe('M14 Meta Shop two-column layout — stat tracks & early character unlo
     });
 
     const brokeSave = createDefaultSave();
-    const richSave = { ...brokeSave, gold: 5000 };
+    const richSave = { ...brokeSave, gold: 9999 };
     const maxedSave = {
       ...richSave,
       chaptersUnlocked: 4,
@@ -918,32 +1172,220 @@ describe('M14 Meta Shop two-column layout — stat tracks & early character unlo
     expect(characterShopRow(maxedSave, 'cultivator').detail).toBe('Unlocked (Chapter 3 cleared)');
 
     for (const save of [brokeSave, richSave, maxedSave, boughtArcherSave]) {
+      const bonusLine = formatShopBonusSummary(save);
+      expect(bonusLine.length * layout.infoFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+        layout.dividerWidth,
+      );
+
       for (const track of UPGRADE_TRACKS) {
         const row = upgradeRow(save, track);
-        expect(row.label.length * rowTextLayout.labelFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
-          rowTextLayout.safeTextWidth,
-        );
-        expect(row.detail.length * rowTextLayout.detailFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
-          rowTextLayout.safeTextWidth,
-        );
+        expect(
+          row.label.length * rowTextLayout.labelFontSize * GLYPH_WIDTH_RATIO,
+          `upgrade label "${row.label}"`,
+        ).toBeLessThanOrEqual(rowTextLayout.safeTextWidth);
+        expect(
+          row.detail.length * rowTextLayout.detailFontSize * GLYPH_WIDTH_RATIO,
+          `upgrade detail "${row.detail}"`,
+        ).toBeLessThanOrEqual(rowTextLayout.safeTextWidth);
       }
       for (const characterId of SHOP_UNLOCK_CHARACTER_IDS) {
         const row = characterShopRow(save, characterId);
-        expect(row.label.length * rowTextLayout.labelFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
-          rowTextLayout.safeTextWidth,
-        );
-        expect(row.detail.length * rowTextLayout.detailFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
-          rowTextLayout.safeTextWidth,
-        );
+        expect(
+          row.label.length * rowTextLayout.labelFontSize * GLYPH_WIDTH_RATIO,
+          `hero label "${row.label}"`,
+        ).toBeLessThanOrEqual(rowTextLayout.safeTextWidth);
+        expect(
+          row.detail.length * rowTextLayout.detailFontSize * GLYPH_WIDTH_RATIO,
+          `hero detail "${row.detail}"`,
+        ).toBeLessThanOrEqual(rowTextLayout.safeTextWidth);
       }
     }
 
-    // 2D focus transitions across columns and rows.
+    // 2D focus transitions across all 3 columns (`0..2` STAT, `3..5` UTILITY, `6..8` HEROES) + footer (`9..10`).
     expect(nextShopScreenFocus(0, 'right', true)).toBe(3);
+    expect(nextShopScreenFocus(3, 'right', true)).toBe(6);
+    expect(nextShopScreenFocus(6, 'right', true)).toBe(0);
     expect(nextShopScreenFocus(3, 'left', true)).toBe(0);
-    expect(nextShopScreenFocus(2, 'down', true)).toBe(6);
-    expect(nextShopScreenFocus(5, 'down', true)).toBe(7);
-    expect(nextShopScreenFocus(6, 'right', true)).toBe(7);
-    expect(nextShopScreenFocus(5, 'down', false)).toBe(6);
+    expect(nextShopScreenFocus(2, 'down', true)).toBe(9);
+    expect(nextShopScreenFocus(5, 'down', true)).toBe(9);
+    expect(nextShopScreenFocus(8, 'down', true)).toBe(10);
+    expect(nextShopScreenFocus(9, 'right', true)).toBe(10);
+    expect(nextShopScreenFocus(8, 'down', false)).toBe(9);
+  });
+});
+
+describe('M15 Rich Results / Death screen layout & summary bounds audit', () => {
+  it('normalizes ReadonlyMap, Record, and SkillSummaryEntry[] ownedSkills inputs identically', () => {
+    const asMap = new Map<string, number>([
+      ['sharpen', 3],
+      ['phantom-volley', 1],
+    ]);
+    const asRecord = { sharpen: 3, 'phantom-volley': 1 };
+    const asEntries = [
+      { id: 'sharpen', stacks: 3 },
+      { id: 'phantom-volley', stacks: 1 },
+    ] as const;
+
+    expect(Array.from(toOwnedSkillsMap(asMap).entries())).toEqual([
+      ['sharpen', 3],
+      ['phantom-volley', 1],
+    ]);
+    expect(Array.from(toOwnedSkillsMap(asRecord).entries())).toEqual([
+      ['sharpen', 3],
+      ['phantom-volley', 1],
+    ]);
+    expect(Array.from(toOwnedSkillsMap(asEntries).entries())).toEqual([
+      ['sharpen', 3],
+      ['phantom-volley', 1],
+    ]);
+  });
+
+  it('fits worst-case 7-line Rich Result + Continue Endless + 3 footer buttons inside 512×288 across all 4 viewports with zero overlap', () => {
+    const maxedOwned: Record<string, number> = {};
+    for (const skill of SKILLS) maxedOwned[skill.id] = skill.maxStacks;
+    for (const evo of EVOLUTIONS) maxedOwned[evo.id] = 1;
+
+    const worstWin = formatResultScreenSummary({
+      chapter: 4,
+      roomReached: 9,
+      roomsTotal: 9,
+      goldEarned: 9999,
+      goldTotal: 99999,
+      durationMs: 3599000,
+      kills: 9999,
+      won: true,
+      seed: 0xffffffff,
+      ascension: 5,
+      endlessLoop: 12,
+      characterId: 'cultivator',
+      ownedSkills: maxedOwned,
+      unlocks: {
+        unlockedChapter: 4,
+        unlockedCharacters: ['archer', 'mage', 'cultivator'],
+        unlockedAscension: { chapter: 4, level: 5 },
+        endlessUnlocked: true,
+      },
+      canContinueEndless: true,
+    });
+
+    expect(worstWin.title).toBe('CHAPTER CLEAR');
+    expect(worstWin.lines.length).toBeLessThanOrEqual(7);
+    expect(worstWin.lines.some((l) => l.text.includes('Hero: Cultivator'))).toBe(true);
+    expect(worstWin.lines.some((l) => l.text.includes('Ascension 5'))).toBe(true);
+    expect(worstWin.lines.some((l) => l.text.includes('Endless Loop 12'))).toBe(true);
+    expect(worstWin.lines.some((l) => l.text.includes('Seed 4294967295'))).toBe(true);
+    expect(worstWin.lines.some((l) => l.kind === 'evolution')).toBe(true);
+    expect(worstWin.lines.some((l) => l.kind === 'skills')).toBe(true);
+    expect(worstWin.lines.some((l) => l.kind === 'unlock')).toBe(true);
+
+    for (const vp of TARGET_VIEWPORTS) {
+      for (const hasContinueEndless of [true, false]) {
+        const layout = computeResultScreenLayout({
+          visibleWidth: DESIGN_WIDTH,
+          visibleHeight: DESIGN_HEIGHT,
+          lineCount: worstWin.lines.length,
+          hasContinueEndless,
+        });
+
+        const halfW = DESIGN_WIDTH / 2;
+        const halfH = DESIGN_HEIGHT / 2;
+        const shadowHalfW = (layout.panelWidth + PANEL_SHADOW_EXPAND_PX) / 2;
+        const shadowTop = layout.panelY + (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
+        const shadowBottom = layout.panelY - (layout.panelHeight + PANEL_SHADOW_EXPAND_PX) / 2 - 1;
+
+        expect(shadowHalfW, `${vp.label} result width`).toBeLessThanOrEqual(halfW);
+        expect(shadowTop, `${vp.label} result top`).toBeLessThanOrEqual(halfH);
+        expect(shadowBottom, `${vp.label} result bottom`).toBeGreaterThanOrEqual(-halfH);
+
+        const panelTop = layout.panelY + layout.panelHeight / 2;
+        const panelBottom = layout.panelY - layout.panelHeight / 2;
+        const titleHalfH = (layout.titleFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+        const subHalfH = (layout.subtitleFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+        const lineHalfH = (layout.lineFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+        const hintHalfH = (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+
+        expect(layout.titleY + titleHalfH).toBeLessThanOrEqual(panelTop - 2);
+        expect(layout.subtitleY + subHalfH).toBeLessThan(layout.titleY - titleHalfH);
+        expect(layout.dividerY).toBeLessThan(layout.subtitleY - subHalfH);
+        expect(layout.lineYs[0]! + lineHalfH).toBeLessThan(layout.dividerY);
+
+        for (let i = 0; i < worstWin.lines.length; i += 1) {
+          const line = worstWin.lines[i]!;
+          expect(line.text.length).toBeLessThanOrEqual(RESULT_LINE_MAX_CHARS);
+          expect(line.text.length * layout.lineFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+            layout.lineSafeWidth,
+          );
+          if (i > 0) {
+            expect(layout.lineYs[i]! + lineHalfH).toBeLessThan(
+              layout.lineYs[i - 1]! - lineHalfH,
+            );
+          }
+        }
+
+        const lastLineBottom = layout.lineYs[layout.lineYs.length - 1]! - lineHalfH;
+        const topBtn = layout.continueEndlessButton ?? layout.footerButtons[0];
+        const topBtnRing = topBtn.y + (topBtn.height + FOCUS_RING_EXPAND_PX) / 2;
+        expect(topBtnRing).toBeLessThan(lastLineBottom);
+
+        if (layout.continueEndlessButton !== null) {
+          const contBottom = layout.continueEndlessButton.y - layout.continueEndlessButton.height / 2;
+          const footerTop = layout.footerButtons[0].y + layout.footerButtons[0].height / 2;
+          expect(contBottom - footerTop).toBeGreaterThanOrEqual(FOCUS_RING_EXPAND_PX);
+        }
+
+        const footerBottomRing =
+          layout.footerButtons[0].y - (layout.footerButtons[0].height + FOCUS_RING_EXPAND_PX) / 2;
+        expect(layout.hintY + hintHalfH).toBeLessThan(footerBottomRing);
+        expect(layout.hintY - hintHalfH).toBeGreaterThanOrEqual(panelBottom + 2);
+      }
+    }
+
+    // Defeat subtitles across all enemy roles & boss IDs fit cleanly inside dividerWidth.
+    const refLayout = computeResultScreenLayout({ lineCount: 4, hasContinueEndless: false });
+    for (const role of ENEMY_ROLES) {
+      const summary = formatResultScreenSummary({
+        chapter: 2,
+        roomReached: 4,
+        roomsTotal: 9,
+        goldEarned: 35,
+        goldTotal: 120,
+        durationMs: 65000,
+        kills: 42,
+        won: false,
+        deathCause: { kind: 'enemy', role, elite: true },
+      });
+      expect(summary.subtitle).toContain('Slain by Elite');
+      expect(
+        summary.subtitle.length * refLayout.subtitleFontSize * GLYPH_WIDTH_RATIO,
+      ).toBeLessThanOrEqual(refLayout.dividerWidth);
+    }
+    for (const bossId of BOSS_IDS) {
+      const summary = formatResultScreenSummary({
+        chapter: 4,
+        roomReached: 9,
+        roomsTotal: 9,
+        goldEarned: 190,
+        goldTotal: 500,
+        durationMs: 310000,
+        kills: 210,
+        won: false,
+        deathCause: { kind: 'boss', bossId, phase: 3 },
+      });
+      expect(summary.subtitle).toContain('(Phase 3)');
+      expect(
+        summary.subtitle.length * refLayout.subtitleFontSize * GLYPH_WIDTH_RATIO,
+      ).toBeLessThanOrEqual(refLayout.dividerWidth);
+    }
+
+    // Unlock progression helper sanity check with SaveData.
+    const unlockedAsc = unlockChapterAscension(createDefaultSave(), 1, 0);
+    expect(unlockedAsc.ascensionUnlocked[0]).toBe(1);
+
+    // 2D focus navigation on ResultScreen.
+    expect(nextResultScreenFocus(0, 'down', true)).toBe(1);
+    expect(nextResultScreenFocus(2, 'up', true)).toBe(0);
+    expect(nextResultScreenFocus(1, 'right', true)).toBe(2);
+    expect(nextResultScreenFocus(0, 'right', false)).toBe(1);
+    expect(nextResultScreenFocus(0, 'left', false)).toBe(2);
   });
 });

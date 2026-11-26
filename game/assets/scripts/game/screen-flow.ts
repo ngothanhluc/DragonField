@@ -1,13 +1,11 @@
 /**
- * M5/M14 screen routing: title, character select, chapter select, shop, settings, credits,
- * pause, result. Split from `bootstrap.ts` so run-flow does not grow with UI.
+ * M5/M14/M15 screen routing: title (+ Continue Run), character select, chapter select (+ Ascension
+ * 0–5), 6-track meta shop, settings (+ Music/SFX sliders), credits, pause (+ Music/SFX sliders &
+ * ducking), and rich result (+ Continue Endless). Split from `bootstrap.ts` so run-flow does not
+ * grow with UI.
  *
- * This file owns neither run nor combat. It takes a narrow `ScreenFlowHost`:
- * the UI canvas, save/repository, run state (`status`, snapshot) and run
- * actions (start/launch/teardown). That way every screen is still built in code under
- * `screens/`, while bootstrap keeps only boot + the run loop + rendering.
- *
- * All on-screen text is English (console logs included).
+ * All new M15 options on `ScreenFlowOptions` / `ScreenFlowHost` are optional so `bootstrap.ts`
+ * compiles cleanly both before and after Wave 3 merges.
  */
 import type { Node as CocosNode } from 'cc';
 import {
@@ -22,23 +20,33 @@ import {
 } from '../core/characters/roster';
 import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
 import type { UpgradeTrack } from '../core/meta/upgrades';
+import { clampAscension } from '../core/run/ascension';
+import { canStartEndless } from '../core/run/endless';
 import { applyGold, MAX_GOLD, summariseRun } from '../core/run/rewards';
 import { CHAPTERS_PER_RUN, ROOMS_PER_CHAPTER } from '../core/run/run-state';
+import type { DeathCause, RunUnlocksSummary } from '../core/run/run-summary';
 import { chapterGate } from '../core/save/chapter-gate';
+import type { ActiveRunSave } from '../core/save/run-save';
 import {
   buyCharacter,
   canBuyCharacter,
   unlockNextChapter,
+  unlockedAscensionForChapter,
   withBest,
   withSelectedCharacter,
   type SaveData,
 } from '../core/save/save-data';
-import { applySettings, type Settings } from '../core/save/settings';
+import {
+  applySettings,
+  stepMusicVolume,
+  stepSfxVolume,
+  type Settings,
+} from '../core/save/settings';
 import type { SaveRepository } from '../core/save/storage';
 import { menuBackdropChapter, type MenuBackdropScreen } from '../core/view/menu-backdrop';
 import type { MusicId } from './audio/audio-manager';
 import { playSfx } from './audio/sfx';
-import { buildChapterSelect, type ChapterButton } from './chapter-select';
+import { buildChapterSelect, type ChapterButton, type ChapterSelectScreen } from './chapter-select';
 import type { DebugCharacterSnapshot, DebugScreenId, DebugStatus } from './debug-api';
 import { commitRunEnd } from './run-end';
 import {
@@ -47,9 +55,18 @@ import {
 } from './screens/character-select-screen';
 import { buildCreditsScreen } from './screens/credits-screen';
 import { buildPauseScreen } from './screens/pause-screen';
-import { buildResultScreen, type RunResultData } from './screens/result-screen';
+import {
+  buildResultScreen,
+  type RunResultData,
+  type RunResultOwnedSkills,
+} from './screens/result-screen';
 import { buildSettingsScreen } from './screens/settings-screen';
-import { SHOP_UNLOCK_CHARACTER_IDS, buildShopScreen } from './screens/shop-screen';
+import {
+  SHOP_CHARACTER_START_INDEX,
+  SHOP_CHAR_SELECT_BUTTON_INDEX,
+  SHOP_UNLOCK_CHARACTER_IDS,
+  buildShopScreen,
+} from './screens/shop-screen';
 import { buildTitleScreen, type TitleScreen } from './screens/title-screen';
 
 type Node = InstanceType<typeof CocosNode>;
@@ -65,6 +82,14 @@ export interface RunSnapshot {
   readonly durationMs: number;
   readonly goldEarned: number;
   readonly kills: number;
+  readonly seed?: number;
+  readonly ascension?: number;
+  readonly endlessLoop?: number;
+  readonly characterId?: CharacterId;
+  readonly deathCause?: DeathCause;
+  readonly ownedSkills?: RunResultOwnedSkills;
+  readonly unlocks?: RunUnlocksSummary;
+  readonly canContinueEndless?: boolean;
 }
 
 export interface ScreenFlowHost {
@@ -81,22 +106,38 @@ export interface ScreenFlowHost {
   showMenuBackdrop(chapter: number): void;
   /** Destroy every living-backdrop node (leaving the menu, entering a run). */
   clearMenuBackdrop(): void;
-  /** Start a run from chapter select (gate/status guard lives in bootstrap). */
-  startChapter(chapter: number): void;
+  /** Start a run from chapter select (accepts optional Ascension 0..5, M15). */
+  startChapter(chapter: number, ascension?: number): void;
+  /** Optional explicit start-chapter callback receiving `(chapter, ascension?)` (M15). */
+  readonly onStartChapter?: (chapter: number, ascension?: number) => void;
   /** Snapshot the current run; `null` when not in a run. */
   runSnapshot(): RunSnapshot | null;
-  launchChapter(chapter: number): Promise<void>;
-  teardownRun(): void;
+  launchChapter(chapter: number, seed?: number, ascension?: number): Promise<void>;
+  teardownRun(clearRunSave?: boolean): void;
   /** Background music per screen; `null` = stop (result/pause leave it alone). */
   setMusic(id: MusicId | null): void;
-  /** Master volume applied right after saved settings change. */
-  setVolume(volume: number): void;
+  /** Legacy master volume fallback when `onMusicVolume` / `onSfxVolume` are omitted. */
+  readonly setVolume?: (volume: number) => void;
+  /** Independent Music channel callback (M15). */
+  readonly onMusicVolume?: (volume: number) => void;
+  /** Independent SFX channel callback (M15). */
+  readonly onSfxVolume?: (volume: number) => void;
+  /** Smooth music ducking callback when Pause opens (`true`) or closes (`false`) (M15). */
+  readonly onMusicDucked?: (ducked: boolean) => void;
+  /** Return active safe-boundary run save for Title's `Continue Run` button (M15). */
+  readonly getActiveRunSave?: () => ActiveRunSave | null;
+  /** Resume a saved active run from Title's `Continue Run` button (M15). */
+  readonly onContinueRun?: (run: ActiveRunSave) => void;
+  /** Advance into Endless loop from Result's `Continue Endless` button (M15). */
+  readonly onContinueEndless?: () => void;
   /** Accessibility flags (shake, damage numbers) applied immediately to the running game. */
   applyFeelSettings(settings: Settings): void;
   /** Optional M10/M14 callback when character selection or preview changes. */
   readonly onCharacterChanged?: (character: CharacterDef) => void;
   fail(error: unknown): void;
 }
+
+export type ScreenFlowOptions = ScreenFlowHost;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -106,12 +147,18 @@ export class ScreenFlow {
   private menu: { readonly node: Node; destroy(): void } | null = null;
   private titleScreen: TitleScreen | null = null;
   private characterSelectScreen: CharacterSelectScreen | null = null;
+  private chapterSelectScreen: ChapterSelectScreen | null = null;
   private token = 0;
   private currentScreen: ScreenFlowScreenId = 'title';
   private settingsBack: (() => void) | null = null;
   private shopBack: (() => void) | null = null;
   /** Chapter currently drawn behind title/character-select/chapter-select; `null` when cleared. */
   private backdropChapter: number | null = null;
+  /** Selected Ascension tier (0..5) preserved across Character Select <-> Chapter Select -> Start Run. */
+  private selectedAscension = 0;
+  private selectedChapterForAscension = 1;
+  /** Tracks whether Pause currently holds music ducking active so closing Pause always unducks cleanly. */
+  private pauseDucked = false;
 
   constructor(private readonly host: ScreenFlowHost) {
     document.addEventListener('keydown', this.onKey, true);
@@ -131,16 +178,25 @@ export class ScreenFlow {
   /** Remove the listener + current screen when Bootstrap is destroyed. */
   destroy(): void {
     document.removeEventListener('keydown', this.onKey, true);
+    this.releasePauseDucking();
     this.clearMenu();
     this.clearBackdrop();
   }
 
-  /**
-   * Current open screen id. Cast keeps `bootstrap.ts` compiling untouched before `debug-api.ts`
-   * widens `DebugScreenId` with `'character-select'`, while returning `'character-select'` live.
-   */
+  /** Current open screen id. */
   get screenId(): DebugScreenId {
     return this.currentScreen as DebugScreenId;
+  }
+
+  /** Selected Ascension tier (0..5) preserved across menu navigation. */
+  get ascension(): number {
+    return this.selectedAscension;
+  }
+
+  /** Update preserved Ascension tier (e.g. from debug hook or external controller). */
+  setAscension(tier: number): void {
+    this.selectedAscension = clampAscension(tier);
+    this.chapterSelectScreen?.setAscension(this.selectedAscension);
   }
 
   /** Bootstrap reports the running screen (playing/skill-pick) — status is unchanged. */
@@ -150,10 +206,24 @@ export class ScreenFlow {
 
   /** Tear down the open screen (used before entering a run or when the component is destroyed). */
   clearMenu(): void {
+    this.releasePauseDucking();
     this.titleScreen = null;
     this.characterSelectScreen = null;
+    this.chapterSelectScreen = null;
     this.menu?.destroy();
     this.menu = null;
+  }
+
+  private setPauseDucking(ducked: boolean): void {
+    if (this.pauseDucked === ducked) return;
+    this.pauseDucked = ducked;
+    this.host.onMusicDucked?.(ducked);
+  }
+
+  private releasePauseDucking(): void {
+    if (!this.pauseDucked) return;
+    this.pauseDucked = false;
+    this.host.onMusicDucked?.(false);
   }
 
   private nextMenuToken(): number {
@@ -189,11 +259,24 @@ export class ScreenFlow {
 
     const selected = resolveSelectedCharacter(save);
     const available = getUnlockedCharacters(save);
+    const activeRun = this.host.getActiveRunSave?.() ?? null;
+    const continueOffset = activeRun !== null ? 1 : 0;
+
     const token = this.nextMenuToken();
     const built = await buildTitleScreen({
       parent: this.host.uiRoot(),
       gold: save.gold,
       best: save.best,
+      activeRun,
+      ...(this.host.onContinueRun !== undefined
+        ? {
+            onContinueRun: (run) => {
+              this.selectedAscension = clampAscension(run.ascension);
+              this.selectedChapterForAscension = run.chapter;
+              this.host.onContinueRun?.(run);
+            },
+          }
+        : {}),
       selectedCharacter: selected,
       availableCharacters: available,
       initialFocus,
@@ -202,7 +285,8 @@ export class ScreenFlow {
       },
       onOpenCharacterSelect: () => {
         void this.showCharacterSelect(() => {
-          void this.showTitle(1).catch((error: unknown) => this.host.fail(error));
+          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
+          void this.showTitle(offset + 1).catch((error: unknown) => this.host.fail(error));
         }).catch((error: unknown) => this.host.fail(error));
       },
       onPlay: () => {
@@ -210,17 +294,20 @@ export class ScreenFlow {
       },
       onShop: () => {
         void this.showShop(() => {
-          void this.showTitle(2).catch((error: unknown) => this.host.fail(error));
+          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
+          void this.showTitle(offset + 2).catch((error: unknown) => this.host.fail(error));
         }).catch((error: unknown) => this.host.fail(error));
       },
       onSettings: () => {
         void this.showSettings(() => {
-          void this.showTitle(3).catch((error: unknown) => this.host.fail(error));
+          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
+          void this.showTitle(offset + 3).catch((error: unknown) => this.host.fail(error));
         }).catch((error: unknown) => this.host.fail(error));
       },
       onCredits: () => {
         void this.showCredits(() => {
-          void this.showTitle(4).catch((error: unknown) => this.host.fail(error));
+          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
+          void this.showTitle(offset + 4).catch((error: unknown) => this.host.fail(error));
         }).catch((error: unknown) => this.host.fail(error));
       },
     });
@@ -238,13 +325,13 @@ export class ScreenFlow {
     this.applyBackdrop('title', null);
     console.log(
       `[YokaiField] Title: gold ${save.gold}, unlocked ${save.chaptersUnlocked}/${CHAPTERS_PER_RUN}, ` +
-        `character ${selected.id}.`,
+        `character ${selected.id}${continueOffset > 0 ? ', activeRun resumable' : ''}.`,
     );
   }
 
   /**
    * Open the 4-class Character Select screen. Previews whichever class is highlighted in the
-   * living room backdrop and restores the active saved character on `Back`.
+   * living room backdrop, preserves `this.selectedAscension`, and restores the saved character on `Back`.
    */
   async showCharacterSelect(
     backTo?: () => void,
@@ -256,7 +343,8 @@ export class ScreenFlow {
     const back =
       backTo ??
       ((): void => {
-        void this.showTitle(1).catch((error: unknown) => this.host.fail(error));
+        const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
+        void this.showTitle(offset + 1).catch((error: unknown) => this.host.fail(error));
       });
     const selected = resolveSelectedCharacter(save);
     const startId = initialCharacterId ?? selected.id;
@@ -319,18 +407,46 @@ export class ScreenFlow {
         chapter,
         hasData,
         playable: chapterGate(save, chapter, hasData).allowed,
+        maxAscension: unlockedAscensionForChapter(save, chapter),
       });
     }
 
     // Make sure backdrop displays the equipped character (never a transient preview).
     this.host.onCharacterChanged?.(resolveSelectedCharacter(save));
 
+    const initialChapter = chapters.some(
+      (c) => c.chapter === this.selectedChapterForAscension && c.playable,
+    )
+      ? this.selectedChapterForAscension
+      : undefined;
+
     const built = await buildChapterSelect(this.host.uiRoot(), {
       chapters,
       best: save.best,
-      onSelect: (chapter) => this.host.startChapter(chapter),
+      save,
+      ...(initialChapter !== undefined ? { initialChapter } : {}),
+      initialAscension: this.selectedAscension,
+      onAscensionChange: (ascension, chapter) => {
+        this.selectedAscension = clampAscension(ascension);
+        this.selectedChapterForAscension = chapter;
+      },
+      onStartChapter: (chapter, ascension) => {
+        const latestSave = this.host.save() ?? save;
+        const clampedAsc = Math.min(
+          clampAscension(ascension ?? this.selectedAscension),
+          unlockedAscensionForChapter(latestSave, chapter),
+        );
+        this.selectedAscension = clampedAsc;
+        this.selectedChapterForAscension = chapter;
+        if (this.host.onStartChapter !== undefined) {
+          this.host.onStartChapter(chapter, clampedAsc);
+        } else {
+          this.host.startChapter(chapter, clampedAsc);
+        }
+      },
       onBack: () => {
-        void this.showTitle(0).catch((error: unknown) => this.host.fail(error));
+        const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
+        void this.showTitle(offset).catch((error: unknown) => this.host.fail(error));
       },
       onFocusChapter: (chapter) => {
         if (token !== this.token) return;
@@ -343,47 +459,55 @@ export class ScreenFlow {
       return;
     }
     this.menu = built;
+    this.chapterSelectScreen = built;
     this.currentScreen = 'chapter-select';
     this.host.setStatus('menu');
     this.host.setMusic('title');
     console.log(
       `[YokaiField] Chapter select: best chapter ${save.best.chapter} · room ${save.best.room}, ` +
-        `unlocked ${save.chaptersUnlocked}/${CHAPTERS_PER_RUN}.`,
+        `unlocked ${save.chaptersUnlocked}/${CHAPTERS_PER_RUN}, ascension ${this.selectedAscension}.`,
     );
   }
 
-  /** End the run: credit gold/unlocks once, tear the run down, open result. */
-  finishRun(won: boolean): void {
+  /** End the run: credit gold/unlocks once, tear the run down, open rich result screen. */
+  finishRun(won: boolean, overrides?: Partial<RunResultData>): void {
     const run = this.host.runSnapshot();
-    if (run === null) return;
+    if (run === null && overrides === undefined) return;
 
-    const roomsCleared = won ? run.roomsTotal : Math.max(0, run.room - 1);
+    const chapter = overrides?.chapter ?? run?.chapter ?? 1;
+    const roomReached = overrides?.roomReached ?? run?.room ?? 1;
+    const roomsTotal = overrides?.roomsTotal ?? run?.roomsTotal ?? ROOMS_PER_CHAPTER;
+    const goldEarned = overrides?.goldEarned ?? run?.goldEarned ?? 0;
+    const durationMs = overrides?.durationMs ?? run?.durationMs ?? 0;
+    const kills = overrides?.kills ?? run?.kills ?? 0;
+
+    const roomsCleared = won ? roomsTotal : Math.max(0, roomReached - 1);
     const summary = summariseRun({
       roomsCleared,
-      kills: run.kills,
-      goldEarned: run.goldEarned,
-      durationMs: run.durationMs,
+      kills,
+      goldEarned,
+      durationMs,
       status: won ? 'won' : 'lost',
     });
 
     const save = this.host.save();
     const repo = this.host.repository();
-    let goldTotal = save?.gold ?? 0;
-    let unlockedChapter: number | undefined;
+    let goldTotal = overrides?.goldTotal ?? save?.gold ?? 0;
+    let unlockedChapter = overrides?.unlockedChapter;
 
-    if (save !== null && repo !== null) {
+    if (overrides?.goldTotal === undefined && save !== null && repo !== null) {
       try {
         const commit = commitRunEnd(save, repo, {
-          chapter: run.chapter,
-          goldEarned: run.goldEarned,
+          chapter,
+          goldEarned,
           won,
         });
         this.host.setSave(commit.save);
         goldTotal = commit.gold;
         if (commit.unlocked) {
-          unlockedChapter = run.chapter + 1;
+          unlockedChapter = chapter + 1;
           console.log(
-            `[YokaiField] Chapter ${run.chapter} clear → unlocked chapter ${commit.chaptersUnlocked}.`,
+            `[YokaiField] Chapter ${chapter} clear → unlocked chapter ${commit.chaptersUnlocked}.`,
           );
         }
       } catch (error: unknown) {
@@ -391,16 +515,36 @@ export class ScreenFlow {
       }
     }
 
+    const seed = overrides?.seed ?? run?.seed;
+    const ascension = overrides?.ascension ?? run?.ascension ?? this.selectedAscension;
+    const endlessLoop = overrides?.endlessLoop ?? run?.endlessLoop;
+    const characterId = overrides?.characterId ?? run?.characterId;
+    const deathCause = overrides?.deathCause ?? run?.deathCause;
+    const ownedSkills = overrides?.ownedSkills ?? run?.ownedSkills;
+    const unlocks = overrides?.unlocks ?? run?.unlocks;
+    const canContinueEndless =
+      overrides?.canContinueEndless ??
+      run?.canContinueEndless ??
+      (canStartEndless(chapter, won) && this.host.onContinueEndless !== undefined);
+
     const data: RunResultData = {
-      chapter: run.chapter,
-      roomReached: run.room,
-      roomsTotal: run.roomsTotal,
-      goldEarned: run.goldEarned,
+      chapter,
+      roomReached,
+      roomsTotal,
+      goldEarned,
       goldTotal,
       durationMs: summary.durationMs,
-      kills: run.kills,
+      kills,
       won,
       ...(unlockedChapter !== undefined ? { unlockedChapter } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+      ...(ascension > 0 ? { ascension } : {}),
+      ...(endlessLoop !== undefined && endlessLoop > 0 ? { endlessLoop } : {}),
+      ...(characterId !== undefined ? { characterId } : {}),
+      ...(deathCause !== undefined ? { deathCause } : {}),
+      ...(ownedSkills !== undefined ? { ownedSkills } : {}),
+      ...(unlocks !== undefined ? { unlocks } : {}),
+      ...(canContinueEndless ? { canContinueEndless: true } : {}),
     };
 
     console.log(
@@ -415,7 +559,7 @@ export class ScreenFlow {
     void this.showResult(data).catch((error: unknown) => this.host.fail(error));
   }
 
-  private async showResult(data: RunResultData): Promise<void> {
+  async showResult(data: RunResultData): Promise<void> {
     this.clearBackdrop();
     const token = this.nextMenuToken();
     const current: RunResultData = {
@@ -426,6 +570,14 @@ export class ScreenFlow {
     const built = await buildResultScreen({
       parent: this.host.uiRoot(),
       result: current,
+      ...(this.host.onContinueEndless !== undefined
+        ? {
+            onContinueEndless: () => {
+              this.clearMenu();
+              this.host.onContinueEndless?.();
+            },
+          }
+        : {}),
       onShop: () => {
         void this.showShop(() => {
           void this.showResult(current).catch((error: unknown) => this.host.fail(error));
@@ -463,7 +615,7 @@ export class ScreenFlow {
       onBack: backTo,
       onBuy: (track) => {
         if (this.tryBuy(track) === null) return;
-        // Rebuild so prices/levels/gold are correct; keep focus on the track just bought.
+        // Rebuild so prices/levels/gold are correct; keep focus on the track just bought (0..5).
         void this.showShop(backTo, UPGRADE_TRACKS.indexOf(track)).catch((error: unknown) =>
           this.host.fail(error),
         );
@@ -474,12 +626,15 @@ export class ScreenFlow {
         const charIdx = SHOP_UNLOCK_CHARACTER_IDS.indexOf(
           characterId as (typeof SHOP_UNLOCK_CHARACTER_IDS)[number],
         );
-        const focusIdx = charIdx >= 0 ? 3 + charIdx : 3;
+        const focusIdx =
+          charIdx >= 0 ? SHOP_CHARACTER_START_INDEX + charIdx : SHOP_CHARACTER_START_INDEX;
         void this.showShop(backTo, focusIdx).catch((error: unknown) => this.host.fail(error));
       },
       onOpenCharacterSelect: () => {
         void this.showCharacterSelect(() => {
-          void this.showShop(backTo, 6).catch((error: unknown) => this.host.fail(error));
+          void this.showShop(backTo, SHOP_CHAR_SELECT_BUTTON_INDEX).catch((error: unknown) =>
+            this.host.fail(error),
+          );
         }).catch((error: unknown) => this.host.fail(error));
       },
     });
@@ -494,7 +649,7 @@ export class ScreenFlow {
     this.host.setMusic('title');
   }
 
-  /** Buy one stat upgrade level; `null` when gold is short / maxed / saving fails. */
+  /** Buy one stat or utility upgrade level; `null` when gold is short / maxed / saving fails. */
   private tryBuy(track: UpgradeTrack): SaveData | null {
     const save = this.host.save();
     const repo = this.host.repository();
@@ -567,7 +722,22 @@ export class ScreenFlow {
     const built = await buildSettingsScreen({
       parent: this.host.uiRoot(),
       settings: save.settings,
-      onVolume: (volume) => this.persistSettings({ ...this.currentSettings(save.settings), volume }),
+      onMusicVolume: (musicVolume) => {
+        const current = this.currentSettings(save.settings);
+        this.persistSettings({
+          ...current,
+          musicVolume,
+          volume: Math.max(musicVolume, current.sfxVolume),
+        });
+      },
+      onSfxVolume: (sfxVolume) => {
+        const current = this.currentSettings(save.settings);
+        this.persistSettings({
+          ...current,
+          sfxVolume,
+          volume: Math.max(current.musicVolume, sfxVolume),
+        });
+      },
       onToggleFullscreen: () => {
         void this.toggleFullscreen().catch((error: unknown) => this.host.fail(error));
       },
@@ -625,8 +795,12 @@ export class ScreenFlow {
 
     const save = this.host.save();
     const token = this.nextMenuToken();
+    this.setPauseDucking(true);
+
     const built = await buildPauseScreen({
       parent: this.host.uiRoot(),
+      musicVolume: save?.settings.musicVolume ?? 0.8,
+      sfxVolume: save?.settings.sfxVolume ?? 0.8,
       volume: save?.settings.volume ?? 0.8,
       onResume: () => this.resumeRun(),
       onRestart: () => {
@@ -635,7 +809,8 @@ export class ScreenFlow {
       onQuit: () => {
         void this.quitToTitle().catch((error: unknown) => this.host.fail(error));
       },
-      onVolume: (volume) => this.persistVolume(volume),
+      onMusicVolume: (musicVolume) => this.persistMusicVolume(musicVolume),
+      onSfxVolume: (sfxVolume) => this.persistSfxVolume(sfxVolume),
     });
 
     if (token !== this.token) {
@@ -648,27 +823,32 @@ export class ScreenFlow {
 
   private resumeRun(): void {
     if (this.host.status() !== 'paused') return;
+    this.releasePauseDucking();
     this.clearMenu();
     this.host.setStatus('playing');
     this.currentScreen = 'playing';
     console.log('[YokaiField] Resume.');
   }
 
-  /** Restart: keep the gold earned, start a new run in the same chapter. */
+  /** Restart: keep the gold earned, start a new run in the same chapter & Ascension. */
   private async restartRun(): Promise<void> {
-    const chapter = this.host.runSnapshot()?.chapter ?? 1;
+    const snap = this.host.runSnapshot();
+    const chapter = snap?.chapter ?? 1;
+    const ascension = snap?.ascension ?? this.selectedAscension;
+    this.releasePauseDucking();
     this.bankRunGold();
     this.clearMenu();
-    this.host.teardownRun();
+    this.host.teardownRun(true);
     this.host.setStatus('loading');
-    await this.host.launchChapter(chapter);
-    console.log(`[YokaiField] Restart chapter ${chapter}.`);
+    await this.host.launchChapter(chapter, undefined, ascension);
+    console.log(`[YokaiField] Restart chapter ${chapter} (ascension ${ascension}).`);
   }
 
   private async quitToTitle(): Promise<void> {
+    this.releasePauseDucking();
     this.bankRunGold();
     this.clearMenu();
-    this.host.teardownRun();
+    this.host.teardownRun(true);
     this.host.setStatus('loading');
     await this.showTitle();
     console.log('[YokaiField] Quit to title.');
@@ -698,10 +878,26 @@ export class ScreenFlow {
     }
   }
 
-  private persistVolume(volume: number): void {
+  private persistMusicVolume(musicVolume: number): void {
     const save = this.host.save();
     if (save === null) return;
-    this.persistSettings({ ...save.settings, volume });
+    const current = stepMusicVolume(save.settings, 0);
+    this.persistSettings({
+      ...current,
+      musicVolume,
+      volume: Math.max(musicVolume, current.sfxVolume),
+    });
+  }
+
+  private persistSfxVolume(sfxVolume: number): void {
+    const save = this.host.save();
+    if (save === null) return;
+    const current = stepSfxVolume(save.settings, 0);
+    this.persistSettings({
+      ...current,
+      sfxVolume,
+      volume: Math.max(current.musicVolume, sfxVolume),
+    });
   }
 
   /**
@@ -720,6 +916,8 @@ export class ScreenFlow {
     const normalized = applySettings(settings);
     if (
       normalized.volume === save.settings.volume &&
+      normalized.musicVolume === save.settings.musicVolume &&
+      normalized.sfxVolume === save.settings.sfxVolume &&
       normalized.fullscreen === save.settings.fullscreen &&
       normalized.screenShake === save.settings.screenShake &&
       normalized.damageNumbers === save.settings.damageNumbers &&
@@ -737,7 +935,22 @@ export class ScreenFlow {
       }
       repo.save(next);
       this.host.setSave(next);
-      if (normalized.volume !== save.settings.volume) this.host.setVolume(normalized.volume);
+
+      if (normalized.musicVolume !== save.settings.musicVolume) {
+        if (this.host.onMusicVolume !== undefined) {
+          this.host.onMusicVolume(normalized.musicVolume);
+        } else {
+          this.host.setVolume?.(normalized.musicVolume);
+        }
+      }
+      if (normalized.sfxVolume !== save.settings.sfxVolume) {
+        if (this.host.onSfxVolume !== undefined) {
+          this.host.onSfxVolume(normalized.sfxVolume);
+        } else {
+          this.host.setVolume?.(normalized.sfxVolume);
+        }
+      }
+
       this.host.applyFeelSettings(normalized);
       if (nextCharacter.id !== prevCharacter.id) {
         this.host.onCharacterChanged?.(nextCharacter);
@@ -841,7 +1054,8 @@ export class ScreenFlow {
       const back =
         this.settingsBack ??
         ((): void => {
-          void this.showTitle(3).catch((error: unknown) => this.host.fail(error));
+          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
+          void this.showTitle(offset + 3).catch((error: unknown) => this.host.fail(error));
         });
       void this.showSettings(back).catch((error: unknown) => this.host.fail(error));
     }
@@ -910,9 +1124,12 @@ export class ScreenFlow {
       const back =
         this.shopBack ??
         ((): void => {
-          void this.showTitle(2).catch((error: unknown) => this.host.fail(error));
+          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
+          void this.showTitle(offset + 2).catch((error: unknown) => this.host.fail(error));
         });
       void this.showShop(back).catch((error: unknown) => this.host.fail(error));
+    } else if (this.currentScreen === 'chapter-select') {
+      void this.showChapterSelect().catch((error: unknown) => this.host.fail(error));
     }
   }
 }
