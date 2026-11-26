@@ -11,7 +11,9 @@
   "props": [
     "npc"
   ],
-  "vfx": [],
+  "vfx": [
+    "fx"
+  ],
   "particles": [],
   "attachments": [
     "attachment"
