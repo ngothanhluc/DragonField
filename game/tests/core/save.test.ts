@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../../assets/scripts/core/characters/roster';
 import {
+  MAX_FREE_REROLLS_TRACK,
+  MAX_GOLD_BONUS_TRACK,
   MAX_HEARTS_TRACK,
   MAX_LEVEL,
+  MAX_XP_MAGNET_TRACK,
+  STAT_UPGRADE_TRACKS,
   UPGRADE_COSTS,
   UPGRADE_TRACKS,
   applyUpgrades,
@@ -14,6 +18,7 @@ import {
 } from '../../assets/scripts/core/meta/upgrades';
 import type { UpgradeState, UpgradeTrack } from '../../assets/scripts/core/meta/upgrades';
 import {
+  MAX_ASCENSION_TIER,
   SAVE_VERSION,
   buyCharacter,
   canBuyCharacter,
@@ -21,7 +26,9 @@ import {
   migrate,
   parseSaveData,
   serializeSave,
+  unlockChapterAscension,
   unlockNextChapter,
+  unlockedAscensionForChapter,
   withBest,
   withSelectedCharacter,
 } from '../../assets/scripts/core/save/save-data';
@@ -62,17 +69,27 @@ function increasingPairs(costs: readonly number[]): Array<[number, number]> {
 }
 
 describe('SaveData — defaults', () => {
-  it('the default v4 save is valid and round-trips through serialize/parse', () => {
+  it('the default v5 save is valid and round-trips through serialize/parse', () => {
     const defaults = createDefaultSave();
 
-    expect(SAVE_VERSION).toBe(4);
+    expect(SAVE_VERSION).toBe(5);
     expect(defaults.version).toBe(SAVE_VERSION);
     expect(defaults.gold).toBe(0);
-    expect(defaults.upgrades).toEqual({ hearts: 0, damage: 0, fireRate: 0 });
+    expect(defaults.upgrades).toEqual({
+      hearts: 0,
+      damage: 0,
+      fireRate: 0,
+      xpMagnet: 0,
+      goldBonus: 0,
+      freeRerolls: 0,
+    });
     expect(defaults.chaptersUnlocked).toBe(1);
+    expect(defaults.ascensionUnlocked).toEqual([0, 0, 0, 0]);
     expect(defaults.best).toEqual({ chapter: 0, room: 0 });
     expect(defaults.settings).toEqual({
       volume: 0.8,
+      musicVolume: 0.8,
+      sfxVolume: 0.8,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
@@ -85,16 +102,26 @@ describe('SaveData — defaults', () => {
     expect(parseSaveData(JSON.parse(serializeSave(defaults)))).toEqual(defaults);
   });
 
-  it('serialize follows canonical v4 key order without retired cultivatorEnabled', () => {
+  it('serialize follows canonical v5 key order without retired cultivatorEnabled', () => {
     const parsed = JSON.parse(serializeSave(createDefaultSave())) as Record<string, unknown>;
     expect(parsed).toEqual({
       version: SAVE_VERSION,
       gold: 0,
-      upgrades: { hearts: 0, damage: 0, fireRate: 0 },
+      upgrades: {
+        hearts: 0,
+        damage: 0,
+        fireRate: 0,
+        xpMagnet: 0,
+        goldBonus: 0,
+        freeRerolls: 0,
+      },
       chaptersUnlocked: 1,
+      ascensionUnlocked: [0, 0, 0, 0],
       best: { chapter: 0, room: 0 },
       settings: {
         volume: 0.8,
+        musicVolume: 0.8,
+        sfxVolume: 0.8,
         fullscreen: false,
         screenShake: true,
         damageNumbers: false,
@@ -108,6 +135,7 @@ describe('SaveData — defaults', () => {
       'gold',
       'upgrades',
       'chaptersUnlocked',
+      'ascensionUnlocked',
       'best',
       'settings',
       'selectedCharacter',
@@ -120,7 +148,7 @@ describe('SaveData — defaults', () => {
   });
 });
 
-describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
+describe('SaveData — migrate (v0/v1/v2/v3/v4 → v5)', () => {
   it('an empty object becomes the default save', () => {
     expect(migrate({})).toEqual(createDefaultSave());
   });
@@ -130,14 +158,22 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
     expect(migrate({ version: undefined })).toEqual(createDefaultSave());
   });
 
-  it('keeps valid fields of a v4 save and deduplicates unlockedCharacters', () => {
+  it('keeps valid fields of a v5 save and deduplicates unlockedCharacters', () => {
     const migrated = migrate({
       version: SAVE_VERSION,
       gold: 120,
-      upgrades: { hearts: 2, damage: 1, fireRate: 3 },
+      upgrades: {
+        hearts: 2,
+        damage: 1,
+        fireRate: 3,
+        xpMagnet: 4,
+        goldBonus: 2,
+        freeRerolls: 1,
+      },
       chaptersUnlocked: 2,
+      ascensionUnlocked: [3, 1, 0, 0],
       best: { chapter: 1, room: 4 },
-      settings: { volume: 0.5, fullscreen: true },
+      settings: { volume: 0.9, musicVolume: 0.4, sfxVolume: 0.9, fullscreen: true },
       selectedCharacter: 'archer',
       unlockedCharacters: ['archer', 'ninja', 'archer', 'invalid', 99],
     });
@@ -145,11 +181,21 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
     expect(migrated).toEqual({
       version: SAVE_VERSION,
       gold: 120,
-      upgrades: { hearts: 2, damage: 1, fireRate: 3 },
+      upgrades: {
+        hearts: 2,
+        damage: 1,
+        fireRate: 3,
+        xpMagnet: 4,
+        goldBonus: 2,
+        freeRerolls: 1,
+      },
       chaptersUnlocked: 2,
+      ascensionUnlocked: [3, 1, 0, 0],
       best: { chapter: 1, room: 4 },
       settings: {
-        volume: 0.5,
+        volume: 0.9,
+        musicVolume: 0.4,
+        sfxVolume: 0.9,
         fullscreen: true,
         screenShake: true,
         damageNumbers: false,
@@ -160,7 +206,7 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
     });
   });
 
-  it('migrates v1, v2, and v3 saves forward to v4 preserving progress and dropping legacy settings.cultivatorEnabled', () => {
+  it('migrates v1, v2, v3, and v4 saves forward to v5 preserving progress, splitting legacy volume, and defaulting new M15 fields', () => {
     const v1 = {
       version: 1,
       gold: 250,
@@ -178,11 +224,21 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
     expect(migrate(v1)).toEqual({
       version: SAVE_VERSION,
       gold: 250,
-      upgrades: { hearts: 2, damage: 4, fireRate: 1 },
+      upgrades: {
+        hearts: 2,
+        damage: 4,
+        fireRate: 1,
+        xpMagnet: 0,
+        goldBonus: 0,
+        freeRerolls: 0,
+      },
       chaptersUnlocked: 3,
+      ascensionUnlocked: [0, 0, 0, 0],
       best: { chapter: 3, room: 8 },
       settings: {
         volume: 0.6,
+        musicVolume: 0.6,
+        sfxVolume: 0.6,
         fullscreen: true,
         screenShake: false,
         damageNumbers: true,
@@ -209,11 +265,21 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
     expect(migrate(v2)).toEqual({
       version: SAVE_VERSION,
       gold: 980,
-      upgrades: { hearts: 5, damage: 7, fireRate: 6 },
+      upgrades: {
+        hearts: 5,
+        damage: 7,
+        fireRate: 6,
+        xpMagnet: 0,
+        goldBonus: 0,
+        freeRerolls: 0,
+      },
       chaptersUnlocked: 4,
+      ascensionUnlocked: [0, 0, 0, 0],
       best: { chapter: 4, room: 9 },
       settings: {
         volume: 0.3,
+        musicVolume: 0.3,
+        sfxVolume: 0.3,
         fullscreen: false,
         screenShake: true,
         damageNumbers: true,
@@ -223,7 +289,7 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
       unlockedCharacters: ['ninja'],
     });
 
-    // Legacy v3 save with `settings.cultivatorEnabled: true` (or even corrupt legacy value) drops it cleanly.
+    // Legacy v3 save with `settings.cultivatorEnabled: true` drops it cleanly and splits volume.
     const v3 = {
       version: 3,
       gold: 410,
@@ -244,11 +310,21 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
     expect(fromV3).toEqual({
       version: SAVE_VERSION,
       gold: 410,
-      upgrades: { hearts: 3, damage: 2, fireRate: 2 },
+      upgrades: {
+        hearts: 3,
+        damage: 2,
+        fireRate: 2,
+        xpMagnet: 0,
+        goldBonus: 0,
+        freeRerolls: 0,
+      },
       chaptersUnlocked: 4,
+      ascensionUnlocked: [0, 0, 0, 0],
       best: { chapter: 3, room: 9 },
       settings: {
         volume: 0.7,
+        musicVolume: 0.7,
+        sfxVolume: 0.7,
         fullscreen: false,
         screenShake: true,
         damageNumbers: false,
@@ -258,6 +334,50 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
       unlockedCharacters: ['ninja'],
     });
     expect('cultivatorEnabled' in fromV3.settings).toBe(false);
+
+    // M14 v4 save preserves unlockedCharacters, selectedCharacter, upgrades, gold, best, and splits volume.
+    const v4 = {
+      version: 4,
+      gold: 640,
+      upgrades: { hearts: 4, damage: 5, fireRate: 3 },
+      chaptersUnlocked: 4,
+      best: { chapter: 4, room: 9 },
+      settings: {
+        volume: 0.45,
+        fullscreen: true,
+        screenShake: false,
+        damageNumbers: true,
+        effects: 'reduced',
+      },
+      selectedCharacter: 'mage',
+      unlockedCharacters: ['ninja', 'archer', 'mage'],
+    };
+    expect(migrate(v4)).toEqual({
+      version: SAVE_VERSION,
+      gold: 640,
+      upgrades: {
+        hearts: 4,
+        damage: 5,
+        fireRate: 3,
+        xpMagnet: 0,
+        goldBonus: 0,
+        freeRerolls: 0,
+      },
+      chaptersUnlocked: 4,
+      ascensionUnlocked: [0, 0, 0, 0],
+      best: { chapter: 4, room: 9 },
+      settings: {
+        volume: 0.45,
+        musicVolume: 0.45,
+        sfxVolume: 0.45,
+        fullscreen: true,
+        screenShake: false,
+        damageNumbers: true,
+        effects: 'reduced',
+      },
+      selectedCharacter: 'mage',
+      unlockedCharacters: ['ninja', 'archer', 'mage'],
+    });
   });
 
   it('always keeps ninja in unlockedCharacters even when missing or corrupt during migration', () => {
@@ -285,7 +405,14 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
 
       expect(migrated.selectedCharacter).toBe('ninja');
       expect(migrated.gold).toBe(75);
-      expect(migrated.upgrades).toEqual({ hearts: 1, damage: 2, fireRate: 0 });
+      expect(migrated.upgrades).toEqual({
+        hearts: 1,
+        damage: 2,
+        fireRate: 0,
+        xpMagnet: 0,
+        goldBonus: 0,
+        freeRerolls: 0,
+      });
       expect(migrated.chaptersUnlocked).toBe(2);
     }
   });
@@ -294,11 +421,21 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
     const migrated = migrate({ gold: 30, upgrades: { hearts: 1 } });
 
     expect(migrated.gold).toBe(30);
-    expect(migrated.upgrades).toEqual({ hearts: 1, damage: 0, fireRate: 0 });
+    expect(migrated.upgrades).toEqual({
+      hearts: 1,
+      damage: 0,
+      fireRate: 0,
+      xpMagnet: 0,
+      goldBonus: 0,
+      freeRerolls: 0,
+    });
     expect(migrated.chaptersUnlocked).toBe(1);
+    expect(migrated.ascensionUnlocked).toEqual([0, 0, 0, 0]);
     expect(migrated.best).toEqual({ chapter: 0, room: 0 });
     expect(migrated.settings).toEqual({
       volume: 0.8,
+      musicVolume: 0.8,
+      sfxVolume: 0.8,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
@@ -311,7 +448,14 @@ describe('SaveData — migrate (v0/v1/v2/v3 → v4)', () => {
   it('reads the old key names from the GDD §10 draft (hp, firerate)', () => {
     const migrated = migrate({ upgrades: { hp: 2, firerate: 3 } });
 
-    expect(migrated.upgrades).toEqual({ hearts: 2, damage: 0, fireRate: 3 });
+    expect(migrated.upgrades).toEqual({
+      hearts: 2,
+      damage: 0,
+      fireRate: 3,
+      xpMagnet: 0,
+      goldBonus: 0,
+      freeRerolls: 0,
+    });
   });
 
   it('rejects a version newer than the game', () => {
@@ -333,10 +477,18 @@ describe('SaveData — validate', () => {
     const broken = {
       version: SAVE_VERSION,
       gold: -5,
-      upgrades: { hearts: 0, damage: 0, fireRate: MAX_LEVEL + 1 },
+      upgrades: {
+        hearts: 0,
+        damage: 0,
+        fireRate: MAX_LEVEL + 1,
+        xpMagnet: MAX_XP_MAGNET_TRACK + 1,
+        goldBonus: 0,
+        freeRerolls: MAX_FREE_REROLLS_TRACK + 1,
+      },
       chaptersUnlocked: 99,
+      ascensionUnlocked: [0, 6, -1, 0],
       best: { chapter: 0, room: 0 },
-      settings: { volume: 2, fullscreen: 'có' }, // i18n-allow: sample bad data
+      settings: { volume: 2, musicVolume: -0.1, sfxVolume: 1.2, fullscreen: 'có' }, // i18n-allow: sample bad data
       selectedCharacter: 'ninja',
       unlockedCharacters: ['ninja'],
     };
@@ -346,9 +498,15 @@ describe('SaveData — validate', () => {
     expect(message).toContain('gold');
     expect(message).toContain('chaptersUnlocked');
     expect(message).toContain('upgrades.fireRate');
+    expect(message).toContain('upgrades.xpMagnet');
+    expect(message).toContain('upgrades.freeRerolls');
+    expect(message).toContain('ascensionUnlocked[1]');
+    expect(message).toContain('ascensionUnlocked[2]');
     expect(message).toContain('settings.volume');
+    expect(message).toContain('settings.musicVolume');
+    expect(message).toContain('settings.sfxVolume');
     expect(message).toContain('settings.fullscreen');
-    expect(message).toMatch(/5 problem/);
+    expect(message).toMatch(/11 problem/);
   });
 
   it('rejects unknown selectedCharacter and invalid unlockedCharacters entries', () => {
@@ -365,29 +523,81 @@ describe('SaveData — validate', () => {
     expect(message).toContain('must include default character "ninja"');
   });
 
-  it('reports nested problems (upgrades + best) too', () => {
+  it('reports nested problems (upgrades + best + ascensionUnlocked) too', () => {
     const message = errorMessage(() =>
       parseSaveData({
         ...createDefaultSave(),
-        upgrades: { hearts: 6, damage: 0, fireRate: 0 },
+        upgrades: {
+          hearts: 6,
+          damage: 0,
+          fireRate: 0,
+          xpMagnet: 0,
+          goldBonus: MAX_GOLD_BONUS_TRACK + 1,
+          freeRerolls: 0,
+        },
+        ascensionUnlocked: [0, 0],
         best: { chapter: 7, room: 0 },
       }),
     );
 
     expect(message).toContain('upgrades.hearts');
     expect(message).toContain(`0..${MAX_HEARTS_TRACK}`);
+    expect(message).toContain('upgrades.goldBonus');
+    expect(message).toContain('ascensionUnlocked');
     expect(message).toContain('best.chapter');
   });
 
   it('parseSaveData demands the exact version, old saves must go through migrate', () => {
     expect(() => parseSaveData({ ...createDefaultSave(), version: 0 })).toThrow(/version/);
-    expect(() => parseSaveData({ ...createDefaultSave(), version: 3 })).toThrow(/version/);
+    expect(() => parseSaveData({ ...createDefaultSave(), version: 4 })).toThrow(/version/);
     expect(() => parseSaveData({ ...createDefaultSave(), version: '1' })).toThrow(/version/);
   });
 
   it('rejects non-object data', () => {
     expect(() => parseSaveData(undefined)).toThrow(/must be an object/);
     expect(() => parseSaveData([1, 2, 3])).toThrow(/must be an object/);
+  });
+});
+
+describe('SaveData — ascensionUnlocked & unlockChapterAscension', () => {
+  it('unlocks Ascension tiers 1..5 per chapter independently without mutating input', () => {
+    const base = createDefaultSave();
+    expect(unlockedAscensionForChapter(base, 1)).toBe(0);
+
+    // Clearing Ch1 on Normal (Ascension 0) unlocks Ch1 Ascension 1 only.
+    const ch1A1 = unlockChapterAscension(base, 1, 0);
+    expect(ch1A1.ascensionUnlocked).toEqual([1, 0, 0, 0]);
+    expect(base.ascensionUnlocked).toEqual([0, 0, 0, 0]);
+    expect(unlockedAscensionForChapter(ch1A1, 1)).toBe(1);
+    expect(unlockedAscensionForChapter(ch1A1, 2)).toBe(0);
+
+    // Clearing Ch1 on Ascension 1 → 2, Ch3 on Ascension 0 → 1, Ch4 on Ascension 4 → 5 (capped).
+    const step2 = unlockChapterAscension(ch1A1, 1, 1);
+    const step3 = unlockChapterAscension(step2, 3, 0);
+    const step4 = unlockChapterAscension(step3, 4, 4);
+    expect(step4.ascensionUnlocked).toEqual([2, 0, 1, 5]);
+
+    // Clearing Ascension 5 stays capped at 5; clearing an older tier never regresses.
+    const step5 = unlockChapterAscension(step4, 4, MAX_ASCENSION_TIER);
+    expect(step5.ascensionUnlocked).toEqual([2, 0, 1, 5]);
+    const noRegress = unlockChapterAscension(step5, 1, 0);
+    expect(noRegress.ascensionUnlocked).toEqual([2, 0, 1, 5]);
+
+    // Round-trips cleanly through serializeSave/parseSaveData.
+    expect(parseSaveData(JSON.parse(serializeSave(step5)))).toEqual(step5);
+  });
+
+  it('rejects invalid chapter or clearedAscension values', () => {
+    const base = createDefaultSave();
+    expect(() => unlockChapterAscension(base, 0, 0)).toThrow(/chapter/);
+    expect(() => unlockChapterAscension(base, 5, 0)).toThrow(/chapter/);
+    expect(() => unlockChapterAscension(base, 1, -1)).toThrow(/clearedAscension/);
+    expect(() => unlockChapterAscension(base, 1, MAX_ASCENSION_TIER + 1)).toThrow(
+      /clearedAscension/,
+    );
+    expect(() => unlockChapterAscension(base, 1, 1.5)).toThrow(/clearedAscension/);
+    expect(unlockedAscensionForChapter(base, 0)).toBe(0);
+    expect(unlockedAscensionForChapter(base, 9)).toBe(0);
   });
 });
 
@@ -499,11 +709,16 @@ describe('SaveData — withSelectedCharacter, canBuyCharacter & buyCharacter', (
 });
 
 describe('Upgrades — price table', () => {
-  it('every track has exactly 10 price steps, rising, positive integers', () => {
+  it('every stat track has 10 rising positive integer steps and every utility track matches its maxLevel', () => {
     for (const track of UPGRADE_TRACKS) {
       const costs = UPGRADE_COSTS[track];
+      const expectedLength = STAT_UPGRADE_TRACKS.includes(
+        track as (typeof STAT_UPGRADE_TRACKS)[number],
+      )
+        ? MAX_LEVEL
+        : maxLevelFor(track);
 
-      expect(costs).toHaveLength(MAX_LEVEL);
+      expect(costs).toHaveLength(expectedLength);
       for (const cost of costs) {
         expect(Number.isInteger(cost)).toBe(true);
         expect(cost).toBeGreaterThan(0);
@@ -523,21 +738,23 @@ describe('Upgrades — price table', () => {
     expect(costFor('fireRate', MAX_LEVEL)).toBe(400);
   });
 
-  it('rejects a level outside 1..10', () => {
+  it('rejects a level outside a track table range', () => {
     expect(() => costFor('damage', 0)).toThrow(/1\.\.10/);
     expect(() => costFor('damage', MAX_LEVEL + 1)).toThrow(/1\.\.10/);
     expect(() => costFor('damage', 1.5)).toThrow(/1\.\.10/);
   });
 
-  it('max level: hearts capped at 5, other tracks at 10', () => {
+  it('max level: hearts 5, damage/fireRate 10, xpMagnet/goldBonus 5, freeRerolls 3', () => {
     expect(maxLevelFor('hearts')).toBe(MAX_HEARTS_TRACK);
-    expect(maxLevelFor('hearts')).toBe(5);
     expect(maxLevelFor('damage')).toBe(MAX_LEVEL);
     expect(maxLevelFor('fireRate')).toBe(MAX_LEVEL);
+    expect(maxLevelFor('xpMagnet')).toBe(MAX_XP_MAGNET_TRACK);
+    expect(maxLevelFor('goldBonus')).toBe(MAX_GOLD_BONUS_TRACK);
+    expect(maxLevelFor('freeRerolls')).toBe(MAX_FREE_REROLLS_TRACK);
   });
 });
 
-describe('Upgrades — mua', () => {
+describe('Upgrades — purchase', () => {
   it('deducts exactly the price and raises the level, without modifying the old state', () => {
     const before = stateWith({});
     const result = buy(before, 'damage', 1000);
@@ -620,20 +837,22 @@ describe('Upgrades — applyUpgrades', () => {
   });
 });
 
-describe('SaveRepository', () => {
-  it('empty storage returns the default save with no error', () => {
-    const repository = new SaveRepository(new MemorySaveStorage());
+describe('SaveRepository — primary + .bak backup fallback (ADR-023)', () => {
+  it('empty storage returns the default save with no error and recoveredFromBackup = false', () => {
+    const repository = new SaveRepository(new MemorySaveStorage(), new MemorySaveStorage());
 
     expect(repository.load()).toEqual(createDefaultSave());
     expect(repository.lastLoadError).toBeNull();
+    expect(repository.recoveredFromBackup).toBe(false);
   });
 
-  it('broken JSON returns the default save and records the error', () => {
+  it('broken JSON without backup returns the default save and records the error', () => {
     const repository = new SaveRepository(new MemorySaveStorage('{ hỏng json')); // i18n-allow: sample bad data
 
     expect(repository.load()).toEqual(createDefaultSave());
     expect(repository.lastLoadError).not.toBeNull();
     expect(repository.lastLoadError).toMatch(/JSON|Unexpected/);
+    expect(repository.recoveredFromBackup).toBe(false);
   });
 
   it('a schema-broken save also returns the default and records the error', () => {
@@ -645,60 +864,152 @@ describe('SaveRepository', () => {
 
     expect(loaded).toEqual(createDefaultSave());
     expect(repository.lastLoadError).toMatch(/999|newer/);
+    expect(repository.recoveredFromBackup).toBe(false);
   });
 
-  it('save → load round-trip', () => {
-    const storage = new MemorySaveStorage();
+  it('save → load round-trip mirrors valid JSON to both primary and backup', () => {
+    const primary = new MemorySaveStorage();
+    const backup = new MemorySaveStorage();
     const custom = saveWith({
       gold: 320,
-      upgrades: { hearts: 2, damage: 1, fireRate: 0 },
+      upgrades: {
+        hearts: 2,
+        damage: 1,
+        fireRate: 0,
+        xpMagnet: 3,
+        goldBonus: 2,
+        freeRerolls: 1,
+      },
       chaptersUnlocked: 2,
+      ascensionUnlocked: [2, 1, 0, 0],
       best: { chapter: 1, room: 4 },
+      settings: {
+        ...createDefaultSave().settings,
+        musicVolume: 0.4,
+        sfxVolume: 0.9,
+        volume: 0.9,
+      },
       unlockedCharacters: ['ninja', 'mage'],
     });
 
-    new SaveRepository(storage).save(custom);
-    const loaded = new SaveRepository(storage).load();
+    const repo = new SaveRepository(primary, backup);
+    repo.save(custom);
 
+    expect(primary.read()).toBe(serializeSave(custom));
+    expect(backup.read()).toBe(serializeSave(custom));
+
+    const loaded = repo.load();
     expect(loaded).toEqual(custom);
-    expect(storage.read()).toBe(serializeSave(custom));
-    expect(new SaveRepository(storage).lastLoadError).toBeNull();
+    expect(repo.lastLoadError).toBeNull();
+    expect(repo.recoveredFromBackup).toBe(false);
+  });
+
+  it('automatically recovers from .bak backup when primary JSON is corrupt', () => {
+    const primary = new MemorySaveStorage();
+    const backup = new MemorySaveStorage();
+    const repo = new SaveRepository(primary, backup);
+    const saved = saveWith({
+      gold: 750,
+      chaptersUnlocked: 3,
+      ascensionUnlocked: [3, 2, 1, 0],
+      unlockedCharacters: ['ninja', 'archer'],
+    });
+
+    repo.save(saved);
+    primary.write('{ truncated-corrupt-json');
+
+    const loaded = repo.load();
+    expect(loaded).toEqual(saved);
+    expect(repo.recoveredFromBackup).toBe(true);
+    expect(repo.lastLoadError).toMatch(/JSON|Unexpected/);
+  });
+
+  it('recovers from .bak backup when primary is missing or fails schema validation', () => {
+    const primary = new MemorySaveStorage();
+    const backup = new MemorySaveStorage();
+    const repo = new SaveRepository(primary, backup);
+    const saved = saveWith({ gold: 420, chaptersUnlocked: 2 });
+
+    repo.save(saved);
+
+    // Primary cleared externally -> recovers cleanly from backup.
+    primary.clear();
+    expect(repo.load()).toEqual(saved);
+    expect(repo.recoveredFromBackup).toBe(true);
+    expect(repo.lastLoadError).toBeNull();
+
+    // Primary replaced with invalid schema -> recovers from backup and records primary error.
+    primary.write(JSON.stringify({ version: SAVE_VERSION, gold: -999 }));
+    expect(repo.load()).toEqual(saved);
+    expect(repo.recoveredFromBackup).toBe(true);
+    expect(repo.lastLoadError).toMatch(/gold/);
+  });
+
+  it('invalid save() throws BEFORE touching either primary or backup', () => {
+    const primary = new MemorySaveStorage();
+    const backup = new MemorySaveStorage();
+    const repo = new SaveRepository(primary, backup);
+    const good = saveWith({ gold: 500 });
+    repo.save(good);
+
+    expect(() => repo.save(saveWith({ gold: -10 }))).toThrow(/gold/);
+    expect(primary.read()).toBe(serializeSave(good));
+    expect(backup.read()).toBe(serializeSave(good));
+  });
+
+  it('falls back to default save when both primary and backup are corrupt', () => {
+    const primary = new MemorySaveStorage('{ bad primary');
+    const backup = new MemorySaveStorage('{ bad backup');
+    const repo = new SaveRepository(primary, backup);
+
+    expect(repo.load()).toEqual(createDefaultSave());
+    expect(repo.recoveredFromBackup).toBe(false);
+    expect(repo.lastLoadError).not.toBeNull();
   });
 
   it('a load of an old save in storage is migrated without an error', () => {
     const storage = new MemorySaveStorage(JSON.stringify({ gold: 77 }));
 
-    const loaded = new SaveRepository(storage).load();
+    const repo = new SaveRepository(storage);
+    const loaded = repo.load();
 
     expect(loaded.gold).toBe(77);
     expect(loaded.version).toBe(SAVE_VERSION);
     expect(loaded.unlockedCharacters).toEqual(['ninja']);
-    expect(new SaveRepository(storage).lastLoadError).toBeNull();
+    expect(loaded.ascensionUnlocked).toEqual([0, 0, 0, 0]);
+    expect(repo.lastLoadError).toBeNull();
   });
 
-  it('a successful load clears the previous error', () => {
-    const storage = new MemorySaveStorage('{ hỏng'); // i18n-allow: sample bad data
-    const repository = new SaveRepository(storage);
+  it('a successful load clears the previous error and recoveredFromBackup flag', () => {
+    const primary = new MemorySaveStorage('{ hỏng'); // i18n-allow: sample bad data
+    const backup = new MemorySaveStorage(serializeSave(saveWith({ gold: 100 })));
+    const repository = new SaveRepository(primary, backup);
 
     repository.load();
     expect(repository.lastLoadError).not.toBeNull();
+    expect(repository.recoveredFromBackup).toBe(true);
 
     repository.save(createDefaultSave());
     repository.load();
     expect(repository.lastLoadError).toBeNull();
+    expect(repository.recoveredFromBackup).toBe(false);
   });
 
-  it('reset clears the slot', () => {
-    const storage = new MemorySaveStorage();
-    const repository = new SaveRepository(storage);
+  it('reset clears both primary and backup slots and resets flags', () => {
+    const primary = new MemorySaveStorage();
+    const backup = new MemorySaveStorage();
+    const repository = new SaveRepository(primary, backup);
 
     repository.save(saveWith({ gold: 500 }));
-    expect(storage.read()).not.toBeNull();
+    expect(primary.read()).not.toBeNull();
+    expect(backup.read()).not.toBeNull();
 
     repository.reset();
 
-    expect(storage.read()).toBeNull();
+    expect(primary.read()).toBeNull();
+    expect(backup.read()).toBeNull();
     expect(repository.lastLoadError).toBeNull();
+    expect(repository.recoveredFromBackup).toBe(false);
     expect(repository.load()).toEqual(createDefaultSave());
   });
 
@@ -730,6 +1041,8 @@ describe('Settings', () => {
 
     expect(applied).toEqual({
       volume: 1,
+      musicVolume: 1,
+      sfxVolume: 1,
       fullscreen: true,
       screenShake: true,
       damageNumbers: false,
@@ -739,6 +1052,8 @@ describe('Settings', () => {
 
     expect(applySettings({ volume: -1, fullscreen: false, effects: 'reduced' })).toEqual({
       volume: 0,
+      musicVolume: 0,
+      sfxVolume: 0,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
@@ -746,9 +1061,11 @@ describe('Settings', () => {
     });
   });
 
-  it('applySettings fills missing fields with defaults (5 canonical keys)', () => {
+  it('applySettings fills missing fields with defaults (7 canonical keys)', () => {
     expect(applySettings()).toEqual({
       volume: DEFAULT_VOLUME,
+      musicVolume: DEFAULT_VOLUME,
+      sfxVolume: DEFAULT_VOLUME,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
@@ -756,14 +1073,18 @@ describe('Settings', () => {
     });
     expect(applySettings({ volume: Number.NaN })).toEqual({
       volume: DEFAULT_VOLUME,
+      musicVolume: DEFAULT_VOLUME,
+      sfxVolume: DEFAULT_VOLUME,
       fullscreen: false,
       screenShake: true,
       damageNumbers: false,
       effects: 'full',
     });
-    // Plain object: all 5 own keys, JSON.stringify emits every field.
+    // Plain object: all 7 own keys, JSON.stringify emits every field.
     expect(Object.keys(applySettings())).toEqual([
       'volume',
+      'musicVolume',
+      'sfxVolume',
       'fullscreen',
       'screenShake',
       'damageNumbers',

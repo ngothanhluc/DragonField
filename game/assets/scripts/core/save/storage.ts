@@ -13,55 +13,105 @@ export interface SaveStorage {
   clear(): void;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
- * A single save slot (ADR-012).
+ * Permanent Profile Save repository with optional `.bak` backup fallback (ADR-023).
  *
- * `load` never throws: a broken/unreadable save returns the default save so the
- * player can still enter the game, but the error is kept in `lastLoadError` for the UI and
- * logs to report — silently swallowing it loses progress with nobody noticing.
+ * - `save(data)` validates & serializes first (throwing on invalid data before touching either
+ *   storage), writes primary, then mirrors the exact valid JSON to `backupStorage` if provided.
+ * - `load()` never throws: if primary is missing, unreadable, or corrupt JSON/schema, it
+ *   automatically tries `backupStorage` and flags `recoveredFromBackup = true`. If both fail,
+ *   returns `createDefaultSave()` and records the error in `lastLoadError`.
+ * - `reset()` clears both primary and backup slots.
  */
 export class SaveRepository {
   private loadError: string | null = null;
+  private recoveredBackup = false;
 
-  constructor(private readonly storage: SaveStorage) {}
+  constructor(
+    private readonly storage: SaveStorage,
+    private readonly backupStorage?: SaveStorage,
+  ) {}
 
   /** Error from the latest `load`, `null` when clean. */
   get lastLoadError(): string | null {
     return this.loadError;
   }
 
+  /** True when the latest `load()` fell back to `backupStorage` and succeeded. */
+  get recoveredFromBackup(): boolean {
+    return this.recoveredBackup;
+  }
+
   load(): SaveData {
     this.loadError = null;
+    this.recoveredBackup = false;
 
-    let raw: string | null;
-    try {
-      raw = this.storage.read();
-    } catch (error) {
-      return this.fail(error);
+    const primary = this.tryReadAndMigrate(this.storage);
+    if (primary.status === 'ok') {
+      return primary.data;
     }
 
-    if (raw === null) return createDefaultSave();
+    const primaryError = primary.status === 'error' ? primary.error : null;
 
-    try {
-      return migrate(JSON.parse(raw));
-    } catch (error) {
-      return this.fail(error);
+    if (this.backupStorage !== undefined) {
+      const backup = this.tryReadAndMigrate(this.backupStorage);
+      if (backup.status === 'ok') {
+        this.recoveredBackup = true;
+        this.loadError = primaryError;
+        return backup.data;
+      }
+      if (primaryError !== null) {
+        this.loadError = primaryError;
+      } else if (backup.status === 'error') {
+        this.loadError = backup.error;
+      }
+      return createDefaultSave();
     }
+
+    if (primaryError !== null) {
+      this.loadError = primaryError;
+    }
+    return createDefaultSave();
   }
 
   save(data: SaveData): void {
-    this.storage.write(serializeSave(data));
+    const serialized = serializeSave(data);
+    this.storage.write(serialized);
+    this.backupStorage?.write(serialized);
   }
 
-  /** Clear the slot and the error state — used by "delete progress". */
+  /** Clear primary and backup slots plus error state — used by "delete progress". */
   reset(): void {
     this.storage.clear();
+    this.backupStorage?.clear();
     this.loadError = null;
+    this.recoveredBackup = false;
   }
 
-  private fail(error: unknown): SaveData {
-    this.loadError = error instanceof Error ? error.message : String(error);
-    return createDefaultSave();
+  private tryReadAndMigrate(
+    slot: SaveStorage,
+  ):
+    | { readonly status: 'ok'; readonly data: SaveData }
+    | { readonly status: 'empty' }
+    | { readonly status: 'error'; readonly error: string } {
+    let raw: string | null;
+    try {
+      raw = slot.read();
+    } catch (error) {
+      return { status: 'error', error: errorMessage(error) };
+    }
+
+    if (raw === null) return { status: 'empty' };
+
+    try {
+      return { status: 'ok', data: migrate(JSON.parse(raw)) };
+    } catch (error) {
+      return { status: 'error', error: errorMessage(error) };
+    }
   }
 }
 

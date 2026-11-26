@@ -8,6 +8,7 @@ import {
   derivedStatsForRun,
   metaBaseline,
   statsForRun,
+  utilityStatsFromSave,
 } from '../../assets/scripts/core/meta/run-stats';
 import { createDefaultUpgrades } from '../../assets/scripts/core/meta/upgrades';
 import { createDefaultSave } from '../../assets/scripts/core/save/save-data';
@@ -48,7 +49,7 @@ describe('applyUpgradesToBaseline', () => {
 
   it('a maxed save gives max bonus: +5 hearts, +50% damage, +30% fire rate', () => {
     const state = {
-      upgrades: { hearts: 5, damage: 10, fireRate: 10 },
+      upgrades: { ...createDefaultUpgrades(), hearts: 5, damage: 10, fireRate: 10 },
     };
     const base = metaBaseline(DEFAULT_COMBAT, state);
 
@@ -59,7 +60,7 @@ describe('applyUpgradesToBaseline', () => {
 
   it('the skill layer adds on top of the meta baseline, never replacing it', () => {
     const base = metaBaseline(DEFAULT_COMBAT, {
-      upgrades: { hearts: 1, damage: 2, fireRate: 0 },
+      upgrades: { ...createDefaultUpgrades(), hearts: 1, damage: 2, fireRate: 0 },
     });
     const stats = computeDerivedStats(new Map<string, number>(), base);
 
@@ -189,7 +190,7 @@ describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
   it('statsForRun composes Layer 1 -> Meta upgrades -> Layer 2 without mutating inputs', () => {
     const save = {
       ...createDefaultSave(),
-      upgrades: { hearts: 2, damage: 4, fireRate: 5 },
+      upgrades: { ...createDefaultUpgrades(), hearts: 2, damage: 4, fireRate: 5 },
       chaptersUnlocked: 4,
       selectedCharacter: 'cultivator' as const,
     };
@@ -206,5 +207,66 @@ describe('4-class Layer 1 base stats & Layer 2 starting passives (M14)', () => {
     const manual = applyCharacterPassive(DEFAULT_COMBAT, 'archer');
     expect(manual.pierce).toBe(1);
     expect(manual.critChance).toBeCloseTo(0.12, 6);
+  });
+});
+
+describe('utilityStatsFromSave (M15 Meta Shop Utility tracks)', () => {
+  it('returns neutral 1x multipliers and 0 free rerolls for a fresh save', () => {
+    const stats = utilityStatsFromSave(createDefaultSave());
+    expect(stats).toEqual({
+      xpMagnetMult: 1,
+      goldBonusMult: 1,
+      freeRerolls: 0,
+    });
+  });
+
+  it('derives xpMagnetMult (+15%/lv), goldBonusMult (+12%/lv), and freeRerolls (+1/lv) cleanly', () => {
+    const mid = {
+      ...createDefaultSave(),
+      upgrades: {
+        ...createDefaultUpgrades(),
+        xpMagnet: 3,
+        goldBonus: 2,
+        freeRerolls: 1,
+      },
+    };
+    expect(utilityStatsFromSave(mid)).toEqual({
+      xpMagnetMult: 1.45,
+      goldBonusMult: 1.24,
+      freeRerolls: 1,
+    });
+
+    const maxed = {
+      ...createDefaultSave(),
+      upgrades: {
+        ...createDefaultUpgrades(),
+        xpMagnet: 5,
+        goldBonus: 5,
+        freeRerolls: 3,
+      },
+    };
+    expect(utilityStatsFromSave(maxed)).toEqual({
+      xpMagnetMult: 1.75,
+      goldBonusMult: 1.6,
+      freeRerolls: 3,
+    });
+  });
+
+  it('clamps corrupt or out-of-range utility levels without mutating the save', () => {
+    const broken = {
+      ...createDefaultSave(),
+      upgrades: {
+        ...createDefaultUpgrades(),
+        xpMagnet: 50,
+        goldBonus: -2,
+        freeRerolls: 99,
+      },
+    };
+    expect(utilityStatsFromSave(broken)).toEqual({
+      xpMagnetMult: 1.75,
+      goldBonusMult: 1,
+      freeRerolls: 3,
+    });
+    expect(broken.upgrades.xpMagnet).toBe(50);
   });
 });

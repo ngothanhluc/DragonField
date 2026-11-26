@@ -278,7 +278,12 @@ describe('M14-T4 SkillRun 3-layer class stats', () => {
   it('computes distinct Layer 1 + Meta + Layer 2 stats for all 4 playable classes', () => {
     const save = {
       ...createDefaultSave(),
-      upgrades: { hearts: 1, damage: 2, fireRate: 0 },
+      upgrades: {
+        ...createDefaultSave().upgrades,
+        hearts: 1,
+        damage: 2,
+        fireRate: 0,
+      },
     };
     const run = new SkillRun();
 

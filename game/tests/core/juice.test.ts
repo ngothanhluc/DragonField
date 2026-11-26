@@ -211,6 +211,8 @@ describe('Settings — screenShake / damageNumbers', () => {
     expect(migrated.version).toBe(SAVE_VERSION);
     expect(migrated.settings).toEqual({
       volume: 0.4,
+      musicVolume: 0.4,
+      sfxVolume: 0.4,
       fullscreen: true,
       screenShake: true,
       damageNumbers: false,

@@ -27,7 +27,24 @@ import {
   type DerivedStats,
   type StatsBaseline,
 } from '../skills/derived-stats';
-import { applyUpgrades, type UpgradeBonuses, type UpgradeState } from './upgrades';
+import {
+  applyUpgrades,
+  applyUtilityUpgrades,
+  type UpgradeBonuses,
+  type UpgradeState,
+  type UtilityUpgradeBonuses,
+} from './upgrades';
+
+/** Utility modifiers applied from Meta Shop Utility tracks at run start (M15). */
+export type RunUtilityStats = UtilityUpgradeBonuses;
+
+/**
+ * Derive run utility modifiers (`xpMagnetMult`, `goldBonusMult`, `freeRerolls`) from a save.
+ * Safe against missing/out-of-range levels; never mutates `save`.
+ */
+export function utilityStatsFromSave(save: UpgradeState): RunUtilityStats {
+  return applyUtilityUpgrades(save);
+}
 
 function sanitize(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0;

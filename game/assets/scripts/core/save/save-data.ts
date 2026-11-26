@@ -1,11 +1,14 @@
 /**
- * 1-slot save schema (GDD §10, §15.4, ADR-012). **Meta only**: gold, upgrades, unlocked
- * chapters, best, settings, selected character, and purchased character unlocks.
- * The current run is never saved — closing the tab loses the run.
+ * Profile Save v5 schema (GDD §10, §15.4, §15.5, ADR-023).
+ *
+ * Persists permanent profile progression only: gold, 6 Meta Shop upgrade tracks
+ * (3 stat + 3 utility, NO Revive), unlocked chapters, per-chapter Ascension unlocks (0..5),
+ * best depth, settings (including independent `musicVolume` and `sfxVolume`), selected
+ * character, and purchased character unlocks. Active mid-run state lives in `run-save.ts`.
  *
  * Three entry points:
  * - `parseSaveData` — strict validation, collecting **every** problem into one `Error`.
- * - `migrate` — upgrades an old save / missing `version` to `SAVE_VERSION`.
+ * - `migrate` — upgrades an old save (v0/v1/v2/v3/v4) / missing `version` to `SAVE_VERSION`.
  * - `serializeSave` — canonical JSON, fixed key order so diffs are readable.
  */
 import {
@@ -26,10 +29,18 @@ import type { Settings } from './settings';
  * v2 (#45): chapter 4 exists.
  * v3 (M10): added `selectedCharacter` and temporary `settings.cultivatorEnabled`.
  * v4 (M14): adds `unlockedCharacters: readonly CharacterId[]` (default `['ninja']`) for early Meta
- * gold character purchases and retires legacy `settings.cultivatorEnabled` (dropped gracefully during
- * v1/v2/v3 → v4 migration without error).
+ * gold character purchases and retires legacy `settings.cultivatorEnabled`.
+ * v5 (M15): adds 3 Utility meta tracks (`xpMagnet`, `goldBonus`, `freeRerolls`), per-chapter
+ * `ascensionUnlocked` tuple (`[0..5, 0..5, 0..5, 0..5]`), and split `settings.musicVolume` /
+ * `settings.sfxVolume` migrated from legacy `settings.volume`.
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
+
+/** Highest Ascension tier unlockable per chapter (GDD §15.5, M15). */
+export const MAX_ASCENSION_TIER = 5;
+
+/** Per-chapter highest unlocked Ascension tier `0..5` for Chapters 1–4. */
+export type AscensionProgress = readonly [number, number, number, number];
 
 /** Furthest record reached. `chapter`/`room` = 0 means never played. */
 export interface BestProgress {
@@ -44,6 +55,8 @@ export interface SaveData {
   readonly upgrades: Record<UpgradeTrack, number>;
   /** Number of unlocked chapters, 1..`CHAPTERS_PER_RUN`. */
   readonly chaptersUnlocked: number;
+  /** Highest unlocked Ascension tier (0..5) for Chapters 1–4 (M15). */
+  readonly ascensionUnlocked: AscensionProgress;
   readonly best: BestProgress;
   readonly settings: Settings;
   /** Active playable character selected for new runs (M10/M14). */
@@ -142,10 +155,25 @@ function readEffects(
   return undefined;
 }
 
+function readVolume01(
+  source: Record<string, unknown>,
+  field: 'volume' | 'musicVolume' | 'sfxVolume',
+  problems: ProblemList,
+): number | undefined {
+  const value = source[field];
+  if (isFiniteNumber(value) && value >= 0 && value <= 1) return value;
+  problems.add(`settings.${field}`, `must be a number in 0..1, got ${describeValue(value)}`);
+  return undefined;
+}
+
 function normalizeUnlockedList(ids: readonly CharacterId[]): CharacterId[] {
   const unique = new Set<CharacterId>([DEFAULT_CHARACTER_ID]);
   for (const id of ids) unique.add(id);
   return Array.from(unique);
+}
+
+export function createDefaultAscensionProgress(): AscensionProgress {
+  return [0, 0, 0, 0];
 }
 
 export function createDefaultSave(): SaveData {
@@ -154,6 +182,7 @@ export function createDefaultSave(): SaveData {
     gold: 0,
     upgrades: createDefaultUpgrades(),
     chaptersUnlocked: 1,
+    ascensionUnlocked: createDefaultAscensionProgress(),
     best: { chapter: 0, room: 0 },
     settings: { ...DEFAULT_SETTINGS },
     selectedCharacter: DEFAULT_CHARACTER_ID,
@@ -211,6 +240,21 @@ export function parseSaveData(raw: unknown): SaveData {
     }
   }
 
+  let ascensionUnlocked: AscensionProgress = createDefaultAscensionProgress();
+  const rawAscension = raw.ascensionUnlocked;
+  if (!Array.isArray(rawAscension) || rawAscension.length !== CHAPTERS_PER_RUN) {
+    problems.add(
+      'ascensionUnlocked',
+      `must be an array of ${CHAPTERS_PER_RUN} integers in 0..${MAX_ASCENSION_TIER}, got ${describeValue(rawAscension)}`,
+    );
+  } else {
+    const a0 = readInteger(rawAscension[0], 'ascensionUnlocked[0]', 0, MAX_ASCENSION_TIER, 0, problems);
+    const a1 = readInteger(rawAscension[1], 'ascensionUnlocked[1]', 0, MAX_ASCENSION_TIER, 0, problems);
+    const a2 = readInteger(rawAscension[2], 'ascensionUnlocked[2]', 0, MAX_ASCENSION_TIER, 0, problems);
+    const a3 = readInteger(rawAscension[3], 'ascensionUnlocked[3]', 0, MAX_ASCENSION_TIER, 0, problems);
+    ascensionUnlocked = [a0, a1, a2, a3];
+  }
+
   let bestChapter = 0;
   let bestRoom = 0;
   const rawBest = raw.best;
@@ -235,14 +279,12 @@ export function parseSaveData(raw: unknown): SaveData {
   if (!isRecord(rawSettings)) {
     problems.add(
       'settings',
-      `must be an object { volume, fullscreen, screenShake, damageNumbers, effects }, got ${describeValue(rawSettings)}`,
+      `must be an object { volume, musicVolume, sfxVolume, fullscreen, screenShake, damageNumbers, effects }, got ${describeValue(rawSettings)}`,
     );
   } else {
-    const volume = rawSettings.volume;
-    const volumeOk = isFiniteNumber(volume) && volume >= 0 && volume <= 1;
-    if (!volumeOk) {
-      problems.add('settings.volume', `must be a number in 0..1, got ${describeValue(volume)}`);
-    }
+    const volume = readVolume01(rawSettings, 'volume', problems);
+    const musicVolume = readVolume01(rawSettings, 'musicVolume', problems);
+    const sfxVolume = readVolume01(rawSettings, 'sfxVolume', problems);
 
     const fullscreen = rawSettings.fullscreen;
     if (typeof fullscreen !== 'boolean') {
@@ -259,7 +301,9 @@ export function parseSaveData(raw: unknown): SaveData {
 
     // Only use the read value when the field is valid; otherwise keep the default.
     settings = applySettings({
-      ...(volumeOk ? { volume } : {}),
+      ...(volume !== undefined ? { volume } : {}),
+      ...(musicVolume !== undefined ? { musicVolume } : {}),
+      ...(sfxVolume !== undefined ? { sfxVolume } : {}),
       ...(typeof fullscreen === 'boolean' ? { fullscreen } : {}),
       ...(screenShake !== undefined ? { screenShake } : {}),
       ...(damageNumbers !== undefined ? { damageNumbers } : {}),
@@ -313,6 +357,7 @@ export function parseSaveData(raw: unknown): SaveData {
     gold,
     upgrades,
     chaptersUnlocked,
+    ascensionUnlocked,
     best: { chapter: bestChapter, room: bestRoom },
     settings,
     selectedCharacter,
@@ -321,8 +366,7 @@ export function parseSaveData(raw: unknown): SaveData {
 }
 
 /**
- * Canonical JSON: fixed key order per GDD §10 (extended in M10/M14 with `selectedCharacter`
- * and `unlockedCharacters`), containing only validated fields.
+ * Canonical JSON: fixed key order per GDD §10 & §15.5, containing only validated fields.
  * Throws when `data` is invalid — better to lose one save than write garbage into the slot.
  */
 export function serializeSave(data: SaveData): string {
@@ -335,11 +379,22 @@ export function serializeSave(data: SaveData): string {
       hearts: valid.upgrades.hearts,
       damage: valid.upgrades.damage,
       fireRate: valid.upgrades.fireRate,
+      xpMagnet: valid.upgrades.xpMagnet,
+      goldBonus: valid.upgrades.goldBonus,
+      freeRerolls: valid.upgrades.freeRerolls,
     },
     chaptersUnlocked: valid.chaptersUnlocked,
+    ascensionUnlocked: [
+      valid.ascensionUnlocked[0],
+      valid.ascensionUnlocked[1],
+      valid.ascensionUnlocked[2],
+      valid.ascensionUnlocked[3],
+    ],
     best: { chapter: valid.best.chapter, room: valid.best.room },
     settings: {
       volume: valid.settings.volume,
+      musicVolume: valid.settings.musicVolume,
+      sfxVolume: valid.settings.sfxVolume,
       fullscreen: valid.settings.fullscreen,
       screenShake: valid.settings.screenShake,
       damageNumbers: valid.settings.damageNumbers,
@@ -397,6 +452,56 @@ export function unlockNextChapter(save: SaveData, clearedChapter: number): SaveD
   const unlocked = Math.min(CHAPTERS_PER_RUN, Math.max(valid.chaptersUnlocked, clearedChapter + 1));
   if (unlocked === valid.chaptersUnlocked) return valid;
   return { ...valid, chaptersUnlocked: unlocked };
+}
+
+/**
+ * Read the highest unlocked Ascension tier (0..5) for `chapter` (1..4).
+ * Returns `0` for out-of-range chapters. Never throws.
+ */
+export function unlockedAscensionForChapter(save: SaveData, chapter: number): number {
+  if (!Number.isInteger(chapter) || chapter < 1 || chapter > CHAPTERS_PER_RUN) return 0;
+  return save.ascensionUnlocked[chapter - 1] ?? 0;
+}
+
+/**
+ * Unlock the next Ascension tier for `chapter` (1..4) after clearing `clearedAscension` (0..5).
+ * Clearing Ascension 0 (Normal) unlocks Ascension 1; clearing tier `k` unlocks `min(5, k + 1)`.
+ * Never shrinks previously unlocked Ascension tiers. Returns a **new** save without mutating input.
+ */
+export function unlockChapterAscension(
+  save: SaveData,
+  chapter: number,
+  clearedAscension: number,
+): SaveData {
+  const valid = parseSaveData(save);
+  if (!Number.isInteger(chapter) || chapter < 1 || chapter > CHAPTERS_PER_RUN) {
+    throw new Error(
+      `unlockChapterAscension: chapter must be an integer 1..${CHAPTERS_PER_RUN}, got ${chapter}`,
+    );
+  }
+  if (
+    !Number.isInteger(clearedAscension) ||
+    clearedAscension < 0 ||
+    clearedAscension > MAX_ASCENSION_TIER
+  ) {
+    throw new Error(
+      `unlockChapterAscension: clearedAscension must be an integer 0..${MAX_ASCENSION_TIER}, got ${clearedAscension}`,
+    );
+  }
+
+  const idx = chapter - 1;
+  const current = valid.ascensionUnlocked[idx] ?? 0;
+  const unlocked = Math.min(MAX_ASCENSION_TIER, Math.max(current, clearedAscension + 1));
+  if (unlocked === current) return valid;
+
+  const next: [number, number, number, number] = [
+    valid.ascensionUnlocked[0],
+    valid.ascensionUnlocked[1],
+    valid.ascensionUnlocked[2],
+    valid.ascensionUnlocked[3],
+  ];
+  next[idx] = unlocked;
+  return { ...valid, ascensionUnlocked: next };
 }
 
 /**
@@ -478,6 +583,9 @@ function migrateUpgrades(raw: unknown, fallback: Record<UpgradeTrack, number>): 
     hearts: fallback.hearts,
     damage: fallback.damage,
     fireRate: fallback.fireRate,
+    xpMagnet: fallback.xpMagnet,
+    goldBonus: fallback.goldBonus,
+    freeRerolls: fallback.freeRerolls,
   };
 
   for (const track of UPGRADE_TRACKS) {
@@ -491,6 +599,18 @@ function migrateUpgrades(raw: unknown, fallback: Record<UpgradeTrack, number>): 
   return levels;
 }
 
+function migrateAscensionUnlocked(raw: unknown, fallback: AscensionProgress): unknown {
+  if (raw === undefined) return fallback;
+  if (!Array.isArray(raw)) return raw;
+  if (raw.length !== CHAPTERS_PER_RUN) return raw;
+  return [
+    raw[0] === undefined ? fallback[0] : raw[0],
+    raw[1] === undefined ? fallback[1] : raw[1],
+    raw[2] === undefined ? fallback[2] : raw[2],
+    raw[3] === undefined ? fallback[3] : raw[3],
+  ];
+}
+
 function migrateBest(raw: unknown, fallback: BestProgress): unknown {
   if (raw === undefined) return fallback;
   if (!isRecord(raw)) return raw;
@@ -502,15 +622,42 @@ function migrateBest(raw: unknown, fallback: BestProgress): unknown {
 }
 
 /**
- * Migrate settings forward to v4, gracefully dropping legacy `settings.cultivatorEnabled`
- * without error (retired in M14).
+ * Migrate settings forward to v5:
+ * - Drops legacy `settings.cultivatorEnabled` cleanly (retired in M14).
+ * - Migrates legacy `settings.volume` into both `settings.musicVolume` and `settings.sfxVolume`
+ *   when those channel keys are absent.
  */
 function migrateSettings(raw: unknown, fallback: Settings): unknown {
   if (raw === undefined) return fallback;
   if (!isRecord(raw)) return raw;
 
+  const hasLegacyVolume = raw.volume !== undefined;
+  const musicVolume =
+    raw.musicVolume !== undefined
+      ? raw.musicVolume
+      : hasLegacyVolume
+        ? raw.volume
+        : fallback.musicVolume;
+  const sfxVolume =
+    raw.sfxVolume !== undefined
+      ? raw.sfxVolume
+      : hasLegacyVolume
+        ? raw.volume
+        : fallback.sfxVolume;
+
+  let volume: unknown;
+  if (hasLegacyVolume) {
+    volume = raw.volume;
+  } else if (isFiniteNumber(musicVolume) && isFiniteNumber(sfxVolume)) {
+    volume = Math.max(musicVolume, sfxVolume);
+  } else {
+    volume = fallback.volume;
+  }
+
   return {
-    volume: pick(raw, 'volume', fallback.volume),
+    volume,
+    musicVolume,
+    sfxVolume,
     fullscreen: pick(raw, 'fullscreen', fallback.fullscreen),
     screenShake: pick(raw, 'screenShake', fallback.screenShake),
     damageNumbers: pick(raw, 'damageNumbers', fallback.damageNumbers),
@@ -541,13 +688,14 @@ function migrateUnlockedCharacters(raw: unknown): CharacterId[] {
 }
 
 /**
- * Upgrade an old save to `SAVE_VERSION`.
+ * Upgrade an old save (v0/v1/v2/v3/v4) to `SAVE_VERSION` (v5).
  *
  * - missing `version` → treated as 0 (a save from before versioning).
  * - missing field → default; wrong type → left for `parseSaveData` to report
  *   (except `selectedCharacter` and `unlockedCharacters`, where unknown/corrupt entries are
  *   sanitized so an outdated roster id never wipes the rest of the player's save).
  * - legacy `settings.cultivatorEnabled` (v3) is dropped gracefully without error.
+ * - legacy `settings.volume` (v0–v4) migrates into both `musicVolume` and `sfxVolume`.
  * - `version` newer than the game → throw a clear error, **never** guess and overwrite the
  *   save of a newer game version (that would lose data).
  */
@@ -573,12 +721,15 @@ export function migrate(raw: unknown): SaveData {
   // v1 → v2 (#45): chapter 4 exists; `chaptersUnlocked` stays unchanged.
   // v2 → v3 (M10): added `selectedCharacter` and temporary `settings.cultivatorEnabled`.
   // v3 → v4 (M14): adds `unlockedCharacters` (deduplicated, always keeping `'ninja'`) and
-  // retires `settings.cultivatorEnabled` cleanly. `parseSaveData` remains the single validator.
+  // retires `settings.cultivatorEnabled` cleanly.
+  // v4 → v5 (M15): adds Utility meta tracks (`xpMagnet`, `goldBonus`, `freeRerolls`),
+  // per-chapter `ascensionUnlocked`, and split `settings.musicVolume` / `settings.sfxVolume`.
   const migrated = {
     version: SAVE_VERSION,
     gold: pick(raw, 'gold', defaults.gold),
     upgrades: migrateUpgrades(raw.upgrades, defaults.upgrades),
     chaptersUnlocked: pick(raw, 'chaptersUnlocked', defaults.chaptersUnlocked),
+    ascensionUnlocked: migrateAscensionUnlocked(raw.ascensionUnlocked, defaults.ascensionUnlocked),
     best: migrateBest(raw.best, defaults.best),
     settings: migrateSettings(raw.settings, defaults.settings),
     selectedCharacter: migrateSelectedCharacter(

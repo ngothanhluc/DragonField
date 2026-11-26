@@ -809,6 +809,9 @@ const SHOP_TRACK_NAMES: Readonly<Record<UpgradeTrack, string>> = {
   hearts: 'Hearts',
   damage: 'Damage',
   fireRate: 'Fire rate',
+  xpMagnet: 'XP magnet',
+  goldBonus: 'Gold bonus',
+  freeRerolls: 'Free rerolls',
 };
 
 /** Label + detail for one permanent stat track (`216 × 35` button). */

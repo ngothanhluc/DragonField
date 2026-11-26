@@ -902,6 +902,9 @@ describe('M14 Meta Shop two-column layout — stat tracks & early character unlo
         hearts: maxLevelFor('hearts'),
         damage: maxLevelFor('damage'),
         fireRate: maxLevelFor('fireRate'),
+        xpMagnet: maxLevelFor('xpMagnet'),
+        goldBonus: maxLevelFor('goldBonus'),
+        freeRerolls: maxLevelFor('freeRerolls'),
       },
     };
     const boughtArcherSave = buyCharacter(richSave, 'archer');
