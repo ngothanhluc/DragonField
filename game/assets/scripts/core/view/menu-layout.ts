@@ -365,6 +365,10 @@ export interface SkillCardLayout {
   readonly effectHeight: number;
   readonly stackY: number;
   readonly cardXs: readonly number[];
+  /** Centred Gold Reroll button below the 3 cards (M12, ADR-021). */
+  readonly rerollY: number;
+  readonly rerollWidth: number;
+  readonly rerollHeight: number;
 }
 
 /** Compute the horizontal card positions and interior element anchors for the 1-of-N skill picker. */
@@ -372,7 +376,7 @@ export function computeSkillCardLayout(choiceCount: number): SkillCardLayout {
   const cardWidth = 144;
   const cardHeight = 162;
   const cardGap = 12;
-  const cardY = -12;
+  const cardY = 0;
   const iconSize = 48;
   const iconFrameSize = 54;
   const count = Math.max(0, Math.floor(choiceCount));
@@ -388,8 +392,8 @@ export function computeSkillCardLayout(choiceCount: number): SkillCardLayout {
     cardHeight,
     cardGap,
     cardY,
-    titleY: 114,
-    subtitleY: 94,
+    titleY: 118,
+    subtitleY: 99,
     iconFrameSize,
     iconSize,
     iconY: 41,
@@ -403,5 +407,8 @@ export function computeSkillCardLayout(choiceCount: number): SkillCardLayout {
     effectHeight: 36,
     stackY: -cardHeight / 2 + 15,
     cardXs,
+    rerollY: -114,
+    rerollWidth: 236,
+    rerollHeight: 32,
   };
 }

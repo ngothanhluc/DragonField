@@ -61,4 +61,21 @@ describe('HealthState', () => {
     dead.tryDamage(6, 0);
     expect(dead.heal(2)).toBe(0);
   });
+
+  it('grants temporary i-frames without dealing damage and preserves longer active windows', () => {
+    const health = new HealthState(config);
+
+    health.grantInvulnerability(1000, 600);
+    expect(health.current).toBe(6);
+    expect(health.isInvulnerable(1000)).toBe(true);
+    expect(health.remainingInvulnerabilityMs(1000)).toBe(600);
+    expect(health.tryDamage(1, 1599).applied).toBe(false);
+    expect(health.isInvulnerable(1600)).toBe(false);
+    expect(health.remainingInvulnerabilityMs(1600)).toBe(0);
+
+    // Extending with a shorter window must not shorten an active hit i-frame (800 ms > 600 ms).
+    health.tryDamage(1, 2000);
+    health.grantInvulnerability(2050, 600);
+    expect(health.remainingInvulnerabilityMs(2050)).toBe(750);
+  });
 });

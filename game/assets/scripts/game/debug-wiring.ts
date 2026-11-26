@@ -23,6 +23,7 @@ import type {
   DebugStatus,
   DebugUiText,
   DebugVfxSnapshot,
+  DebugXpSnapshot,
 } from './debug-api';
 import { installDebugApi } from './debug-api';
 import { animationOfNode, collectAnimations, collectPlaceholders } from './debug-extras';
@@ -80,6 +81,10 @@ export interface DebugWiringHost {
   readonly setAttachmentHidden: (hidden: boolean) => boolean;
   readonly hideAttachmentForSkill: (skillId: string) => boolean;
   readonly showAttachmentForSkill: (skillId: string) => boolean;
+  readonly xp: () => DebugXpSnapshot;
+  readonly grantXp: (amount: number) => DebugXpSnapshot;
+  readonly rerollSkill: () => boolean;
+  readonly playerIframeMs: () => number;
 }
 
 /** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
@@ -154,6 +159,10 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     setAttachmentHidden: host.setAttachmentHidden,
     hideAttachmentForSkill: host.hideAttachmentForSkill,
     showAttachmentForSkill: host.showAttachmentForSkill,
+    xp: host.xp,
+    grantXp: host.grantXp,
+    rerollSkill: host.rerollSkill,
+    playerIframeMs: host.playerIframeMs,
     nodeCount: () => {
       const scene: Node | null = director.getScene() as Node | null;
       return scene === null ? 0 : countNodes(scene);

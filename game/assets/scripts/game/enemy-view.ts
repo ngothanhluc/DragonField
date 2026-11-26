@@ -526,6 +526,20 @@ export class EnemyView extends Component {
     this.syncNodePosition();
   }
 
+  /**
+   * Apply a pre-computed radial knockback (e.g. M12 mid-combat level-up resume wave).
+   * Clones the `KnockbackState` so `stepKnockback` never mutates caller state, and preserves
+   * obstacle/wall safety through `applyKnockback`.
+   */
+  applyKnockbackState(knockback: KnockbackState): void {
+    if (this.dead || this.state === null) return;
+    this.knockback = {
+      direction: { x: knockback.direction.x, y: knockback.direction.y },
+      speedTilesPerSecond: knockback.speedTilesPerSecond,
+      remainingMs: knockback.remainingMs,
+    };
+  }
+
   private die(): void {
     const state = this.state;
     if (state !== null) {

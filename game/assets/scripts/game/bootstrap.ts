@@ -47,8 +47,16 @@ import {
 import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
-import { DOORS_TUNING, SPECIAL_ROOMS_TUNING } from '../core/enemies/tuning';
+import { DOORS_TUNING, SPECIAL_ROOMS_TUNING, XP_TUNING } from '../core/enemies/tuning';
 import { edgeArrowTargets, roomEnemyTotal } from '../core/enemies/wave-scheduler';
+import {
+  XpTracker,
+  xpDoorClearBonus,
+  xpForKill,
+} from '../core/xp/xp-curve';
+import { XpOrbPool } from '../core/xp/xp-orbs';
+import { rerollCost, spendSharedGoldForReroll } from '../core/xp/reroll';
+import { hasAlternativeSkills } from '../core/skills/roll';
 import { chapterFromLevels } from '../core/level/chapter';
 import { ROOM_COLS, ROOM_ROWS, TILE_SIZE_PX } from '../core/level/level-data';
 import type { ChapterData, EnemyRole, LevelData } from '../core/level/level-data';
@@ -83,7 +91,7 @@ import {
   type ShopOffer,
   type SpecialKind,
 } from '../core/run/special-rooms';
-import { getSkill } from '../core/skills/pool';
+import { getSkill, type SkillDef } from '../core/skills/pool';
 import { chapterGate } from '../core/save/chapter-gate';
 import { withBest } from '../core/save/save-data';
 import type { SaveData } from '../core/save/save-data';
@@ -108,10 +116,20 @@ import {
   type DebugUiText,
   type DebugVfxSnapshot,
   type DebugAtmosphereSnapshot,
+  type DebugXpSnapshot,
 } from './debug-api';
 import { TELEGRAPH_RING_SHEET } from './enemy-view';
 import { createFxPool } from './fx/effect-pool';
 import type { FxPool } from './fx/effect-pool';
+import {
+  XP_ORB_SHEETS,
+  createXpOrbView,
+  spawnLevelUpBurst,
+  xpOrbTierForValue,
+  type XpOrbTier,
+  type XpOrbView,
+  type XpOrbVisual,
+} from './xp-orb-view';
 import {
   enemyProjectileKey,
   playerProjectileLook,
@@ -196,6 +214,9 @@ const DESIGN_HEIGHT = ROOM_ROWS * TILE_SIZE_PX;
 
 /** How long "ROOM CLEAR" stays up before the next room, in seconds. */
 const ROOM_CLEAR_BANNER_SECONDS = 1;
+
+/** Minimum gap between XP pickup SFX plays so room-clear vacuum sounds crisp. */
+const XP_PICKUP_SFX_COOLDOWN_MS = 65;
 
 /** How close (tiles) the player must get to a door for walking into it to count. */
 const DOOR_ENTER_TILES = 1;
@@ -360,6 +381,29 @@ export class Bootstrap extends Component {
   /** Skills of the current run (loadout, RNG roll, the 1-of-3 screen). */
   private readonly skills = new SkillRun();
   private combatRng = SeededRng.fromSeed(1);
+  /** Pooled XP orbs + level-up progression for the active run (M12, ADR-021). */
+  private readonly xpPool = new XpOrbPool();
+  private xpOrbView: XpOrbView | null = null;
+  private xpTracker: XpTracker | null = null;
+  private readonly xpVisuals: Array<{
+    x: number;
+    y: number;
+    tier: XpOrbTier;
+    vacuuming: boolean;
+  }> = [];
+  private readonly xpHudCache: { level: number; current: number; required: number } = {
+    level: 1,
+    current: 0,
+    required: 0,
+  };
+  private xpOrbElapsedSec = 0;
+  private lastXpPickupSfxMs = Number.NEGATIVE_INFINITY;
+  /** True when the current room was entered through an `'xp'` / Elite challenge door. */
+  private isXpDoorRoom = false;
+  /** True after combat clears while remaining XP orbs vacuum in and banner finishes. */
+  private roomClearPending = false;
+  private roomClearElapsedMs = 0;
+  private clearClockMs = 0;
   private readonly bossPhases = new BossPhaseBanner({
     showBanner: (name, text, color, fontSize) => this.showBanner(name, text, color, fontSize),
     schedule: (callback, delaySeconds) => this.scheduleOnce(callback, delaySeconds),
@@ -453,6 +497,13 @@ export class Bootstrap extends Component {
       return;
     }
 
+    // Room cleared: keep player movement and XP orb vacuum running until all orbs & queued
+    // level-up modals resolve and the clear banner finishes before opening doors.
+    if (this.roomClearPending) {
+      this.updateRoomClearVacuum(rawDeltaMs);
+      return;
+    }
+
     const player = this.player;
     const combat = this.combat;
     if (player === null || combat === null) return;
@@ -468,7 +519,8 @@ export class Bootstrap extends Component {
     this.updateDepthAndCover(rawDeltaMs);
     if (result.frozen) return;
 
-    if (this.hud !== null) syncCombatHud(this.hud, player, combat);
+    const leveledUp = this.stepXpOrbs(deltaMs, false);
+    this.syncHud();
     this.updateHudArrows();
 
     if (result.playerDied) {
@@ -476,7 +528,11 @@ export class Bootstrap extends Component {
       return;
     }
     if (result.cleared) {
-      this.onWaveCleared();
+      this.beginRoomClear(leveledUp);
+      return;
+    }
+    if (leveledUp) {
+      this.openLevelUpSkillPick();
     }
   }
 
@@ -705,9 +761,16 @@ export class Bootstrap extends Component {
     // Run baseline = base stats + purchased meta (hearts/damage/fire rate).
     this.skills.reset(seed, metaBaseline(DEFAULT_COMBAT, save));
     this.rewards = new RunRewards();
-    // A new run starts with no door reward and no doors on screen (#39).
+    // A new run starts with no door reward, clean XP state, and no doors on screen (#39).
     this.roomReward = null;
     this.clearReward = null;
+    this.isXpDoorRoom = false;
+    this.roomClearPending = false;
+    this.roomClearElapsedMs = 0;
+    this.clearClockMs = 0;
+    this.xpPool.clear();
+    this.xpOrbElapsedSec = 0;
+    this.lastXpPickupSfxMs = Number.NEGATIVE_INFINITY;
     this.doorPhase = false;
     this.doorOfferList = [];
     this.doorView?.destroy();
@@ -728,6 +791,7 @@ export class Bootstrap extends Component {
     this.runRooms = drawRunRooms(loaded.chapter, seed);
     const run = new RunState(loaded.chapter.chapter, this.runRooms.length);
     this.run = run;
+    this.xpTracker = new XpTracker(loaded.chapter.chapter);
 
     // Preload **before** building anything: all art/JSON errors surface in one place, with full paths.
     await preloadSheets(this.collectSheets(manifest, loaded.chapter));
@@ -749,6 +813,8 @@ export class Bootstrap extends Component {
     // The room build sets the tile → world flip for this room's height (a room may be > one screen).
     player.teleport(firstRoom.playerStart);
 
+    const bulletLayer = this.bulletLayer ?? this.node;
+    this.xpOrbView = await createXpOrbView(bulletLayer, XP_TUNING.orbs.poolCapacity);
     await this.createBullets(player);
     await this.createHud();
     const actorLayer = this.actorLayer;
@@ -780,7 +846,7 @@ export class Bootstrap extends Component {
     this.screens.setScreen('playing');
     this.persistBest(run.room);
     this.combat.startWaves(this.waveSeed(firstRoom), run.room);
-    if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
+    this.syncHud();
     this.hud?.setSkills(this.skills.entries);
     this.displayedGold = 0;
     // The HUD shows the gold the player can actually spend: meta gold + this run's banked gold.
@@ -918,13 +984,17 @@ export class Bootstrap extends Component {
 
       this.status = 'playing';
       this.screens.setScreen('playing');
+      this.xpPool.clear();
+      this.xpOrbView?.clear();
+      this.isXpDoorRoom = false;
+      this.roomClearPending = false;
+      this.roomClearElapsedMs = 0;
       this.createRoom(level, asset);
       this.combat?.enterRoom(level);
       this.player?.teleport(level.playerStart);
       // A dev room is inspected on its own: treat it as the run's first slot (smallest crowd).
       this.combat?.startWaves(this.waveSeed(level), 1);
-      const player = this.player;
-      if (this.hud !== null && player !== null) syncCombatHud(this.hud, player, this.combat);
+      this.syncHud();
 
       console.log(
         `[YokaiField] Dev room '${id}': ${level.size.cols}×${level.size.rows} tiles, ` +
@@ -1017,6 +1087,7 @@ export class Bootstrap extends Component {
     // Bullet sheets are loaded by `BulletView.init` from the manifest (one per loadout/chapter).
     sheets.add(TELEGRAPH_RING_SHEET);
     sheets.add(HEART_SHEET);
+    for (const sheet of XP_ORB_SHEETS) sheets.add(sheet);
     // Special rooms (#40): the NPC/chest sheets, so the first frame of the room has no pop.
     for (const key of SPECIAL_ACTOR_KEYS) sheets.add(resolve(manifest, key).sheet);
     for (const sheet of obstacleSheets(chapter.chapter)) sheets.add(sheet);
@@ -1334,12 +1405,11 @@ export class Bootstrap extends Component {
   // -------------------------------------------------------------------------
 
   /**
-   * Contact damage, enemy bullets and hitstop all moved to `CombatLoop` (M3).
-   * Bootstrap only handles run flow now: room → skill → chapter. Since #41 a room is **one**
-   * continuous wave (the `WaveScheduler` decides when it is cleared), so there is no
-   * wave-to-wave step here any more.
+   * Room cleared: pay clear gold + Second Wind, spawn `'xp'` door bonus orbs if applicable,
+   * show the clear banner, and vacuum every remaining XP orb before opening doors.
+   * Unified XP-only skill acquisition (ADR-021): clearing a room no longer grants a free pick.
    */
-  private onWaveCleared(): void {
+  private beginRoomClear(pendingLevelUp: boolean): void {
     const run = this.run;
     const level = this.currentLevel;
     const combat = this.combat;
@@ -1353,101 +1423,316 @@ export class Bootstrap extends Component {
       level.isBossRoom,
       this.player?.derivedStats.goldMultiplier ?? 1,
     );
-    this.flyGold(roomGold, this.player?.position ?? { x: level.size.cols / 2, y: level.size.rows / 2 });
+    const playerPos = this.player?.position ?? { x: level.size.cols / 2, y: level.size.rows / 2 };
+    this.flyGold(roomGold, playerPos);
 
     // Second Wind: heal hearts on every room clear (GDD §6).
     const healPerRoom = this.player?.derivedStats.healPerRoom ?? 0;
     if (healPerRoom > 0) this.player?.heal(healPerRoom);
-    if (this.hud !== null && this.player !== null) {
-      syncCombatHud(this.hud, this.player, this.combat);
-    }
-    this.hud?.setSkills(this.skills.entries);
-    console.log(`[YokaiField] Room ${run.roomLabel} clear (+${roomGold} gold).`);
 
-    // Clear reward (#39): room 1 is always a skill pick; later rooms take the door's reward.
-    // A `gold` reward pays the bonus now (coin fly + sfx) and skips the pick entirely.
     const finalRoom = run.room >= run.roomsTotal;
     this.clearReward = finalRoom ? null : clearRewardFor(run.room, this.roomReward);
     this.roomReward = null;
     if (this.clearReward === 'gold') this.payDoorGold();
 
-    // Stop the sim (update() returns when status is not 'playing') and hold the text for ~1 s so
-    // the player can read "room clear" before the screen changes. Timing uses Cocos'
-    // scheduler, not setTimeout — the callback is dropped automatically when the scene reloads.
-    this.status = 'room-clear';
+    if (this.isXpDoorRoom && !level.isBossRoom) {
+      const bonus = xpDoorClearBonus(run.chapter);
+      if (bonus > 0) this.spawnXpBonusBurst(bonus, playerPos, level);
+    }
+
+    combat.clearBullets();
+    this.syncHud();
+    this.hud?.setSkills(this.skills.entries);
+    console.log(`[YokaiField] Room ${run.roomLabel} clear (+${roomGold} gold).`);
+
+    this.roomClearPending = true;
+    this.roomClearElapsedMs = 0;
+    this.clearClockMs = combat.clockMs;
     this.roomClearBanner?.destroy();
     this.roomClearBanner = this.showBanner('room-clear', 'ROOM CLEAR', END_WIN_COLOR, 20);
     // Celebrate the clear — except on the chapter's last room, where `chapter-clear` plays
     // ~1 s later from `finishWin()`.
-    if (run.room < run.roomsTotal) playSfx('room-clear');
+    if (!finalRoom) playSfx('room-clear');
 
-    this.scheduleOnce(() => {
-      const current = this.run;
-      if (!this.isValid || current === null || this.status !== 'room-clear') return;
-
-      this.roomClearBanner?.destroy();
-      this.roomClearBanner = null;
-
-      // The last room of the chapter (count taken from data) = this chapter's run is over.
-      // Do not use `RunState.isBossRoom`: a chapter may have normal rooms after the boss.
-      if (current.room >= current.roomsTotal) {
-        this.finishWin();
-        return;
-      }
-
-      if (this.clearReward === 'gold') {
-        this.openDoors();
-        return;
-      }
-
-      this.openSkillPick();
-    }, ROOM_CLEAR_BANNER_SECONDS);
+    if (!finalRoom && (pendingLevelUp || (this.xpTracker?.pendingLevelUps ?? 0) > 0)) {
+      this.openLevelUpSkillPick();
+    }
   }
 
-  /** Roll a 1-of-3 skill with the run RNG and open the picker; if the pool is empty, move on. */
-  private openSkillPick(): void {
-    const choices = this.skills.roll();
+  /** Step player movement + room-clear XP auto-vacuum until orbs, modals, and banner finish. */
+  private updateRoomClearVacuum(deltaMs: number): void {
+    const run = this.run;
+    const player = this.player;
+    const level = this.currentLevel;
+    if (run === null || player === null || level === null) return;
 
-    if (choices.length === 0) {
-      console.log('[YokaiField] Skill pool exhausted — no cards, opening the doors.');
-      this.openDoors();
+    this.roomClearElapsedMs += deltaMs;
+    this.clearClockMs += deltaMs;
+    player.step(this.clearClockMs, deltaMs, [], level);
+    this.fx?.update(deltaMs);
+    this.updateDepthAndCover(deltaMs);
+
+    const leveledUp = this.stepXpOrbs(deltaMs, true);
+    this.syncHud();
+
+    const finalRoom = run.room >= run.roomsTotal;
+    if (!finalRoom && (leveledUp || (this.xpTracker?.pendingLevelUps ?? 0) > 0)) {
+      this.openLevelUpSkillPick();
       return;
     }
 
+    const orbsDone = this.xpPool.size === 0;
+    const picksDone = finalRoom || (this.xpTracker?.pendingLevelUps ?? 0) === 0;
+    const bannerDone = this.roomClearElapsedMs >= ROOM_CLEAR_BANNER_SECONDS * 1000;
+    if (orbsDone && picksDone && bannerDone) {
+      this.finishRoomClear();
+    }
+  }
+
+  private finishRoomClear(): void {
+    const run = this.run;
+    this.roomClearPending = false;
+    this.roomClearBanner?.destroy();
+    this.roomClearBanner = null;
+    if (run === null) return;
+
+    // The last room of the chapter (count taken from data) = this chapter's run is over.
+    // Do not use `RunState.isBossRoom`: a chapter may have normal rooms after the boss.
+    if (run.room >= run.roomsTotal) {
+      this.finishWin();
+      return;
+    }
+    this.openDoors();
+  }
+
+  /** Advance pooled XP orbs, grant collected XP, and return whether a level-up pick is queued. */
+  private stepXpOrbs(deltaMs: number, roomCleared: boolean): boolean {
+    const player = this.player;
+    const tracker = this.xpTracker;
+    if (player === null || tracker === null) return false;
+
+    const dtSec = Math.max(0, deltaMs) / 1000;
+    this.xpOrbElapsedSec += dtSec;
+    const collectedXp = this.xpPool.step(dtSec, player.position, roomCleared);
+    this.syncXpOrbView();
+
+    if (collectedXp > 0) {
+      const nowWallMs = performance.now();
+      if (nowWallMs - this.lastXpPickupSfxMs >= XP_PICKUP_SFX_COOLDOWN_MS) {
+        this.lastXpPickupSfxMs = nowWallMs;
+        playSfx('xp-pickup');
+      }
+      tracker.grant(collectedXp);
+    }
+    return tracker.pendingLevelUps > 0;
+  }
+
+  /** Sync pooled `XpOrbView` without allocating new visual wrapper objects per frame. */
+  private syncXpOrbView(): void {
+    const view = this.xpOrbView;
+    if (view === null) return;
+
+    const orbs = this.xpPool.activeOrbs;
+    const count = orbs.length;
+    for (let index = 0; index < count; index += 1) {
+      const orb = orbs[index];
+      if (orb === undefined) continue;
+      let visual = this.xpVisuals[index];
+      if (visual === undefined) {
+        visual = {
+          x: orb.position.x,
+          y: orb.position.y,
+          tier: xpOrbTierForValue(orb.value),
+          vacuuming: orb.phase === 'vacuum' || orb.phase === 'magnet',
+        };
+        this.xpVisuals[index] = visual;
+      } else {
+        visual.x = orb.position.x;
+        visual.y = orb.position.y;
+        visual.tier = xpOrbTierForValue(orb.value);
+        visual.vacuuming = orb.phase === 'vacuum' || orb.phase === 'magnet';
+      }
+    }
+    this.xpVisuals.length = count;
+    view.sync(this.xpVisuals as readonly XpOrbVisual[], this.xpOrbElapsedSec);
+  }
+
+  /** Split `'xp'` door room-clear bonus into 3–5 large diamond orbs around `center`. */
+  private spawnXpBonusBurst(totalBonus: number, center: Vec2, level: LevelData): void {
+    const count = Math.min(5, Math.max(3, Math.floor(totalBonus / 25)));
+    const base = Math.floor(totalBonus / count);
+    let remainder = totalBonus - base * count;
+    const radius = 2.2;
+    const maxX = Math.max(1, level.size.cols - 1);
+    const maxY = Math.max(1, level.size.rows - 1);
+
+    for (let index = 0; index < count; index += 1) {
+      const value = base + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder -= 1;
+      const angle = (index / count) * Math.PI * 2;
+      const x = Math.min(maxX, Math.max(1, center.x + Math.cos(angle) * radius));
+      const y = Math.min(maxY, Math.max(1, center.y + Math.sin(angle) * radius));
+      this.xpPool.spawn({
+        position: { x, y },
+        value,
+        scatterDir: { x: Math.cos(angle), y: Math.sin(angle) },
+      });
+    }
+    this.syncXpOrbView();
+  }
+
+  /** Pause combat cleanly and open the 1-of-3 skill modal for a queued `XpTracker` level-up. */
+  private openLevelUpSkillPick(): void {
+    const tracker = this.xpTracker;
+    if (tracker === null || tracker.pendingLevelUps <= 0) return;
+
+    const choices = this.skills.roll();
+    if (choices.length === 0) {
+      console.log('[YokaiField] Skill pool exhausted — clearing queued level-up picks.');
+      while (tracker.consumeLevelUp()) {
+        // Pool exhausted; nothing left to offer.
+      }
+      this.syncHud();
+      return;
+    }
+
+    // Clear any transient room-clear banner so it never overlaps `CHOOSE A SKILL`.
+    this.roomClearBanner?.destroy();
+    this.roomClearBanner = null;
     this.status = 'skill-pick';
     this.screens.setScreen('skill-pick');
+    this.player?.resetInput();
+    playSfx('level-up');
+    this.openLevelUpModal(choices);
+  }
+
+  private openLevelUpModal(choices: readonly SkillDef[]): void {
     const canvas = this.ensureUiRoot();
+    const availableGold = this.shopGoldTotal();
+    const cost = rerollCost(this.skills.rerollsUsed);
+    const hasAlternatives = hasAlternativeSkills(this.skills.snapshot(), choices);
 
     void this.skills
-      .open(canvas, choices, (index) => this.chooseSkill(index))
+      .open(
+        canvas,
+        choices,
+        (index) => this.chooseSkill(index),
+        {
+          cost,
+          availableGold,
+          hasAlternatives,
+          onReroll: () => this.rerollActiveSkillPick(),
+        },
+      )
       .then(() => {
         if (this.status !== 'skill-pick') return;
         console.log(
-          `[YokaiField] Skill pick: ${choices.map((skill) => `${skill.id}(${skill.rarity})`).join(', ')}`,
+          `[YokaiField] Level-up pick (LV ${this.xpTracker?.level ?? 1}): ` +
+            `${choices.map((skill) => `${skill.id}(${skill.rarity})`).join(', ')}`,
         );
       })
       .catch((error: unknown) => this.fail(error));
   }
 
+  /** Spend shared gold (run first, then meta bank) to reroll the active level-up cards. */
+  private rerollActiveSkillPick(): boolean {
+    if (this.status !== 'skill-pick' || this.specialRoom !== null) return false;
+    const currentChoices = this.skills.choices;
+    if (currentChoices === null || !hasAlternativeSkills(this.skills.snapshot(), currentChoices)) {
+      return false;
+    }
+
+    const save = this.save;
+    const repo = this.saveRepo;
+    if (save !== null && repo !== null) {
+      const spend = spendSharedGoldForReroll(
+        save,
+        this.rewards.goldEarned,
+        this.skills.rerollsUsed,
+      );
+      if (!spend.ok) return false;
+
+      if (spend.save !== save) {
+        try {
+          repo.save(spend.save);
+        } catch (error: unknown) {
+          console.warn(`[YokaiField] Could not persist reroll gold: ${errorMessage(error)}`);
+          return false;
+        }
+        this.save = spend.save;
+      }
+
+      const spentFromRun = this.rewards.spend(this.rewards.goldEarned - spend.runGold);
+      this.displayedGold = Math.max(0, this.displayedGold - spentFromRun);
+      this.hud?.setGold(this.hudGoldTotal());
+    } else {
+      const cost = rerollCost(this.skills.rerollsUsed);
+      if (this.rewards.goldEarned < cost) return false;
+      const spent = this.rewards.spend(cost);
+      this.displayedGold = Math.max(0, this.displayedGold - spent);
+      this.hud?.setGold(this.hudGoldTotal());
+    }
+
+    const nextChoices = this.skills.reroll();
+    if (nextChoices === null || nextChoices.length === 0) return false;
+
+    playSfx('ui-confirm');
+    console.log(
+      `[YokaiField] Rerolled skill choices (#${this.skills.rerollsUsed}): ` +
+        `${nextChoices.map((skill) => skill.id).join(', ')}.`,
+    );
+    this.openLevelUpModal(nextChoices);
+    return true;
+  }
+
   /**
-   * Pick a card by index or id. Shared by clicks, keys 1/2/3 and debug.
+   * Pick a card by index or id. Shared by clicks, keys 1/2/3, chest picks, and debug.
    * `false` when there is no picker or the card is invalid.
    */
   private chooseSkill(indexOrId: number | string): boolean {
     if (this.status !== 'skill-pick') return false;
+    if (this.specialRoom !== null) return this.chooseChestSkill(indexOrId);
+
     const picked = this.skills.choose(indexOrId);
     if (picked === null) return false;
 
     const { def, result } = picked;
     this.applyLoadout(result.healNow);
-    this.player?.playSkillBoost();
+    this.xpTracker?.consumeLevelUp();
+    this.syncHud();
     console.log(
       `[YokaiField] Took ${def.name} → stack ${result.stacks}/${def.maxStacks}` +
         `${result.healNow > 0 ? `, healed ${result.healNow} hearts` : ''}.`,
     );
 
-    // The reward is taken; now the door choice decides the next room.
-    this.openDoors();
+    const remaining = this.xpTracker?.pendingLevelUps ?? 0;
+    if (remaining > 0) {
+      const nextChoices = this.skills.roll();
+      if (nextChoices.length > 0) {
+        playSfx('level-up');
+        this.openLevelUpModal(nextChoices);
+        return true;
+      }
+      while (this.xpTracker?.consumeLevelUp()) {
+        // Pool exhausted; clear remaining queued picks.
+      }
+      this.syncHud();
+    }
+
+    this.status = 'playing';
+    this.screens.setScreen('playing');
+    this.player?.resetInput();
+
+    if (this.roomClearPending) {
+      const pos = this.player?.position;
+      if (pos !== undefined) {
+        spawnLevelUpBurst(this.fx, pos, this.save?.settings.effects ?? 'full', {
+          radiusTiles: XP_TUNING.levelUpWave.knockbackRadiusTiles,
+        });
+      }
+    } else {
+      this.combat?.applyLevelUpResumeWave();
+    }
     return true;
   }
 
@@ -1643,12 +1928,21 @@ export class Bootstrap extends Component {
     }
 
     this.clearSpecialRoom();
+    this.xpPool.clear();
+    this.xpOrbView?.clear();
+    this.roomClearPending = false;
+    this.roomClearElapsedMs = 0;
+
     const specialKind = this.pendingSpecial;
     this.pendingSpecial = null;
     if (specialKind !== null) {
+      this.isXpDoorRoom = false;
       this.enterSpecialRoom(roomNumber, specialKind);
       return;
     }
+
+    this.isXpDoorRoom = !level.isBossRoom && this.roomReward === 'xp';
+    const extraElites = this.isXpDoorRoom ? DOORS_TUNING.xpRoomExtraElites : 0;
 
     this.createRoom(level);
     this.combat?.enterRoom(level);
@@ -1665,17 +1959,16 @@ export class Bootstrap extends Component {
     } else {
       this.audio?.playMusic(chapterMusic(level.chapter));
     }
-    this.combat?.startWaves(this.waveSeed(level), run.room);
-    const player = this.player;
-    if (this.hud !== null && player !== null) {
-      syncCombatHud(this.hud, player, this.combat);
-    }
+    this.combat?.startWaves(this.waveSeed(level), run.room, extraElites);
+    this.syncHud();
 
     console.log(
       `[YokaiField] Entering room ${run.roomLabel} (` +
         (level.isBossRoom
           ? 'boss'
-          : `${roomEnemyTotal(level, this.waveSeed(level))} enemies in waves`) +
+          : `${roomEnemyTotal(level, this.waveSeed(level))} enemies in waves${
+              this.isXpDoorRoom ? `, XP challenge +${extraElites} elites` : ''
+            }`) +
         ').',
     );
   }
@@ -1740,8 +2033,7 @@ export class Bootstrap extends Component {
 
     this.status = 'playing';
     this.screens.setScreen('playing');
-    const player = this.player;
-    if (this.hud !== null && player !== null) syncCombatHud(this.hud, player, this.combat);
+    this.syncHud();
     console.log(
       `[YokaiField] Entering the ${kind} room in slot ${run.roomLabel} ` +
         `(32×18 chapter floor, no enemies).`,
@@ -1759,7 +2051,7 @@ export class Bootstrap extends Component {
     player.step(this.specialClockMs, deltaMs, [], level);
     this.fx?.update(deltaMs);
     this.updateDepthAndCover(deltaMs);
-    if (this.hud !== null) syncCombatHud(this.hud, player, this.combat);
+    this.syncHud();
 
     if (this.specialUsed) return;
     const gap = Math.hypot(
@@ -1837,9 +2129,9 @@ export class Bootstrap extends Component {
   }
 
   /** Free pick from a chest: no door is opened here, `finishSpecialRoom` does that. */
-  private chooseChestSkill(index: number): boolean {
+  private chooseChestSkill(indexOrId: number | string): boolean {
     if (this.status !== 'skill-pick' || this.specialRoom === null) return false;
-    const picked = this.skills.choose(index);
+    const picked = this.skills.choose(indexOrId);
     if (picked === null) return false;
 
     this.applyLoadout(picked.result.healNow);
@@ -1960,9 +2252,7 @@ export class Bootstrap extends Component {
       this.player?.derivedStats.goldMultiplier ?? 1,
     );
     this.flyGold(gold, this.specialView?.position ?? { x: ROOM_COLS / 2, y: ROOM_ROWS / 2 });
-    if (this.hud !== null && this.player !== null) {
-      syncCombatHud(this.hud, this.player, this.combat);
-    }
+    this.syncHud();
     this.hud?.setSkills(this.skills.entries);
     this.openSpecialExit();
   }
@@ -2022,11 +2312,18 @@ export class Bootstrap extends Component {
     this.screens.finishRun(true);
   }
 
-  /** Credit gold for one kill, then fly a coin from the death spot to the HUD gold cell. */
+  /** Credit gold and drop a pooled XP orb at the kill spot (`splitling` yields 0 XP → no orb). */
   private awardKill(role: EnemyRole, elite: boolean, position: Vec2): void {
     const multiplier = this.player?.derivedStats.goldMultiplier ?? 1;
     const amount = this.rewards.awardKill(role, elite, multiplier);
     this.flyGold(amount, position);
+
+    const roomMultiplier = this.isXpDoorRoom ? DOORS_TUNING.xpRoomXpMultiplier : 1;
+    const xpValue = xpForKill(role, elite, XP_TUNING, roomMultiplier);
+    if (xpValue > 0) {
+      this.xpPool.spawn({ position, value: xpValue });
+      this.syncXpOrbView();
+    }
   }
 
   /** A coin flies to the gold cell; the HUD total is credited when it lands (`onCoinArrived`). */
@@ -2090,6 +2387,17 @@ export class Bootstrap extends Component {
    */
   private teardownRun(): void {
     this.skills.destroy();
+    this.xpPool.clear();
+    this.xpOrbView?.destroy();
+    this.xpOrbView = null;
+    this.xpTracker = null;
+    this.xpVisuals.length = 0;
+    this.xpOrbElapsedSec = 0;
+    this.lastXpPickupSfxMs = Number.NEGATIVE_INFINITY;
+    this.isXpDoorRoom = false;
+    this.roomClearPending = false;
+    this.roomClearElapsedMs = 0;
+    this.clearClockMs = 0;
     this.roomClearBanner?.destroy();
     this.roomClearBanner = null;
     this.doorView?.destroy();
@@ -2252,7 +2560,73 @@ export class Bootstrap extends Component {
         this.player.showAttachmentForSkill(skillId);
         return true;
       },
+      xp: () => this.debugXpSnapshot(),
+      grantXp: (amount) => this.debugGrantXp(amount),
+      rerollSkill: () => this.rerollActiveSkillPick(),
+      playerIframeMs: () =>
+        this.player !== null && this.combat !== null
+          ? this.player.remainingInvulnerabilityMs(this.combat.clockMs)
+          : 0,
     });
+  }
+
+  /** Sync HUD hearts, enemy counter, boss bar, and live XP bar without allocating per frame. */
+  private syncHud(): void {
+    const hud = this.hud;
+    const player = this.player;
+    if (hud === null || player === null) return;
+
+    const tracker = this.xpTracker;
+    if (tracker === null) {
+      syncCombatHud(hud, player, this.combat);
+      return;
+    }
+    this.xpHudCache.level = tracker.level;
+    this.xpHudCache.current = tracker.currentXp;
+    this.xpHudCache.required = tracker.nextLevelXp;
+    syncCombatHud(hud, player, this.combat, this.xpHudCache);
+  }
+
+  private debugXpSnapshot(): DebugXpSnapshot {
+    const tracker = this.xpTracker;
+    const orbs = this.xpPool.activeOrbs.map((orb) => ({
+      id: orb.id,
+      x: orb.position.x,
+      y: orb.position.y,
+      value: orb.value,
+      phase: orb.phase,
+    }));
+    return {
+      level: tracker?.level ?? 1,
+      currentXp: tracker?.currentXp ?? 0,
+      nextLevelXp: tracker?.nextLevelXp ?? 0,
+      totalXp: tracker?.totalXp ?? 0,
+      pendingLevelUps: tracker?.pendingLevelUps ?? 0,
+      activeOrbs: orbs.length,
+      orbs,
+      rerollsUsed: this.skills.rerollsUsed,
+      rerollCost: rerollCost(this.skills.rerollsUsed),
+      sharedGold: this.shopGoldTotal(),
+      isXpDoorRoom: this.isXpDoorRoom,
+    };
+  }
+
+  private debugGrantXp(amount: number): DebugXpSnapshot {
+    const tracker = this.xpTracker;
+    if (tracker === null || !Number.isFinite(amount) || amount <= 0) {
+      return this.debugXpSnapshot();
+    }
+    tracker.grant(amount);
+    this.syncHud();
+    if (
+      tracker.pendingLevelUps > 0 &&
+      this.status === 'playing' &&
+      !this.doorPhase &&
+      this.specialRoom === null
+    ) {
+      this.openLevelUpSkillPick();
+    }
+    return this.debugXpSnapshot();
   }
 
   /** Debug `doors()`: the live offer, the door positions and the reward this room will pay. */

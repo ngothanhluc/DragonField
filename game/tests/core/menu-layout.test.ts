@@ -425,7 +425,7 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
     }
   });
 
-  it('fits 3 skill cards with focus rings and all 20 skill labels inside 512×288', () => {
+  it('fits 3 skill cards with focus rings, all 20 skill labels, and the Gold Reroll button inside 512×288 across all target viewports', () => {
     const layout = computeSkillCardLayout(3);
     const leftEdge = layout.cardXs[0]! - (layout.cardWidth + FOCUS_RING_EXPAND_PX) / 2;
     const rightEdge = layout.cardXs[2]! + (layout.cardWidth + FOCUS_RING_EXPAND_PX) / 2;
@@ -436,6 +436,42 @@ describe('computeMenuScreenLayout & computeSkillCardLayout — viewport bounds a
     expect(rightEdge).toBeLessThanOrEqual(DESIGN_WIDTH / 2 - 8);
     expect(bottomEdge).toBeGreaterThanOrEqual(-DESIGN_HEIGHT / 2 + 8);
     expect(topEdge).toBeLessThan(layout.subtitleY - 10);
+
+    // Gold Reroll button sits cleanly below the 3 cards without touching focus rings or bottom edge.
+    const rerollTopEdge = layout.rerollY + (layout.rerollHeight + FOCUS_RING_EXPAND_PX) / 2;
+    const rerollBottomEdge = layout.rerollY - (layout.rerollHeight + FOCUS_RING_EXPAND_PX) / 2;
+    expect(rerollTopEdge).toBeLessThanOrEqual(bottomEdge - 4);
+    expect(rerollBottomEdge).toBeGreaterThanOrEqual(-DESIGN_HEIGHT / 2 + 6);
+    expect((layout.rerollWidth + FOCUS_RING_EXPAND_PX) / 2).toBeLessThanOrEqual(
+      DESIGN_WIDTH / 2 - 8,
+    );
+
+    const rerollText = computeMenuButtonTextLayout({
+      width: layout.rerollWidth,
+      height: layout.rerollHeight,
+      fontSize: 11,
+      hasDetail: true,
+    });
+    for (const labelText of ['Reroll (R) — 10g', 'Reroll (R) — 120g', 'Reroll (R)']) {
+      expect(labelText.length * rerollText.labelFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+        rerollText.safeTextWidth,
+      );
+    }
+    for (const detailText of [
+      'Gold: 9999g',
+      'Gold: 5g — Not enough gold',
+      'No alternative skills',
+    ]) {
+      expect(detailText.length * rerollText.detailFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+        rerollText.safeTextWidth,
+      );
+    }
+
+    for (const vp of TARGET_VIEWPORTS) {
+      const band = letterboxRect(vp.width, vp.height, DESIGN_WIDTH, DESIGN_HEIGHT);
+      expect(band.width).toBeGreaterThan(0);
+      expect(band.height).toBeGreaterThan(0);
+    }
 
     for (const skill of SKILLS) {
       const nameW = skill.name.length * 12 * GLYPH_WIDTH_RATIO;

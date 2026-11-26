@@ -174,6 +174,30 @@ export interface DebugPlayerAttachmentSnapshot {
   readonly frame: number;
 }
 
+/** Active XP orb snapshot for `window.__yokai.xp()`. */
+export interface DebugXpOrbSnapshot {
+  readonly id: number;
+  readonly x: number;
+  readonly y: number;
+  readonly value: number;
+  readonly phase: string;
+}
+
+/** Live M12 XP, orb pool, reroll, and XP-door state for `window.__yokai.xp()`. */
+export interface DebugXpSnapshot {
+  readonly level: number;
+  readonly currentXp: number;
+  readonly nextLevelXp: number;
+  readonly totalXp: number;
+  readonly pendingLevelUps: number;
+  readonly activeOrbs: number;
+  readonly orbs: readonly DebugXpOrbSnapshot[];
+  readonly rerollsUsed: number;
+  readonly rerollCost: number;
+  readonly sharedGold: number;
+  readonly isXpDoorRoom: boolean;
+}
+
 /** Data bootstrap supplies to the API; every method is a live closure. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
@@ -251,6 +275,14 @@ export interface DebugProvider {
   readonly hideAttachmentForSkill?: (skillId: string) => boolean;
   /** M10: clear a skill hide token on the player's attachment node. */
   readonly showAttachmentForSkill?: (skillId: string) => boolean;
+  /** M12: live XP tracker, active orbs, reroll state, and XP door status. */
+  readonly xp?: () => DebugXpSnapshot;
+  /** M12: grant `amount` XP directly (syncs HUD and opens level-up modal if threshold crossed). */
+  readonly grantXp?: (amount: number) => DebugXpSnapshot;
+  /** M12: trigger Gold Reroll on the active level-up modal; `false` if unavailable/unaffordable. */
+  readonly rerollSkill?: () => boolean;
+  /** M12: remaining player invulnerability window in ms (`600` right after level-up resume). */
+  readonly playerIframeMs?: () => number;
 }
 
 /** Alias for `DebugProvider`. */
@@ -269,6 +301,10 @@ export type YokaiDebugApi = Omit<
   | 'setAttachmentHidden'
   | 'hideAttachmentForSkill'
   | 'showAttachmentForSkill'
+  | 'xp'
+  | 'grantXp'
+  | 'rerollSkill'
+  | 'playerIframeMs'
 > & {
   /** The last 200 keyboard events (key/code/keyCode/isComposing) — for IME diagnosis. */
   readonly keyLog: typeof keyLog;
@@ -283,6 +319,10 @@ export type YokaiDebugApi = Omit<
   readonly setAttachmentHidden: (hidden: boolean) => boolean;
   readonly hideAttachmentForSkill: (skillId: string) => boolean;
   readonly showAttachmentForSkill: (skillId: string) => boolean;
+  readonly xp: () => DebugXpSnapshot;
+  readonly grantXp: (amount: number) => DebugXpSnapshot;
+  readonly rerollSkill: () => boolean;
+  readonly playerIframeMs: () => number;
 };
 
 const DEFAULT_CHARACTER_SNAPSHOT: DebugCharacterSnapshot = {
@@ -290,6 +330,20 @@ const DEFAULT_CHARACTER_SNAPSHOT: DebugCharacterSnapshot = {
   name: 'Ninja',
   cultivatorEnabled: false,
   available: ['ninja'],
+};
+
+const DEFAULT_XP_SNAPSHOT: DebugXpSnapshot = {
+  level: 1,
+  currentXp: 0,
+  nextLevelXp: 0,
+  totalXp: 0,
+  pendingLevelUps: 0,
+  activeOrbs: 0,
+  orbs: [],
+  rerollsUsed: 0,
+  rerollCost: 0,
+  sharedGold: 0,
+  isXpDoorRoom: false,
 };
 
 /** Install the API if `?debug=1`; returns `true` when installed. */
@@ -304,6 +358,10 @@ export function installDebugApi(provider: DebugProvider): boolean {
   const setAttachmentHidden = provider.setAttachmentHidden ?? ((): boolean => false);
   const hideAttachmentForSkill = provider.hideAttachmentForSkill ?? ((): boolean => false);
   const showAttachmentForSkill = provider.showAttachmentForSkill ?? ((): boolean => false);
+  const xp = provider.xp ?? ((): DebugXpSnapshot => DEFAULT_XP_SNAPSHOT);
+  const grantXp = provider.grantXp ?? ((): DebugXpSnapshot => DEFAULT_XP_SNAPSHOT);
+  const rerollSkill = provider.rerollSkill ?? ((): boolean => false);
+  const playerIframeMs = provider.playerIframeMs ?? ((): number => 0);
 
   const api: YokaiDebugApi = Object.defineProperties({} as YokaiDebugApi, {
     status: { get: provider.status, enumerable: true },
@@ -351,6 +409,10 @@ export function installDebugApi(provider: DebugProvider): boolean {
     setAttachmentHidden: { value: setAttachmentHidden, enumerable: true },
     hideAttachmentForSkill: { value: hideAttachmentForSkill, enumerable: true },
     showAttachmentForSkill: { value: showAttachmentForSkill, enumerable: true },
+    xp: { value: xp, enumerable: true },
+    grantXp: { value: grantXp, enumerable: true },
+    rerollSkill: { value: rerollSkill, enumerable: true },
+    playerIframeMs: { value: playerIframeMs, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -362,7 +424,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'screen, save, setGold, markChapterCleared, uiText, skillPreview, closeSkillPreview, placeholders, audio, anim, ' +
       'setEffects, vfx, atmosphere, menuBackdrop, nodeCount, doors, takeDoor, special, useSpecial, ' +
       'character, selectCharacter, setCultivatorEnabled, playerAttachment, setAttachmentHidden, ' +
-      'hideAttachmentForSkill, showAttachmentForSkill, keyLog).',
+      'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, keyLog).',
   );
   return true;
 }

@@ -28,6 +28,7 @@ import { firstHit, hitsCircle } from '../core/combat/bullets';
 import { fireEnemyVolley, sniperShotPlan } from '../core/combat/enemy-fire';
 import { segmentHitsCircle } from '../core/combat/hitbox';
 import { HitstopClock } from '../core/combat/hitstop';
+import type { KnockbackState } from '../core/combat/knockback';
 import {
   HOMING_TURN_RATE_RADIANS_PER_SECOND,
   damageAfterExecute,
@@ -40,7 +41,7 @@ import type { Targetable } from '../core/combat/targeting';
 import { DEFAULT_COMBAT } from '../core/config';
 import type { EnemyState } from '../core/enemies/behaviours';
 import { ROOM_EDGE_MARGIN_TILES, maxHealthFor } from '../core/enemies/behaviours';
-import { FEEL_TUNING, NAVIGATION_TUNING } from '../core/enemies/tuning';
+import { FEEL_TUNING, NAVIGATION_TUNING, XP_TUNING } from '../core/enemies/tuning';
 import { eliteVolleyAngles } from '../core/enemies/elite';
 import { splitOnDeath } from '../core/enemies/splitter';
 import { RoomNavigation, separateEnemies, type SeparationBody } from '../core/enemies/navigation';
@@ -61,12 +62,17 @@ import {
   effectsLayers,
   type EffectsMode,
 } from '../core/vfx/weapon-vfx';
+import {
+  computeLevelUpKnockback,
+  levelUpResumeIframeMs,
+  type KnockbackTarget,
+} from '../core/xp/level-up-wave';
 import { SpriteAnimator } from './anim/sprite-animator';
 import { BossView } from './boss-view';
 import type { BulletView } from './bullet-view';
 import type { CoverBody } from './cover-view';
 import { EnemyView } from './enemy-view';
-import type { FxPool } from './fx/effect-pool';
+import { spawnLevelUpBurst, type FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE } from './level-view';
 import type { PlayerController } from './player-controller';
 import { pointInCullRect, type CullRect } from './world-culler';
@@ -390,7 +396,7 @@ export class CombatLoop {
    * `enterRoom` (and after the boss is spawned). `runSlot` is the room's 1-based position in the
    * run — room 1 opens with the smallest crowd (see `aliveCapForSlot`).
    */
-  startWaves(seed: number, runSlot = 1): void {
+  startWaves(seed: number, runSlot = 1, extraElites = 0): void {
     this.scheduler = null;
     this.pendingSpawns.length = 0;
     this.spawnedSequence = 0;
@@ -398,12 +404,55 @@ export class CombatLoop {
 
     const level = this.level;
     if (!usesWaveScheduler(level)) {
-      for (const state of level.waves.flatMap((_, wave) => spawnWave(level, wave))) {
+      const states = level.waves.flatMap((_, wave) => spawnWave(level, wave));
+      let remainingExtra = Number.isFinite(extraElites) ? Math.max(0, Math.floor(extraElites)) : 0;
+      for (const state of states) {
+        if (remainingExtra > 0 && !state.elite && state.role !== 'splitling') {
+          state.elite = true;
+          const boostedHp = maxHealthFor(state.role, true, undefined, level.chapter);
+          state.maxHealth = boostedHp;
+          state.health = boostedHp;
+          remainingExtra -= 1;
+        }
         this.addEnemy(state);
       }
       return;
     }
-    this.scheduler = new WaveScheduler(level, seed, runSlot);
+    this.scheduler = new WaveScheduler(level, seed, runSlot, extraElites);
+  }
+
+  /**
+   * Apply ADR-021 mid-combat level-up resume safety:
+   * push nearby live enemies radially away from the player, grant 0.6 s player i-frame,
+   * leave all enemy bullets intact, and emit the radial burst FX.
+   */
+  applyLevelUpResumeWave(): number {
+    const targets: KnockbackTarget[] = [];
+    for (const enemy of this.enemies) {
+      if (!enemy.isDead) {
+        targets.push({ id: enemy.id, position: enemy.position });
+      }
+    }
+    const hits = computeLevelUpKnockback(this.player.position, targets);
+    if (hits.length > 0) {
+      const byId = new Map<string, KnockbackState>();
+      for (const hit of hits) byId.set(hit.id, hit.knockback);
+      for (const enemy of this.enemies) {
+        const kb = byId.get(enemy.id);
+        if (kb !== undefined) enemy.applyKnockbackState(kb);
+      }
+    }
+    this.player.grantInvulnerability(this.nowMs, levelUpResumeIframeMs());
+    spawnLevelUpBurst(this.fx, this.player.position, this.effectsMode, {
+      radiusTiles: XP_TUNING.levelUpWave.knockbackRadiusTiles,
+    });
+    return hits.length;
+  }
+
+  /** Drop active bullets immediately (used on room clear before vacuuming orbs to doors). */
+  clearBullets(): void {
+    this.player.bullets.clear();
+    this.bulletView?.sync();
   }
 
   /** One combat frame. `realDeltaMs` has already been capped by bootstrap. */

@@ -100,6 +100,13 @@ export interface XpOrbTransform {
   readonly scaleY: number;
 }
 
+/** Map an XP orb's XP value to its visual crystal tier (`small` / `medium` / `large`). */
+export function xpOrbTierForValue(value: number): XpOrbTier {
+  if (value >= 25) return 'large';
+  if (value >= 16) return 'medium';
+  return 'small';
+}
+
 /** Pure visual transform per orb slot — zero engine state, directly unit-testable. */
 export function xpOrbTransform(
   orb: XpOrbVisual,

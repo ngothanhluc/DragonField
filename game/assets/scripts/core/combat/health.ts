@@ -53,6 +53,28 @@ export class HealthState {
     return nowMs < this.invulnerableUntilMs;
   }
 
+  /**
+   * Grant temporary invulnerability without dealing damage (e.g. M12 level-up resume safety).
+   * Preserves any longer existing i-frame window so an active hit i-frame is never shortened.
+   */
+  grantInvulnerability(nowMs: number, durationMs: number): void {
+    if (
+      this.isDead ||
+      !Number.isFinite(nowMs) ||
+      !Number.isFinite(durationMs) ||
+      durationMs <= 0
+    ) {
+      return;
+    }
+    this.invulnerableUntilMs = Math.max(this.invulnerableUntilMs, nowMs + durationMs);
+  }
+
+  /** Remaining i-frame duration at `nowMs` in milliseconds (`0` when vulnerable or dead). */
+  remainingInvulnerabilityMs(nowMs: number): number {
+    if (this.isDead || !Number.isFinite(nowMs)) return 0;
+    return Math.max(0, this.invulnerableUntilMs - nowMs);
+  }
+
   tryDamage(amount: number, nowMs: number): DamageResult {
     if (this.isDead || this.isInvulnerable(nowMs)) {
       return { applied: false, hearts: this.hearts, dead: this.isDead };

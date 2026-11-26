@@ -291,6 +291,25 @@ export class PlayerController extends Component {
     return this.health.heal(amount);
   }
 
+  /** Grant `durationMs` of i-frames at `nowMs` without dealing damage (M12 level-up resume). */
+  grantInvulnerability(nowMs: number, durationMs: number): void {
+    this.health.grantInvulnerability(nowMs, durationMs);
+  }
+
+  /** Remaining player i-frames at `nowMs` in milliseconds (`0` when vulnerable). */
+  remainingInvulnerabilityMs(nowMs: number): number {
+    return this.health.remainingInvulnerabilityMs(nowMs);
+  }
+
+  isInvulnerable(nowMs: number): boolean {
+    return this.health.isInvulnerable(nowMs);
+  }
+
+  /** Clear held movement keys when pausing or opening a modal so keys never stick on resume. */
+  resetInput(): void {
+    this.keyboard.keys.reset();
+  }
+
   /** New loadout: the aura decision (visible + colour) is recomputed once, not every frame. */
   setLoadout(owned: ReadonlyMap<string, number>): void {
     this.loadout = owned;

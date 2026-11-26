@@ -161,3 +161,17 @@ export function rerollChoices(args: RerollChoicesArgs): SkillDef[] {
     avoidIds,
   });
 }
+
+/**
+ * Whether at least one eligible skill not already in `previous` exists in the pool.
+ * Used to disable Gold Reroll when rerolling could not surface any alternative skill.
+ */
+export function hasAlternativeSkills(
+  owned: ReadonlyMap<string, number>,
+  previous: readonly (SkillDef | string)[],
+): boolean {
+  const currentIds = new Set(previous.map((entry) => (typeof entry === 'string' ? entry : entry.id)));
+  return SKILLS.some(
+    (skill) => (owned.get(skill.id) ?? 0) < skill.maxStacks && !currentIds.has(skill.id),
+  );
+}

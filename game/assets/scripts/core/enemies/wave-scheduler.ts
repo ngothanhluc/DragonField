@@ -209,11 +209,13 @@ export class WaveScheduler {
   /**
    * `runSlot` is the drawn room's position in the run (1-based, default 1 = the run's first room),
    * which caps how many enemies this room holds at once — see `aliveCapForSlot`.
+   * `extraElites` promotes up to that many non-elite enemies in the wave queue (used by `'xp'` doors).
    */
   constructor(
     readonly level: LevelData,
     readonly seed: number,
     readonly runSlot = 1,
+    extraElites = 0,
   ) {
     this.rng = new SeededRng(roomSeed(level, seed) ^ 0x5bf03635);
     this.cap = aliveCapForSlot(runSlot);
@@ -224,6 +226,31 @@ export class WaveScheduler {
       const source = authored[index % Math.max(1, authored.length)];
       if (source === undefined) break;
       this.queue.push(source);
+    }
+    this.promoteExtraElites(extraElites);
+  }
+
+  /** Promote up to `extraElites` non-elite enemies (excluding splitlings) deterministically. */
+  private promoteExtraElites(extraElites: number): void {
+    const count = Number.isFinite(extraElites) ? Math.max(0, Math.floor(extraElites)) : 0;
+    if (count === 0) return;
+
+    const candidates: number[] = [];
+    for (let index = 0; index < this.queue.length; index += 1) {
+      const entry = this.queue[index];
+      if (entry !== undefined && !entry.elite && entry.role !== 'splitling') {
+        candidates.push(index);
+      }
+    }
+    const promotions = Math.min(count, candidates.length);
+    for (let step = 0; step < promotions; step += 1) {
+      const pick = this.rng.int(candidates.length);
+      const targetIndex = candidates.splice(pick, 1)[0];
+      if (targetIndex === undefined) continue;
+      const current = this.queue[targetIndex];
+      if (current !== undefined) {
+        this.queue[targetIndex] = { ...current, elite: true };
+      }
     }
   }
 

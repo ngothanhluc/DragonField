@@ -43,7 +43,9 @@ import {
   PANEL_WELL_TINT,
   addSlicedSpriteNode,
   createFocusFrame,
+  createMenuButton,
   loadMenuFrames,
+  type MenuButtonHandle,
   type MenuFrames,
 } from './screens/menu';
 
@@ -63,11 +65,20 @@ const HOTKEY_COLOR = new CocosColor(232, 210, 168, 255);
 
 const HOTKEY_CODES = [KeyCode.KEY_1, KeyCode.KEY_2, KeyCode.KEY_3] as const;
 
+export interface SkillPickRerollOptions {
+  readonly cost: number;
+  readonly availableGold: number;
+  readonly hasAlternatives: boolean;
+  readonly onReroll: () => boolean;
+}
+
 export interface SkillPickOptions {
   readonly choices: readonly SkillDef[];
   /** Current stacks by id. */
   readonly owned: ReadonlyMap<string, number>;
   readonly onPick: (index: number) => void;
+  /** Optional Gold Reroll control below the 3 cards (level-up modal, ADR-021). */
+  readonly reroll?: SkillPickRerollOptions;
 }
 
 /** Built screen; call `destroy()` after picking or when leaving the run. */
@@ -93,22 +104,44 @@ export async function buildSkillPick(
   parent: Node,
   options: SkillPickOptions,
 ): Promise<SkillPickScreen> {
-  // Listen for keys **before** loading textures: the player may hit 1/2/3 on the very frame
+  // Listen for keys **before** loading textures: the player may hit 1/2/3/R on the very frame
   // status becomes 'skill-pick', before assets resolve.
   let picked = false;
+  let rerolling = false;
+  let destroyed = false;
   let focused = 0;
   let hoveredIndex: number | null = null;
   let pressedIndex: number | null = null;
+  let rerollFocused = false;
+  let rerollHovered = false;
+  let rerollPressed = false;
   const cards: SkillCardHandle[] = [];
+  let rerollHandle: MenuButtonHandle | null = null;
+
+  const rerollOpt = options.reroll;
+  const canRerollNow =
+    rerollOpt !== undefined &&
+    rerollOpt.hasAlternatives &&
+    rerollOpt.availableGold >= rerollOpt.cost;
 
   const applyFocus = (): void => {
     cards.forEach((card, index) => {
-      card.setState(index === focused, index === hoveredIndex, index === pressedIndex);
+      card.setState(
+        !rerollFocused && index === focused,
+        index === hoveredIndex,
+        index === pressedIndex,
+      );
     });
+    if (rerollHandle !== null) {
+      rerollHandle.setFocused(rerollFocused);
+      rerollHandle.setHovered?.(rerollHovered);
+      rerollHandle.setPressed?.(rerollPressed);
+    }
   };
 
   const moveFocus = (delta: number): void => {
     if (cards.length === 0) return;
+    rerollFocused = false;
     hoveredIndex = null;
     pressedIndex = null;
     focused = (focused + delta + cards.length) % cards.length;
@@ -117,11 +150,23 @@ export async function buildSkillPick(
   };
 
   const pick = (index: number): void => {
-    if (picked) return;
+    if (picked || destroyed || rerolling) return;
     if (index < 0 || index >= options.choices.length) return;
     picked = true;
     playSfx('skill-acquired');
     options.onPick(index);
+  };
+
+  const triggerReroll = (): void => {
+    if (picked || destroyed || rerolling || rerollOpt === undefined) return;
+    if (!canRerollNow) {
+      playSfx('ui-move');
+      return;
+    }
+    rerolling = true;
+    if (!rerollOpt.onReroll()) {
+      rerolling = false;
+    }
   };
 
   const onKey = (event: KeyEvent): void => {
@@ -131,27 +176,69 @@ export async function buildSkillPick(
 
   // Two listening paths: Cocos `input` and capture-phase DOM (`AGENTS.md` trap).
   const onDomKey = (event: KeyboardEvent): void => {
+    if (event.repeat || picked || destroyed) return;
+
     const digit = /^Digit([1-3])$/.exec(event.code) ?? /^([1-3])$/.exec(event.key);
     if (digit !== null) {
+      event.preventDefault();
       pick(Number(digit[1]) - 1);
       return;
     }
 
+    if (
+      rerollOpt !== undefined &&
+      (event.code === 'KeyR' || event.key === 'r' || event.key === 'R' || event.keyCode === 82)
+    ) {
+      event.preventDefault();
+      triggerReroll();
+      return;
+    }
+
     const key = event.key;
-    if (key === 'ArrowLeft' || key === 'ArrowUp' || event.keyCode === 37 || event.keyCode === 38) {
+    if (key === 'ArrowLeft' || event.keyCode === 37) {
       event.preventDefault();
       moveFocus(-1);
       return;
     }
-    if (key === 'ArrowRight' || key === 'ArrowDown' || event.keyCode === 39 || event.keyCode === 40) {
+    if (key === 'ArrowRight' || event.keyCode === 39) {
       event.preventDefault();
       moveFocus(1);
       return;
     }
+    if (key === 'ArrowDown' || event.keyCode === 40) {
+      event.preventDefault();
+      if (rerollOpt !== undefined && !rerollFocused) {
+        rerollFocused = true;
+        hoveredIndex = null;
+        pressedIndex = null;
+        playSfx('ui-move');
+        applyFocus();
+      } else if (rerollOpt === undefined) {
+        moveFocus(1);
+      }
+      return;
+    }
+    if (key === 'ArrowUp' || event.keyCode === 38) {
+      event.preventDefault();
+      if (rerollFocused) {
+        rerollFocused = false;
+        playSfx('ui-move');
+        applyFocus();
+      } else if (rerollOpt === undefined) {
+        moveFocus(-1);
+      }
+      return;
+    }
     if (key === 'Enter' || key === ' ' || event.keyCode === 13 || event.keyCode === 32) {
       event.preventDefault();
-      pick(focused);
+      if (rerollFocused) triggerReroll();
+      else pick(focused);
     }
+  };
+
+  const removeListeners = (): void => {
+    input.off(Input.EventType.KEY_DOWN, onKey);
+    document.removeEventListener('keydown', onDomKey, true);
   };
 
   input.on(Input.EventType.KEY_DOWN, onKey);
@@ -161,9 +248,19 @@ export async function buildSkillPick(
   try {
     frames = await loadMenuFrames();
   } catch (error: unknown) {
-    input.off(Input.EventType.KEY_DOWN, onKey);
-    document.removeEventListener('keydown', onDomKey, true);
+    removeListeners();
     throw error;
+  }
+
+  if (destroyed) {
+    removeListeners();
+    const cancelled = new CocosNode('skill-pick-cancelled');
+    return {
+      node: cancelled,
+      destroy(): void {
+        if (cancelled.isValid) cancelled.destroy();
+      },
+    };
   }
 
   const layout = computeSkillCardLayout(options.choices.length);
@@ -180,11 +277,11 @@ export async function buildSkillPick(
   title.color = MENU_TITLE_COLOR;
   title.node.setPosition(0, layout.titleY, 0);
 
-  const subtitle = createLabel(
-    root,
-    'skill-pick-hint',
-    'Click a card, ←/→ + Enter, or press 1 / 2 / 3',
-  );
+  const hintText =
+    rerollOpt !== undefined
+      ? 'Click a card, arrows + Enter, 1 / 2 / 3, or R to reroll'
+      : 'Click a card, ←/→ + Enter, or press 1 / 2 / 3';
+  const subtitle = createLabel(root, 'skill-pick-hint', hintText);
   subtitle.fontSize = 10;
   subtitle.lineHeight = 12;
   subtitle.color = MENU_MUTED_COLOR;
@@ -195,12 +292,14 @@ export async function buildSkillPick(
     const stacks = options.owned.get(skill.id) ?? 0;
     const card = makeCard(root, frames, layout, skill, stacks, index + 1, x, () => {
       pressedIndex = null;
+      rerollFocused = false;
       focused = index;
       applyFocus();
       pick(index);
     });
     card.node.on(CocosNode.EventType.MOUSE_ENTER, () => {
-      if (focused !== index) playSfx('ui-move');
+      if (rerollFocused || focused !== index) playSfx('ui-move');
+      rerollFocused = false;
       focused = index;
       hoveredIndex = index;
       applyFocus();
@@ -211,6 +310,7 @@ export async function buildSkillPick(
       applyFocus();
     });
     card.node.on(CocosNode.EventType.MOUSE_DOWN, () => {
+      rerollFocused = false;
       focused = index;
       pressedIndex = index;
       applyFocus();
@@ -221,13 +321,71 @@ export async function buildSkillPick(
     });
     cards.push(card);
   });
+
+  if (rerollOpt !== undefined) {
+    const label = rerollOpt.hasAlternatives
+      ? `Reroll (R) — ${rerollOpt.cost}g`
+      : 'Reroll (R)';
+    const detail = !rerollOpt.hasAlternatives
+      ? 'No alternative skills'
+      : canRerollNow
+        ? `Gold: ${rerollOpt.availableGold}g`
+        : `Gold: ${rerollOpt.availableGold}g — Not enough gold`;
+
+    const handle = createMenuButton(
+      root,
+      'skill-pick-reroll',
+      {
+        label,
+        detail,
+        disabled: !canRerollNow,
+        activate: triggerReroll,
+      },
+      frames,
+      {
+        width: layout.rerollWidth,
+        height: layout.rerollHeight,
+        fontSize: 11,
+      },
+    );
+    handle.node.setPosition(0, layout.rerollY, 0);
+    handle.node.on(CocosNode.EventType.MOUSE_ENTER, () => {
+      if (!rerollFocused) playSfx('ui-move');
+      rerollFocused = true;
+      rerollHovered = true;
+      hoveredIndex = null;
+      applyFocus();
+    });
+    handle.node.on(CocosNode.EventType.MOUSE_LEAVE, () => {
+      rerollHovered = false;
+      rerollPressed = false;
+      applyFocus();
+    });
+    handle.node.on(CocosNode.EventType.MOUSE_DOWN, () => {
+      rerollFocused = true;
+      rerollPressed = true;
+      applyFocus();
+    });
+    handle.node.on(CocosNode.EventType.MOUSE_UP, () => {
+      rerollPressed = false;
+      applyFocus();
+    });
+    handle.node.on(CocosButton.EventType.CLICK, () => {
+      rerollPressed = false;
+      rerollFocused = true;
+      applyFocus();
+      triggerReroll();
+    });
+    rerollHandle = handle;
+  }
+
   applyFocus();
 
   return {
     node: root,
     destroy(): void {
-      input.off(Input.EventType.KEY_DOWN, onKey);
-      document.removeEventListener('keydown', onDomKey, true);
+      destroyed = true;
+      removeListeners();
       if (root.isValid) root.destroy();
     },
   };

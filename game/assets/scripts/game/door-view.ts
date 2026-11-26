@@ -12,6 +12,7 @@
 import {
   Color as CocosColor,
   Graphics as CocosGraphics,
+  Label as CocosLabel,
   Node as CocosNode,
   Rect,
   Size,
@@ -24,10 +25,12 @@ import type { Vec2 } from '../core/math/vec2';
 import type { DoorReward } from '../core/run/doors';
 import { loadPixelTexture } from './assets/texture-cache';
 import { ACTOR_SCALE, tileToWorld } from './level-view';
+import { applyPixelFont } from './ui-font';
 
 /** `cc` is an any module: import names only work in value position. */
 type Color = InstanceType<typeof CocosColor>;
 type Graphics = InstanceType<typeof CocosGraphics>;
+type Label = InstanceType<typeof CocosLabel>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type SpriteFrame = InstanceType<typeof CocosSpriteFrame>;
@@ -65,7 +68,7 @@ export interface IconSpec {
  * Exported for the HUD's door arrows (#63): an arrow must show the same icon its door shows.
  */
 export const ICONS: Readonly<Record<DoorReward, IconSpec>> = {
-  xp: { sheet: 'resources/art/ui/skill-icons/AttackUpgrade.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
+  xp: { sheet: 'resources/art/fx/xp-orb/xp-orb-large.png', x: 0, y: 0, width: 16, height: 16, tiles: 1.5 },
   gold: { sheet: 'resources/art/ui/coin/Coin2.png', x: 0, y: 0, width: 10, height: 10, tiles: 1.5 },
   heal: { sheet: 'resources/art/ui/skill-icons/Heal.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
   shop: { sheet: 'resources/art/ui/skill-icons/Alchemy.png', x: 0, y: 0, width: 24, height: 24, tiles: 1.5 },
@@ -74,7 +77,7 @@ export const ICONS: Readonly<Record<DoorReward, IconSpec>> = {
 };
 
 const TINTS: Readonly<Record<DoorReward, Color>> = {
-  xp: new CocosColor(120, 190, 255, 255),
+  xp: new CocosColor(115, 228, 255, 255),
   gold: new CocosColor(255, 214, 90, 255),
   heal: new CocosColor(255, 120, 130, 255),
   shop: new CocosColor(120, 230, 150, 255),
@@ -82,11 +85,24 @@ const TINTS: Readonly<Record<DoorReward, Color>> = {
   boss: new CocosColor(255, 110, 90, 255),
 };
 
+const DOOR_LABELS: Readonly<Record<DoorReward, string>> = {
+  xp: 'XP +ELITE',
+  gold: 'GOLD',
+  heal: 'HEAL',
+  shop: 'SHOP',
+  chest: 'CHEST',
+  boss: 'BOSS',
+};
+
+const LABEL_OUTLINE_COLOR = new CocosColor(12, 10, 16, 255);
+
 /** Doorway size, world units (1 unit = 1 tile). */
 const DOOR_WIDTH = 1.3;
 const DOOR_HEIGHT = 1.9;
 /** Icon centre above the doorway's top edge, tiles. */
 const ICON_LIFT = 0.95;
+/** Label centre above the reward icon, tiles. */
+const LABEL_LIFT = 0.95;
 
 /** One cached frame per icon sheet (textures are already cached by `loadPixelTexture`). */
 const iconFrames = new Map<string, Promise<SpriteFrame>>();
@@ -144,6 +160,26 @@ export class DoorView {
     this.addGlow(door, tint);
     this.addFrame(door, tint);
     this.addIcon(door, ICONS[spot.reward]);
+    this.addLabel(door, DOOR_LABELS[spot.reward], tint);
+  }
+
+  /** World-space pixel label above the reward icon (scaled by ACTOR_SCALE on the door's layer). */
+  private addLabel(door: Node, text: string, tint: Color): void {
+    const node = new CocosNode('reward-label');
+    node.layer = door.layer;
+    node.parent = door;
+    node.setPosition(0, DOOR_HEIGHT + ICON_LIFT + LABEL_LIFT, 0);
+    node.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
+
+    const label: Label = node.addComponent(CocosLabel);
+    label.string = text;
+    label.fontSize = 8;
+    label.lineHeight = 10;
+    label.color = tint;
+    label.enableOutline = true;
+    label.outlineColor = LABEL_OUTLINE_COLOR;
+    label.outlineWidth = 1;
+    applyPixelFont(label);
   }
 
   /** Translucent fill: one `Graphics` per colour (fill() repaints every sub-path still buffered). */

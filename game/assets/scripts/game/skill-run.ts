@@ -10,9 +10,17 @@ import { SkillLoadout, type AcquireResult } from '../core/skills/loadout';
 import type { DerivedStats, StatsBaseline } from '../core/skills/derived-stats';
 import { DEFAULT_COMBAT } from '../core/config';
 import type { OwnedSkillStacks, SkillDef } from '../core/skills/pool';
-import { rollChoices } from '../core/skills/roll';
-import { SeededRng } from '../core/rng';
-import { buildSkillPick, type SkillPickScreen } from './skill-pick';
+import {
+  createSkillRollRng,
+  hasAlternativeSkills,
+  rerollChoices,
+  rollChoices,
+} from '../core/skills/roll';
+import {
+  buildSkillPick,
+  type SkillPickRerollOptions,
+  type SkillPickScreen,
+} from './skill-pick';
 
 type PickParent = Parameters<typeof buildSkillPick>[0];
 
@@ -29,20 +37,22 @@ export interface SkillGrant {
 
 export class SkillRun {
   private loadout = new SkillLoadout();
-  private rng = SeededRng.fromSeed(1);
+  private rng = createSkillRollRng(1);
   /** Baseline with meta upgrades added (M5); skills stack on top of it. */
   private base: StatsBaseline = DEFAULT_COMBAT;
   private screen: SkillPickScreen | null = null;
   private offered: readonly SkillDef[] | null = null;
+  private rerolls = 0;
   /** Bumped on every open/close to drop stale screen builds (fast room changes). */
   private token = 0;
 
-  /** Start a new run: empty loadout, RNG from the run seed, baseline from meta. */
+  /** Start a new run: empty loadout, dedicated skill-roll sub-seed (ADR-021), baseline from meta. */
   reset(seed: number, base: StatsBaseline = DEFAULT_COMBAT): void {
     this.destroy();
     this.loadout = new SkillLoadout();
-    this.rng = SeededRng.fromSeed(seed);
+    this.rng = createSkillRollRng(seed);
     this.base = base;
+    this.rerolls = 0;
   }
 
   get entries(): OwnedSkillStacks[] {
@@ -51,6 +61,10 @@ export class SkillRun {
 
   get size(): number {
     return this.loadout.size;
+  }
+
+  get rerollsUsed(): number {
+    return this.rerolls;
   }
 
   stats(): DerivedStats {
@@ -70,22 +84,54 @@ export class SkillRun {
     return this.offered === null ? null : this.offered.map((skill) => skill.id);
   }
 
-  /** Roll cards with the run RNG; an exhausted pool returns fewer than 3 (even none). */
+  /** Whether at least one eligible skill outside the current offer remains for Gold Reroll. */
+  hasAlternatives(): boolean {
+    if (this.offered === null) return false;
+    return hasAlternativeSkills(this.loadout.snapshot(), this.offered);
+  }
+
+  /** Roll cards with the dedicated skill-roll RNG; an exhausted pool returns fewer than 3. */
   roll(): SkillDef[] {
     return rollChoices({ rng: this.rng, owned: this.loadout.snapshot() });
   }
 
   /**
-   * Build the picker. Keys are wired inside `buildSkillPick` before any await,
-   * so hitting 1/2/3 on the opening frame still registers.
+   * Reroll the current offered cards via `rerollChoices`, avoiding `offered` IDs whenever fresh
+   * skills exist, and increment `rerollsUsed`. Returns `null` when no picker is active or no
+   * skills can be rolled.
    */
-  async open(parent: PickParent, choices: readonly SkillDef[], onPick: (index: number) => void): Promise<void> {
+  reroll(): SkillDef[] | null {
+    if (this.offered === null) return null;
+    const next = rerollChoices({
+      rng: this.rng,
+      owned: this.loadout.snapshot(),
+      previous: this.offered,
+    });
+    if (next.length === 0) return null;
+    this.rerolls += 1;
+    return next;
+  }
+
+  /**
+   * Build the picker. Always tears down any previous picker first so rerolls never leak listeners
+   * or nodes. Keys are wired inside `buildSkillPick` before any await, so hitting 1/2/3/R on the
+   * opening frame still registers.
+   */
+  async open(
+    parent: PickParent,
+    choices: readonly SkillDef[],
+    onPick: (index: number) => void,
+    reroll?: SkillPickRerollOptions,
+  ): Promise<void> {
+    this.screen?.destroy();
+    this.screen = null;
     this.offered = choices;
     const token = ++this.token;
     const screen = await buildSkillPick(parent, {
       choices,
       owned: this.loadout.snapshot(),
       onPick,
+      ...(reroll !== undefined ? { reroll } : {}),
     });
 
     if (token !== this.token || this.offered === null) {
@@ -130,6 +176,7 @@ export class SkillRun {
   destroy(): void {
     this.token += 1;
     this.offered = null;
+    this.rerolls = 0;
     this.screen?.destroy();
     this.screen = null;
   }
