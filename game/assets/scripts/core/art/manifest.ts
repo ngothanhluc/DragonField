@@ -158,6 +158,10 @@ export const REQUIRED_ACTOR_ANIMATIONS: Readonly<Record<string, readonly string[
     'fx.ash',
     'fx.sand',
     'fx.ripple',
+    // M12 — XP crystal orb tiers (`small` / `medium` / `large`, diamond silhouette per ADR-016).
+    'fx.xp-orb-small',
+    'fx.xp-orb-medium',
+    'fx.xp-orb-large',
   ],
   // Ticket #6 / M11 — living decor: wandering animals and animated flags/flowers/plants/campfires.
   animal: ['animal.frog', 'animal.chicken', 'animal.cat', 'animal.racoon', 'animal.dog'],

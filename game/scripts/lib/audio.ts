@@ -9,13 +9,36 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT = join(HERE, '..', '..');
-const PACK = join(PROJECT, '..', 'art-source', 'ninja-adventure');
 const RES = join(PROJECT, 'assets', 'resources');
+
+/**
+ * Resolve `art-source/ninja-adventure` across both the main checkout and git worktrees
+ * (where `art-source/` is gitignored and lives beside the shared git common dir).
+ */
+export function resolvePackDir(): string {
+  const override = process.env['ART_SOURCE'];
+  const candidates = [
+    ...(override === undefined ? [] : [join(override, 'ninja-adventure')]),
+    join(PROJECT, '..', 'art-source', 'ninja-adventure'),
+  ];
+  try {
+    const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: PROJECT,
+      encoding: 'utf8',
+    }).trim();
+    candidates.push(join(dirname(resolve(PROJECT, common)), 'art-source', 'ninja-adventure'));
+  } catch {
+    // Fallback to the relative candidate above outside a git repo.
+  }
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
+}
+
+const PACK = resolvePackDir();
 
 export function ensureDir(path: string): void {
   mkdirSync(path, { recursive: true });

@@ -21,6 +21,7 @@ import {
 } from 'cc';
 import { resolve } from '../../core/art/manifest';
 import type { Vec2 } from '../../core/math/vec2';
+import { effectsLayers, type EffectsMode } from '../../core/vfx/weapon-vfx';
 import { getFrame } from '../assets/sprite-frame-cache';
 import { loadAnimationManifest } from '../anim/sprite-animator';
 import { tileToWorld } from '../level-view';
@@ -76,8 +77,26 @@ const STYLES: Readonly<Record<FxKey, FxStyle>> = {
 
 const POOL_SIZE = 40;
 const LINE_SLOTS = 8;
+const RING_SLOTS = 4;
 const LINE_LIFETIME_MS = 170;
+const SHOCKWAVE_SEGMENTS = 28;
+export const DEFAULT_LEVEL_UP_RADIUS_TILES = 3.6;
+export const DEFAULT_LEVEL_UP_DURATION_MS = 380;
+const LEVEL_UP_SPARK_RAYS = 8;
+
 const NO_TINT = new CocosColor(255, 255, 255, 255);
+const LEVEL_UP_BOOST_TINT = new CocosColor(255, 240, 170, 255);
+const LEVEL_UP_RING_FULL_TINT = new CocosColor(255, 226, 120, 240);
+const LEVEL_UP_RING_REDUCED_TINT = new CocosColor(255, 226, 120, 175);
+const LEVEL_UP_INNER_RING_TINT = new CocosColor(143, 239, 241, 210);
+const LEVEL_UP_SPARK_TINT = new CocosColor(255, 235, 130, 255);
+
+const UNIT_CIRCLE_X: readonly number[] = Array.from({ length: SHOCKWAVE_SEGMENTS }, (_, i) =>
+  Math.cos((i * Math.PI * 2) / SHOCKWAVE_SEGMENTS),
+);
+const UNIT_CIRCLE_Y: readonly number[] = Array.from({ length: SHOCKWAVE_SEGMENTS }, (_, i) =>
+  Math.sin((i * Math.PI * 2) / SHOCKWAVE_SEGMENTS),
+);
 
 interface Slot {
   readonly node: Node;
@@ -106,6 +125,19 @@ interface LineSlot {
   active: boolean;
 }
 
+interface ShockwaveSlot {
+  readonly node: Node;
+  readonly graphics: Graphics;
+  readonly color: Color;
+  baseAlpha: number;
+  startRadius: number;
+  endRadius: number;
+  lineWidth: number;
+  durationMs: number;
+  elapsedMs: number;
+  active: boolean;
+}
+
 export interface FxSpawnOptions {
   /** Width in world units; defaults per FX type. */
   readonly drawUnits?: number;
@@ -118,9 +150,25 @@ export interface FxSpawnOptions {
   readonly travelMs?: number;
 }
 
+export interface FxShockwaveOptions {
+  readonly startRadiusTiles?: number;
+  readonly endRadiusTiles?: number;
+  readonly durationMs?: number;
+  readonly lineWidth?: number;
+  readonly tint?: Color;
+}
+
+export interface LevelUpBurstOptions {
+  /** Outer radial knockback wave radius in world tiles (defaults to 3.6 tiles). */
+  readonly radiusTiles?: number;
+  /** Shockwave expansion duration in ms (defaults to 380 ms). */
+  readonly durationMs?: number;
+}
+
 export class FxPool {
   private readonly slots: Slot[] = [];
   private readonly lineSlots: LineSlot[] = [];
+  private readonly ringSlots: ShockwaveSlot[] = [];
   private readonly framesByKey = new Map<FxKey, { frames: readonly SpriteFrame[]; fps: number }>();
   private elapsedMs = 0;
   /** Round-robin cursor: picking a free slot must not scan from 0 on every spawn. */
@@ -153,6 +201,9 @@ export class FxPool {
     }
     for (let index = 0; index < LINE_SLOTS; index += 1) {
       this.lineSlots.push(this.createLineSlot(parent, index));
+    }
+    for (let index = 0; index < RING_SLOTS; index += 1) {
+      this.ringSlots.push(this.createRingSlot(parent, index));
     }
 
     const aura = this.framesByKey.get('fx.aura');
@@ -293,6 +344,98 @@ export class FxPool {
     slot.node.active = true;
   }
 
+  /**
+   * Expanding world-space shockwave ring centred on `position` (tile units, y down).
+   * Drawn as a closed 28-segment polygon in world units so Cocos's pixel chord tessellation
+   * never turns small world-unit radii into coarse polygons.
+   */
+  spawnShockwave(position: Vec2, options: FxShockwaveOptions = {}): void {
+    const slot = this.takeRingSlot();
+    if (slot === undefined) return;
+
+    const world = tileToWorld(position);
+    const startRadius = Math.max(0.05, options.startRadiusTiles ?? 0.45);
+    const endRadius = Math.max(startRadius, options.endRadiusTiles ?? DEFAULT_LEVEL_UP_RADIUS_TILES);
+    const durationMs = Math.max(40, options.durationMs ?? DEFAULT_LEVEL_UP_DURATION_MS);
+    const lineWidth = Math.max(0.03, options.lineWidth ?? 0.09);
+    const tint = options.tint ?? LEVEL_UP_RING_FULL_TINT;
+
+    slot.color.r = tint.r;
+    slot.color.g = tint.g;
+    slot.color.b = tint.b;
+    slot.color.a = tint.a;
+    slot.baseAlpha = tint.a;
+    slot.startRadius = startRadius;
+    slot.endRadius = endRadius;
+    slot.lineWidth = lineWidth;
+    slot.durationMs = durationMs;
+    slot.elapsedMs = 0;
+    slot.active = true;
+    slot.node.setPosition(world.x, world.y, 0);
+    slot.node.active = true;
+    this.drawRing(slot.graphics, startRadius, lineWidth, slot.color);
+  }
+
+  /**
+   * Celebratory level-up & resume-knockback radial burst at `position` (tile units, y down).
+   *
+   * - Always plays `fx.boost` (`Magic/Boost`) + primary expanding shockwave ring so the player
+   *   sees the radial knockback wave clearly in both `full` and `reduced` modes.
+   * - Under `Effects: Full`, adds an inner spirit-cyan echo ring and radial `fx.spark` motes;
+   *   under `Effects: Reduced`, drops all secondary rings/motes (`effectsLayers(mode)`).
+   */
+  spawnLevelUpBurst(
+    position: Vec2,
+    mode: EffectsMode = 'full',
+    options: LevelUpBurstOptions = {},
+  ): void {
+    const layers = effectsLayers(mode);
+    const radiusTiles = Math.max(0.8, options.radiusTiles ?? DEFAULT_LEVEL_UP_RADIUS_TILES);
+    const durationMs = Math.max(80, options.durationMs ?? DEFAULT_LEVEL_UP_DURATION_MS);
+
+    this.spawn('fx.boost', position, {
+      drawUnits: 2.8,
+      tint: LEVEL_UP_BOOST_TINT,
+    });
+    this.spawnShockwave(position, {
+      startRadiusTiles: 0.45,
+      endRadiusTiles: radiusTiles,
+      durationMs,
+      lineWidth: layers.secondaryParticles ? 0.1 : 0.08,
+      tint: layers.secondaryParticles ? LEVEL_UP_RING_FULL_TINT : LEVEL_UP_RING_REDUCED_TINT,
+    });
+
+    if (!layers.secondaryParticles) return;
+
+    this.spawnShockwave(position, {
+      startRadiusTiles: 0.25,
+      endRadiusTiles: radiusTiles * 0.68,
+      durationMs: Math.round(durationMs * 0.72),
+      lineWidth: 0.06,
+      tint: LEVEL_UP_INNER_RING_TINT,
+    });
+
+    const sparkTravelMs = Math.round(durationMs * 0.75);
+    const sparkDist = radiusTiles * 0.88;
+    for (let ray = 0; ray < LEVEL_UP_SPARK_RAYS; ray += 1) {
+      const angle = (ray * Math.PI * 2) / LEVEL_UP_SPARK_RAYS;
+      this.spawn('fx.spark', position, {
+        drawUnits: 0.65,
+        lifetimeMs: sparkTravelMs + 60,
+        travelMs: sparkTravelMs,
+        tint: LEVEL_UP_SPARK_TINT,
+        to: {
+          x: position.x + Math.cos(angle) * sparkDist,
+          y: position.y + Math.sin(angle) * sparkDist,
+        },
+      });
+    }
+  }
+
+  get activeShockwaves(): number {
+    return this.ringSlots.filter((slot) => slot.active).length;
+  }
+
   update(deltaMs: number): void {
     this.elapsedMs += Math.max(0, deltaMs);
     for (const slot of this.slots) {
@@ -333,6 +476,23 @@ export class FxPool {
       }
     }
 
+    for (const slot of this.ringSlots) {
+      if (!slot.active) continue;
+      slot.elapsedMs += Math.max(0, deltaMs);
+      if (slot.elapsedMs >= slot.durationMs) {
+        slot.active = false;
+        slot.graphics.clear();
+        slot.node.active = false;
+        continue;
+      }
+      const t = Math.min(1, slot.elapsedMs / slot.durationMs);
+      // Ease-out quad so the shockwave snaps outward quickly then settles cleanly at `endRadius`.
+      const eased = 1 - (1 - t) * (1 - t);
+      const radius = slot.startRadius + (slot.endRadius - slot.startRadius) * eased;
+      slot.color.a = Math.max(0, Math.round(slot.baseAlpha * (1 - t)));
+      this.drawRing(slot.graphics, radius, slot.lineWidth, slot.color);
+    }
+
     if (this.auraActive && this.auraFrames.length > 1) {
       this.auraElapsedMs += Math.max(0, deltaMs);
       const index =
@@ -354,6 +514,9 @@ export class FxPool {
     for (const slot of this.lineSlots) {
       if (slot.node.isValid) slot.node.destroy();
     }
+    for (const slot of this.ringSlots) {
+      if (slot.node.isValid) slot.node.destroy();
+    }
     if (this.auraNode !== null && this.auraNode.isValid) this.auraNode.destroy();
     this.auraNode = null;
     this.auraSprite = null;
@@ -361,6 +524,7 @@ export class FxPool {
     this.auraActive = false;
     this.slots.length = 0;
     this.lineSlots.length = 0;
+    this.ringSlots.length = 0;
     this.framesByKey.clear();
   }
 
@@ -421,6 +585,61 @@ export class FxPool {
     node.active = false;
     return { node, graphics, remainingMs: 0, active: false };
   }
+
+  private createRingSlot(parent: Node, index: number): ShockwaveSlot {
+    const node = new CocosNode(`fx-ring-${index}`);
+    node.parent = parent;
+    const graphics: Graphics = node.addComponent(CocosGraphics);
+    node.active = false;
+    return {
+      node,
+      graphics,
+      color: new CocosColor(255, 226, 120, 240),
+      baseAlpha: 240,
+      startRadius: 0.45,
+      endRadius: DEFAULT_LEVEL_UP_RADIUS_TILES,
+      lineWidth: 0.09,
+      durationMs: DEFAULT_LEVEL_UP_DURATION_MS,
+      elapsedMs: 0,
+      active: false,
+    };
+  }
+
+  private takeRingSlot(): ShockwaveSlot | undefined {
+    const free = this.ringSlots.find((candidate) => !candidate.active);
+    if (free !== undefined) return free;
+    let oldest = this.ringSlots[0];
+    for (const candidate of this.ringSlots) {
+      if (oldest !== undefined && candidate.elapsedMs > oldest.elapsedMs) {
+        oldest = candidate;
+      }
+    }
+    return oldest;
+  }
+
+  private drawRing(graphics: Graphics, radius: number, lineWidth: number, color: Color): void {
+    graphics.clear();
+    graphics.lineWidth = lineWidth;
+    graphics.strokeColor = color;
+    const firstX = UNIT_CIRCLE_X[0]! * radius;
+    const firstY = UNIT_CIRCLE_Y[0]! * radius;
+    graphics.moveTo(firstX, firstY);
+    for (let index = 1; index < SHOCKWAVE_SEGMENTS; index += 1) {
+      graphics.lineTo(UNIT_CIRCLE_X[index]! * radius, UNIT_CIRCLE_Y[index]! * radius);
+    }
+    graphics.lineTo(firstX, firstY);
+    graphics.stroke();
+  }
+}
+
+/** Standalone helper for triggering the M12 level-up / resume-knockback radial burst FX. */
+export function spawnLevelUpBurst(
+  fx: FxPool | null | undefined,
+  position: Vec2,
+  mode: EffectsMode = 'full',
+  options?: LevelUpBurstOptions,
+): void {
+  fx?.spawnLevelUpBurst(position, mode, options);
 }
 
 /** Build the pool under `parent` (should be the FX layer above actors) — bootstrap awaits it once. */

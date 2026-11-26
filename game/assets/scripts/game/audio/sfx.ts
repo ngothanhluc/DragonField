@@ -9,6 +9,7 @@
  */
 import { SFX_BANK, type SfxId } from '../../core/audio/sfx-bank';
 
+export { SFX_BANK };
 export type { SfxId };
 
 /** `Object.keys` typed as ids — no spread of iterators (the build flattens `[...keys]` wrongly). */

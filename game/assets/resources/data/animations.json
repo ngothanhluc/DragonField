@@ -6132,6 +6132,42 @@
       "loop": true,
       "anchor": "center",
       "footPx": 4
+    },
+    "fx.xp-orb-small": {
+      "sheet": "resources/art/fx/xp-orb/xp-orb-small.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "fx.xp-orb-medium": {
+      "sheet": "resources/art/fx/xp-orb/xp-orb-medium.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 8
+    },
+    "fx.xp-orb-large": {
+      "sheet": "resources/art/fx/xp-orb/xp-orb-large.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "layout": "strip",
+      "directions": [],
+      "frames": 1,
+      "fps": 1,
+      "loop": true,
+      "anchor": "center",
+      "footPx": 8
     }
   }
 }

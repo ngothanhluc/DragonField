@@ -32,6 +32,8 @@ export const SFX_BANK = {
   poison: ['audio/sfx/poison'],
   'room-clear': ['audio/sfx/room-clear'],
   'skill-acquired': ['audio/sfx/skill-acquired'],
+  'level-up': ['audio/sfx/level-up-1', 'audio/sfx/level-up-2', 'audio/sfx/level-up-3'],
+  'xp-pickup': ['audio/sfx/xp-pickup', 'audio/sfx/xp-pickup-2'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 
 export type SfxId = keyof typeof SFX_BANK;
