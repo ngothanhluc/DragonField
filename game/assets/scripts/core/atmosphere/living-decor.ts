@@ -70,6 +70,23 @@ function isFree(at: Vec2, level: LevelData): boolean {
   return true;
 }
 
+/**
+ * Free floor **and** inside the optional home leash / outside the optional keep-out circle.
+ * Combat rooms pass neither, so their animal behaviour is unchanged.
+ */
+function isValidAt(at: Vec2, context: AnimalContext): boolean {
+  if (!isFree(at, context.level)) return false;
+  const leash = context.leash;
+  if (leash !== undefined && distance(at, leash.center) > leash.radiusTiles + EPSILON) {
+    return false;
+  }
+  const keepOut = context.keepOut;
+  if (keepOut !== undefined && distance(at, keepOut.center) < keepOut.radiusTiles) {
+    return false;
+  }
+  return true;
+}
+
 /** Spawns, player start, boss start and doors: decor never sits on (or right next to) them. */
 function reservedPoints(level: LevelData): Vec2[] {
   const points: Vec2[] = [level.playerStart];
@@ -154,6 +171,13 @@ export interface AnimalState {
   readonly timerMs: number;
 }
 
+/** A circular area the animal stays inside (e.g. its yard) or outside (e.g. the plaza). */
+export interface AnimalBoundary {
+  readonly center: Vec2;
+  /** Radius in tiles. */
+  readonly radiusTiles: number;
+}
+
 export interface AnimalContext {
   /** Player position (tile units), or `null` when there is no player (menus). */
   readonly player: Vec2 | null;
@@ -162,6 +186,10 @@ export interface AnimalContext {
   readonly level: LevelData;
   readonly tuning: AnimalTuning;
   readonly rng: SeededRng;
+  /** Optional home leash: the animal never goes farther than `radiusTiles` from `center`. */
+  readonly leash?: AnimalBoundary;
+  /** Optional keep-out circle (e.g. the village plaza): the animal never enters it. */
+  readonly keepOut?: AnimalBoundary;
 }
 
 /** A fresh animal standing idle at `at`. */
@@ -225,16 +253,15 @@ function wanderDuration(rng: SeededRng): number {
  */
 function pickWanderTarget(
   at: Vec2,
-  level: LevelData,
-  player: Vec2 | null,
-  tuning: AnimalTuning,
-  rng: SeededRng,
+  context: AnimalContext,
 ): Vec2 | null {
+  const tuning = context.tuning;
+  const player = context.player;
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const angle = rng.next() * Math.PI * 2;
-    const radius = ANIMAL_WANDER_RADIUS_TILES * (0.35 + 0.65 * rng.next());
+    const angle = context.rng.next() * Math.PI * 2;
+    const radius = ANIMAL_WANDER_RADIUS_TILES * (0.35 + 0.65 * context.rng.next());
     const target = { x: at.x + Math.cos(angle) * radius, y: at.y + Math.sin(angle) * radius };
-    if (!isFree(target, level)) continue;
+    if (!isValidAt(target, context)) continue;
     if (player !== null && distance(target, player) <= tuning.fleeRadiusTiles) continue;
     return target;
   }
@@ -260,7 +287,7 @@ export function stepAnimal(state: AnimalState, context: AnimalContext): AnimalSt
     const dirX = awayLength > 0 ? awayX / awayLength : 1;
     const dirY = awayLength > 0 ? awayY / awayLength : 0;
     const step = context.tuning.fleeSpeedTilesPerSec * dtSec;
-    const next = move(state.at, dirX * step, dirY * step, (at) => isFree(at, context.level));
+    const next = move(state.at, dirX * step, dirY * step, (at) => isValidAt(at, context));
     return {
       at: next,
       mode: 'flee',
@@ -278,7 +305,7 @@ export function stepAnimal(state: AnimalState, context: AnimalContext): AnimalSt
     const step = Math.min(remaining, context.tuning.wanderSpeedTilesPerSec * dtSec);
 
     const keptAwayFromPlayer = (at: Vec2): boolean =>
-      isFree(at, context.level) &&
+      isValidAt(at, context) &&
       (player === null || distance(at, player) > context.tuning.fleeRadiusTiles);
 
     const next =
@@ -287,8 +314,11 @@ export function stepAnimal(state: AnimalState, context: AnimalContext): AnimalSt
         : move(state.at, (dx / remaining) * step, (dy / remaining) * step, keptAwayFromPlayer);
 
     const arrived = distance(next, state.target) <= EPSILON;
+    // Pushing against a wall for the whole wander phase looks like a frozen animal: give up and
+    // idle instead (the next phase picks a new target).
+    const blocked = !arrived && step > EPSILON && distance(state.at, next) <= EPSILON;
     const timerMs = Math.max(0, state.timerMs - dtMs);
-    if (arrived || timerMs <= 0) {
+    if (arrived || blocked || timerMs <= 0) {
       return {
         at: next,
         mode: 'idle',
@@ -316,7 +346,7 @@ export function stepAnimal(state: AnimalState, context: AnimalContext): AnimalSt
     return { at: state.at, mode: 'idle', facing: state.facing, target: null, timerMs: idleDuration(context.rng) };
   }
 
-  const target = pickWanderTarget(state.at, context.level, player, context.tuning, context.rng);
+  const target = pickWanderTarget(state.at, context);
   if (target === null) {
     return { at: state.at, mode: 'idle', facing: state.facing, target: null, timerMs: idleDuration(context.rng) };
   }

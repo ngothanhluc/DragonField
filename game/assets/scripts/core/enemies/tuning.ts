@@ -44,6 +44,7 @@ import {
   type EnemiesTuning,
   type EnemyAiTuning,
   type FeelTuning,
+  type HubTuning,
   type NavigationTuning,
   type PickupsTuning,
   type SpecialRoomsTuning,
@@ -116,3 +117,6 @@ export const CLASS_SKILLS_TUNING: ClassSkillsTuning = TUNING.classSkills;
 
 /** Playable 4-class unlock milestones, gold costs, base stats, passives, and signature active parameters (M14). */
 export const CHARACTERS_TUNING: CharactersTuning = TUNING.characters;
+
+/** Living Village Hub population (#92) — `core/hub/village-life.ts` reads the animal bounds. */
+export const HUB_TUNING: HubTuning = TUNING.hub;

@@ -10,6 +10,7 @@ import type { DoorReward } from '../core/run/doors';
 import type { DeathCause } from '../core/run/run-summary';
 import type { SpecialKind } from '../core/run/special-rooms';
 import type { ActiveRunSave } from '../core/save/run-save';
+import type { DialogBoxView } from '../core/hub/village-life';
 import { keyLog } from './keyboard-move';
 
 export type DebugStatus =
@@ -119,6 +120,27 @@ export interface DebugAtmosphereSnapshot {
   /** Animals / animated props really created in this room (0 under Effects Reduced). */
   readonly animals: number;
   readonly props: number;
+}
+
+/** Village Life (#92): live villagers, yard animals and the open DialogBox view model. */
+export interface DebugHubLifeSnapshot {
+  readonly villagers: readonly {
+    readonly id: string;
+    readonly x: number;
+    readonly y: number;
+    readonly mode: string;
+  }[];
+  readonly animals: readonly {
+    readonly id: string;
+    readonly sprite: string;
+    readonly x: number;
+    readonly y: number;
+    readonly mode: string;
+  }[];
+  /** `null` when no box is open. */
+  readonly dialog: DialogBoxView | null;
+  /** Hub player position in tile units (top-left origin), proving the dialog locks movement. */
+  readonly player: { readonly x: number; readonly y: number };
 }
 
 /** The living room drawn behind title / chapter select (#8), read from the live adapter. */
@@ -406,6 +428,10 @@ export interface DebugProvider {
   readonly hubTeleport?: (x: number, y: number) => boolean;
   /** M21 #91: dispatch the nearest hub interactable (same path as `[E]` / a click). */
   readonly hubInteract?: () => boolean;
+  /** M21 #92: live Village Life snapshot (villagers, animals, open dialog); `null` outside the hub. */
+  readonly hubLife?: () => DebugHubLifeSnapshot | null;
+  /** M21 #92: advance/close the open DialogBox exactly like `[E]`. */
+  readonly hubAdvance?: () => boolean;
 }
 
 /** Alias for `DebugProvider`. */
@@ -586,6 +612,9 @@ export function installDebugApi(provider: DebugProvider): boolean {
   const setMusicDucked = provider.setMusicDucked ?? ((): boolean => false);
   const hubTeleport = provider.hubTeleport ?? ((): boolean => false);
   const hubInteract = provider.hubInteract ?? ((): boolean => false);
+  const hubLife =
+    provider.hubLife ?? ((): DebugHubLifeSnapshot | null => null);
+  const hubAdvance = provider.hubAdvance ?? ((): boolean => false);
 
   const api: YokaiDebugApi = Object.defineProperties({} as YokaiDebugApi, {
     status: { get: provider.status, enumerable: true },
@@ -656,6 +685,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
     setMusicDucked: { value: setMusicDucked, enumerable: true },
     hubTeleport: { value: hubTeleport, enumerable: true },
     hubInteract: { value: hubInteract, enumerable: true },
+    hubLife: { value: hubLife, enumerable: true },
+    hubAdvance: { value: hubAdvance, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -669,7 +700,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'character, selectCharacter, unlockAllCharacters, playerAttachment, attachmentState, characterStats, setAttachmentHidden, ' +
       'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, ' +
       'dash, activeSkill, actions, triggerEvolution, state, runSave, setAscension, unlockAllAscensions, ' +
-      'triggerDeath, continueRun, continueEndless, setMusicVolume, setSfxVolume, setMusicDucked, classSkillState, keyLog).',
+      'triggerDeath, continueRun, continueEndless, setMusicVolume, setSfxVolume, setMusicDucked, ' +
+      'hubTeleport, hubInteract, hubLife, hubAdvance, classSkillState, keyLog).',
   );
   return true;
 }

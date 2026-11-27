@@ -397,3 +397,87 @@ describe('animals — flee when the player comes within the radius', () => {
     30_000,
   );
 });
+
+describe('animals — optional home leash and keep-out circle (#92 village yards)', () => {
+  const tuning: AnimalTuning = {
+    fleeRadiusTiles: 3,
+    wanderSpeedTilesPerSec: 1.2,
+    fleeSpeedTilesPerSec: 4,
+  };
+  const open: LevelData = { ...roomsOf(1)[0]!, obstacles: [] };
+  const home: Vec2 = { x: 16, y: 9 };
+  const plaza: Vec2 = { x: 16, y: 1 };
+  const leash = { center: home, radiusTiles: 4 };
+  const keepOut = { center: plaza, radiusTiles: 6 };
+
+  it('roams inside the leash while the player is away', () => {
+    const rng = new SeededRng(92);
+    let state = createAnimal(home);
+    let maxMove = 0;
+    for (let tick = 0; tick < 1200; tick += 1) {
+      state = stepAnimal(state, { player: null, dtMs: 100, level: open, tuning, rng, leash, keepOut });
+      maxMove = Math.max(maxMove, distance(state.at, home));
+      expect(distance(state.at, home)).toBeLessThanOrEqual(leash.radiusTiles + 1e-6);
+      expect(distance(state.at, plaza)).toBeGreaterThanOrEqual(keepOut.radiusTiles);
+    }
+    expect(maxMove).toBeGreaterThan(0.25);
+  });
+
+  it('cannot be pushed out of the leash or into the keep-out, from either side', () => {
+    const rng = new SeededRng(7);
+    let state = createAnimal(home);
+    for (const side of [1, -1] as const) {
+      for (let tick = 0; tick < 200; tick += 1) {
+        const chaser = { x: state.at.x, y: state.at.y + side * 1.2 };
+        state = stepAnimal(state, {
+          player: chaser,
+          dtMs: 100,
+          level: open,
+          tuning,
+          rng,
+          leash,
+          keepOut,
+        });
+        expect(distance(state.at, home), `side ${side} tick ${tick}`).toBeLessThanOrEqual(
+          leash.radiusTiles + 1e-6,
+        );
+        expect(distance(state.at, plaza), `side ${side} tick ${tick}`).toBeGreaterThanOrEqual(
+          keepOut.radiusTiles,
+        );
+      }
+    }
+    // It really was pressed against a bound (the leash, the keep-out or both), not left at home.
+    expect(distance(state.at, home)).toBeGreaterThan(0.25);
+  });
+});
+
+describe('animals — a blocked wander does not freeze the animal in `wander`', () => {
+  const tuning: AnimalTuning = {
+    fleeRadiusTiles: 3,
+    wanderSpeedTilesPerSec: 1.2,
+    fleeSpeedTilesPerSec: 4,
+  };
+  const walled: LevelData = {
+    ...roomsOf(1)[0]!,
+    obstacles: [
+      { kind: 'wall', x: 16.6, y: 7, width: 1, height: 6 },
+    ],
+  };
+
+  it('gives up (backs to idle) when the wall blocks every sub-step', () => {
+    let state: AnimalState = {
+      at: { x: 16, y: 9 },
+      mode: 'wander',
+      facing: 1,
+      target: { x: 18, y: 9 },
+      timerMs: 5000,
+    };
+    const rng = new SeededRng(4);
+    let sawIdle = false;
+    for (let tick = 0; tick < 40 && !sawIdle; tick += 1) {
+      state = stepAnimal(state, { player: null, dtMs: 100, level: walled, tuning, rng });
+      sawIdle = state.mode === 'idle' && state.target === null;
+    }
+    expect(sawIdle, 'animal stopped pushing into the wall').toBe(true);
+  });
+});

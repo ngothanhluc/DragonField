@@ -34,6 +34,8 @@ export const SFX_BANK = {
   'skill-acquired': ['audio/sfx/skill-acquired'],
   'level-up': ['audio/sfx/level-up-1', 'audio/sfx/level-up-2', 'audio/sfx/level-up-3'],
   'xp-pickup': ['audio/sfx/xp-pickup', 'audio/sfx/xp-pickup-2'],
+  /** M21 #92: soft RPG voice blips while the DialogBox types a line. */
+  'dialog-blip': ['audio/sfx/dialog-blip', 'audio/sfx/dialog-blip-2', 'audio/sfx/dialog-blip-3'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 
 export type SfxId = keyof typeof SFX_BANK;

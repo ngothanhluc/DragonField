@@ -50,25 +50,36 @@ import {
   type CharacterDef,
 } from '../core/characters/roster';
 import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
-import { setLocale, t } from '../core/i18n';
+import { getLocale, setLocale, t } from '../core/i18n';
 import {
+  advanceVillageDialog,
   buildHubInteractables,
   canControlPlayerInHub,
   createHubInteractRegistry,
   createHubState,
+  createVillageLife,
+  dialogBoxView,
   findNearestInteractable,
   findStepTrigger,
+  isVillageDialogOpen,
+  moveDialogChoice,
   parseHubTmx,
+  selectDialogChoice,
   startHubTransition,
   stepHubTransition,
   stepTriggerEntered,
+  stepVillageLife,
+  talkToVillager,
   updateHubPlayerPose,
+  villageLiveNpcs,
   type HubEntryOrigin,
   type HubInteractable,
   type HubInteractRegistry,
   type HubMapData,
   type HubState,
   type HubTriggerId,
+  type HubVillagerId,
+  type VillageLifeState,
 } from '../core/hub';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
@@ -165,6 +176,7 @@ import {
   type DebugAttachmentStateSnapshot,
   type DebugCharacterStatsSnapshot,
   type DebugDoorSnapshot,
+  type DebugHubLifeSnapshot,
   type DebugSpecialSnapshot,
   type DebugStateSnapshot,
   type DebugStatus,
@@ -215,6 +227,8 @@ import { playEvolutionPickSfx, playPotionHealSfx, playSfx } from './audio/sfx';
 import { installDebugWiring } from './debug-wiring';
 import { MenuBackdrop } from './menu-backdrop';
 import { HubVillageView } from './hub-village';
+import { HubLifeView } from './hub-life-view';
+import { DialogBox } from './dialog-box';
 import {
   buildRichRunResult,
   commitRunEnd,
@@ -400,15 +414,24 @@ interface HubReturnSnapshot {
 interface HubRuntime {
   readonly map: HubMapData;
   state: HubState;
-  readonly interactables: readonly HubInteractable[];
+  /** Rebuilt each frame from the live villager positions so `[E]` follows walkers. */
+  interactables: readonly HubInteractable[];
   readonly registry: HubInteractRegistry;
   readonly view: HubVillageView;
+  /** Village Life session (#92): villagers, yard animals and the open DialogBox. */
+  life: VillageLifeState;
+  /** Villager/animal sprites and the bottom DialogBox (#92); `null` until their textures load. */
+  lifeView: HubLifeView | null;
+  dialogBox: DialogBox | null;
   /** Step-trigger zone the player was standing in last frame (fires only on entering). */
   lastTrigger: HubTriggerId | null;
   clockMs: number;
   /** Set while fading out to a menu screen; `then` runs at full black. */
   leave: { readonly from: HubReturnSnapshot; readonly then: () => void } | null;
 }
+
+/** Deterministic animal wander seed for the village (its yards are fixed, not run-seeded). */
+const VILLAGE_ANIMAL_SEED = 92;
 
 @ccclass('Bootstrap')
 export class Bootstrap extends Component {
@@ -920,18 +943,36 @@ export class Bootstrap extends Component {
     });
     registry.register('enter-shop', () => this.screens.villageShopRequested());
     registry.register('open-dojo', () => this.screens.villageDojoRequested());
+    registry.register('talk-villager', (action) => {
+      this.openVillageDialog(action.npcId);
+    });
 
     const view = new HubVillageView(this.ensureUiRoot());
     view.setGold(save.gold);
-    const interactables = buildHubInteractables(map);
     view.setPromptHandler(() => this.dispatchNearestHubInteraction());
+
+    // Village Life (#92): the pure session owns the villagers/animals/dialog; the UI and the
+    // villager sprites only render it.
+    const animalTuning = this.atmosphereConfig?.animal;
+    if (animalTuning === undefined) {
+      throw new Error('Bootstrap: atmosphere config is not loaded — village animals need its tuning');
+    }
+    const actorLayer = this.actorLayer;
+    if (actorLayer === null) throw new Error('Bootstrap: no actor-layer for the village');
+    const life = createVillageLife(map, { seed: VILLAGE_ANIMAL_SEED, animalTuning });
+    const lifeView = new HubLifeView({ actorLayer, rows: map.size.rows });
+    lifeView.init(life);
+    const dialogBox = this.createHubDialogBox();
 
     this.hub = {
       map,
       state,
-      interactables,
+      interactables: buildHubInteractables(map, villageLiveNpcs(life)),
       registry,
       view,
+      life,
+      lifeView,
+      dialogBox,
       lastTrigger: resume?.trigger ?? null,
       clockMs: 0,
       leave: null,
@@ -942,8 +983,73 @@ export class Bootstrap extends Component {
     console.log(
       `[YokaiField] Village Hub: ${map.size.cols}×${map.size.rows} tiles, ` +
         `${map.obstacles.length} obstacle(s), ${map.triggers.length} trigger(s), ` +
+        `${life.villagers.length} villager(s), ${life.animals.length} animal(s), ` +
         `spawn ${JSON.stringify(state.playerPos)} (from ${origin}).`,
     );
+  }
+
+  /** The reusable RPG DialogBox (#92), wired to the hub session and UI SFX. */
+  private createHubDialogBox(): DialogBox {
+    return new DialogBox({
+      parent: this.ensureUiRoot(),
+      onAdvance: () => this.advanceHubDialog(),
+      onMoveChoice: (delta) => this.moveHubDialogChoice(delta),
+      onSelectChoice: (index) => this.selectHubDialogChoice(index),
+    });
+  }
+
+  /** Talk to a villager in the active locale; ignored while another box is open. */
+  private openVillageDialog(npcId: HubVillagerId): boolean {
+    const hub = this.hub;
+    if (hub === null) return false;
+    const next = talkToVillager(hub.life, npcId, getLocale());
+    if (next === hub.life) return false;
+    hub.life = next;
+    playSfx('ui-confirm');
+    this.renderHubDialog();
+    return true;
+  }
+
+  /** `E` / `Enter` / click: reveal the line, then close (or confirm the highlighted choice). */
+  private advanceHubDialog(): boolean {
+    const hub = this.hub;
+    if (hub === null || !isVillageDialogOpen(hub.life)) return false;
+    hub.life = advanceVillageDialog(hub.life);
+    this.renderHubDialog();
+    return true;
+  }
+
+  /** `W/S` / arrows: move the Shopkeeper-style choice highlight. */
+  private moveHubDialogChoice(delta: number): boolean {
+    const hub = this.hub;
+    const dialog = hub?.life.dialog ?? null;
+    if (hub === null || dialog === null || dialog.choices.length === 0) return false;
+    const moved = moveDialogChoice(dialog, delta);
+    if (moved.selectedChoiceIndex === dialog.selectedChoiceIndex) return false;
+    hub.life = { ...hub.life, dialog: moved };
+    playSfx('ui-move');
+    this.renderHubDialog();
+    return true;
+  }
+
+  /** Click a choice row: move the highlight onto it, then confirm exactly like `E`. */
+  private selectHubDialogChoice(index: number): boolean {
+    const hub = this.hub;
+    const dialog = hub?.life.dialog ?? null;
+    if (hub === null || dialog === null || dialog.choices.length === 0) return false;
+    const outcome = selectDialogChoice(dialog, dialog.choices[index]?.id ?? dialog.choices[0]!.id);
+    hub.life = { ...hub.life, dialog: outcome.state.open ? outcome.state : null };
+    playSfx('ui-confirm');
+    this.renderHubDialog();
+    return true;
+  }
+
+  /** Re-render the DialogBox from the session (hidden when no box is open). */
+  private renderHubDialog(): void {
+    const hub = this.hub;
+    if (hub === null || hub.dialogBox === null) return;
+    const dialog = hub.life.dialog;
+    hub.dialogBox.render(dialog === null ? null : dialogBoxView(dialog, getLocale()));
   }
 
   /** Build/replace the hub room without chapter atmosphere or water (village art is in the map). */
@@ -965,7 +1071,14 @@ export class Bootstrap extends Component {
   private readonly onHubKey = (event: KeyboardEvent): void => {
     if (event.repeat || event.code !== 'KeyE') return;
     const hub = this.hub;
-    if (hub === null || !canControlPlayerInHub(hub.state)) return;
+    if (hub === null) return;
+    // An open DialogBox consumes `[E]` (reveal → close) before any world interaction.
+    if (isVillageDialogOpen(hub.life)) {
+      event.preventDefault();
+      this.advanceHubDialog();
+      return;
+    }
+    if (!canControlPlayerInHub(hub.state)) return;
     if (this.dispatchNearestHubInteraction()) event.preventDefault();
   };
 
@@ -974,6 +1087,7 @@ export class Bootstrap extends Component {
     const hub = this.hub;
     const player = this.player;
     if (hub === null || player === null || !canControlPlayerInHub(hub.state)) return false;
+    if (isVillageDialogOpen(hub.life)) return false;
     const prompt = findNearestInteractable(player.position, hub.interactables);
     if (prompt === null) return false;
     return hub.registry.dispatch(prompt.action);
@@ -1027,11 +1141,31 @@ export class Bootstrap extends Component {
       return;
     }
 
-    player.step(hub.clockMs, deltaMs, [], hub.map.collisionLevel);
+    const dialogOpen = isVillageDialogOpen(hub.life);
+    if (dialogOpen) {
+      // The box locks the player: no walking while reading, and the `[E]` prompt goes away.
+      player.resetInput();
+    } else {
+      player.step(hub.clockMs, deltaMs, [], hub.map.collisionLevel);
+    }
+    hub.state = updateHubPlayerPose(hub.state, player.position, player.facingDirection);
+
+    // Village Life: villagers patrol/yield, animals roam their yards, the typewriter advances.
+    const lifeStep = stepVillageLife(hub.life, hub.map, {
+      dtMs: deltaMs,
+      playerPos: player.position,
+    });
+    hub.life = lifeStep.state;
+    if (lifeStep.blipCount > 0) playSfx('dialog-blip');
+    hub.lifeView?.apply(hub.life);
+    this.renderHubDialog();
+    hub.interactables = buildHubInteractables(hub.map, villageLiveNpcs(hub.life));
 
     const camera = this.camera;
     hub.view.showPrompt(
-      findNearestInteractable(player.position, hub.interactables),
+      isVillageDialogOpen(hub.life)
+        ? null
+        : findNearestInteractable(player.position, hub.interactables),
       {
         position: camera?.position ?? { x: hub.map.size.cols / 2, y: hub.map.size.rows / 2 },
         hudScale: camera?.hudScale ?? 1,
@@ -1043,8 +1177,7 @@ export class Bootstrap extends Component {
     const zone = findStepTrigger(player.position, hub.map.triggers);
     const entered = stepTriggerEntered(hub.lastTrigger, zone?.id ?? null);
     hub.lastTrigger = zone?.id ?? null;
-    hub.state = updateHubPlayerPose(hub.state, player.position, player.facingDirection);
-    if (entered !== null) {
+    if (!isVillageDialogOpen(hub.life) && entered !== null) {
       const trigger = hub.interactables.find((item) => item.id === entered);
       if (trigger !== undefined) hub.registry.dispatch(trigger.action);
     }
@@ -1055,6 +1188,8 @@ export class Bootstrap extends Component {
   /** Destroy the hub's nodes, input listener and camera state (safe when already gone). */
   private leaveHubWorld(): void {
     document.removeEventListener('keydown', this.onHubKey, true);
+    this.hub?.dialogBox?.destroy();
+    this.hub?.lifeView?.destroy();
     this.hub?.view.destroy();
     this.hub = null;
     this.player?.node.destroy();
@@ -1084,6 +1219,31 @@ export class Bootstrap extends Component {
   /** Debug-only: dispatch the nearest hub interactable (same path as `[E]` / a click). */
   private debugHubInteract(): boolean {
     return this.dispatchNearestHubInteraction();
+  }
+
+  /** Debug-only: live Village Life snapshot for the browser proof (#92). */
+  private debugHubLife(): DebugHubLifeSnapshot | null {
+    const hub = this.hub;
+    const player = this.player;
+    if (hub === null || player === null) return null;
+    const dialog = hub.life.dialog;
+    return {
+      villagers: hub.life.villagers.map((villager) => ({
+        id: villager.id,
+        x: villager.position.x,
+        y: villager.position.y,
+        mode: villager.mode,
+      })),
+      animals: hub.life.animals.map((animal) => ({
+        id: animal.id,
+        sprite: animal.sprite,
+        x: animal.state.at.x,
+        y: animal.state.at.y,
+        mode: animal.state.mode,
+      })),
+      dialog: dialog === null ? null : dialogBoxView(dialog, getLocale()),
+      player: { x: player.position.x, y: player.position.y },
+    };
   }
 
   /** Latest rich M15 run summary captured before teardown (for `ResultScreen` / debug). */
@@ -2215,6 +2375,8 @@ export class Bootstrap extends Component {
       footY: player.position.y + ACTOR_FEET_OFFSET_TILES,
     });
     this.combat?.collectEnemyBodies(bodies);
+    // Village villagers/animals sort against the player exactly like run actors (#92).
+    this.hub?.lifeView?.collectBodies(bodies);
 
     depth.update(bodies);
     this.cover?.update(deltaMs, bodies);
@@ -3880,6 +4042,8 @@ export class Bootstrap extends Component {
       setMusicDucked: (ducked) => this.setMusicDucked(ducked),
       hubTeleport: (x, y) => this.debugHubTeleport(x, y),
       hubInteract: () => this.debugHubInteract(),
+      hubLife: () => this.debugHubLife(),
+      hubAdvance: () => this.advanceHubDialog(),
     });
   }
 
