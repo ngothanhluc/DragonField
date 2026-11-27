@@ -450,3 +450,34 @@ describe('animals — optional home leash and keep-out circle (#92 village yards
     expect(distance(state.at, home)).toBeGreaterThan(0.25);
   });
 });
+
+describe('animals — a blocked wander does not freeze the animal in `wander`', () => {
+  const tuning: AnimalTuning = {
+    fleeRadiusTiles: 3,
+    wanderSpeedTilesPerSec: 1.2,
+    fleeSpeedTilesPerSec: 4,
+  };
+  const walled: LevelData = {
+    ...roomsOf(1)[0]!,
+    obstacles: [
+      { kind: 'wall', x: 16.6, y: 7, width: 1, height: 6 },
+    ],
+  };
+
+  it('gives up (backs to idle) when the wall blocks every sub-step', () => {
+    let state: AnimalState = {
+      at: { x: 16, y: 9 },
+      mode: 'wander',
+      facing: 1,
+      target: { x: 18, y: 9 },
+      timerMs: 5000,
+    };
+    const rng = new SeededRng(4);
+    let sawIdle = false;
+    for (let tick = 0; tick < 40 && !sawIdle; tick += 1) {
+      state = stepAnimal(state, { player: null, dtMs: 100, level: walled, tuning, rng });
+      sawIdle = state.mode === 'idle' && state.target === null;
+    }
+    expect(sawIdle, 'animal stopped pushing into the wall').toBe(true);
+  });
+});

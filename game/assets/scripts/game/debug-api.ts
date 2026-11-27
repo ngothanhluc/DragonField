@@ -139,6 +139,8 @@ export interface DebugHubLifeSnapshot {
   }[];
   /** `null` when no box is open. */
   readonly dialog: DialogBoxView | null;
+  /** Hub player position in tile units (top-left origin), proving the dialog locks movement. */
+  readonly player: { readonly x: number; readonly y: number };
 }
 
 /** The living room drawn behind title / chapter select (#8), read from the live adapter. */

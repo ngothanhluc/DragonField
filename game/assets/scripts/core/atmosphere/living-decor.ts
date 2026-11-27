@@ -314,8 +314,11 @@ export function stepAnimal(state: AnimalState, context: AnimalContext): AnimalSt
         : move(state.at, (dx / remaining) * step, (dy / remaining) * step, keptAwayFromPlayer);
 
     const arrived = distance(next, state.target) <= EPSILON;
+    // Pushing against a wall for the whole wander phase looks like a frozen animal: give up and
+    // idle instead (the next phase picks a new target).
+    const blocked = !arrived && step > EPSILON && distance(state.at, next) <= EPSILON;
     const timerMs = Math.max(0, state.timerMs - dtMs);
-    if (arrived || timerMs <= 0) {
+    if (arrived || blocked || timerMs <= 0) {
       return {
         at: next,
         mode: 'idle',

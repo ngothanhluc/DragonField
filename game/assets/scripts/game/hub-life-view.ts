@@ -9,9 +9,9 @@
  */
 import { Node as CocosNode, Sprite as CocosSprite } from 'cc';
 import type { AnimalState } from '../core/atmosphere/living-decor';
-import type { NpcPatrolState } from '../core/hub';
+import { NPC_BODY_RADIUS_TILES, type NpcPatrolState } from '../core/hub';
 import type { VillageAnimal, VillageLifeState } from '../core/hub/village-life';
-import type { DepthBody } from './depth-view';
+import type { CoverBody } from './cover-view';
 import { ACTOR_SCALE } from './level-view';
 import { SpriteAnimator } from './anim/sprite-animator';
 
@@ -29,12 +29,18 @@ interface VillagerSprite {
   readonly animator: SpriteAnimator;
   /** `animKey|facing` of the clip already playing (never restart an unchanged clip). */
   playing: string;
+  /** Live tile position (y down) — the cover pass works in tile space, not world units. */
+  at: { x: number; y: number };
 }
 
 interface AnimalSprite {
   readonly node: Node;
   readonly animator: SpriteAnimator;
+  at: { x: number; y: number };
 }
+
+/** Small circular body used for the cover pass (animals are slightly slimmer than villagers). */
+const ANIMAL_BODY_RADIUS_TILES = 0.3;
 
 /** Tile position → world feet (same rule as `LivingDecor` and the player: bottom of the 1×1 cell). */
 function feetOf(at: { readonly x: number; readonly y: number }, rows: number): { x: number; y: number } {
@@ -60,7 +66,12 @@ export class HubLifeView {
       const node = this.createActorNode(villager.id);
       node.addComponent(SpriteAnimator);
       const animator = node.getComponent(SpriteAnimator) as SpriteAnimator;
-      this.villagers.set(villager.id, { node, animator, playing: '' });
+      this.villagers.set(villager.id, {
+        node,
+        animator,
+        playing: '',
+        at: { x: villager.position.x, y: villager.position.y },
+      });
     }
 
     for (const animal of state.animals) {
@@ -71,7 +82,7 @@ export class HubLifeView {
       node.addComponent(SpriteAnimator);
       const animator = node.getComponent(SpriteAnimator) as SpriteAnimator;
       animator.play(animal.sprite);
-      this.animals.set(animal.id, { node, animator });
+      this.animals.set(animal.id, { node, animator, at: { x: animal.state.at.x, y: animal.state.at.y } });
     }
 
     this.apply(state);
@@ -93,14 +104,26 @@ export class HubLifeView {
     }
   }
 
-  /** Feed the actors' feet into the hub's Y-sort (called from `updateDepthAndCover`). */
-  collectBodies(out: DepthBody[]): void {
+  /** Feed the actors' feet into the hub's Y-sort and cover pass (called from `updateDepthAndCover`). */
+  collectBodies(out: CoverBody[]): void {
     if (this.destroyed) return;
-    for (const view of this.villagers.values()) {
-      if (view.node.isValid) out.push({ node: view.node, footY: view.node.position.y });
+    for (const villager of this.villagers.values()) {
+      if (!villager.node.isValid) continue;
+      out.push({
+        node: villager.node,
+        position: villager.at,
+        radiusTiles: NPC_BODY_RADIUS_TILES,
+        footY: villager.at.y,
+      });
     }
-    for (const view of this.animals.values()) {
-      if (view.node.isValid) out.push({ node: view.node, footY: view.node.position.y });
+    for (const animal of this.animals.values()) {
+      if (!animal.node.isValid) continue;
+      out.push({
+        node: animal.node,
+        position: animal.at,
+        radiusTiles: ANIMAL_BODY_RADIUS_TILES,
+        footY: animal.at.y,
+      });
     }
   }
 
@@ -130,7 +153,8 @@ export class HubLifeView {
   }
 
   private placeVillager(view: VillagerSprite, villager: NpcPatrolState): void {
-    const feet = feetOf(villager.position, this.rows);
+    view.at = { x: villager.position.x, y: villager.position.y };
+    const feet = feetOf(view.at, this.rows);
     view.node.setPosition(feet.x, feet.y, 0);
 
     const signature = `${villager.animKey}|${villager.facing}`;
@@ -142,7 +166,8 @@ export class HubLifeView {
 
   private placeAnimal(view: AnimalSprite, animal: VillageAnimal): void {
     const state: AnimalState = animal.state;
-    const feet = feetOf(state.at, this.rows);
+    view.at = { x: state.at.x, y: state.at.y };
+    const feet = feetOf(view.at, this.rows);
     view.node.setPosition(feet.x, feet.y, 0);
     view.node.setScale(ACTOR_SCALE * state.facing, ACTOR_SCALE, 1);
   }

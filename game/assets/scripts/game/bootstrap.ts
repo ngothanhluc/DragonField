@@ -1224,7 +1224,8 @@ export class Bootstrap extends Component {
   /** Debug-only: live Village Life snapshot for the browser proof (#92). */
   private debugHubLife(): DebugHubLifeSnapshot | null {
     const hub = this.hub;
-    if (hub === null) return null;
+    const player = this.player;
+    if (hub === null || player === null) return null;
     const dialog = hub.life.dialog;
     return {
       villagers: hub.life.villagers.map((villager) => ({
@@ -1241,6 +1242,7 @@ export class Bootstrap extends Component {
         mode: animal.state.mode,
       })),
       dialog: dialog === null ? null : dialogBoxView(dialog, getLocale()),
+      player: { x: player.position.x, y: player.position.y },
     };
   }
 
