@@ -1,6 +1,6 @@
 # GDD — Yokai Field (Index)
 
-**Status:** M0–M15 implemented and shipped on `master`; M16–M21 designed (2026-11-26 grill session).
+**Status:** M0–M21 implemented and shipped on `master`; M16–M21 landed between 2026-11-26 and 2026-11-28, with M21 proven end to end in a release build (see `docs/milestones/m16-m21.md`).
 
 ---
 
@@ -41,7 +41,7 @@ Detailed rules and tuning live in focused modules (one fact, one home):
 | [RPG HP Bar, Pickups & Single North Portal](gdd/m17-hp-pickups-portal.md) | `100 HP` base scale, top-left HP + XP HUD, small glowing XP/Gold + rare Health Potion, single North Portal + Portal VFX, room-clear speed boost | M17 | `designed` |
 | [Bullet-Hell Difficulty, New Enemies & Visual Clarity](gdd/m18-difficulty-and-clarity.md) | Remove enemy hit knockback/stagger, speed/bullet/density escalation, `dasher` & `gunner` roles, move animals out of combat, softened weather & high-contrast outlines | M18 | `designed` |
 | [Art Generation, Skill Pruning & Class-Exclusive Skills](gdd/m19-m20-class-skills-and-art.md) | `image-generator` asset batch (6 portraits, 20 skill icons, class FX), prune 27 → 21 core skills, 16 class-exclusive skills + 4 Class Evolutions, Skill Codex | M19–M20 | `designed` |
-| [Interactive Village Hub & Enterable Shop](gdd/m21-village-hub.md) | Playable 36×24 village, wandering villagers & animals, enterable Shop interior + RPG dialog, Dojo character swap, North Gate & quick shortcuts | M21 | `designed` |
+| [Interactive Village Hub & Enterable Shop](gdd/m21-village-hub.md) | Playable 36×24 village, wandering villagers & animals, enterable Shop interior + RPG dialog, Dojo character swap, North Gate & quick shortcuts | M21 | `implemented` |
 
 Related project docs:
 - Roadmap & acceptance: [docs/milestones.md](milestones.md) (detailed M16–M21: [docs/milestones/m16-m21.md](milestones/m16-m21.md))
