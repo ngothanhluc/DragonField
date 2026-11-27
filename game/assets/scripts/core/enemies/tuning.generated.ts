@@ -436,6 +436,69 @@ export const TUNING_DATA = {
     barrageProjectiles: 10,
     barrageDamageMultiplier: 1.5,
   },
+  classSkills: {
+    ninja: {
+      shadowClone: {
+        damageRatioByStack: [
+          0.5,
+          0.65,
+          0.8,
+        ],
+        durationMs: 2500,
+        fireIntervalMs: 700,
+        rangeTiles: 6,
+        projectileSpeedTilesPerSecond: 12,
+        projectileTtlMs: 900,
+      },
+      venomShuriken: {
+        everyNShots: 3,
+        damageByStack: [
+          1.5,
+          2,
+          2.5,
+        ],
+        radiusTilesByStack: [
+          1.6,
+          1.8,
+          2,
+        ],
+        durationMsByStack: [
+          4000,
+          4500,
+          5000,
+        ],
+        damageTickMs: 500,
+        projectileSpeedTilesPerSecond: 10,
+        projectileTtlMs: 900,
+      },
+      kunaiBurst: {
+        baseKunai: 4,
+        kunaiPerStack: 2,
+        damage: 2,
+        speedTilesPerSecond: 11,
+        ttlMs: 380,
+        radiusTiles: 0.16,
+      },
+      smokeBomb: {
+        slowByStack: [
+          0.45,
+          0.55,
+        ],
+        fireRateBonusByStack: [
+          0.3,
+          0.35,
+        ],
+        radiusTilesByStack: [
+          2.8,
+          3.1,
+        ],
+        durationMsByStack: [
+          3000,
+          3500,
+        ],
+      },
+    },
+  },
   characters: {
     ninja: {
       unlockChapter: 0,

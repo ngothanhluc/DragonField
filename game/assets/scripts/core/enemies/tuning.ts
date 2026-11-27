@@ -36,6 +36,7 @@ import {
   type BossTuning,
   type CameraTuning,
   type CharactersTuning,
+  type ClassSkillsTuning,
   type CombatTuning,
   type CoverTuning,
   type DashTuning,
@@ -109,6 +110,9 @@ export const DASH_TUNING: DashTuning = TUNING.dash;
 
 /** Signature Active Skill cooldown, hit/kill recharge, and barrage stats (M13, ADR-022). */
 export const ACTIVE_SKILL_TUNING: ActiveSkillTuning = TUNING.activeSkill;
+
+/** Class-exclusive skill numbers (M20, ADR-027) — `core/skills/classes/*` and the Ninja runtime read them. */
+export const CLASS_SKILLS_TUNING: ClassSkillsTuning = TUNING.classSkills;
 
 /** Playable 4-class unlock milestones, gold costs, base stats, passives, and signature active parameters (M14). */
 export const CHARACTERS_TUNING: CharactersTuning = TUNING.characters;
