@@ -366,15 +366,14 @@ describe('M15 TitleScreen — Continue Run button', () => {
       gold: 50,
       best: { chapter: 1, room: 3 },
       activeRun: null,
-      onPlay: vi.fn(),
-      onShop: vi.fn(),
+      onEnterVillage: vi.fn(),
       onSettings: vi.fn(),
-      onCredits: vi.fn(),
     });
 
     const texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).not.toContain('Tiếp tục màn chơi');
-    expect(texts).toContain('Chơi');
+    expect(texts).not.toContain('Tiếp Tục Hành Trình');
+    expect(texts).toContain('Vào Làng');
+    expect(texts).toContain('Cài Đặt');
     screen.destroy();
   });
 
@@ -382,7 +381,6 @@ describe('M15 TitleScreen — Continue Run button', () => {
     const parent = new MockNode('ui');
     const activeRun = makeActiveRun();
     const onContinueRun = vi.fn();
-    const onSelectCharacter = vi.fn();
 
     const screen = await buildTitleScreen({
       parent: parent as unknown as never,
@@ -391,27 +389,20 @@ describe('M15 TitleScreen — Continue Run button', () => {
       activeRun,
       onContinueRun,
       selectedCharacter: CHARACTERS.ninja,
-      availableCharacters: [CHARACTERS.ninja, CHARACTERS.archer],
-      onSelectCharacter,
-      onPlay: vi.fn(),
-      onShop: vi.fn(),
+      onEnterVillage: vi.fn(),
       onSettings: vi.fn(),
-      onCredits: vi.fn(),
     });
 
     const texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
-    expect(texts).toContain('Tiếp tục màn chơi');
+    expect(texts).toContain('Vào Làng');
+    expect(texts).toContain('Tiếp Tục Hành Trình');
     expect(texts).toContain('Cung Thủ · Ch2 P4 · A3 · E1');
 
-    // Focus defaults to 0 (Continue Run) -> Enter invokes onContinueRun(activeRun).
+    // Row 0 is Enter Village now; row 1 is Continue Run -> Enter invokes onContinueRun(activeRun).
+    screen.focus(1);
     dispatchKey('Enter', 13);
     expect(onContinueRun).toHaveBeenCalledTimes(1);
     expect(onContinueRun).toHaveBeenCalledWith(activeRun);
-
-    // Character row is shifted to index 2 -> Left/Right cycles unlocked heroes cleanly.
-    screen.focus(2);
-    dispatchKey('ArrowRight', 39);
-    expect(onSelectCharacter).toHaveBeenCalledWith('archer');
 
     screen.destroy();
   });
@@ -607,7 +598,7 @@ describe('M15 Rich Result / Death screen — rich summary & Continue Endless', (
       onContinueEndless: vi.fn(),
       onShop: vi.fn(),
       onChapterSelect: vi.fn(),
-      onTitle: vi.fn(),
+      onVillage: vi.fn(),
     });
 
     const texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
@@ -648,7 +639,7 @@ describe('M15 Rich Result / Death screen — rich summary & Continue Endless', (
       onContinueEndless,
       onShop: vi.fn(),
       onChapterSelect: vi.fn(),
-      onTitle: vi.fn(),
+      onVillage: vi.fn(),
     });
 
     const texts = collectLabels(screen.node as unknown as InstanceType<typeof MockNode>);
@@ -850,9 +841,10 @@ describe('M15 ScreenFlow — Ascension preservation, Pause music ducking & chann
     expect(activeRun).not.toBeNull();
     expect(save.gold).toBe(100);
     let texts = collectLabels(uiRoot);
-    expect(texts).toContain('Tiếp tục màn chơi');
+    expect(texts).toContain('Tiếp Tục Hành Trình');
 
-    // Pressing Enter on Title focus 0 invokes `onContinueRun(activeRun)`.
+    // Title row 0 is Enter Village; row 1 is Continue Run. Enter there invokes `onContinueRun(activeRun)`.
+    dispatchKey('ArrowDown', 40);
     dispatchKey('Enter', 13);
     expect(onContinueRun).toHaveBeenCalledTimes(1);
     expect(onContinueRun).toHaveBeenCalledWith(activeRun);
@@ -877,12 +869,10 @@ describe('M15 ScreenFlow — Ascension preservation, Pause music ducking & chann
     // Returning to Title after victory hides `Continue Run` because `activeRun` was cleared.
     await flow.showTitle();
     texts = collectLabels(uiRoot);
-    expect(texts).not.toContain('Tiếp tục màn chơi');
+    expect(texts).not.toContain('Tiếp Tục Hành Trình');
 
-    // 3. M16: Opening Settings from Title (index 3: Play, Character, Meta shop, Settings) and
+    // 3. M16/M21: Opening Settings from Title (no run save -> row 1: Enter Village, Settings) and
     //    toggling Language updates locale live, rebuilds Settings in English, and persists `settings.locale = 'en'`.
-    dispatchKey('ArrowDown', 40);
-    dispatchKey('ArrowDown', 40);
     dispatchKey('ArrowDown', 40);
     dispatchKey('Enter', 13);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -906,7 +896,7 @@ describe('M15 ScreenFlow — Ascension preservation, Pause music ducking & chann
     dispatchKey('Escape', 27);
     await new Promise((resolve) => setTimeout(resolve, 0));
     texts = collectLabels(uiRoot);
-    expect(texts).toContain('Play');
+    expect(texts).toContain('Enter Village');
     expect(texts).toContain('Settings');
 
     flow.destroy();

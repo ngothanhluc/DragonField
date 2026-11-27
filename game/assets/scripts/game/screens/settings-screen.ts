@@ -23,8 +23,10 @@ import {
 import { buildMenuScreen, type MenuItem, type MenuScreen } from './menu';
 import type { TitleScreenOptions } from './title-screen';
 
-/** Row index of the Language toggle button inside Settings (`0..7`). */
+/** Row index of the Language toggle button inside Settings (`0..8`). */
 export const SETTINGS_LANGUAGE_ROW_INDEX = 6;
+/** Row index of the Credits button (M21 #91: Credits lives in Settings, not the Title). */
+export const SETTINGS_CREDITS_ROW_INDEX = 7;
 
 export interface SettingsScreenOptions {
   readonly parent: TitleScreenOptions['parent'];
@@ -39,6 +41,8 @@ export interface SettingsScreenOptions {
   readonly onToggleEffects: () => void;
   /** Toggle UI language (`'vi'` ↔ `'en'`) and refresh open screens live (M16, ADR-024). */
   readonly onToggleLocale?: (next: Locale) => void;
+  /** Open the Credits screen (moved here from the Title in M21 #91). */
+  readonly onCredits?: () => void;
   readonly onBack: () => void;
   readonly initialFocus?: number;
 }
@@ -178,6 +182,10 @@ export function buildSettingsScreen(options: SettingsScreenOptions): Promise<Men
     {
       label: formatLanguage(activeLocale),
       activate: () => toggleLanguage(),
+    },
+    {
+      label: t('settings.credits', undefined, activeLocale),
+      activate: () => options.onCredits?.(),
     },
     { label: t('common.back', undefined, activeLocale), activate: options.onBack },
   ];

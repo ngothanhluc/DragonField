@@ -19,6 +19,13 @@ import {
   type CharacterId,
 } from '../core/characters/roster';
 import { setLocale } from '../core/i18n';
+import {
+  initialHomeFlow,
+  stepHomeFlow,
+  type HomeFlowEvent,
+  type HomeFlowState,
+} from '../core/hub/home-flow';
+import type { HubEntryOrigin } from '../core/hub/hub-state';
 import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
 import type { UpgradeTrack } from '../core/meta/upgrades';
 import { clampAscension } from '../core/run/ascension';
@@ -62,6 +69,7 @@ import {
   type RunResultOwnedSkills,
 } from './screens/result-screen';
 import {
+  SETTINGS_CREDITS_ROW_INDEX,
   SETTINGS_LANGUAGE_ROW_INDEX,
   buildSettingsScreen,
 } from './screens/settings-screen';
@@ -71,7 +79,7 @@ import {
   SHOP_UNLOCK_CHARACTER_IDS,
   buildShopScreen,
 } from './screens/shop-screen';
-import { buildTitleScreen, type TitleScreen } from './screens/title-screen';
+import { buildTitleScreen } from './screens/title-screen';
 
 type Node = InstanceType<typeof CocosNode>;
 
@@ -132,6 +140,13 @@ export interface ScreenFlowHost {
   readonly getActiveRunSave?: () => ActiveRunSave | null;
   /** Resume a saved active run from Title's `Continue Run` button (M15). */
   readonly onContinueRun?: (run: ActiveRunSave) => void;
+  /** M21 #91: build the playable Village Hub at the spawn for `origin`. */
+  readonly enterVillage?: (origin: HubEntryOrigin) => void;
+  /**
+   * M21 #91: leave the Village Hub (fade out, tear down) and call `then` at full black. When the
+   * hub is not live the callback runs immediately.
+   */
+  readonly leaveVillage?: (then: () => void) => void;
   /** Advance into Endless loop from Result's `Continue Endless` button (M15). */
   readonly onContinueEndless?: () => void;
   /** Accessibility flags (shake, damage numbers) applied immediately to the running game. */
@@ -149,12 +164,12 @@ function errorMessage(error: unknown): string {
 
 export class ScreenFlow {
   private menu: { readonly node: Node; destroy(): void } | null = null;
-  private titleScreen: TitleScreen | null = null;
   private characterSelectScreen: CharacterSelectScreen | null = null;
   private chapterSelectScreen: ChapterSelectScreen | null = null;
   private token = 0;
   private currentScreen: ScreenFlowScreenId = 'title';
-  private settingsBack: (() => void) | null = null;
+  /** Pure home-flow position (M21 #91): every screen transition goes through this reducer. */
+  private home: HomeFlowState = initialHomeFlow();
   private shopBack: (() => void) | null = null;
   /** Chapter currently drawn behind title/character-select/chapter-select; `null` when cleared. */
   private backdropChapter: number | null = null;
@@ -192,6 +207,131 @@ export class ScreenFlow {
     return this.currentScreen as DebugScreenId;
   }
 
+  /** Pure home-flow snapshot (`title | settings | village | chapter-select | run | result`). */
+  get homeState(): HomeFlowState {
+    return this.home;
+  }
+
+  /**
+   * Route one event through the pure home-flow reducer and render the screen it lands on.
+   * This is the only place screen rules are decided; no screen re-implements a transition.
+   */
+  private async advanceHome(event: HomeFlowEvent): Promise<void> {
+    const next = stepHomeFlow(this.home, event);
+    if (next === this.home) {
+      console.log(`[YokaiField] Home flow ignored '${event.kind}' on '${this.home.screen}'.`);
+      return;
+    }
+    this.home = next;
+    switch (next.screen) {
+      case 'title':
+        await this.renderTitleScreen();
+        return;
+      case 'settings':
+        await this.renderSettingsScreen();
+        return;
+      case 'village':
+        this.renderVillageScreen(next.hubEntryOrigin ?? 'title');
+        return;
+      case 'chapter-select':
+        await this.renderChapterSelectScreen();
+        return;
+      case 'run':
+        this.launchHomeRun(event);
+        return;
+      case 'result':
+        // `finishRun` opens the result screen with the run summary it already holds.
+        return;
+    }
+  }
+
+  /** `run` has no menu screen of its own: resume or launch the chapter the event named. */
+  private launchHomeRun(event: HomeFlowEvent): void {
+    if (event.kind === 'start-run') {
+      if (this.host.onStartChapter !== undefined) {
+        this.host.onStartChapter(event.chapter, event.ascension);
+      } else {
+        this.host.startChapter(event.chapter, event.ascension);
+      }
+      return;
+    }
+    if (event.kind === 'title-select' && event.item === 'continue-run') {
+      const run = this.host.getActiveRunSave?.() ?? null;
+      if (run === null) {
+        // The save vanished between building the menu and pressing the button.
+        this.home = initialHomeFlow();
+        void this.renderTitleScreen().catch((error: unknown) => this.host.fail(error));
+        return;
+      }
+      this.host.onContinueRun?.(run);
+    }
+  }
+
+  /** Show the Village Hub; it owns movement/`[E]` until the player leaves. */
+  private renderVillageScreen(origin: HubEntryOrigin): void {
+    this.clearBackdrop();
+    this.nextMenuToken();
+    this.currentScreen = 'village';
+    this.host.setStatus('hub');
+    // The village has no music track of its own yet (M21 audio polish is a later ticket).
+    this.host.setMusic('title');
+    if (this.host.enterVillage === undefined) {
+      console.warn('[YokaiField] Village Hub is not available on this host.');
+      return;
+    }
+    this.host.enterVillage(origin);
+    console.log(`[YokaiField] Village Hub (entered from ${origin}).`);
+  }
+
+  /** Leave the hub (fade at black) and then run `then`. */
+  private leaveVillageThen(then: () => void): void {
+    if (this.host.leaveVillage !== undefined) {
+      this.host.leaveVillage(then);
+      return;
+    }
+    then();
+  }
+
+  /** Hub gate (`open-expedition`) → Chapter Select, through the pure home flow. */
+  async villageGateInteracted(): Promise<void> {
+    if (this.home.screen !== 'village') return;
+    const next = stepHomeFlow(this.home, {
+      kind: 'hub-interact',
+      action: { kind: 'open-expedition', triggerId: 'expedition-gate' },
+    });
+    if (next.screen !== 'chapter-select') return;
+    this.home = next;
+    this.leaveVillageThen(() => {
+      void this.renderChapterSelectScreen().catch((error: unknown) => this.host.fail(error));
+    });
+  }
+
+  /** Hub shop door → interim Meta Shop screen; Back returns to the village. */
+  villageShopRequested(): void {
+    if (this.home.screen !== 'village') return;
+    this.leaveVillageThen(() => {
+      void this.showShop(() => this.returnToVillage()).catch((error: unknown) =>
+        this.host.fail(error),
+      );
+    });
+  }
+
+  /** Hub dojo → interim Character Select; Back returns to the village. */
+  villageDojoRequested(): void {
+    if (this.home.screen !== 'village') return;
+    this.leaveVillageThen(() => {
+      void this.showCharacterSelect(() => this.returnToVillage()).catch((error: unknown) =>
+        this.host.fail(error),
+      );
+    });
+  }
+
+  /** Return to the village after an interim screen, keeping the hub's entry origin. */
+  private returnToVillage(): void {
+    if (this.home.screen !== 'village') return;
+    this.renderVillageScreen(this.home.hubEntryOrigin ?? 'title');
+  }
+
   /** Selected Ascension tier (0..5) preserved across menu navigation. */
   get ascension(): number {
     return this.selectedAscension;
@@ -211,7 +351,6 @@ export class ScreenFlow {
   /** Tear down the open screen (used before entering a run or when the component is destroyed). */
   clearMenu(): void {
     this.releasePauseDucking();
-    this.titleScreen = null;
     this.characterSelectScreen = null;
     this.chapterSelectScreen = null;
     this.menu?.destroy();
@@ -257,62 +396,47 @@ export class ScreenFlow {
     this.host.clearMenuBackdrop();
   }
 
+  /** Public entry for boot / quit-to-title: reset the flow and draw the Title. */
   async showTitle(initialFocus = 0): Promise<void> {
+    this.home = initialHomeFlow();
+    await this.renderTitleScreen(initialFocus);
+  }
+
+  private async renderTitleScreen(initialFocus = 0): Promise<void> {
     const save = this.host.save();
     if (save === null) throw new Error('ScreenFlow: save not loaded');
 
     const selected = resolveSelectedCharacter(save);
-    const available = getUnlockedCharacters(save);
     const activeRun = this.host.getActiveRunSave?.() ?? null;
-    const continueOffset = activeRun !== null ? 1 : 0;
 
     const token = this.nextMenuToken();
     const built = await buildTitleScreen({
       parent: this.host.uiRoot(),
       gold: save.gold,
       best: save.best,
+      selectedCharacter: selected,
       activeRun,
       ...(this.host.onContinueRun !== undefined
         ? {
             onContinueRun: (run) => {
               this.selectedAscension = clampAscension(run.ascension);
               this.selectedChapterForAscension = run.chapter;
-              this.host.onContinueRun?.(run);
+              void this.advanceHome({ kind: 'title-select', item: 'continue-run' }).catch(
+                (error: unknown) => this.host.fail(error),
+              );
             },
           }
         : {}),
-      selectedCharacter: selected,
-      availableCharacters: available,
       initialFocus,
-      onSelectCharacter: (characterId) => {
-        this.selectCharacter(characterId);
-      },
-      onOpenCharacterSelect: () => {
-        void this.showCharacterSelect(() => {
-          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
-          void this.showTitle(offset + 1).catch((error: unknown) => this.host.fail(error));
-        }).catch((error: unknown) => this.host.fail(error));
-      },
-      onPlay: () => {
-        void this.showChapterSelect().catch((error: unknown) => this.host.fail(error));
-      },
-      onShop: () => {
-        void this.showShop(() => {
-          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
-          void this.showTitle(offset + 2).catch((error: unknown) => this.host.fail(error));
-        }).catch((error: unknown) => this.host.fail(error));
+      onEnterVillage: () => {
+        void this.advanceHome({ kind: 'title-select', item: 'enter-village' }).catch(
+          (error: unknown) => this.host.fail(error),
+        );
       },
       onSettings: () => {
-        void this.showSettings(() => {
-          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
-          void this.showTitle(offset + 3).catch((error: unknown) => this.host.fail(error));
-        }).catch((error: unknown) => this.host.fail(error));
-      },
-      onCredits: () => {
-        void this.showCredits(() => {
-          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
-          void this.showTitle(offset + 4).catch((error: unknown) => this.host.fail(error));
-        }).catch((error: unknown) => this.host.fail(error));
+        void this.advanceHome({ kind: 'title-select', item: 'settings' }).catch(
+          (error: unknown) => this.host.fail(error),
+        );
       },
     });
 
@@ -321,7 +445,6 @@ export class ScreenFlow {
       return;
     }
     this.menu = built;
-    this.titleScreen = built;
     this.currentScreen = 'title';
     this.host.setStatus('menu');
     this.host.setMusic('title');
@@ -329,7 +452,7 @@ export class ScreenFlow {
     this.applyBackdrop('title', null);
     console.log(
       `[YokaiField] Title: gold ${save.gold}, unlocked ${save.chaptersUnlocked}/${CHAPTERS_PER_RUN}, ` +
-        `character ${selected.id}${continueOffset > 0 ? ', activeRun resumable' : ''}.`,
+        `character ${selected.id}${activeRun !== null ? ', activeRun resumable' : ''}.`,
     );
   }
 
@@ -344,12 +467,7 @@ export class ScreenFlow {
     const save = this.host.save();
     if (save === null) throw new Error('ScreenFlow: save not loaded');
 
-    const back =
-      backTo ??
-      ((): void => {
-        const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
-        void this.showTitle(offset + 1).catch((error: unknown) => this.host.fail(error));
-      });
+    const back = backTo ?? ((): void => this.returnToVillage());
     const selected = resolveSelectedCharacter(save);
     const startId = initialCharacterId ?? selected.id;
 
@@ -399,7 +517,16 @@ export class ScreenFlow {
     );
   }
 
+  /**
+   * Open Chapter Select directly (debug/tests, as if the gate was used). Normal play reaches it
+   * only through `advanceHome` + the village gate.
+   */
   async showChapterSelect(): Promise<void> {
+    this.home = { ...this.home, screen: 'chapter-select' };
+    await this.renderChapterSelectScreen();
+  }
+
+  private async renderChapterSelectScreen(): Promise<void> {
     const save = this.host.save();
     if (save === null) throw new Error('ScreenFlow: save not loaded');
 
@@ -442,15 +569,12 @@ export class ScreenFlow {
         );
         this.selectedAscension = clampedAsc;
         this.selectedChapterForAscension = chapter;
-        if (this.host.onStartChapter !== undefined) {
-          this.host.onStartChapter(chapter, clampedAsc);
-        } else {
-          this.host.startChapter(chapter, clampedAsc);
-        }
+        void this.advanceHome({ kind: 'start-run', chapter, ascension: clampedAsc }).catch(
+          (error: unknown) => this.host.fail(error),
+        );
       },
       onBack: () => {
-        const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
-        void this.showTitle(offset).catch((error: unknown) => this.host.fail(error));
+        void this.advanceHome({ kind: 'back' }).catch((error: unknown) => this.host.fail(error));
       },
       onFocusChapter: (chapter) => {
         if (token !== this.token) return;
@@ -565,6 +689,13 @@ export class ScreenFlow {
     );
 
     this.currentScreen = 'result';
+    // Debug/dev `startChapter` bypasses the flow: make sure the run screen is current before the
+    // reducer records its end, so Results → Village keeps working from any entry point.
+    if (this.home.screen !== 'run') this.home = { ...this.home, screen: 'run' };
+    this.home = stepHomeFlow(this.home, {
+      kind: 'run-ended',
+      outcome: won ? 'victory' : 'defeat',
+    });
     this.host.setStatus(won ? 'won' : 'lost');
     this.host.teardownRun(true);
     void this.showResult(data).catch((error: unknown) => this.host.fail(error));
@@ -595,10 +726,14 @@ export class ScreenFlow {
         }).catch((error: unknown) => this.host.fail(error));
       },
       onChapterSelect: () => {
-        void this.returnToChapterSelect().catch((error: unknown) => this.host.fail(error));
+        void this.advanceHome({ kind: 'result-to-chapter-select' }).catch((error: unknown) =>
+          this.host.fail(error),
+        );
       },
-      onTitle: () => {
-        void this.showTitle().catch((error: unknown) => this.host.fail(error));
+      onVillage: () => {
+        void this.advanceHome({ kind: 'result-to-village' }).catch((error: unknown) =>
+          this.host.fail(error),
+        );
       },
     });
 
@@ -723,13 +858,12 @@ export class ScreenFlow {
     }
   }
 
-  private async showSettings(backTo: () => void, initialFocus?: number): Promise<void> {
+  private async renderSettingsScreen(initialFocus?: number): Promise<void> {
     const save = this.host.save();
     if (save === null) throw new Error('ScreenFlow: save not loaded');
 
     setLocale(save.settings.locale);
     this.clearBackdrop();
-    this.settingsBack = backTo;
     const token = this.nextMenuToken();
     const built = await buildSettingsScreen({
       parent: this.host.uiRoot(),
@@ -774,11 +908,16 @@ export class ScreenFlow {
         this.persistSettings({ ...current, locale: next });
         setLocale(next);
         // Rebuild Settings live on the Language row so every visible label updates immediately.
-        void this.showSettings(backTo, SETTINGS_LANGUAGE_ROW_INDEX).catch((error: unknown) =>
+        void this.renderSettingsScreen(SETTINGS_LANGUAGE_ROW_INDEX).catch((error: unknown) =>
           this.host.fail(error),
         );
       },
-      onBack: backTo,
+      onCredits: () => {
+        void this.showCredits().catch((error: unknown) => this.host.fail(error));
+      },
+      onBack: () => {
+        void this.advanceHome({ kind: 'back' }).catch((error: unknown) => this.host.fail(error));
+      },
     });
 
     if (token !== this.token) {
@@ -791,10 +930,17 @@ export class ScreenFlow {
     this.host.setMusic('title');
   }
 
-  private async showCredits(backTo: () => void): Promise<void> {
+  private async showCredits(): Promise<void> {
     this.clearBackdrop();
     const token = this.nextMenuToken();
-    const built = await buildCreditsScreen({ parent: this.host.uiRoot(), onBack: backTo });
+    const built = await buildCreditsScreen({
+      parent: this.host.uiRoot(),
+      onBack: () => {
+        void this.renderSettingsScreen(SETTINGS_CREDITS_ROW_INDEX).catch((error: unknown) =>
+          this.host.fail(error),
+        );
+      },
+    });
 
     if (token !== this.token) {
       built.destroy();
@@ -880,13 +1026,6 @@ export class ScreenFlow {
     this.host.setStatus('loading');
     await this.showTitle();
     console.log('[YokaiField] Quit to title.');
-  }
-
-  private async returnToChapterSelect(): Promise<void> {
-    this.clearMenu();
-    this.host.teardownRun();
-    this.host.setStatus('loading');
-    await this.showChapterSelect();
   }
 
   /** Quitting/restarting mid-run still keeps the gold (GDD §7: gold you picked up is yours). */
@@ -1035,10 +1174,6 @@ export class ScreenFlow {
         this.host.setSave(next);
       }
       const character = CHARACTERS[id];
-      const available = getUnlockedCharacters(next);
-      if (this.currentScreen === 'title' && this.titleScreen !== null) {
-        this.titleScreen.setCharacter(character, available);
-      }
       if (this.currentScreen === 'character-select' && this.characterSelectScreen !== null) {
         this.characterSelectScreen.setSave(next);
       }
@@ -1081,13 +1216,7 @@ export class ScreenFlow {
     }
 
     if (this.currentScreen === 'settings') {
-      const back =
-        this.settingsBack ??
-        ((): void => {
-          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
-          void this.showTitle(offset + 3).catch((error: unknown) => this.host.fail(error));
-        });
-      void this.showSettings(back).catch((error: unknown) => this.host.fail(error));
+      void this.renderSettingsScreen().catch((error: unknown) => this.host.fail(error));
     }
   }
 
@@ -1146,20 +1275,13 @@ export class ScreenFlow {
   }
 
   private refreshOpenSaveViews(next: SaveData): void {
-    if (this.currentScreen === 'title' && this.titleScreen !== null) {
-      this.titleScreen.setCharacter(resolveSelectedCharacter(next), getUnlockedCharacters(next));
-    } else if (this.currentScreen === 'character-select' && this.characterSelectScreen !== null) {
+    if (this.currentScreen === 'character-select' && this.characterSelectScreen !== null) {
       this.characterSelectScreen.setSave(next);
     } else if (this.currentScreen === 'shop') {
-      const back =
-        this.shopBack ??
-        ((): void => {
-          const offset = (this.host.getActiveRunSave?.() ?? null) !== null ? 1 : 0;
-          void this.showTitle(offset + 2).catch((error: unknown) => this.host.fail(error));
-        });
+      const back = this.shopBack ?? ((): void => this.returnToVillage());
       void this.showShop(back).catch((error: unknown) => this.host.fail(error));
     } else if (this.currentScreen === 'chapter-select') {
-      void this.showChapterSelect().catch((error: unknown) => this.host.fail(error));
+      void this.renderChapterSelectScreen().catch((error: unknown) => this.host.fail(error));
     }
   }
 }
