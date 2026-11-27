@@ -57,6 +57,11 @@ export interface Bullet {
   hitIds: string[];
   /** Optional killer attribution for enemy/boss bullets (M15 rich death cause). */
   source?: DeathCause | undefined;
+  /**
+   * Class skill that spawned this projectile (M20, e.g. `'archer-split-arrow'`), undefined for
+   * auto-fire arrows. Hooks read it as `projectileSkillId` so a split arrow never splits again.
+   */
+  classSkillId?: string | undefined;
 }
 
 export interface CircleArea {
@@ -78,6 +83,7 @@ export interface BulletSpawnArgs {
   readonly explosiveDamage?: number;
   readonly crit?: boolean;
   readonly source?: DeathCause;
+  readonly classSkillId?: string;
 }
 
 /** Default capacity: more than 5× the M3 target of max on-screen bullets (40). */
@@ -226,6 +232,7 @@ export class BulletPool {
     bullet.crit = args.crit === true;
     bullet.hitIds.length = 0;
     bullet.source = args.source;
+    bullet.classSkillId = args.classSkillId;
 
     this.live.push(bullet);
     return bullet;
@@ -340,6 +347,7 @@ export class BulletPool {
       crit: bullet.crit,
       hitIds: bullet.hitIds.slice(),
       ...(bullet.source !== undefined ? { source: bullet.source } : {}),
+      ...(bullet.classSkillId !== undefined ? { classSkillId: bullet.classSkillId } : {}),
     }));
   }
 

@@ -190,6 +190,14 @@ export class PlayerController extends Component {
   private tintUntilMs = 0;
   private tint: Color = PLAYER_NO_TINT;
   private readonly keyboard = new KeyboardMove();
+  /** Temporary class-skill buff (Wind Arrow): expires on the run clock, never accumulates. */
+  private classSkillBuff: {
+    fireRateMult: number;
+    projectileSpeedMult: number;
+    untilMs: number;
+  } | null = null;
+  /** Auto-fire target of the newest shot (CombatLoop reads it for `onShot` hooks). */
+  private shotTargetId: string | null = null;
 
   /** Current position in `LevelData`'s **tile** space (y down), not world space. */
   private tilePosition: Vec2 = { x: 0, y: 0 };
@@ -339,9 +347,99 @@ export class PlayerController extends Component {
     return this.health.isDead;
   }
 
+  /**
+   * Spawn one player projectile requested by a class-skill hook (M20). Same pool, radius and
+   * owner as auto-fire bullets; `classSkillId` marks it so class hooks can tell split arrows
+   * from normal ones, and `ignoreTargetId` seeds `hitIds` so a split never hits its victim.
+   */
+  spawnClassSkillArrow(args: {
+    readonly position: Vec2;
+    readonly direction: Vec2;
+    readonly damage: number;
+    readonly speedTilesPerSecond: number;
+    readonly ttlMs: number;
+    readonly pierce: number;
+    readonly classSkillId: string;
+    readonly ignoreTargetId?: string;
+  }): void {
+    const bullet = this.bulletPool.spawn({
+      position: args.position,
+      velocity: {
+        x: args.direction.x * args.speedTilesPerSecond,
+        y: args.direction.y * args.speedTilesPerSecond,
+      },
+      radiusTiles: BULLET_RADIUS_TILES,
+      damage: args.damage,
+      owner: 'player',
+      ttlMs: args.ttlMs,
+      pierceRemaining: Math.max(0, Math.floor(args.pierce)),
+      crit: false,
+      classSkillId: args.classSkillId,
+    });
+    if (args.ignoreTargetId !== undefined) bullet.hitIds.push(args.ignoreTargetId);
+  }
+
   /** Stats after skills — CombatLoop reads them to apply crit/pierce/explosion/lifesteal/thorns. */
   get derivedStats(): DerivedStats {
     return this.stats;
+  }
+
+  /**
+   * Target id of the auto-fire shot fired on the last `step()`, or `null` when that step fired
+   * nothing. CombatLoop uses it to pass `targetPosition` to `onShot` class hooks.
+   */
+  get lastShotTargetId(): string | null {
+    return this.shotTargetId;
+  }
+
+  /**
+   * Apply a temporary class-skill buff (M20 Wind Arrow). A later buff replaces it, so the
+   * multiplier always matches the freshest momentum; the run clock expires it.
+   */
+  applyClassSkillBuff(
+    fireRateMult: number,
+    projectileSpeedMult: number,
+    durationMs: number,
+    nowMs: number,
+  ): void {
+    if (!(durationMs > 0)) return;
+    this.classSkillBuff = {
+      fireRateMult: Math.max(1, fireRateMult),
+      projectileSpeedMult: Math.max(1, projectileSpeedMult),
+      untilMs: nowMs + durationMs,
+    };
+  }
+
+  /** Active fire-rate multiplier of the class-skill buff (1 when none/expired). */
+  private classBuffFireRate(nowMs: number): number {
+    const buff = this.classSkillBuff;
+    if (buff === null) return 1;
+    if (nowMs >= buff.untilMs) {
+      this.classSkillBuff = null;
+      return 1;
+    }
+    return buff.fireRateMult;
+  }
+
+  /** Active projectile-speed multiplier of the class-skill buff (1 when none/expired). */
+  private classBuffProjectileSpeed(nowMs: number): number {
+    const buff = this.classSkillBuff;
+    return buff !== null && nowMs < buff.untilMs ? buff.projectileSpeedMult : 1;
+  }
+
+  /** Debug proof (`?debug=1`): live class-skill buff and its remaining time, or `null`. */
+  classSkillBuffSnapshot(nowMs: number): {
+    readonly fireRateMult: number;
+    readonly projectileSpeedMult: number;
+    readonly remainingMs: number;
+  } | null {
+    const buff = this.classSkillBuff;
+    if (buff === null || nowMs >= buff.untilMs) return null;
+    return {
+      fireRateMult: buff.fireRateMult,
+      projectileSpeedMult: buff.projectileSpeedMult,
+      remainingMs: buff.untilMs - nowMs,
+    };
   }
 
   get shieldCharges(): number {
@@ -659,7 +757,9 @@ export class PlayerController extends Component {
         ? deltaMs * (1 + Math.max(0, postDash.bonus))
         : deltaMs;
     // M20 Ninja *Bom Khói Ẩn Thân* (#84): fire faster while standing in a smoke zone.
-    const fireDeltaMs = postDashDeltaMs * (1 + Math.max(0, fireRateBonus));
+    // M20 Archer *Phong Tiễn* (#85): temporary momentum buff multiplies the same delta.
+    const fireDeltaMs =
+      postDashDeltaMs * (1 + Math.max(0, fireRateBonus)) * this.classBuffFireRate(nowMs);
     this.fireIfReady(nowMs, fireDeltaMs, targets);
     this.updateAura();
     this.playCurrentAnimation(nowMs, moving, dashing);
@@ -772,14 +872,17 @@ export class PlayerController extends Component {
   }
 
   private fireIfReady(nowMs: number, deltaMs: number, targets: readonly Targetable[]): void {
+    this.shotTargetId = null;
     const rangeTiles =
       this.stats.targetingRangeTiles > 0
         ? this.stats.targetingRangeTiles
         : DEFAULT_COMBAT.targetingRangeTiles;
-    const speedTilesPerSecond =
+    const baseSpeedTilesPerSecond =
       this.stats.projectileSpeedTilesPerSecond > 0
         ? this.stats.projectileSpeedTilesPerSecond
         : DEFAULT_COMBAT.projectileSpeedTilesPerSecond;
+    const speedTilesPerSecond =
+      baseSpeedTilesPerSecond * this.classBuffProjectileSpeed(nowMs);
 
     const shot = this.autoFire.update({
       deltaMs,
@@ -788,6 +891,7 @@ export class PlayerController extends Component {
       rangeTiles,
     });
     if (shot === null) return;
+    this.shotTargetId = shot.targetId;
 
     const ttlMs = Math.max(1200, Math.ceil((rangeTiles / speedTilesPerSecond) * 1000 * 1.5));
 

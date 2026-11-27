@@ -127,6 +127,8 @@ const FROZEN_TINT = new CocosColor(150, 220, 255, 255);
 const BURNED_TINT = new CocosColor(255, 165, 105, 255);
 const POISONED_TINT = new CocosColor(170, 230, 130, 255);
 const HASTED_TINT = new CocosColor(180, 255, 170, 255);
+/** Hunter's Mark (M20): warm gold, readable over every status tint. */
+const MARKED_TINT = new CocosColor(255, 232, 140, 255);
 /** M18 (ADR-026): crisp dark ground shadow under every enemy's feet + stronger Elite ring. */
 const SHADOW_FILL_COLOR = new CocosColor(12, 10, 18, 175);
 const ELITE_SHADOW_RING_COLOR = new CocosColor(255, 198, 72, 220);
@@ -286,6 +288,8 @@ export class EnemyView extends Component {
   private chargeUntilMs = -1;
   /** Freeze/Poison from player skills; core decides timing, the view only holds state. */
   private readonly statuses = new StatusEffects();
+  /** Hunter's Mark (M20): the enemy stays tinted until this run-clock timestamp. */
+  private markUntilMs = 0;
   /** Stuck guard for this enemy (one window): walking 2 s without progress ⇒ 1 s detour. */
   private readonly stuckGuard = new StuckGuard(
     NAVIGATION_TUNING.stuckWindowMs,
@@ -506,6 +510,14 @@ export class EnemyView extends Component {
     this.applyVisual(next, nowMs, player);
 
     return { released, chargeSweep };
+  }
+
+  /**
+   * Hunter's Mark (M20): keep the gold tint until `untilMs`. Re-applying refreshes the window;
+   * the damage flash still wins for its 80 ms, so the mark never hides a hit.
+   */
+  applyClassSkillMark(untilMs: number): void {
+    if (untilMs > this.markUntilMs) this.markUntilMs = untilMs;
   }
 
   /**
@@ -760,11 +772,12 @@ export class EnemyView extends Component {
     this.hideLine();
   }
 
-  /** Status & buffer haste tint outside telegraph: frozen > burned > poisoned > hasted > none. */
+  /** Status & buffer haste tint outside telegraph: frozen > burned > poisoned > marked > hasted > none. */
   private stateTint(nowMs: number): Color {
     if (this.statuses.isSlowed(nowMs)) return FROZEN_TINT;
     if (this.statuses.isBurned(nowMs)) return BURNED_TINT;
     if (this.statuses.isPoisoned(nowMs)) return POISONED_TINT;
+    if (nowMs < this.markUntilMs) return MARKED_TINT;
     if (this.hasted) return HASTED_TINT;
     return NO_TINT;
   }

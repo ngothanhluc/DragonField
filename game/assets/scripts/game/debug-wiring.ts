@@ -16,6 +16,7 @@ import type {
   DebugBossSnapshot,
   DebugCharacterSnapshot,
   DebugCharacterStatsSnapshot,
+  DebugClassSkillSnapshot,
   DebugDoorSnapshot,
   DebugEnemySnapshot,
   DebugMenuBackdropSnapshot,
@@ -96,6 +97,7 @@ export interface DebugWiringHost {
   readonly dash: () => boolean;
   readonly activeSkill: () => boolean;
   readonly actions: () => DebugActionsSnapshot;
+  readonly classSkillState: () => DebugClassSkillSnapshot;
   readonly triggerEvolution: (id?: string) => string | null;
   readonly state: () => DebugStateSnapshot;
   readonly runSave: () => ActiveRunSave | null;
@@ -200,6 +202,7 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     dash: host.dash,
     activeSkill: host.activeSkill,
     actions: host.actions,
+    classSkillState: host.classSkillState,
     triggerEvolution: host.triggerEvolution,
     state: host.state,
     runSave: host.runSave,

@@ -325,10 +325,10 @@ export interface TuningConfig {
   readonly dash: DashTuning;
   /** Signature Active Skill action buffer, base + hit/kill cooldown reduction, and barrage stats (M13, ADR-022). */
   readonly activeSkill: ActiveSkillTuning;
-  /** Class-exclusive skill numbers (M20, ADR-027); one block per class. */
-  readonly classSkills: ClassSkillsTuning;
   /** Playable 4-class unlock milestones, gold costs, base stats, passives, and signature active parameters (M14). */
   readonly characters: CharactersTuning;
+  /** Class-exclusive skill numbers (M20, ADR-027; #84–#87). */
+  readonly classSkills: ClassSkillsTuning;
 }
 
 /** Playable character IDs validated in `config/tuning.json` (M14). */
@@ -412,6 +412,69 @@ export interface CharacterTuning {
 
 /** All 4 playable character tuning blocks keyed by character id (M14). */
 export type CharactersTuning = Readonly<Record<TuningCharacterId, CharacterTuning>>;
+
+/** Mưa Tên (`archer-arrow-rain`): every-Nth-shot volley, #85. */
+export interface ArrowRainTuning {
+  /** Auto-fire shots between two volleys (1-based counter; 5 = shots 5, 10, …). */
+  readonly everyShots: number;
+  /** Volley AoE radius, tiles. */
+  readonly radiusTiles: number;
+  /** Damage multiplier of the shot damage, one entry per stack (index 0 = 1 stack). */
+  readonly damageRatioByStack: readonly number[];
+}
+
+/** Tên Tách Chùm (`archer-split-arrow`): first-hit split, #85. */
+export interface SplitArrowTuning {
+  /** Projectiles spawned per split. */
+  readonly arrows: number;
+  /** Half-angle of each split projectile off the flight direction, degrees. */
+  readonly angleDegrees: number;
+  /** Damage multiplier of the hit damage, one entry per stack. */
+  readonly damageRatioByStack: readonly number[];
+}
+
+/** Ấn Ký Săn Mồi (`archer-hunters-mark`): mark, then detonate on crit, #85. */
+export interface HuntersMarkTuning {
+  /** How long a mark stays armed, ms. */
+  readonly durationMs: number;
+  /** Detonation AoE radius, tiles. */
+  readonly radiusTiles: number;
+  /** Detonation damage multiplier of the hit damage, one entry per stack. */
+  readonly damageRatioByStack: readonly number[];
+}
+
+/** Phong Tiễn (`archer-wind-arrow`): hit-momentum buff, #85. */
+export interface WindArrowTuning {
+  /** Momentum cap (each hit adds 1). */
+  readonly momentumCap: number;
+  /** Gap between hits that resets momentum, ms. */
+  readonly resetMs: number;
+  /** Buff lifetime, ms. */
+  readonly buffDurationMs: number;
+  /** Additive fire-rate bonus per momentum point per skill stack (0.01 = +1%). */
+  readonly fireRatePerMomentum: number;
+  /** Additive projectile-speed bonus per momentum point per skill stack (0.02 = +2%). */
+  readonly projectileSpeedPerMomentum: number;
+}
+
+/** Thiên Tiễn Lôi Đình (`archer-sky-tempest`): radial piercing volley on each rain, #85. */
+export interface SkyTempestTuning {
+  /** Projectiles per radial volley. */
+  readonly arrows: number;
+  /** Enemies every volley projectile passes through. */
+  readonly pierce: number;
+  /** Damage multiplier of the shot damage. */
+  readonly damageRatio: number;
+}
+
+/** Archer class-skill numbers (M20, #85). */
+export interface ArcherClassSkillTuning {
+  readonly arrowRain: ArrowRainTuning;
+  readonly splitArrow: SplitArrowTuning;
+  readonly huntersMark: HuntersMarkTuning;
+  readonly windArrow: WindArrowTuning;
+  readonly skyTempest: SkyTempestTuning;
+}
 
 /** Player Dash tuning (M13, ADR-022). */
 export interface DashTuning {
@@ -509,6 +572,7 @@ export interface NinjaClassSkillsTuning {
 /** Class-exclusive skill tuning (M20, ADR-027), one block per class. */
 export interface ClassSkillsTuning {
   readonly ninja: NinjaClassSkillsTuning;
+  readonly archer: ArcherClassSkillTuning;
 }
 
 /** XP level-up threshold curve: `round((baseThreshold + linearStep·i + quadraticStep·i²) · chapterMultiplier)`. */
@@ -925,7 +989,7 @@ const ACTIVE_SKILL_FIELDS = [
   'barrageDamageMultiplier',
 ] as const;
 
-const CLASS_SKILLS_FIELDS = ['ninja'] as const;
+const CLASS_SKILLS_FIELDS = ['ninja', 'archer'] as const;
 
 const NINJA_CLASS_SKILLS_FIELDS = [
   'shadowClone',
@@ -1126,6 +1190,30 @@ const LEVEL_UP_WAVE_FIELDS = [
 ] as const;
 
 const SHOP_PRICE_FIELDS = ['common', 'rare', 'epic'] as const;
+
+const ARCHER_CLASS_SKILL_FIELDS = [
+  'arrowRain',
+  'splitArrow',
+  'huntersMark',
+  'windArrow',
+  'skyTempest',
+] as const;
+
+const ARROW_RAIN_FIELDS = ['everyShots', 'radiusTiles', 'damageRatioByStack'] as const;
+
+const SPLIT_ARROW_FIELDS = ['arrows', 'angleDegrees', 'damageRatioByStack'] as const;
+
+const HUNTERS_MARK_FIELDS = ['durationMs', 'radiusTiles', 'damageRatioByStack'] as const;
+
+const WIND_ARROW_FIELDS = [
+  'momentumCap',
+  'resetMs',
+  'buffDurationMs',
+  'fireRatePerMomentum',
+  'projectileSpeedPerMomentum',
+] as const;
+
+const SKY_TEMPEST_FIELDS = ['arrows', 'pierce', 'damageRatio'] as const;
 
 const SHAKE_FIELDS = [
   'maxOffsetTiles',
@@ -1372,6 +1460,35 @@ function readMultiplierArray(
     if (typeof entry !== 'number' || !Number.isFinite(entry) || entry <= 0) {
       problems.add(`${fieldPath}[${index}]`, `must be a finite number > 0, got ${describe(entry)}`);
       result.push(1);
+      return;
+    }
+    result.push(entry);
+  });
+  return result;
+}
+
+/**
+ * Read a non-empty array of finite, positive numbers (per-stack multipliers). The array's
+ * length is the skill's stack count; the hooks clamp a stack past the end to the last entry.
+ */
+function readNumberList(
+  source: Record<string, unknown>,
+  field: string,
+  path: string,
+  problems: ProblemList,
+): readonly number[] {
+  const fieldPath = joinPath(path, field);
+  const value = source[field];
+  if (!Array.isArray(value) || value.length === 0) {
+    problems.add(fieldPath, `must be a non-empty array of numbers, got ${describe(value)}`);
+    return [];
+  }
+
+  const result: number[] = [];
+  value.forEach((entry, index) => {
+    if (typeof entry !== 'number' || !Number.isFinite(entry) || entry <= 0) {
+      problems.add(`${fieldPath}[${index}]`, `must be a finite number > 0, got ${describe(entry)}`);
+      result.push(0);
       return;
     }
     result.push(entry);
@@ -2697,6 +2814,22 @@ function zeroNinjaSmokeBomb(): NinjaSmokeBombTuning {
   };
 }
 
+function defaultArcherClassSkills(): ArcherClassSkillTuning {
+  return {
+    arrowRain: { everyShots: 5, radiusTiles: 2.2, damageRatioByStack: [0.8, 1.2, 1.6] },
+    splitArrow: { arrows: 2, angleDegrees: 18, damageRatioByStack: [0.5, 0.7, 0.9] },
+    huntersMark: { durationMs: 4000, radiusTiles: 1.6, damageRatioByStack: [1.5, 2.25] },
+    windArrow: {
+      momentumCap: 10,
+      resetMs: 1500,
+      buffDurationMs: 1500,
+      fireRatePerMomentum: 0.01,
+      projectileSpeedPerMomentum: 0.02,
+    },
+    skyTempest: { arrows: 6, pierce: 2, damageRatio: 0.5 },
+  };
+}
+
 function zeroClassSkills(): ClassSkillsTuning {
   return {
     ninja: {
@@ -2705,6 +2838,7 @@ function zeroClassSkills(): ClassSkillsTuning {
       kunaiBurst: zeroNinjaKunaiBurst(),
       smokeBomb: zeroNinjaSmokeBomb(),
     },
+    archer: defaultArcherClassSkills(),
   };
 }
 
@@ -2863,7 +2997,10 @@ function parseClassSkills(
 ): ClassSkillsTuning {
   const source = readObject(raw, 'classSkills', '', problems, CLASS_SKILLS_FIELDS);
   if (source === undefined) return zeroClassSkills();
-  return { ninja: parseNinjaClassSkills(source, problems) };
+  return {
+    ninja: parseNinjaClassSkills(source, problems),
+    archer: parseArcherClassSkills(source, problems),
+  };
 }
 
 function zeroCharacter(): CharacterTuning {
@@ -3076,13 +3213,112 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-/**
- * Parse + validate tuning data. Throws one `Error` collecting every problem when the structure is wrong.
- * Tests call this on a copy to try other numbers without touching the exported object.
- *
- * The returned object is deeply frozen and **keeps the field declaration order above**,
- * so `scripts/gen-tuning.ts` printing it straight to the generated file is deterministic.
- */
+/** Parse the Archer class-skill numbers (M20, #85; other classes add their own block). */
+function parseArcherClassSkills(
+  classSkills: Record<string, unknown>,
+  problems: ProblemList,
+): ArcherClassSkillTuning {
+  const defaults = defaultArcherClassSkills();
+  const archerSource = readObject(
+    classSkills,
+    'archer',
+    'classSkills',
+    problems,
+    ARCHER_CLASS_SKILL_FIELDS,
+  );
+  if (archerSource === undefined) return defaults;
+
+  const path = 'classSkills.archer';
+  const rainSource =
+    readObject(archerSource, 'arrowRain', path, problems, ARROW_RAIN_FIELDS) ?? {};
+  const rainPath = `${path}.arrowRain`;
+  const splitSource =
+    readObject(archerSource, 'splitArrow', path, problems, SPLIT_ARROW_FIELDS) ?? {};
+  const splitPath = `${path}.splitArrow`;
+  const markSource =
+    readObject(archerSource, 'huntersMark', path, problems, HUNTERS_MARK_FIELDS) ?? {};
+  const markPath = `${path}.huntersMark`;
+  const windSource =
+    readObject(archerSource, 'windArrow', path, problems, WIND_ARROW_FIELDS) ?? {};
+  const windPath = `${path}.windArrow`;
+  const tempestSource =
+    readObject(archerSource, 'skyTempest', path, problems, SKY_TEMPEST_FIELDS) ?? {};
+  const tempestPath = `${path}.skyTempest`;
+
+  const rainRatios = readNumberList(rainSource, 'damageRatioByStack', rainPath, problems);
+  const splitRatios = readNumberList(splitSource, 'damageRatioByStack', splitPath, problems);
+  const markRatios = readNumberList(markSource, 'damageRatioByStack', markPath, problems);
+
+  return {
+    arrowRain: {
+      everyShots:
+          readNumber(rainSource, 'everyShots', rainPath, problems, {
+            integer: true,
+            positive: true,
+          }) ?? defaults.arrowRain.everyShots,
+        radiusTiles:
+          readNumber(rainSource, 'radiusTiles', rainPath, problems, { positive: true }) ??
+          defaults.arrowRain.radiusTiles,
+        damageRatioByStack:
+          rainRatios.length > 0 ? rainRatios : defaults.arrowRain.damageRatioByStack,
+      },
+      splitArrow: {
+        arrows:
+          readNumber(splitSource, 'arrows', splitPath, problems, {
+            integer: true,
+            positive: true,
+          }) ?? defaults.splitArrow.arrows,
+        angleDegrees:
+          readNumber(splitSource, 'angleDegrees', splitPath, problems, { positive: true }) ??
+          defaults.splitArrow.angleDegrees,
+        damageRatioByStack:
+          splitRatios.length > 0 ? splitRatios : defaults.splitArrow.damageRatioByStack,
+      },
+      huntersMark: {
+        durationMs:
+          readNumber(markSource, 'durationMs', markPath, problems, { positive: true }) ??
+          defaults.huntersMark.durationMs,
+        radiusTiles:
+          readNumber(markSource, 'radiusTiles', markPath, problems, { positive: true }) ??
+          defaults.huntersMark.radiusTiles,
+        damageRatioByStack:
+          markRatios.length > 0 ? markRatios : defaults.huntersMark.damageRatioByStack,
+      },
+      windArrow: {
+        momentumCap:
+          readNumber(windSource, 'momentumCap', windPath, problems, {
+            integer: true,
+            positive: true,
+          }) ?? defaults.windArrow.momentumCap,
+        resetMs:
+          readNumber(windSource, 'resetMs', windPath, problems, { positive: true }) ??
+          defaults.windArrow.resetMs,
+        buffDurationMs:
+          readNumber(windSource, 'buffDurationMs', windPath, problems, { positive: true }) ??
+          defaults.windArrow.buffDurationMs,
+        fireRatePerMomentum:
+          readNumber(windSource, 'fireRatePerMomentum', windPath, problems) ??
+          defaults.windArrow.fireRatePerMomentum,
+        projectileSpeedPerMomentum:
+          readNumber(windSource, 'projectileSpeedPerMomentum', windPath, problems) ??
+          defaults.windArrow.projectileSpeedPerMomentum,
+      },
+      skyTempest: {
+        arrows:
+          readNumber(tempestSource, 'arrows', tempestPath, problems, {
+            integer: true,
+            positive: true,
+          }) ?? defaults.skyTempest.arrows,
+        pierce:
+          readNumber(tempestSource, 'pierce', tempestPath, problems, { integer: true }) ??
+          defaults.skyTempest.pierce,
+        damageRatio:
+          readNumber(tempestSource, 'damageRatio', tempestPath, problems, { positive: true }) ??
+          defaults.skyTempest.damageRatio,
+    },
+  };
+}
+
 export function parseTuning(raw: unknown): TuningConfig {
   if (!isRecord(raw)) {
     throw new Error(

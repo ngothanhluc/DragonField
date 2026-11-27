@@ -23,6 +23,15 @@ import type { EvolutionDef } from './evolutions';
 /** Read-only stack accessor so hooks never copy the loadout map (hot-path friendly). */
 export type ClassSkillStackSource = (id: string) => number;
 
+/**
+ * Per-run mutable scratch store owned by the caller (combat loop / sim).
+ *
+ * A hook with state (mark timestamps, momentum counters) keeps it here instead of in a module
+ * variable, so two runs can never leak state into each other and the hooks stay pure functions
+ * of their context. Hooks that need state no-op when it is absent (pure unit tests).
+ */
+export type ClassSkillMemory = Map<string, number>;
+
 /** Everything a class hook may inspect for one event. */
 export interface ClassSkillEventContext {
   readonly characterId: CharacterId;
@@ -42,6 +51,22 @@ export interface ClassSkillEventContext {
    */
   readonly killedBy?: string;
   readonly rng?: SeededRng;
+  /** Game time of the event, ms (same clock as `dtMs`). */
+  readonly nowMs?: number;
+  /** Victim actor id: an enemy `id` string, or `'boss'` for a boss. */
+  readonly targetId?: string;
+  /** The hitting bullet rolled a crit. */
+  readonly crit?: boolean;
+  /** `onShot`: the shot's damage; `onHit`: the damage actually dealt. */
+  readonly damage?: number;
+  /** Unit flight direction of the hitting bullet (room tiles, y down). */
+  readonly direction?: Vec2;
+  /** The hitting bullet had not hit any enemy before this one (`hitIds` was empty). */
+  readonly firstHit?: boolean;
+  /** Id of the class skill that spawned the hitting projectile; undefined for auto-fire arrows. */
+  readonly projectileSkillId?: string;
+  /** Per-run mutable scratch store; a stateful hook no-ops when it is absent. */
+  readonly memory?: ClassSkillMemory;
 }
 
 /**
@@ -60,6 +85,20 @@ export interface ClassSkillEffect {
    * Additive optional field: sibling class tickets may add their own, none may rename.
    */
   readonly crit?: boolean;
+  /** `spawn`: unit flight direction of the new projectile. */
+  readonly direction?: Vec2;
+  /** `spawn`: enemies the new projectile still passes through before stopping. */
+  readonly pierce?: number;
+  /** `spawn`: actor id the new projectile must never hit (the split victim). */
+  readonly ignoreTargetId?: string;
+  /** `status`: actor id the status/mark is applied to. */
+  readonly targetId?: string;
+  /** `buff`: temporary fire-rate multiplier (`1` = unchanged). */
+  readonly fireRateMult?: number;
+  /** `buff`: temporary projectile-speed multiplier (`1` = unchanged). */
+  readonly projectileSpeedMult?: number;
+  /** Manifest FX key to play with this effect (e.g. `'fx.arrow-rain'`). */
+  readonly fx?: string;
 }
 
 /** Event names a class implements (one hook per combat site, dispatched once from the loop). */

@@ -265,6 +265,24 @@ export interface DebugActionsSnapshot {
   readonly evolutions: readonly string[];
 }
 
+/** M20 class-skill proof: memory entries (marks/momentum), live class projectiles, Wind buff. */
+export interface DebugClassSkillSnapshot {
+  /** 1-based auto-fire counter (Arrow Rain fires on multiples of 5). */
+  readonly shotsFired: number;
+  /** Class-hook scratch store: `[key, value]` pairs (mark timestamp, wind momentum). */
+  readonly memory: readonly (readonly [string, number])[];
+  /** Player bullets currently carrying a `classSkillId` (split / tempest arrows). */
+  readonly classBullets: number;
+  /** Same count grouped by the spawning skill id (proof for split vs. Sky Tempest volleys). */
+  readonly classBulletsById: Readonly<Record<string, number>>;
+  /** Active temporary buff (Wind Arrow), `null` when none/expired. */
+  readonly buff: {
+    readonly fireRateMult: number;
+    readonly projectileSpeedMult: number;
+    readonly remainingMs: number;
+  } | null;
+}
+
 /** Data bootstrap supplies to the API; every method is a live closure. */
 export interface DebugProvider {
   readonly status: () => DebugStatus;
@@ -360,6 +378,8 @@ export interface DebugProvider {
   readonly activeSkill?: () => boolean;
   /** M13: live Dash / Signature Active cooldown & active Evolution snapshot. */
   readonly actions?: () => DebugActionsSnapshot;
+  /** M20: class-skill memory, live class projectiles and temporary buff proof. */
+  readonly classSkillState?: () => DebugClassSkillSnapshot;
   /** M13: unlock prerequisites and grant an Evolution (`id` optional), returning its id or `null`. */
   readonly triggerEvolution?: (id?: string) => string | null;
   /** M15: full run/M15 state snapshot (`ascension`, `endlessLoop`, `freeRerollsLeft`, `deathCause`, `seed`). */
@@ -505,6 +525,14 @@ const DEFAULT_ACTIONS_SNAPSHOT: DebugActionsSnapshot = {
   evolutions: [],
 };
 
+const DEFAULT_CLASS_SKILL_SNAPSHOT: DebugClassSkillSnapshot = {
+  shotsFired: 0,
+  memory: [],
+  classBullets: 0,
+  classBulletsById: {},
+  buff: null,
+};
+
 /** Install the API if `?debug=1`; returns `true` when installed. */
 export function installDebugApi(provider: DebugProvider): boolean {
   if (!isDebugEnabled()) return false;
@@ -528,6 +556,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
   const dash = provider.dash ?? ((): boolean => false);
   const activeSkill = provider.activeSkill ?? ((): boolean => false);
   const actions = provider.actions ?? ((): DebugActionsSnapshot => DEFAULT_ACTIONS_SNAPSHOT);
+  const classSkillState =
+    provider.classSkillState ?? ((): DebugClassSkillSnapshot => DEFAULT_CLASS_SKILL_SNAPSHOT);
   const triggerEvolution = provider.triggerEvolution ?? ((): string | null => null);
   const state =
     provider.state ??
@@ -612,6 +642,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
     dash: { value: dash, enumerable: true },
     activeSkill: { value: activeSkill, enumerable: true },
     actions: { value: actions, enumerable: true },
+    classSkillState: { value: classSkillState, enumerable: true },
     triggerEvolution: { value: triggerEvolution, enumerable: true },
     state: { value: state, enumerable: true },
     runSave: { value: runSave, enumerable: true },
@@ -638,7 +669,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'character, selectCharacter, unlockAllCharacters, playerAttachment, attachmentState, characterStats, setAttachmentHidden, ' +
       'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, ' +
       'dash, activeSkill, actions, triggerEvolution, state, runSave, setAscension, unlockAllAscensions, ' +
-      'triggerDeath, continueRun, continueEndless, setMusicVolume, setSfxVolume, setMusicDucked, keyLog).',
+      'triggerDeath, continueRun, continueEndless, setMusicVolume, setSfxVolume, setMusicDucked, classSkillState, keyLog).',
   );
   return true;
 }

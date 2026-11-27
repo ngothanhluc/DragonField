@@ -492,6 +492,35 @@
           3500
         ]
       }
+    },
+    "archer": {
+      "arrowRain": {
+        "everyShots": 5,
+        "radiusTiles": 2.2,
+        "damageRatioByStack": [0.8, 1.2, 1.6]
+      },
+      "splitArrow": {
+        "arrows": 2,
+        "angleDegrees": 18,
+        "damageRatioByStack": [0.5, 0.7, 0.9]
+      },
+      "huntersMark": {
+        "durationMs": 4000,
+        "radiusTiles": 1.6,
+        "damageRatioByStack": [1.5, 2.25]
+      },
+      "windArrow": {
+        "momentumCap": 10,
+        "resetMs": 1500,
+        "buffDurationMs": 1500,
+        "fireRatePerMomentum": 0.01,
+        "projectileSpeedPerMomentum": 0.02
+      },
+      "skyTempest": {
+        "arrows": 6,
+        "pierce": 2,
+        "damageRatio": 0.5
+      }
     }
   },
   "characters": {

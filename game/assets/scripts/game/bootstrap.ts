@@ -3859,6 +3859,14 @@ export class Bootstrap extends Component {
       dash: () => this.debugDash(),
       activeSkill: () => this.debugActiveSkill(),
       actions: () => this.debugActionsSnapshot(),
+      classSkillState: () =>
+        this.combat?.classSkillSnapshot() ?? {
+          shotsFired: 0,
+          memory: [],
+          classBullets: 0,
+          classBulletsById: {},
+          buff: null,
+        },
       triggerEvolution: (id) => this.debugTriggerEvolution(id),
       state: () => this.debugStateSnapshot(),
       runSave: () => this.getActiveRunSave(),

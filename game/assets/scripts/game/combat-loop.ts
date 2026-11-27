@@ -28,9 +28,12 @@ import type { CharacterId } from '../core/characters/roster';
 import { dispatchClassSkillEvent, hasAnyClassSkill } from '../core/skills/class-skills';
 import type {
   ClassSkillEffect,
+  ClassSkillEventContext,
   ClassSkillEventName,
+  ClassSkillMemory,
   ClassSkillStackSource,
 } from '../core/skills/class-skill-hooks';
+import { NO_CLASS_SKILL_EFFECTS } from '../core/skills/class-skill-hooks';
 import {
   NinjaSkillRuntime,
   type NinjaHit,
@@ -150,10 +153,11 @@ import { BossView } from './boss-view';
 import type { BulletView } from './bullet-view';
 import type { CoverBody } from './cover-view';
 import { EnemyView } from './enemy-view';
-import { spawnLevelUpBurst, type FxPool } from './fx/effect-pool';
+import { spawnLevelUpBurst, type FxKey, type FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE } from './level-view';
 import { NinjaSkillView } from './ninja-skill-view';
 import type { PlayerController } from './player-controller';
+import type { DebugClassSkillSnapshot } from './debug-api';
 import { pointInCullRect, type CullRect } from './world-culler';
 import {
   playActiveSkillSfx,
@@ -263,6 +267,13 @@ export interface ClassSkillHookSource {
 function newestBulletId(bullets: readonly { readonly id: number }[]): number {
   const last = bullets[bullets.length - 1];
   return last === undefined ? 0 : last.id;
+}
+
+/** Unit flight direction of a bullet velocity (room tiles, y down); null for a zero vector. */
+function unitDirection(velocity: Vec2): Vec2 | null {
+  const length = Math.hypot(velocity.x, velocity.y);
+  if (!(length > 0)) return null;
+  return { x: velocity.x / length, y: velocity.y / length };
 }
 
 /** One enemy/boss hit, enough to show a floating number. */
@@ -388,6 +399,10 @@ export class CombatLoop {
   private readonly ninjaView: NinjaSkillView | null;
   /** Class skill that last damaged an enemy/boss this frame, for `onKill.killedBy`. */
   private readonly classSkillKilledBy = new Map<string, string>();
+  /** Per-run scratch store for stateful class hooks (marks, wind momentum); reset with the run. */
+  private readonly classSkillMemory: ClassSkillMemory = new Map();
+  /** Reused `onHit` effect queue: spawning into `active()` mid-iteration is unsafe. */
+  private readonly classSkillEffectBuffer: ClassSkillEffect[] = [];
 
   /** Debug stress: keep 24 enemies + 44 enemy bullets on screen to measure fps. */
   private stress = false;
@@ -628,6 +643,27 @@ export class CombatLoop {
     };
   }
 
+  /** Debug proof (`?debug=1`): class-hook memory, live class projectiles and the temporary buff. */
+  classSkillSnapshot(): DebugClassSkillSnapshot {
+    const memory: Array<readonly [string, number]> = [];
+    for (const entry of this.classSkillMemory.entries()) memory.push(entry);
+    let classBullets = 0;
+    const classBulletsById: Record<string, number> = {};
+    for (const bullet of this.player.bullets.active()) {
+      const id = bullet.classSkillId;
+      if (id === undefined) continue;
+      classBullets += 1;
+      classBulletsById[id] = (classBulletsById[id] ?? 0) + 1;
+    }
+    return {
+      shotsFired: this.shotsFired,
+      memory,
+      classBullets,
+      classBulletsById,
+      buff: this.player.classSkillBuffSnapshot(this.nowMs),
+    };
+  }
+
   /** Room change: clear enemies/bullets, take the new level. The sim clock keeps running (i-frames carry across rooms). */
   enterRoom(level: LevelData): void {
     this.clear();
@@ -794,29 +830,23 @@ export class CombatLoop {
     return source !== null && hasAnyClassSkill(source.characterId, source.stacks);
   }
 
-  /** Forward one event to the active character's class hooks and apply what they request. */
+  /** Forward one event to the active character's class hooks and return their effect requests. */
   private dispatchClassSkill(
     event: ClassSkillEventName,
-    context: {
-      readonly shotCount?: number;
-      readonly dtMs?: number;
-      readonly position?: Vec2;
-      readonly targetPosition?: Vec2;
-      readonly elite?: boolean;
-      readonly killedBy?: string;
-    },
-  ): void {
+    context: Omit<ClassSkillEventContext, 'characterId' | 'owned' | 'rng' | 'memory'>,
+  ): readonly ClassSkillEffect[] {
     const source = this.classSkills;
-    if (source === null) return;
-    const effects = dispatchClassSkillEvent(event, source.characterId, source.stacks, {
+    if (source === null) return NO_CLASS_SKILL_EFFECTS;
+    return dispatchClassSkillEvent(event, source.characterId, source.stacks, {
       ...context,
+      nowMs: context.nowMs ?? this.nowMs,
       rng: this.rng,
+      memory: this.classSkillMemory,
     });
-    this.applyClassSkillEffects(effects);
   }
 
   /** Feed one dispatch's effect requests to the Ninja runtime and play one cue per skill. */
-  private applyClassSkillEffects(effects: readonly ClassSkillEffect[]): void {
+  private applyNinjaClassSkillEffects(effects: readonly ClassSkillEffect[]): void {
     const runtime = this.ninja;
     if (runtime === null || effects.length === 0) return;
 
@@ -912,6 +942,129 @@ export class CombatLoop {
     this.ninjaView?.sync(runtime);
   }
 
+  /**
+   * Apply the effects a class hook requested (M20; shared by every class).
+   *
+   * `damage` goes through the normal damage path so kills/XP/gold/`onKill` are credited;
+   * `spawn` fires player bullets from the existing pool; `status` marks the target (pooled FX +
+   * tint, no node or FX-per-frame); `buff` is a temporary player multiplier.
+   */
+  private applyClassSkillEffects(effects: readonly ClassSkillEffect[]): void {
+    if (effects.length === 0) return;
+
+    // Ninja owns its own runtime (clones/zones): its effects are all Ninja ids, so the generic
+    // kinds below must not also interpret them. Every other class uses the generic path.
+    if (this.ninja !== null) {
+      this.applyNinjaClassSkillEffects(effects);
+      return;
+    }
+
+    let spawned = false;
+    for (const effect of effects) {
+      switch (effect.kind) {
+        case 'damage':
+          this.damageAreaFromClassSkill(effect);
+          break;
+        case 'spawn':
+          if (this.spawnClassSkillArrow(effect)) spawned = true;
+          break;
+        case 'status':
+          this.markClassSkillTarget(effect);
+          break;
+        case 'buff':
+          this.player.applyClassSkillBuff(
+            effect.fireRateMult ?? 1,
+            effect.projectileSpeedMult ?? 1,
+            effect.durationMs ?? 0,
+            this.nowMs,
+          );
+          break;
+        default:
+          break;
+      }
+    }
+    if (spawned) playSfx('shoot');
+  }
+
+  /** AoE damage at the effect point, through the same path as Dash Nova and Explosive. */
+  private damageAreaFromClassSkill(effect: ClassSkillEffect): void {
+    const baseDamage = effect.amount ?? 0;
+    const radius = effect.radiusTiles ?? 0;
+    if (!(baseDamage > 0)) return;
+
+    const aoeMult = Math.max(1, this.player.derivedStats.aoePowerMult);
+    const damage = baseDamage * aoeMult;
+    const reach = radius * aoeMult;
+
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      if (distance(effect.position, enemy.position) > reach + enemy.radiusTiles) continue;
+      enemy.takeDamage(damage, effect.position, this.nowMs);
+      this.reportDamage(damage, enemy.position, false);
+    }
+
+    const boss = this.boss;
+    if (
+      boss !== null &&
+      !boss.isDefeated &&
+      distance(effect.position, boss.position) <= reach + boss.hitboxRadiusTiles
+    ) {
+      boss.takeDamage(damage, this.nowMs);
+      this.reportDamage(damage, boss.position, false);
+    }
+
+    if (effect.fx !== undefined) {
+      this.fx?.spawn(effect.fx as FxKey, effect.position, {
+        drawUnits: Math.max(1.2, reach * 2),
+      });
+    }
+    playSfx(effect.fx !== undefined ? 'explosion' : 'enemy-hit');
+  }
+
+  /** Spawn one class-skill projectile from the player pool; returns false when it cannot fly. */
+  private spawnClassSkillArrow(effect: ClassSkillEffect): boolean {
+    const direction = effect.direction;
+    const damage = effect.amount ?? 0;
+    if (direction === undefined || !(damage > 0)) return false;
+
+    const stats = this.player.derivedStats;
+    const rangeTiles =
+      stats.targetingRangeTiles > 0 ? stats.targetingRangeTiles : DEFAULT_COMBAT.targetingRangeTiles;
+    const speedTilesPerSecond =
+      stats.projectileSpeedTilesPerSecond > 0
+        ? stats.projectileSpeedTilesPerSecond
+        : DEFAULT_COMBAT.projectileSpeedTilesPerSecond;
+    this.player.spawnClassSkillArrow({
+      position: effect.position,
+      direction,
+      damage,
+      speedTilesPerSecond,
+      ttlMs: Math.max(1200, Math.ceil((rangeTiles / speedTilesPerSecond) * 1000 * 1.5)),
+      pierce: effect.pierce ?? 0,
+      classSkillId: effect.skillId,
+      ...(effect.ignoreTargetId !== undefined ? { ignoreTargetId: effect.ignoreTargetId } : {}),
+    });
+    return true;
+  }
+
+  /** Visible mark: tint the enemy until the status expires plus a small pooled spark. */
+  private markClassSkillTarget(effect: ClassSkillEffect): void {
+    const targetId = effect.targetId;
+    const durationMs = effect.durationMs ?? 0;
+    if (targetId === undefined || !(durationMs > 0)) return;
+
+    if (targetId === BOSS_TARGET_ID) {
+      this.fx?.spawn('fx.spark', effect.position, { drawUnits: 1.4, lifetimeMs: 500 });
+      return;
+    }
+    for (const enemy of this.enemies) {
+      if (enemy.id !== targetId || enemy.isDead) continue;
+      enemy.applyClassSkillMark(this.nowMs + durationMs);
+      this.fx?.spawn('fx.spark', enemy.position, { drawUnits: 1.1, lifetimeMs: 380 });
+      return;
+    }
+  }
+
   /** One combat frame. `realDeltaMs` has already been capped by bootstrap. */
   update(realDeltaMs: number): CombatUpdateResult {
     const player = this.player;
@@ -940,7 +1093,9 @@ export class CombatLoop {
 
     // Class-skill periodic tick (no-op until #84–#87; allocation-free when nothing is owned).
     if (this.hasClassSkills()) {
-      this.dispatchClassSkill('tick', { dtMs: deltaMs, position: player.position });
+      this.applyClassSkillEffects(
+        this.dispatchClassSkill('tick', { dtMs: deltaMs, position: player.position }),
+      );
     }
 
     const targets: Targetable[] = this.enemies
@@ -964,10 +1119,17 @@ export class CombatLoop {
     if (shotIdAfter !== shotIdBefore) {
       this.shotsFired += 1;
       if (this.hasClassSkills()) {
-        this.dispatchClassSkill('onShot', {
-          shotCount: this.shotsFired,
-          position: player.position,
-        });
+        const targetId = player.lastShotTargetId;
+        const shotTarget =
+          targetId === null ? undefined : targets.find((target) => target.id === targetId);
+        this.applyClassSkillEffects(
+          this.dispatchClassSkill('onShot', {
+            shotCount: this.shotsFired,
+            position: player.position,
+            damage: player.derivedStats.damage,
+            ...(shotTarget !== undefined ? { targetPosition: shotTarget.position } : {}),
+          }),
+        );
       }
     }
     // Live Ninja state (clones/clouds/kunai) before enemy AI, so its kills land this frame.
@@ -1337,6 +1499,9 @@ export class CombatLoop {
 
     const seconds = deltaMs / 1000;
     const spent = new Set<number>();
+    /** `onHit` effects are applied after the loop: spawning into `active()` mid-iteration is unsafe. */
+    const classSkillEffects = this.classSkillEffectBuffer;
+    classSkillEffects.length = 0;
 
     for (const bullet of pool.active()) {
       // Obstacles block bullets — sweep along the path so a fast bullet cannot tunnel a 1-tile pillar.
@@ -1387,10 +1552,21 @@ export class CombatLoop {
         boss.takeDamage(damage, this.nowMs);
         this.reportDamage(damage, boss.position, crit);
         if (this.hasClassSkills()) {
-          this.dispatchClassSkill('onHit', {
-            position: bullet.position,
-            targetPosition: boss.position,
-          });
+          const direction = unitDirection(bullet.velocity);
+          classSkillEffects.push(
+            ...this.dispatchClassSkill('onHit', {
+              position: bullet.position,
+              targetPosition: boss.position,
+              targetId: BOSS_TARGET_ID,
+              crit: bullet.crit,
+              damage,
+              firstHit: bullet.hitIds.length === 0,
+              ...(direction !== null ? { direction } : {}),
+              ...(bullet.classSkillId !== undefined
+                ? { projectileSkillId: bullet.classSkillId }
+                : {}),
+            }),
+          );
         }
         this.activeSkillState = onActiveHit(this.activeSkillState, this.activeConfig, 1);
         playSfx('enemy-hit');
@@ -1430,10 +1606,21 @@ export class CombatLoop {
         victim.takeDamage(damage, bullet.position, this.nowMs);
         this.reportDamage(damage, victim.position, crit);
         if (this.hasClassSkills()) {
-          this.dispatchClassSkill('onHit', {
-            position: bullet.position,
-            targetPosition: victim.position,
-          });
+          const direction = unitDirection(bullet.velocity);
+          classSkillEffects.push(
+            ...this.dispatchClassSkill('onHit', {
+              position: bullet.position,
+              targetPosition: victim.position,
+              targetId: victim.id,
+              crit: bullet.crit,
+              damage,
+              firstHit: bullet.hitIds.length === 0,
+              ...(direction !== null ? { direction } : {}),
+              ...(bullet.classSkillId !== undefined
+                ? { projectileSkillId: bullet.classSkillId }
+                : {}),
+            }),
+          );
         }
         this.activeSkillState = onActiveHit(this.activeSkillState, this.activeConfig, 1);
         playSfx('enemy-hit');
@@ -1461,6 +1648,11 @@ export class CombatLoop {
     if (spent.size > 0) {
       for (const id of spent) this.signatureBullets.delete(id);
       pool.consumeWhere((bullet) => spent.has(bullet.id));
+    }
+
+    if (classSkillEffects.length > 0) {
+      this.applyClassSkillEffects(classSkillEffects);
+      classSkillEffects.length = 0;
     }
   }
 
@@ -1797,12 +1989,15 @@ export class CombatLoop {
       if (role !== null) this.onKill(role, enemy.isElite, enemy.position);
       if (this.hasClassSkills()) {
         const killedBy = this.classSkillKilledBy.get(enemy.id);
-        this.dispatchClassSkill('onKill', {
-          position: enemy.position,
-          targetPosition: enemy.position,
-          elite: enemy.isElite,
-          ...(killedBy !== undefined ? { killedBy } : {}),
-        });
+        this.applyClassSkillEffects(
+          this.dispatchClassSkill('onKill', {
+            position: enemy.position,
+            targetPosition: enemy.position,
+            targetId: enemy.id,
+            elite: enemy.isElite,
+            ...(killedBy !== undefined ? { killedBy } : {}),
+          }),
+        );
       }
       // Gold sparkle at the death spot (there are no pickups in a run).
       this.fx?.spawn('fx.impact', enemy.position, {
@@ -1839,12 +2034,15 @@ export class CombatLoop {
       this.onBossKilled();
       if (this.hasClassSkills()) {
         const killedBy = this.classSkillKilledBy.get(boss.id);
-        this.dispatchClassSkill('onKill', {
-          position: boss.position,
-          targetPosition: boss.position,
-          elite: false,
-          ...(killedBy !== undefined ? { killedBy } : {}),
-        });
+        this.applyClassSkillEffects(
+          this.dispatchClassSkill('onKill', {
+            position: boss.position,
+            targetPosition: boss.position,
+            targetId: BOSS_TARGET_ID,
+            elite: false,
+            ...(killedBy !== undefined ? { killedBy } : {}),
+          }),
+        );
       }
     }
 
@@ -1872,7 +2070,9 @@ export class CombatLoop {
     this.dashesUsed += 1;
     this.player.startDash(this.nowMs, result.state);
     if (this.hasClassSkills()) {
-      this.dispatchClassSkill('onDash', { position: this.player.position });
+      this.applyClassSkillEffects(
+        this.dispatchClassSkill('onDash', { position: this.player.position }),
+      );
     }
     this.triggerDashNova(stats);
     return true;
@@ -1963,7 +2163,7 @@ export class CombatLoop {
     }
 
     if (this.hasClassSkills()) {
-      this.dispatchClassSkill('onActive', { position: origin });
+      this.applyClassSkillEffects(this.dispatchClassSkill('onActive', { position: origin }));
     }
 
     return true;

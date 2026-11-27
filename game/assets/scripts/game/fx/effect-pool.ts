@@ -53,7 +53,9 @@ export type FxKey =
   | 'fx.big-shuriken'
   | 'fx.kunai'
   | 'fx.big-kunai'
-  | 'fx.cloud-shadow';
+  | 'fx.cloud-shadow'
+  // M20 Archer class skills (#85): Arrow Rain volley.
+  | 'fx.arrow-rain';
 
 interface FxStyle {
   /** Target width in world units (1 tile = 1 unit) when drawUnits is not passed. */
@@ -85,6 +87,8 @@ const STYLES: Readonly<Record<FxKey, FxStyle>> = {
   'fx.kunai': { drawUnits: 0.6, lifetimeMs: 340, frameMaxPx: 14 },
   'fx.big-kunai': { drawUnits: 1.3, lifetimeMs: 460, frameMaxPx: 24 },
   'fx.cloud-shadow': { drawUnits: 2.0, lifetimeMs: 700, frameMaxPx: 32 },
+  // M20 Arrow Rain volley (ticket #85): 32 px frames, drawn ~2.2 tiles per side.
+  'fx.arrow-rain': { drawUnits: 4.4, lifetimeMs: 720, frameMaxPx: 32 },
 };
 
 const POOL_SIZE = 40;
