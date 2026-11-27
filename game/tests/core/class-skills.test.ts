@@ -58,8 +58,10 @@ describe('class skill aggregator (M20, ADR-027)', () => {
 });
 
 describe('class skill no-op hooks (M20 seam for #84–#87)', () => {
-  // #84 implemented Ninja; Archer/Mage/Cultivator still return the shared empty list.
-  const UNIMPLEMENTED = CHARACTER_IDS.filter((characterId) => characterId !== 'ninja');
+  // #84 implemented Ninja and #87 Cultivator; Archer/Mage still return the shared empty list.
+  const UNIMPLEMENTED = CHARACTER_IDS.filter(
+    (characterId) => characterId !== 'ninja' && characterId !== 'cultivator',
+  );
 
   it('defines every hook for all 4 classes and returns the shared empty effect list', () => {
     for (const characterId of UNIMPLEMENTED) {
