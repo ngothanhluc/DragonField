@@ -16,7 +16,7 @@ const GENERATED_CONFIG_PATH = join(PROJECT, 'config', 'generated-art.json');
 
 const manifest = validateManifest(JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) as unknown);
 
-function resolvePackDir(): string {
+function resolvePackDir(): string | null {
   const candidates = [join(PROJECT, '..', 'art-source', 'ninja-adventure')];
   try {
     const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
@@ -27,13 +27,16 @@ function resolvePackDir(): string {
   } catch {
     // Fallback to relative candidate.
   }
-  const found = candidates.find((candidate) => existsSync(candidate));
-  if (found === undefined) throw new Error('missing ninja-adventure art-source');
-  return found;
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
+/** `art-source/` is gitignored (not in CI), so palette checks only run where the pack exists. */
+const PACK_AVAILABLE = resolvePackDir() !== null;
+
 function loadPalette(): ReadonlySet<string> {
-  const pal = readPng(join(resolvePackDir(), 'Palette.png'));
+  const packDir = resolvePackDir();
+  if (packDir === null) return new Set();
+  const pal = readPng(join(packDir, 'Palette.png'));
   const set = new Set<string>();
   for (let i = 0; i < pal.data.length; i += 4) {
     if (pal.data[i + 3]! > 0) {
@@ -79,7 +82,7 @@ function expectBinaryPaletteArt(img: PngImage, label: string, palette: ReadonlyS
   return opaque;
 }
 
-describe('M17 & M19 generated pixel-art asset batch', () => {
+describe.skipIf(!PACK_AVAILABLE)('M17 & M19 generated pixel-art asset batch', () => {
   const palette = loadPalette();
 
   it('registers generated icon and vfx prefixes and directory .meta files', () => {

@@ -1,5 +1,7 @@
+import type { CharacterId } from '../characters/roster';
 import { SeededRng } from '../rng';
-import { unlockedEvolutions } from './evolutions';
+import { classSkillsFor } from './class-skills';
+import { unlockedClassEvolution, unlockedEvolutions } from './evolutions';
 import { RARITIES, SKILLS, type Rarity, type SkillDef } from './pool';
 
 /** Salt isolating the skill-roll RNG stream from combat/door/room RNG streams (ADR-021). */
@@ -63,6 +65,11 @@ export interface RollChoicesArgs {
    * Mid-run shops pass `false` since Evolutions are level-up rewards only.
    */
   readonly includeEvolutions?: boolean;
+  /**
+   * Active character, which adds **only** that character's 4 exclusives and its unlocked
+   * Class Evolution to the pool (M20, ADR-027). Omitted = shared-only pool (shop / legacy).
+   */
+  readonly characterId?: CharacterId;
 }
 
 export interface RerollChoicesArgs {
@@ -71,19 +78,31 @@ export interface RerollChoicesArgs {
   /** Previously offered cards or skill ids to avoid repeating. */
   readonly previous: readonly (SkillDef | string)[];
   readonly count?: number;
+  /** Same class scoping as `RollChoicesArgs.characterId`; forwarded to `rollChoices`. */
+  readonly characterId?: CharacterId;
 }
 
 function eligiblePool(
   owned: ReadonlyMap<string, number>,
   includeEvolutions: boolean,
+  characterId?: CharacterId,
 ): SkillDef[] {
   const baseEligible: SkillDef[] = SKILLS.filter(
     (skill) => (owned.get(skill.id) ?? 0) < skill.maxStacks,
   );
+  if (characterId !== undefined) {
+    for (const skill of classSkillsFor(characterId)) {
+      if ((owned.get(skill.id) ?? 0) < skill.maxStacks) baseEligible.push(skill);
+    }
+  }
   if (!includeEvolutions) return baseEligible;
 
-  const evos = unlockedEvolutions(owned);
-  return evos.length > 0 ? [...baseEligible, ...evos] : baseEligible;
+  baseEligible.push(...unlockedEvolutions(owned));
+  if (characterId !== undefined) {
+    const classEvo = unlockedClassEvolution(characterId, owned);
+    if (classEvo !== undefined) baseEligible.push(classEvo);
+  }
+  return baseEligible;
 }
 
 /** Draw `target` rarity-weighted cards from `pool` (mutating `pool` to prevent duplicates). */
@@ -128,7 +147,7 @@ export function rollChoices(args: RollChoicesArgs): SkillDef[] {
     throw new Error(`rollChoices needs count to be an integer >= 0, got ${count}`);
   }
 
-  const eligible = eligiblePool(args.owned, args.includeEvolutions ?? true);
+  const eligible = eligiblePool(args.owned, args.includeEvolutions ?? true, args.characterId);
   const target = Math.min(count, eligible.length);
   if (target === 0) return [];
 
@@ -162,6 +181,7 @@ export function rerollChoices(args: RerollChoicesArgs): SkillDef[] {
     owned: args.owned,
     count: args.count,
     avoidIds,
+    characterId: args.characterId,
   });
 }
 
@@ -172,7 +192,8 @@ export function rerollChoices(args: RerollChoicesArgs): SkillDef[] {
 export function hasAlternativeSkills(
   owned: ReadonlyMap<string, number>,
   previous: readonly (SkillDef | string)[],
+  characterId?: CharacterId,
 ): boolean {
   const currentIds = new Set(previous.map((entry) => (typeof entry === 'string' ? entry : entry.id)));
-  return eligiblePool(owned, true).some((skill) => !currentIds.has(skill.id));
+  return eligiblePool(owned, true, characterId).some((skill) => !currentIds.has(skill.id));
 }

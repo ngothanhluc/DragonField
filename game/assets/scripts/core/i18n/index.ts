@@ -125,6 +125,52 @@ const SKILL_KEYS: Readonly<Record<string, TranslationKey>> = {
   'aegis-retribution': 'evolution.aegis-retribution',
   shadowstep: 'evolution.shadowstep',
   'tempest-barrage': 'evolution.tempest-barrage',
+
+  // Class-exclusive skills & Class Evolutions (M20, ADR-027).
+  'ninja-shadow-clone': 'skill.ninja-shadow-clone',
+  'ninja-venom-shuriken': 'skill.ninja-venom-shuriken',
+  'ninja-kunai-burst': 'skill.ninja-kunai-burst',
+  'ninja-smoke-bomb': 'skill.ninja-smoke-bomb',
+  'ninja-phantom-assassin': 'skill.ninja-phantom-assassin',
+  'archer-arrow-rain': 'skill.archer-arrow-rain',
+  'archer-split-arrow': 'skill.archer-split-arrow',
+  'archer-hunters-mark': 'skill.archer-hunters-mark',
+  'archer-wind-arrow': 'skill.archer-wind-arrow',
+  'archer-sky-tempest': 'skill.archer-sky-tempest',
+  'mage-meteor': 'skill.mage-meteor',
+  'mage-frost-orbs': 'skill.mage-frost-orbs',
+  'mage-storm-strike': 'skill.mage-storm-strike',
+  'mage-arcane-pulse': 'skill.mage-arcane-pulse',
+  'mage-elemental-cataclysm': 'skill.mage-elemental-cataclysm',
+  'cultivator-orbit-swords': 'skill.cultivator-orbit-swords',
+  'cultivator-sword-array': 'skill.cultivator-sword-array',
+  'cultivator-sword-qi': 'skill.cultivator-sword-qi',
+  'cultivator-qi-barrier': 'skill.cultivator-qi-barrier',
+  'cultivator-myriad-swords': 'skill.cultivator-myriad-swords',
+};
+
+/** Class-exclusive card description keys (M20, ADR-027): they have no `tags` to derive text from. */
+const SKILL_DESCRIPTION_KEYS: Readonly<Record<string, TranslationKey>> = {
+  'ninja-shadow-clone': 'skill.desc.ninja-shadow-clone',
+  'ninja-venom-shuriken': 'skill.desc.ninja-venom-shuriken',
+  'ninja-kunai-burst': 'skill.desc.ninja-kunai-burst',
+  'ninja-smoke-bomb': 'skill.desc.ninja-smoke-bomb',
+  'ninja-phantom-assassin': 'skill.desc.ninja-phantom-assassin',
+  'archer-arrow-rain': 'skill.desc.archer-arrow-rain',
+  'archer-split-arrow': 'skill.desc.archer-split-arrow',
+  'archer-hunters-mark': 'skill.desc.archer-hunters-mark',
+  'archer-wind-arrow': 'skill.desc.archer-wind-arrow',
+  'archer-sky-tempest': 'skill.desc.archer-sky-tempest',
+  'mage-meteor': 'skill.desc.mage-meteor',
+  'mage-frost-orbs': 'skill.desc.mage-frost-orbs',
+  'mage-storm-strike': 'skill.desc.mage-storm-strike',
+  'mage-arcane-pulse': 'skill.desc.mage-arcane-pulse',
+  'mage-elemental-cataclysm': 'skill.desc.mage-elemental-cataclysm',
+  'cultivator-orbit-swords': 'skill.desc.cultivator-orbit-swords',
+  'cultivator-sword-array': 'skill.desc.cultivator-sword-array',
+  'cultivator-sword-qi': 'skill.desc.cultivator-sword-qi',
+  'cultivator-qi-barrier': 'skill.desc.cultivator-qi-barrier',
+  'cultivator-myriad-swords': 'skill.desc.cultivator-myriad-swords',
 };
 
 /** Localized name of a base skill or Legendary Evolution (`fallback` used if unknown id). */
@@ -135,6 +181,15 @@ export function localizeSkillName(
 ): string {
   const key = SKILL_KEYS[id];
   return key === undefined ? fallback : t(key, undefined, locale);
+}
+
+/** Localized mechanic text of a class-exclusive skill/Evolution, or `undefined` for shared cards. */
+export function localizeSkillDescription(
+  id: string,
+  locale: Locale = currentLocale,
+): string | undefined {
+  const key = SKILL_DESCRIPTION_KEYS[id];
+  return key === undefined ? undefined : t(key, undefined, locale);
 }
 
 export type CharacterTextField =

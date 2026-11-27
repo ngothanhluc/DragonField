@@ -5,7 +5,15 @@
  * Evolutions trigger realistically within a 12–16 level-up run). Once unlocked and not yet
  * owned, it enters the level-up roll pool at `'legendary'` rarity.
  */
+import type { CharacterId } from '../characters/roster';
 import { getLocale, localizeSkillName, t, type Locale } from '../i18n';
+import {
+  CLASS_EVOLUTIONS,
+  classEvolutionFor,
+  findClassEvolution,
+  findClassSkillOrEvolution,
+} from './class-skills';
+import type { ClassEvolutionDef } from './class-skill-hooks';
 import { clampSkillStacks, getSkill, type SkillDef } from './pool';
 
 export interface EvolutionDef extends SkillDef {
@@ -135,12 +143,12 @@ const EVOLUTIONS_BY_ID: ReadonlyMap<string, EvolutionDef> = new Map(
 );
 
 export function isEvolutionId(id: string): boolean {
-  return EVOLUTIONS_BY_ID.has(id);
+  return EVOLUTIONS_BY_ID.has(id) || findClassEvolution(id) !== undefined;
 }
 
-/** Look up an Evolution by id. Throws when unknown. */
+/** Look up an Evolution by id (shared or Class Evolution). Throws when unknown. */
 export function getEvolution(id: string): EvolutionDef {
-  const evo = EVOLUTIONS_BY_ID.get(id);
+  const evo = EVOLUTIONS_BY_ID.get(id) ?? findClassEvolution(id);
   if (evo === undefined) {
     throw new Error(`Evolution does not exist: "${id}"`);
   }
@@ -151,6 +159,8 @@ export function getEvolution(id: string): EvolutionDef {
 export function findSkillOrEvolution(id: string): SkillDef | undefined {
   const evo = EVOLUTIONS_BY_ID.get(id);
   if (evo !== undefined) return evo;
+  const classCard = findClassSkillOrEvolution(id);
+  if (classCard !== undefined) return classCard;
   try {
     return getSkill(id);
   } catch {
@@ -167,7 +177,8 @@ export function isEvolutionUnlocked(
   if (ownedEvoStacks >= evo.maxStacks) return false;
 
   for (const reqId of evo.requires) {
-    const reqDef = getSkill(reqId);
+    const reqDef = findSkillOrEvolution(reqId);
+    if (reqDef === undefined) return false;
     const stacks = clampSkillStacks(owned.get(reqId) ?? 0, reqDef.maxStacks);
     if (stacks < evo.minStacksEach) return false;
   }
@@ -177,6 +188,18 @@ export function isEvolutionUnlocked(
 /** All Evolutions currently unlocked and not yet owned, in `EVOLUTIONS` order. */
 export function unlockedEvolutions(owned: ReadonlyMap<string, number>): EvolutionDef[] {
   return EVOLUTIONS.filter((evo) => isEvolutionUnlocked(evo, owned));
+}
+
+/**
+ * The Class Evolution of `characterId` when both of its prerequisites are owned and it is not
+ * yet owned; `undefined` otherwise. Never returns another class's Evolution.
+ */
+export function unlockedClassEvolution(
+  characterId: CharacterId,
+  owned: ReadonlyMap<string, number>,
+): ClassEvolutionDef | undefined {
+  const evo = classEvolutionFor(characterId);
+  return isEvolutionUnlocked(evo, owned) ? evo : undefined;
 }
 
 /** Owned Evolutions in deterministic `EVOLUTIONS` order, clamped to [0, 1]. */
@@ -202,14 +225,15 @@ export function evolutionHintsForSkill(
 ): EvolutionHint[] {
   const hints: EvolutionHint[] = [];
 
-  for (const evo of EVOLUTIONS) {
+  for (const evo of [...EVOLUTIONS, ...CLASS_EVOLUTIONS]) {
     const [a, b] = evo.requires;
     if (a !== skillId && b !== skillId) continue;
     if (clampSkillStacks(owned.get(evo.id) ?? 0, evo.maxStacks) >= evo.maxStacks) continue;
 
     const partnerId = a === skillId ? b : a;
-    const partnerDef = getSkill(partnerId);
-    const selfDef = getSkill(skillId);
+    const partnerDef = findSkillOrEvolution(partnerId);
+    const selfDef = findSkillOrEvolution(skillId);
+    if (partnerDef === undefined || selfDef === undefined) continue;
     const partnerStacks = clampSkillStacks(owned.get(partnerId) ?? 0, partnerDef.maxStacks);
     const selfStacksAfterPick = Math.min(
       selfDef.maxStacks,

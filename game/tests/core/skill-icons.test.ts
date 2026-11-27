@@ -3,6 +3,10 @@
  * Every base skill (27) and every Legendary Evolution (7) maps to a strictly unique 24×24 icon.
  */
 import { describe, expect, it } from 'vitest';
+import {
+  CLASS_EVOLUTIONS,
+  CLASS_SKILLS,
+} from '../../assets/scripts/core/skills/class-skills';
 import { EVOLUTIONS, getEvolution } from '../../assets/scripts/core/skills/evolutions';
 import {
   SKILL_ICONS,
@@ -15,6 +19,11 @@ describe('skill & Evolution icon mapping (data)', () => {
   it('maps every pool skill and every Legendary Evolution to a unique pack icon', () => {
     const allIds = [...SKILLS.map((s) => s.id), ...EVOLUTIONS.map((e) => e.id)].sort();
     expect(Object.keys(SKILL_ICONS).sort()).toEqual(allIds);
+
+    // Class cards (M20) map to their own staged sheets, so they are covered through the API.
+    const classIds = [...CLASS_SKILLS.map((s) => s.id), ...CLASS_EVOLUTIONS.map((e) => e.id)];
+    const sheets = [...allIds, ...classIds].map((id) => skillIconSheet(id));
+    expect(new Set(sheets).size).toBe(sheets.length);
 
     const icons = Object.values(SKILL_ICONS);
     expect(new Set(icons).size).toBe(icons.length);

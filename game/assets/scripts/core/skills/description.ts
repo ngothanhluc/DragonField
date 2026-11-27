@@ -4,7 +4,7 @@
  * Content derives from the pool's `tags`, not hand-written per skill: adding a skill or Evolution
  * = adding tags, and the description follows automatically.
  */
-import { getLocale, t, type Locale } from '../i18n';
+import { getLocale, localizeSkillDescription, t, type Locale } from '../i18n';
 import type { SkillDef, SkillTag } from './pool';
 
 /** Twin Shot spread angle, degrees — matches `shot-effects.ts`. */
@@ -13,8 +13,15 @@ export const TWIN_SPREAD_DEGREES = 12;
 /**
  * One description line for **each stack** of a skill or Evolution. Multiple tags join with " · ".
  * Does not include the current stack count — the UI appends "×N" or stack lines separately.
+ *
+ * Class-exclusive skills carry hand-written mechanic text (they have no `tags` in #83); shared
+ * cards keep the tag-derived text so adding a shared skill never needs a new string.
  */
 export function describeSkill(def: SkillDef, locale: Locale = getLocale()): string {
+  if (def.characterId !== undefined) {
+    const text = localizeSkillDescription(def.id, locale);
+    if (text !== undefined) return text;
+  }
   return def.tags.map((tag) => describeTag(tag, locale)).join(' · ');
 }
 

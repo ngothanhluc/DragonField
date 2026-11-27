@@ -29,6 +29,7 @@ import {
 } from '../../assets/scripts/core/i18n';
 import { UPGRADE_TRACKS } from '../../assets/scripts/core/meta/upgrades';
 import { DOOR_REWARDS } from '../../assets/scripts/core/run/doors';
+import { CLASS_EVOLUTIONS, CLASS_SKILLS } from '../../assets/scripts/core/skills/class-skills';
 import { EVOLUTIONS } from '../../assets/scripts/core/skills/evolutions';
 import { RARITIES, SKILLS } from '../../assets/scripts/core/skills/pool';
 import { readTtfCodePoints } from './vietnamese-font.test';
@@ -132,6 +133,10 @@ describe('M16 core/i18n — dictionary parity, interpolation & locale switching'
     for (const evo of EVOLUTIONS) {
       expect(localizeSkillName(evo.id, evo.name, 'vi').length).toBeGreaterThan(0);
       expect(localizeSkillName(evo.id, evo.name, 'en')).toBe(evo.name);
+    }
+    for (const card of [...CLASS_SKILLS, ...CLASS_EVOLUTIONS]) {
+      expect(localizeSkillName(card.id, card.name, 'vi').length, card.id).toBeGreaterThan(0);
+      expect(localizeSkillName(card.id, card.name, 'en'), card.id).toBe(card.name);
     }
     for (const id of CHARACTER_IDS) {
       expect(localizeCharacterName(id, 'vi').length).toBeGreaterThan(0);
