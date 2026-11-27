@@ -8,3 +8,4 @@ export * from './hub-state';
 export * from './npc-patrol';
 export * from './interact';
 export * from './dialog';
+export * from './home-flow';
