@@ -32,8 +32,10 @@ import type {
   ClassSkillEventName,
   ClassSkillMemory,
   ClassSkillStackSource,
+  ClassSkillTarget,
 } from '../core/skills/class-skill-hooks';
 import { NO_CLASS_SKILL_EFFECTS } from '../core/skills/class-skill-hooks';
+import { MAGE_SKILL_FX, MAGE_SKILL_SFX, frostOrbPositions } from '../core/skills/classes/mage';
 import {
   NinjaSkillRuntime,
 } from '../core/skills/ninja-runtime';
@@ -49,6 +51,7 @@ import {
   type PendingGunnerVolley,
 } from '../core/combat/enemy-fire';
 import { segmentHitsCircle } from '../core/combat/hitbox';
+import { accumulateDamage } from '../core/combat/integer-damage';
 import { HitstopClock } from '../core/combat/hitstop';
 import type { KnockbackState } from '../core/combat/knockback';
 import {
@@ -455,6 +458,8 @@ export class CombatLoop {
   private readonly classSkillMemory: ClassSkillMemory = new Map();
   /** Reused `onHit` effect queue: spawning into `active()` mid-iteration is unsafe. */
   private readonly classSkillEffectBuffer: ClassSkillEffect[] = [];
+  /** Fractional class-skill damage per victim, so popups only ever show whole numbers (M20). */
+  private readonly classDamageCarry = new Map<string, number>();
 
   /** Debug stress: keep 24 enemies + 44 enemy bullets on screen to measure fps. */
   private stress = false;
@@ -760,6 +765,7 @@ export class CombatLoop {
     this.pendingBlasts = [];
     this.pendingGunnerVolleys = [];
     this.signatureBullets.clear();
+    this.classDamageCarry.clear();
   }
 
   /**
@@ -887,6 +893,7 @@ export class CombatLoop {
   clearBullets(): void {
     this.player.bullets.clear();
     this.signatureBullets.clear();
+    this.fx?.setFrostOrbs(null, 0);
     this.bulletView?.sync();
   }
 
@@ -906,6 +913,8 @@ export class CombatLoop {
     return dispatchClassSkillEvent(event, source.characterId, source.stacks, {
       ...context,
       nowMs: context.nowMs ?? this.nowMs,
+      damage: context.damage ?? this.player.derivedStats.damage,
+      enemies: context.enemies ?? this.classSkillTargets(),
       rng: this.rng,
       memory: this.classSkillMemory,
     });
@@ -914,7 +923,7 @@ export class CombatLoop {
   /** Feed one dispatch's effect requests to the Ninja runtime and play one cue per skill. */
   private applyNinjaClassSkillEffects(effects: readonly ClassSkillEffect[]): void {
     const runtime = this.ninja;
-    if (runtime === null || effects.length === 0) return;
+    if (runtime === null) return;
 
     const origin = this.player.position;
     const aim = this.nearestTarget(origin);
@@ -1094,13 +1103,18 @@ export class CombatLoop {
     for (const effect of effects) {
       switch (effect.kind) {
         case 'damage':
-          this.damageAreaFromClassSkill(effect);
+          if (effect.targetId !== undefined) this.applyClassDamage(effect);
+          else this.damageAreaFromClassSkill(effect);
           break;
         case 'spawn':
           if (this.spawnClassSkillArrow(effect)) spawned = true;
           break;
         case 'status':
-          this.markClassSkillTarget(effect);
+          if (effect.slowFactor !== undefined || effect.burnDps !== undefined) {
+            this.applyClassStatus(effect);
+          } else {
+            this.markClassSkillTarget(effect);
+          }
           break;
         case 'buff':
           this.player.applyClassSkillBuff(
@@ -1115,6 +1129,7 @@ export class CombatLoop {
       }
     }
     if (spawned) playSfx('shoot');
+    this.presentClassSkillEffects(effects);
   }
 
   /** AoE damage at the effect point, through the same path as Dash Nova and Explosive. */
@@ -1130,6 +1145,7 @@ export class CombatLoop {
     for (const enemy of this.enemies) {
       if (enemy.isDead) continue;
       if (distance(effect.position, enemy.position) > reach + enemy.radiusTiles) continue;
+      this.classSkillKilledBy.set(enemy.id, effect.skillId);
       enemy.takeDamage(damage, effect.position, this.nowMs);
       this.reportDamage(damage, enemy.position, false);
     }
@@ -1140,6 +1156,7 @@ export class CombatLoop {
       !boss.isDefeated &&
       distance(effect.position, boss.position) <= reach + boss.hitboxRadiusTiles
     ) {
+      this.classSkillKilledBy.set(BOSS_TARGET_ID, effect.skillId);
       boss.takeDamage(damage, this.nowMs);
       this.reportDamage(damage, boss.position, false);
     }
@@ -1196,12 +1213,195 @@ export class CombatLoop {
     }
   }
 
+  /** Living enemies + the boss in the shape a class hook targets (M20). */
+  private classSkillTargets(): readonly ClassSkillTarget[] {
+    const targets: ClassSkillTarget[] = [];
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      targets.push({
+        id: enemy.id,
+        position: enemy.position,
+        ignited: enemy.isBurning(this.nowMs),
+      });
+    }
+    const boss = this.boss;
+    if (boss !== null && !boss.isDefeated) {
+      targets.push({
+        id: BOSS_TARGET_ID,
+        position: boss.position,
+        ignited: this.bossStatus.isBurned(this.nowMs),
+      });
+    }
+    return targets;
+  }
+
+  /** Whole part of a fractional class-skill hit; the remainder waits for the next tick (M20). */
+  private classDamageWhole(id: string, amount: number): number {
+    const step = accumulateDamage(this.classDamageCarry.get(id) ?? 0, amount);
+    this.classDamageCarry.set(id, step.carry);
+    return step.whole;
+  }
+
+  /** One class-skill `damage` request: direct `targetId` or an AoE around `position`. */
+  private applyClassDamage(effect: ClassSkillEffect): void {
+    const amount = effect.amount ?? 0;
+    if (!(amount > 0)) return;
+
+    if (effect.targetId !== undefined) {
+      if (effect.targetId === BOSS_TARGET_ID) {
+        this.damageBossWithClassSkill(amount);
+        return;
+      }
+      const victim = this.enemies.find(
+        (enemy) => enemy.id === effect.targetId && !enemy.isDead,
+      );
+      if (victim === undefined) return;
+      const whole = this.classDamageWhole(victim.id, amount);
+      if (whole <= 0) return;
+      this.classSkillKilledBy.set(victim.id, effect.skillId);
+      victim.takeDamage(whole, effect.position, this.nowMs);
+      this.reportDamage(whole, victim.position, false);
+      return;
+    }
+
+    const radius = effect.radiusTiles ?? 0;
+    if (!(radius > 0)) return;
+    for (const victim of this.enemies) {
+      if (victim.isDead) continue;
+      if (distance(effect.position, victim.position) > radius + victim.radiusTiles) continue;
+      const whole = this.classDamageWhole(victim.id, amount);
+      if (whole <= 0) continue;
+      this.classSkillKilledBy.set(victim.id, effect.skillId);
+      victim.takeDamage(whole, effect.position, this.nowMs);
+      this.reportDamage(whole, victim.position, false);
+    }
+    const boss = this.boss;
+    if (
+      boss !== null &&
+      !boss.isDefeated &&
+      distance(effect.position, boss.position) <= radius + boss.hitboxRadiusTiles
+    ) {
+      this.damageBossWithClassSkill(amount);
+    }
+  }
+
+  private damageBossWithClassSkill(amount: number): void {
+    const boss = this.boss;
+    if (boss === null || boss.isDefeated) return;
+    const whole = this.classDamageWhole(BOSS_TARGET_ID, amount);
+    if (whole <= 0) return;
+    this.classSkillKilledBy.set(BOSS_TARGET_ID, 'mage-class-skill');
+    boss.takeDamage(whole, this.nowMs);
+    this.reportDamage(whole, boss.position, false);
+  }
+
+  /** One class-skill `status` request (slow and/or burn) on a target or an AoE. */
+  private applyClassStatus(effect: ClassSkillEffect): void {
+    const slowFactor = effect.slowFactor;
+    const burnDps = effect.burnDps;
+    const effectMs = effect.durationMs ?? 0;
+    if (slowFactor === undefined && burnDps === undefined) return;
+
+    const applyToEnemy = (enemy: EnemyView): void => {
+      if (slowFactor !== undefined && effectMs > 0) {
+        enemy.applyClassSlow({ factor: slowFactor, durationMs: effectMs }, this.nowMs);
+      }
+      if (burnDps !== undefined && effectMs > 0) {
+        enemy.applyClassBurn({ dps: burnDps, durationMs: effectMs }, this.nowMs);
+      }
+    };
+    const applyToBoss = (): void => {
+      const boss = this.boss;
+      if (boss === null || boss.isDefeated) return;
+      if (slowFactor !== undefined && effectMs > 0) {
+        this.bossStatus.applySlow({ factor: slowFactor, durationMs: effectMs }, this.nowMs);
+      }
+      if (burnDps !== undefined && effectMs > 0) {
+        this.bossStatus.applyBurn({ dps: burnDps, durationMs: effectMs }, this.nowMs);
+      }
+    };
+
+    if (effect.targetId !== undefined) {
+      if (effect.targetId === BOSS_TARGET_ID) {
+        applyToBoss();
+        return;
+      }
+      const victim = this.enemies.find(
+        (enemy) => enemy.id === effect.targetId && !enemy.isDead,
+      );
+      if (victim !== undefined) applyToEnemy(victim);
+      return;
+    }
+
+    const radius = effect.radiusTiles ?? 0;
+    if (!(radius > 0)) return;
+    for (const victim of this.enemies) {
+      if (victim.isDead) continue;
+      if (distance(effect.position, victim.position) > radius + victim.radiusTiles) continue;
+      applyToEnemy(victim);
+    }
+    const boss = this.boss;
+    if (
+      boss !== null &&
+      !boss.isDefeated &&
+      distance(effect.position, boss.position) <= radius + boss.hitboxRadiusTiles
+    ) {
+      applyToBoss();
+    }
+  }
+
+  /**
+   * Spawn the FX/SFX for a class skill's effects (M20). The per-skill tables live in
+   * `core/skills/classes/<id>.ts`; Frost Orb contact is skipped because the orbiting sprites
+   * themselves are the visual (`FxPool.setFrostOrbs`).
+   */
+  private presentClassSkillEffects(effects: readonly ClassSkillEffect[]): void {
+    const source = this.classSkills;
+    if (source === null || source.characterId !== 'mage') return;
+
+    const playedSfx = new Set<string>();
+    const presented = new Set<string>();
+    for (const effect of effects) {
+      if (effect.skillId === 'mage-frost-orbs') continue;
+      if (!presented.has(effect.skillId)) {
+        presented.add(effect.skillId);
+        const fxKey = MAGE_SKILL_FX[effect.skillId];
+        if (fxKey !== undefined) this.fx?.spawn(fxKey as FxKey, effect.position);
+      }
+      const sfx = MAGE_SKILL_SFX[effect.skillId];
+      if (sfx !== undefined && !playedSfx.has(sfx)) {
+        playedSfx.add(sfx);
+        playSfx(sfx);
+      }
+    }
+  }
+
+  /** Draw the Mage's orbiting Frost Orbs every frame from the pure `frostOrbPositions` (M20). */
+  private updateMageOrbs(deltaMs: number): void {
+    const source = this.classSkills;
+    if (this.fx === null || source === null || source.characterId !== 'mage') return;
+
+    const raw = source.stacks('mage-frost-orbs');
+    const stacks = Number.isFinite(raw) ? Math.min(3, Math.max(0, Math.floor(raw))) : 0;
+    if (stacks <= 0) {
+      this.fx.setFrostOrbs(null, deltaMs);
+      return;
+    }
+    const evolved = source.stacks('mage-elemental-cataclysm') > 0;
+    this.fx.setFrostOrbs(
+      frostOrbPositions(stacks, evolved, this.nowMs, this.player.position),
+      deltaMs,
+    );
+  }
+
   /** One combat frame. `realDeltaMs` has already been capped by bootstrap. */
   update(realDeltaMs: number): CombatUpdateResult {
     const player = this.player;
     const level = this.level;
 
     if (this.awaitingAdvance || player.isDead) {
+      // Hide the orbiting Frost Orbs when the room is over (the loop stops advancing).
+      this.fx?.setFrostOrbs(null, 0);
       return { frozen: false, playerDied: player.isDead, cleared: this.awaitingAdvance };
     }
 
@@ -1222,12 +1422,13 @@ export class CombatLoop {
     this.tryConsumeOrStartDash(true);
     this.tryConsumeOrStartActive(true);
 
-    // Class-skill periodic tick (allocation-free when nothing is owned).
+    // Class-skill periodic tick + Mage Frost Orb view (M20; allocation-free when nothing is owned).
     if (this.hasClassSkills()) {
       this.applyClassSkillEffects(
         this.dispatchClassSkill('tick', { dtMs: deltaMs, position: player.position }),
       );
     }
+    this.updateMageOrbs(deltaMs);
 
     const targets: Targetable[] = this.enemies
       .filter((enemy) => !enemy.isDead)
@@ -1249,6 +1450,10 @@ export class CombatLoop {
     const shotIdAfter = newestBulletId(player.bullets.active());
     if (shotIdAfter !== shotIdBefore) {
       this.shotsFired += 1;
+      // Tag this volley so `onHit` reads the shot that actually hit (Arcane Pulse every 4th shot).
+      for (const bullet of player.bullets.active()) {
+        if (bullet.id > shotIdBefore) bullet.shotCount = this.shotsFired;
+      }
       if (this.hasClassSkills()) {
         const targetId = player.lastShotTargetId;
         const shotTarget =
@@ -1692,6 +1897,7 @@ export class CombatLoop {
               crit: bullet.crit,
               damage,
               firstHit: bullet.hitIds.length === 0,
+              shotCount: bullet.shotCount,
               ...(direction !== null ? { direction } : {}),
               ...(bullet.classSkillId !== undefined
                 ? { projectileSkillId: bullet.classSkillId }
@@ -1746,6 +1952,7 @@ export class CombatLoop {
               crit: bullet.crit,
               damage,
               firstHit: bullet.hitIds.length === 0,
+              shotCount: bullet.shotCount,
               ...(direction !== null ? { direction } : {}),
               ...(bullet.classSkillId !== undefined
                 ? { projectileSkillId: bullet.classSkillId }

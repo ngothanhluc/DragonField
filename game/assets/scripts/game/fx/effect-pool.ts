@@ -59,7 +59,12 @@ export type FxKey =
   // M20 Cultivator class skills (#87): spirit sword, planted array, crescent wave.
   | 'fx.orbit-sword'
   | 'fx.sword-array'
-  | 'fx.sword-qi';
+  | 'fx.sword-qi'
+  // M20 Mage class skills (#86): meteor impact, frost orbs, arcane pulse, ice shards.
+  | 'fx.meteor'
+  | 'fx.frost-orb'
+  | 'fx.arcane-bolt'
+  | 'fx.ice-spike';
 
 interface FxStyle {
   /** Target width in world units (1 tile = 1 unit) when drawUnits is not passed. */
@@ -97,11 +102,18 @@ const STYLES: Readonly<Record<FxKey, FxStyle>> = {
   'fx.orbit-sword': { drawUnits: 0.8, lifetimeMs: 340, frameMaxPx: 16 },
   'fx.sword-array': { drawUnits: 4.6, lifetimeMs: 420, frameMaxPx: 32 },
   'fx.sword-qi': { drawUnits: 1.8, lifetimeMs: 360, frameMaxPx: 32 },
+  // M20 Mage (#86): Meteor impact, Frost Orb spheres, Arcane Pulse, ice shards.
+  'fx.meteor': { drawUnits: 3.2, lifetimeMs: 620, frameMaxPx: 32 },
+  'fx.frost-orb': { drawUnits: 0.9, lifetimeMs: 420, frameMaxPx: 16 },
+  'fx.arcane-bolt': { drawUnits: 2.4, lifetimeMs: 420, frameMaxPx: 16 },
+  'fx.ice-spike': { drawUnits: 1.2, lifetimeMs: 520, frameMaxPx: 18 },
 };
 
 const POOL_SIZE = 40;
 const LINE_SLOTS = 8;
 const RING_SLOTS = 4;
+/** Max Frost Orbs at 3 stacks (GDD: 2 + 1/stack). */
+const ORB_SLOTS = 4;
 const LINE_LIFETIME_MS = 170;
 const SHOCKWAVE_SEGMENTS = 28;
 export const DEFAULT_LEVEL_UP_RADIUS_TILES = 3.6;
@@ -213,6 +225,15 @@ export class FxPool {
   private readonly auraTint = new CocosColor(255, 255, 255, 255);
   private auraScale = Number.NaN;
 
+  /** Mage Frost Orbs (M20): persistent orbiting sprites, one shared clock for every slot. */
+  private readonly orbNodes: Node[] = [];
+  private readonly orbSprites: Sprite[] = [];
+  private orbFrames: readonly SpriteFrame[] = [];
+  private orbFps = 10;
+  private orbFrameIndex = -1;
+  private orbElapsedMs = 0;
+  private orbVisible = false;
+
   /** Initialise the pool under `parent`; slice frames from the manifest up front. */
   async init(parent: Node): Promise<void> {
     const manifest = await loadAnimationManifest();
@@ -242,6 +263,17 @@ export class FxPool {
     this.auraNode = this.createSpriteSlot(parent, 'fx-aura', NO_TINT).node;
     this.auraSprite = this.auraNode.getComponent(CocosSprite);
     this.auraNode.active = false;
+
+    const orbs = this.framesByKey.get('fx.frost-orb');
+    if (orbs !== undefined) {
+      this.orbFrames = orbs.frames;
+      this.orbFps = orbs.fps;
+    }
+    for (let index = 0; index < ORB_SLOTS; index += 1) {
+      const slot = this.createSpriteSlot(parent, `fx-frost-orb-${index}`, NO_TINT);
+      this.orbNodes.push(slot.node);
+      this.orbSprites.push(slot.sprite);
+    }
   }
 
   /** Play an FX at `position` (tile units, y down). */
@@ -351,6 +383,53 @@ export class FxPool {
 
   get auraVisible(): boolean {
     return this.auraActive;
+  }
+
+  /**
+   * Draw the Mage's Frost Orbs (M20) at `positions` (tile units, y down). `null` or `[]` hides
+   * them. All slots share this pool's clock: one `SpriteFrame` write per frame change, no
+   * per-orb animator (the rule that keeps `stress()` at 60 fps).
+   */
+  setFrostOrbs(positions: readonly Vec2[] | null, deltaMs: number): void {
+    const count = positions?.length ?? 0;
+    if (count === 0 || this.orbFrames.length === 0 || this.orbNodes.length === 0) {
+      if (this.orbVisible) {
+        for (const node of this.orbNodes) node.active = false;
+        this.orbVisible = false;
+      }
+      return;
+    }
+
+    this.orbVisible = true;
+    this.orbElapsedMs += Math.max(0, deltaMs);
+    const frameMs = 1000 / Math.max(1, this.orbFps);
+    const index = Math.floor(this.orbElapsedMs / frameMs) % this.orbFrames.length;
+    const frameChanged = index !== this.orbFrameIndex;
+    this.orbFrameIndex = index;
+    const frame = this.orbFrames[index]!;
+    const style = STYLES['fx.frost-orb'];
+    const scale = style.drawUnits / style.frameMaxPx;
+
+    for (let slot = 0; slot < this.orbNodes.length; slot += 1) {
+      const node = this.orbNodes[slot]!;
+      const position = positions?.[slot];
+      if (position === undefined) {
+        if (node.active) node.active = false;
+        continue;
+      }
+      if (!node.active) node.active = true;
+      const world = tileToWorld(position);
+      node.setPosition(world.x, world.y, 0);
+      node.setScale(scale, scale, 1);
+      const sprite = this.orbSprites[slot]!;
+      if (frameChanged || sprite.spriteFrame !== frame) {
+        sprite.spriteFrame = frame;
+        const transform = node.getComponent(CocosUITransform);
+        if (transform !== null) {
+          transform.setContentSize(frame.rect.width, frame.rect.height);
+        }
+      }
+    }
   }
 
   /** Short straight tracer (Ricochet); both ends are tile positions, y down. */
