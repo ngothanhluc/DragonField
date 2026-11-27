@@ -887,12 +887,14 @@ export class Bootstrap extends Component {
     const manifest = this.manifest;
     if (save === null || manifest === null) return;
 
+    // Consume the snapshot *before* `teardownRun` (which invalidates it for every run start).
+    const resume = this.hubReturn;
+    this.hubReturn = null;
+
     this.leaveHubWorld();
     this.screens.clearMenu();
     this.menuBackdrop?.clear();
     this.teardownRun(false);
-    const resume = this.hubReturn;
-    this.hubReturn = null;
     this.status = 'loading';
     this.screens.setScreen('village');
 
@@ -1233,6 +1235,9 @@ export class Bootstrap extends Component {
     seedArg?: number,
     ascensionArg?: number,
   ): Promise<void> {
+    // A run starts fresh: the position saved for "Back from Chapter Select" must not leak into
+    // the village the player returns to after Results (they respawn in the Village Square).
+    this.hubReturn = null;
     const folder = CHAPTER_FOLDERS[chapterNumber];
     if (folder === undefined) {
       console.warn(`[YokaiField] Chapter ${chapterNumber} has no .tmx data — not opening.`);
@@ -3653,6 +3658,9 @@ export class Bootstrap extends Component {
    * pollutes the "no console errors" gate), while this teardown drops only the run's own nodes.
    */
   private teardownRun(clearSavedRun = false): void {
+    // Any run teardown (start, resume, death/victory, Quit to Title) invalidates the position
+    // kept for Chapter Select / Shop / Dojo Back, so the next Vào Làng uses the square spawn.
+    this.hubReturn = null;
     if (clearSavedRun) {
       this.runSaveRepo?.clear();
     }
