@@ -122,3 +122,29 @@ export function playNinjaSmokeSfx(): void {
   playSfx('shield');
   playSfx('ui-confirm');
 }
+
+/** M20 Cultivator exclusive-skill cues (#87) — one distinct pair of existing bank clips per skill. */
+export function playCultivatorOrbitSfx(): void {
+  playSfx('shoot');
+  playSfx('ui-move');
+}
+
+export function playCultivatorArraySfx(): void {
+  playSfx('freeze');
+  playSfx('skill-acquired');
+}
+
+export function playCultivatorQiSfx(): void {
+  playSfx('shoot');
+  playSfx('enemy-hit');
+}
+
+export function playCultivatorBarrierSfx(): void {
+  playSfx('shield');
+  playSfx('level-up');
+}
+
+export function playCultivatorEvolutionSfx(): void {
+  playSfx('level-up');
+  playSfx('skill-acquired');
+}

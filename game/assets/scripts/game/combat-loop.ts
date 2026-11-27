@@ -36,9 +36,8 @@ import type {
 import { NO_CLASS_SKILL_EFFECTS } from '../core/skills/class-skill-hooks';
 import {
   NinjaSkillRuntime,
-  type NinjaHit,
-  type NinjaTarget,
 } from '../core/skills/ninja-runtime';
+import { CultivatorSkillRuntime } from '../core/skills/cultivator-runtime';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
 import {
   fireEnemyVolley,
@@ -156,6 +155,7 @@ import { EnemyView } from './enemy-view';
 import { spawnLevelUpBurst, type FxKey, type FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE } from './level-view';
 import { NinjaSkillView } from './ninja-skill-view';
+import { CultivatorSkillView } from './cultivator-skill-view';
 import type { PlayerController } from './player-controller';
 import type { DebugClassSkillSnapshot } from './debug-api';
 import { pointInCullRect, type CullRect } from './world-culler';
@@ -168,12 +168,57 @@ import {
   playNinjaKunaiSfx,
   playNinjaSmokeSfx,
   playNinjaVenomSfx,
+  playCultivatorArraySfx,
+  playCultivatorBarrierSfx,
+  playCultivatorEvolutionSfx,
+  playCultivatorOrbitSfx,
+  playCultivatorQiSfx,
   playSfx,
   playShockSfx,
 } from './audio/sfx';
 
 /** `cc` is an any module: import names only work in value position. */
 type Node = InstanceType<typeof CocosNodeValue>;
+
+/** One living enemy/boss a class-skill runtime can hit (M20). */
+interface ClassRuntimeTarget {
+  readonly id: string;
+  readonly position: Vec2;
+  readonly radiusTiles: number;
+}
+
+/** One damage a class-skill runtime asks the caller to apply (M20). */
+interface ClassRuntimeHit {
+  readonly skillId: string;
+  readonly targetId: string;
+  readonly position: Vec2;
+  readonly amount: number;
+  readonly crit: boolean;
+}
+
+/** Values a class-skill runtime needs from the player at trigger time (M20). */
+interface ClassRuntimeContext {
+  readonly shotDamage: number;
+  readonly critMultiplier: number;
+  readonly aimDirection?: Vec2;
+}
+
+/** Class-generic runtime surface: Ninja (#84) and Cultivator (#87) both implement it. */
+interface ClassSkillRuntime {
+  readonly isEmpty: boolean;
+  applyEffects(
+    effects: readonly ClassSkillEffect[],
+    nowMs: number,
+    context: ClassRuntimeContext,
+  ): void;
+  step(
+    nowMs: number,
+    deltaMs: number,
+    targets: readonly ClassRuntimeTarget[],
+    context: ClassRuntimeContext,
+  ): readonly ClassRuntimeHit[];
+  reset(): void;
+}
 
 /** Player radius for enemy bullets / dashes, tiles — same convention as the sim. */
 export const PLAYER_RADIUS_TILES = 0.25;
@@ -397,6 +442,13 @@ export class CombatLoop {
   /** Ninja class-skill runtime + view (M20, #84); `null` for every other class. */
   private readonly ninja: NinjaSkillRuntime | null;
   private readonly ninjaView: NinjaSkillView | null;
+  /** Cultivator class-skill runtime + view (M20, #87); `null` for every other class. */
+  private readonly cultivator: CultivatorSkillRuntime | null;
+  private readonly cultivatorView: CultivatorSkillView | null;
+  /** The active class's runtime, if any; one generic surface for step/apply (M20). */
+  private readonly classRuntime: ClassSkillRuntime | null;
+  /** Orbit-slash SFX throttle: 4 swords must not stack 4 cues on one cadence. */
+  private orbitSfxAtMs = Number.NEGATIVE_INFINITY;
   /** Class skill that last damaged an enemy/boss this frame, for `onKill.killedBy`. */
   private readonly classSkillKilledBy = new Map<string, string>();
   /** Per-run scratch store for stateful class hooks (marks, wind momentum); reset with the run. */
@@ -444,6 +496,20 @@ export class CombatLoop {
       this.ninja = null;
       this.ninjaView = null;
     }
+    if (options.classSkills?.characterId === 'cultivator') {
+      this.cultivator = new CultivatorSkillRuntime(
+        CLASS_SKILLS_TUNING.cultivator,
+        options.classSkills.stacks,
+      );
+      this.cultivatorView =
+        options.fx !== undefined
+          ? new CultivatorSkillView(options.actorLayer, options.fx)
+          : null;
+    } else {
+      this.cultivator = null;
+      this.cultivatorView = null;
+    }
+    this.classRuntime = this.ninja ?? this.cultivator;
   }
 
   /** Live Ascension + Endless difficulty modifiers applied to enemies and bosses (M15). */
@@ -890,8 +956,61 @@ export class CombatLoop {
     if (smoke) playNinjaSmokeSfx();
   }
 
+  /** Feed one dispatch's effect requests to the Cultivator runtime and play one cue per skill. */
+  private applyCultivatorClassSkillEffects(effects: readonly ClassSkillEffect[]): void {
+    const runtime = this.cultivator;
+    if (runtime === null || effects.length === 0) return;
+
+    const origin = this.player.position;
+    const aim = this.nearestTarget(origin);
+    const aimDirection =
+      aim === null ? undefined : { x: aim.x - origin.x, y: aim.y - origin.y };
+    const stats = this.player.derivedStats;
+    runtime.applyEffects(effects, this.nowMs, {
+      shotDamage: stats.damage,
+      critMultiplier: stats.critMultiplier,
+      ...(aimDirection !== undefined ? { aimDirection } : {}),
+    });
+
+    let orbit = false;
+    let array = false;
+    let qi = false;
+    let barrier = false;
+    let evolution = false;
+    for (const effect of effects) {
+      switch (effect.skillId) {
+        case 'cultivator-orbit-swords':
+          orbit = true;
+          break;
+        case 'cultivator-sword-array':
+          array = true;
+          break;
+        case 'cultivator-sword-qi':
+          qi = true;
+          break;
+        case 'cultivator-qi-barrier':
+          barrier = true;
+          break;
+        case 'cultivator-myriad-swords':
+          evolution = true;
+          break;
+        default:
+          break;
+      }
+    }
+    // One cue per skill per dispatch, not one per sword/wave; the orbit cadence is throttled.
+    if (orbit && this.nowMs - this.orbitSfxAtMs >= 400) {
+      this.orbitSfxAtMs = this.nowMs;
+      playCultivatorOrbitSfx();
+    }
+    if (array) playCultivatorArraySfx();
+    if (qi) playCultivatorQiSfx();
+    if (barrier) playCultivatorBarrierSfx();
+    if (evolution) playCultivatorEvolutionSfx();
+  }
+
   /** One class-skill hit through the real damage path (kills, gold, floating numbers). */
-  private applyClassSkillHit(hit: NinjaHit): void {
+  private applyClassSkillHit(hit: ClassRuntimeHit): void {
     for (const enemy of this.enemies) {
       if (enemy.isDead || enemy.id !== hit.targetId) continue;
       enemy.takeDamage(hit.amount, null, this.nowMs);
@@ -907,16 +1026,16 @@ export class CombatLoop {
     }
   }
 
-  /** Step clones/projectiles/clouds/zones and apply their hits (M20, #84). */
+  /** Step the active class's live state and apply its hits (M20, #84/#87). */
   private stepClassSkills(deltaMs: number): void {
-    const runtime = this.ninja;
+    const runtime = this.classRuntime;
     if (runtime === null) return;
     if (runtime.isEmpty) {
-      // Still sync so clone/zones that just expired disappear.
-      this.ninjaView?.sync(runtime);
+      // Still sync so clones/zones/arrays/waves that just expired disappear.
+      this.syncClassSkillViews();
       return;
     }
-    const targets: NinjaTarget[] = [];
+    const targets: ClassRuntimeTarget[] = [];
     for (const enemy of this.enemies) {
       if (enemy.isDead) continue;
       targets.push({
@@ -939,7 +1058,15 @@ export class CombatLoop {
       critMultiplier: stats.critMultiplier,
     });
     for (const hit of hits) this.applyClassSkillHit(hit);
-    this.ninjaView?.sync(runtime);
+    this.syncClassSkillViews();
+  }
+
+  /** Mirror the active class runtime into its Cocos view (one call per frame). */
+  private syncClassSkillViews(): void {
+    if (this.ninja !== null) this.ninjaView?.sync(this.ninja);
+    if (this.cultivator !== null) {
+      this.cultivatorView?.sync(this.cultivator, this.player.position, this.nowMs);
+    }
   }
 
   /**
@@ -952,10 +1079,14 @@ export class CombatLoop {
   private applyClassSkillEffects(effects: readonly ClassSkillEffect[]): void {
     if (effects.length === 0) return;
 
-    // Ninja owns its own runtime (clones/zones): its effects are all Ninja ids, so the generic
-    // kinds below must not also interpret them. Every other class uses the generic path.
+    // Ninja and Cultivator own stateful runtimes: their effects are all their own ids, so the
+    // generic kinds below must not also interpret them. Every other class uses the generic path.
     if (this.ninja !== null) {
       this.applyNinjaClassSkillEffects(effects);
+      return;
+    }
+    if (this.cultivator !== null) {
+      this.applyCultivatorClassSkillEffects(effects);
       return;
     }
 
@@ -1091,7 +1222,7 @@ export class CombatLoop {
     this.tryConsumeOrStartDash(true);
     this.tryConsumeOrStartActive(true);
 
-    // Class-skill periodic tick (no-op until #84–#87; allocation-free when nothing is owned).
+    // Class-skill periodic tick (allocation-free when nothing is owned).
     if (this.hasClassSkills()) {
       this.applyClassSkillEffects(
         this.dispatchClassSkill('tick', { dtMs: deltaMs, position: player.position }),
@@ -1889,6 +2020,22 @@ export class CombatLoop {
     cause: DeathCause = { kind: 'unknown' },
   ): boolean {
     if (this.god) return false;
+    // *Hộ Tâm Linh Khí*: the Qi shield absorbs exactly the next hit (M20, #87). Respect i-frames
+    // first, exactly like the sim's `damagePlayer`, so a dash never wastes the shield.
+    if (
+      this.cultivator !== null &&
+      !this.player.isInvulnerable(this.nowMs) &&
+      this.cultivator.consumeQiShield()
+    ) {
+      this.fx?.spawnShockwave(this.player.position, {
+        startRadiusTiles: 0.4,
+        endRadiusTiles: 1.8,
+        durationMs: 320,
+        tint: new CocosColor(150, 246, 220, 220),
+      });
+      playCultivatorBarrierSfx();
+      return false;
+    }
     const before = this.player.hearts;
     this.player.applyDamage(this.nowMs, amount, source);
     if (this.player.hearts >= before) return false;

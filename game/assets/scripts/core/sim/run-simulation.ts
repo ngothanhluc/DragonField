@@ -163,9 +163,8 @@ import type {
 } from '../skills/class-skill-hooks';
 import {
   NinjaSkillRuntime,
-  type NinjaHit,
-  type NinjaTarget,
 } from '../skills/ninja-runtime';
+import { CultivatorSkillRuntime } from '../skills/cultivator-runtime';
 import type { SkillDef } from '../skills/pool';
 import { createSkillRollRng, rerollChoices, rollChoices } from '../skills/roll';
 import { screenViewAround } from '../view/view-rect';
@@ -184,6 +183,49 @@ import {
 import type { ViewRect } from '../camera/follow-camera';
 
 export const SIM_STEP_MS = 16;
+
+/** One living enemy/boss a class-skill runtime can hit (M20). */
+interface ClassRuntimeTarget {
+  readonly id: string;
+  readonly position: Vec2;
+  readonly radiusTiles: number;
+}
+
+/** One damage a class-skill runtime asks the caller to apply (M20). */
+interface ClassRuntimeHit {
+  readonly skillId: string;
+  readonly targetId: string;
+  readonly position: Vec2;
+  readonly amount: number;
+  readonly crit: boolean;
+}
+
+/** Values a class-skill runtime needs from the player at trigger time (M20). */
+interface ClassRuntimeContext {
+  readonly shotDamage: number;
+  readonly critMultiplier: number;
+  readonly aimDirection?: Vec2;
+}
+
+/**
+ * The class-generic surface both `NinjaSkillRuntime` and `CultivatorSkillRuntime` implement, so
+ * `simulateRun` wires one runtime per active class instead of a parallel copy per class (M20).
+ */
+interface ClassSkillRuntime {
+  readonly isEmpty: boolean;
+  applyEffects(
+    effects: readonly ClassSkillEffect[],
+    nowMs: number,
+    context: ClassRuntimeContext,
+  ): void;
+  step(
+    nowMs: number,
+    deltaMs: number,
+    targets: readonly ClassRuntimeTarget[],
+    context: ClassRuntimeContext,
+  ): readonly ClassRuntimeHit[];
+  reset(): void;
+}
 /**
  * Simulated wall-clock cap of one `simulateRun` call. The owner accepted a **30–60 minute** run
  * for M9 (16-screen rooms, 8× the v1 enemies), and one chapter alone takes ~17 minutes at that
@@ -464,6 +506,13 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   /** Ninja-only class-skill runtime (clones, venom clouds, smoke, kunai) — M20, #84. */
   const ninjaRuntime =
     characterId === 'ninja' ? new NinjaSkillRuntime(CLASS_SKILLS_TUNING.ninja) : null;
+  /** Cultivator-only class-skill runtime (swords, arrays, waves, Qi gauge/shield) — M20, #87. */
+  const cultivatorRuntime =
+    characterId === 'cultivator'
+      ? new CultivatorSkillRuntime(CLASS_SKILLS_TUNING.cultivator, classSkillSource)
+      : null;
+  /** The active class's runtime, if any; the sim drives one generic surface (M20). */
+  const classRuntime: ClassSkillRuntime | null = ninjaRuntime ?? cultivatorRuntime;
   /** Per-class-skill totals reported by `SimulationResult` (M20, #84+). */
   const classSkillDamage = new Map<string, number>();
   const classSkillProcs = new Map<string, number>();
@@ -573,6 +622,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     burns.clear();
     activeBulletIds.clear();
     ninjaRuntime?.reset();
+    cultivatorRuntime?.reset();
     dashState = createDashState();
     actionBuffer.clear();
     postDashFireUntilMs = Number.NEGATIVE_INFINITY;
@@ -781,6 +831,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const damagePlayer = (amount: number, source: 'contact' | 'projectile' = 'projectile'): boolean => {
     if (options.godMode === true || isActionInvulnerable()) return false;
     if (health.isInvulnerable(durationMs)) return false;
+    // *Hộ Tâm Linh Khí*: the Qi shield absorbs exactly the next hit (M20, #87).
+    if (cultivatorRuntime !== null && cultivatorRuntime.consumeQiShield()) {
+      events.push({ kind: 'shield-block', nowMs: durationMs, room: room.room });
+      return false;
+    }
     if (shield.tryBlock(durationMs)) {
       events.push({ kind: 'shield-block', nowMs: durationMs, room: room.room });
       return false;
@@ -1007,9 +1062,9 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   /**
    * Apply the class-skill requests one hook dispatch returned (M20, #84 + #85).
    *
-   * Every request counts as a proc for `SimulationResult.classSkillProcs`. Ninja owns its own
-   * runtime (clones/projectiles/clouds/zones); every other class uses the generic effect kinds
-   * below, so a Ninja effect is never interpreted twice.
+   * Every request counts as a proc for `SimulationResult.classSkillProcs`. Ninja (#84) and
+   * Cultivator (#87) own stateful runtimes; every other class (Archer #85) uses the generic
+   * effect kinds below, so an effect is never interpreted twice.
    */
   const applyClassSkillEffects = (
     effects: readonly ClassSkillEffect[],
@@ -1018,8 +1073,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (effects.length === 0) return;
     for (const effect of effects) bumpClassSkill(classSkillProcs, effect.skillId);
 
-    if (ninjaRuntime !== null) {
-      ninjaRuntime.applyEffects(effects, durationMs, {
+    if (classRuntime !== null) {
+      classRuntime.applyEffects(effects, durationMs, {
         shotDamage: stats.damage,
         critMultiplier: stats.critMultiplier,
         ...(aimDirection !== undefined ? { aimDirection } : {}),
@@ -1075,7 +1130,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   };
 
   /** One class-skill damage event: normal enemy path so kills/gold/XP/onKill attribution match. */
-  const applyNinjaHit = (hit: NinjaHit): void => {
+  const applyClassSkillHit = (hit: ClassRuntimeHit): void => {
     const enemy = enemies.find(
       (candidate) =>
         candidate.id === hit.targetId &&
@@ -1087,11 +1142,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     bumpClassSkill(classSkillDamage, hit.skillId, dealt);
   };
 
-  /** Step the live Ninja state (clones fire, clouds tick, zones expire) and apply its hits. */
+  /** Step the active class's live state and apply its hits. */
   const stepClassSkillRuntime = (): void => {
-    const runtime = ninjaRuntime;
+    const runtime = classRuntime;
     if (runtime === null || runtime.isEmpty) return;
-    const targets: NinjaTarget[] = [];
+    const targets: ClassRuntimeTarget[] = [];
     for (const enemy of enemies) {
       if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
       targets.push({
@@ -1104,7 +1159,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       shotDamage: stats.damage,
       critMultiplier: stats.critMultiplier,
     });
-    for (const hit of hits) applyNinjaHit(hit);
+    for (const hit of hits) applyClassSkillHit(hit);
   };
 
   /** Active class-skill buff fire-rate multiplier (1 when none/expired). */
@@ -1276,8 +1331,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     if (hasAnyClassSkill(characterId, classSkillSource)) {
       const effects = dispatchClassSkillEvent('tick', characterId, classSkillSource, {
         dtMs: SIM_STEP_MS,
-        position: player,
         nowMs: durationMs,
+        position: player,
         memory: classSkillMemory,
         rng,
       });

@@ -72,6 +72,11 @@ const SKILL_PRIORITY: readonly string[] = [
   'ninja-shadow-clone',
   'ninja-venom-shuriken',
   'ninja-smoke-bomb',
+  'cultivator-myriad-swords',
+  'cultivator-sword-array',
+  'cultivator-orbit-swords',
+  'cultivator-qi-barrier',
+  'cultivator-sword-qi',
   'twin-shot',
   'sharpen',
   'shield',
@@ -110,6 +115,11 @@ const CORE_COMBAT_SKILLS: ReadonlySet<string> = new Set([
   'ninja-shadow-clone',
   'ninja-venom-shuriken',
   'ninja-smoke-bomb',
+  'cultivator-myriad-swords',
+  'cultivator-sword-array',
+  'cultivator-orbit-swords',
+  'cultivator-qi-barrier',
+  'cultivator-sword-qi',
   'phantom-volley',
   'cataclysm',
   'starfall-kunai',
@@ -148,6 +158,16 @@ const EVOLUTION_PAIR_READY_RANK = SKILL_PRIORITY.indexOf('shield') + 0.25;
  */
 const NINJA_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('shield') + 0.75;
 
+/** Cultivator exclusives: same rule as Ninja — one stack each, then the shared DPS curve. */
+const CULTIVATOR_SKILLS: ReadonlySet<string> = new Set([
+  'cultivator-orbit-swords',
+  'cultivator-sword-array',
+  'cultivator-sword-qi',
+  'cultivator-qi-barrier',
+]);
+
+const CULTIVATOR_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('shield') + 0.75;
+
 function completesEvolutionPair(skill: SkillDef, owned: ReadonlyMap<string, number>): boolean {
   if (skill.rarity === 'legendary') return false;
   return evolutionHintsForSkill(skill.id, owned).some((hint) => hint.ready);
@@ -178,6 +198,9 @@ export const typicalSkillChoice: SkillPickPolicy = (
     }
     if (NINJA_SKILLS.has(skill.id) && (owned.get(skill.id) ?? 0) >= 1) {
       effectiveRank = Math.max(effectiveRank, NINJA_CAP_AFTER_RANK);
+    }
+    if (CULTIVATOR_SKILLS.has(skill.id) && (owned.get(skill.id) ?? 0) >= 1) {
+      effectiveRank = Math.max(effectiveRank, CULTIVATOR_CAP_AFTER_RANK);
     }
     if (!lowHearts && completesEvolutionPair(skill, owned)) {
       effectiveRank = Math.min(effectiveRank, EVOLUTION_PAIR_READY_RANK);

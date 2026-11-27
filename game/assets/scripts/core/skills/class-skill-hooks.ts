@@ -40,6 +40,11 @@ export interface ClassSkillEventContext {
   readonly shotCount?: number;
   /** Game-time step of a periodic tick, ms. */
   readonly dtMs?: number;
+  /**
+   * Run game-time clock in ms, the same clock as `dtMs` (M20, #87). Periodic mechanics use the
+   * stateless crossing rule `floor(nowMs / P) > floor((nowMs - dtMs) / P)`.
+   */
+  readonly nowMs?: number;
   /** Event origin in room tiles (y down). */
   readonly position?: Vec2;
   /** Victim/target position when the event has one. */
@@ -51,8 +56,6 @@ export interface ClassSkillEventContext {
    */
   readonly killedBy?: string;
   readonly rng?: SeededRng;
-  /** Game time of the event, ms (same clock as `dtMs`). */
-  readonly nowMs?: number;
   /** Victim actor id: an enemy `id` string, or `'boss'` for a boss. */
   readonly targetId?: string;
   /** The hitting bullet rolled a crit. */

@@ -569,10 +569,92 @@ export interface NinjaClassSkillsTuning {
   readonly smokeBomb: NinjaSmokeBombTuning;
 }
 
+/** Cultivator exclusive skill *Ngự Kiếm Hộ Thể* (orbit swords) tuning (M20, ADR-027). */
+export interface CultivatorOrbitSwordsTuning {
+  /** Sword count per stack (GDD: 2, +1/stack). */
+  readonly swordsByStack: readonly number[];
+  /** Time between two slash cadences, ms. */
+  readonly slashIntervalMs: number;
+  /** Slash damage as a fraction of the player's shot damage, indexed per stack. */
+  readonly damageRatioByStack: readonly number[];
+  /** How far a sword darts from the player, tiles, indexed per stack. */
+  readonly reachTilesByStack: readonly number[];
+  readonly dartSpeedTilesPerSecond: number;
+  /** Out-and-back travel time of one dart, ms. */
+  readonly dartTravelMs: number;
+  /** Orbit radius around the player, tiles (view + mini-wave origin). */
+  readonly orbitRadiusTiles: number;
+  /** Orbit angular speed, radians/second (view + mini-wave origin). */
+  readonly orbitSpinRadiansPerSecond: number;
+}
+
+/** Cultivator exclusive skill *Kiếm Trận* (sword array) tuning (M20, ADR-027). */
+export interface CultivatorSwordArrayTuning {
+  /** Array radius, tiles, indexed per stack (GDD stack 1: 3.2). */
+  readonly radiusTilesByStack: readonly number[];
+  /** Array lifetime, ms, indexed per stack (GDD stack 1: 3000). */
+  readonly durationMsByStack: readonly number[];
+  /** Damage per slice tick as a fraction of the player's shot damage, indexed per stack. */
+  readonly damageRatioByStack: readonly number[];
+  /** Time between two slice ticks, ms. */
+  readonly tickMs: number;
+}
+
+/** Cultivator exclusive skill *Kiếm Khí Bán Nguyệt* (sword qi) tuning (M20, ADR-027). */
+export interface CultivatorSwordQiTuning {
+  /** Unleash a crescent every N auto-fire shots (GDD: 3). */
+  readonly everyNShots: number;
+  /** Wave damage as a fraction of the player's shot damage, indexed per stack. */
+  readonly damageRatioByStack: readonly number[];
+  /** Crescent half-width, tiles, indexed per stack. */
+  readonly halfWidthTilesByStack: readonly number[];
+  /** Wave travel lifetime, ms, indexed per stack. */
+  readonly durationMsByStack: readonly number[];
+  readonly speedTilesPerSecond: number;
+}
+
+/** Cultivator exclusive skill *Hộ Tâm Linh Khí* (qi barrier) tuning (M20, ADR-027). */
+export interface CultivatorQiBarrierTuning {
+  /** Gauge charge per damaging hit in `0..1`, indexed per stack. */
+  readonly chargeByStack: readonly number[];
+  /** Radial sword-qi waves released when the shield is raised, indexed per stack. */
+  readonly wavesByStack: readonly number[];
+  /** Wave damage as a fraction of the player's shot damage, indexed per stack. */
+  readonly waveDamageRatioByStack: readonly number[];
+  /** Wave half-width, tiles, indexed per stack. */
+  readonly waveHalfWidthTilesByStack: readonly number[];
+  /** Wave travel lifetime, ms, indexed per stack. */
+  readonly waveDurationMsByStack: readonly number[];
+  readonly waveSpeedTilesPerSecond: number;
+}
+
+/** Cultivator Class Evolution *Vạn Kiếm Quy Tông* tuning (M20, ADR-027). */
+export interface CultivatorMyriadSwordsTuning {
+  /** Period between automatic Sword Arrays, ms (GDD test: <= 15000). */
+  readonly arrayIntervalMs: number;
+  /** Mini wave damage as a fraction of the player's shot damage. */
+  readonly miniWaveDamageRatio: number;
+  /** Mini wave half-width, tiles. */
+  readonly miniWaveRadiusTiles: number;
+  /** Mini wave travel lifetime, ms. */
+  readonly miniWaveDurationMs: number;
+  readonly miniWaveSpeedTilesPerSecond: number;
+}
+
+/** Complete Cultivator class-exclusive skill tuning block. */
+export interface CultivatorClassSkillsTuning {
+  readonly orbitSwords: CultivatorOrbitSwordsTuning;
+  readonly swordArray: CultivatorSwordArrayTuning;
+  readonly swordQi: CultivatorSwordQiTuning;
+  readonly qiBarrier: CultivatorQiBarrierTuning;
+  readonly myriadSwords: CultivatorMyriadSwordsTuning;
+}
+
 /** Class-exclusive skill tuning (M20, ADR-027), one block per class. */
 export interface ClassSkillsTuning {
   readonly ninja: NinjaClassSkillsTuning;
   readonly archer: ArcherClassSkillTuning;
+  readonly cultivator: CultivatorClassSkillsTuning;
 }
 
 /** XP level-up threshold curve: `round((baseThreshold + linearStep·i + quadraticStep·i²) · chapterMultiplier)`. */
@@ -989,7 +1071,7 @@ const ACTIVE_SKILL_FIELDS = [
   'barrageDamageMultiplier',
 ] as const;
 
-const CLASS_SKILLS_FIELDS = ['ninja', 'archer'] as const;
+const CLASS_SKILLS_FIELDS = ['ninja', 'archer', 'cultivator'] as const;
 
 const NINJA_CLASS_SKILLS_FIELDS = [
   'shadowClone',
@@ -1031,6 +1113,57 @@ const NINJA_SMOKE_BOMB_FIELDS = [
   'fireRateBonusByStack',
   'radiusTilesByStack',
   'durationMsByStack',
+] as const;
+
+const CULTIVATOR_CLASS_SKILLS_FIELDS = [
+  'orbitSwords',
+  'swordArray',
+  'swordQi',
+  'qiBarrier',
+  'myriadSwords',
+] as const;
+
+const CULTIVATOR_ORBIT_SWORDS_FIELDS = [
+  'swordsByStack',
+  'slashIntervalMs',
+  'damageRatioByStack',
+  'reachTilesByStack',
+  'dartSpeedTilesPerSecond',
+  'dartTravelMs',
+  'orbitRadiusTiles',
+  'orbitSpinRadiansPerSecond',
+] as const;
+
+const CULTIVATOR_SWORD_ARRAY_FIELDS = [
+  'radiusTilesByStack',
+  'durationMsByStack',
+  'damageRatioByStack',
+  'tickMs',
+] as const;
+
+const CULTIVATOR_SWORD_QI_FIELDS = [
+  'everyNShots',
+  'damageRatioByStack',
+  'halfWidthTilesByStack',
+  'durationMsByStack',
+  'speedTilesPerSecond',
+] as const;
+
+const CULTIVATOR_QI_BARRIER_FIELDS = [
+  'chargeByStack',
+  'wavesByStack',
+  'waveDamageRatioByStack',
+  'waveHalfWidthTilesByStack',
+  'waveDurationMsByStack',
+  'waveSpeedTilesPerSecond',
+] as const;
+
+const CULTIVATOR_MYRIAD_SWORDS_FIELDS = [
+  'arrayIntervalMs',
+  'miniWaveDamageRatio',
+  'miniWaveRadiusTiles',
+  'miniWaveDurationMs',
+  'miniWaveSpeedTilesPerSecond',
 ] as const;
 
 const CHARACTER_FIELDS = [
@@ -1336,7 +1469,12 @@ function readNumberArray(
   field: string,
   path: string,
   problems: ProblemList,
-  options: { readonly length?: number; readonly positive?: boolean } = {},
+  options: {
+    readonly length?: number;
+    readonly positive?: boolean;
+    readonly integer?: boolean;
+    readonly max?: number;
+  } = {},
 ): readonly number[] {
   const fieldPath = joinPath(path, field);
   const value = source[field];
@@ -1364,6 +1502,14 @@ function readNumberArray(
     }
     if (options.positive === true && entry === 0) {
       problems.add(`${fieldPath}[${index}]`, `must be > 0, got ${entry}`);
+      continue;
+    }
+    if (options.integer === true && !Number.isInteger(entry)) {
+      problems.add(`${fieldPath}[${index}]`, `must be an integer, got ${entry}`);
+      continue;
+    }
+    if (options.max !== undefined && entry > options.max) {
+      problems.add(`${fieldPath}[${index}]`, `must be <= ${options.max}, got ${entry}`);
       continue;
     }
     result.push(entry);
@@ -2830,6 +2976,59 @@ function defaultArcherClassSkills(): ArcherClassSkillTuning {
   };
 }
 
+function zeroCultivatorOrbitSwords(): CultivatorOrbitSwordsTuning {
+  return {
+    swordsByStack: [],
+    slashIntervalMs: 0,
+    damageRatioByStack: [],
+    reachTilesByStack: [],
+    dartSpeedTilesPerSecond: 0,
+    dartTravelMs: 0,
+    orbitRadiusTiles: 0,
+    orbitSpinRadiansPerSecond: 0,
+  };
+}
+
+function zeroCultivatorSwordArray(): CultivatorSwordArrayTuning {
+  return {
+    radiusTilesByStack: [],
+    durationMsByStack: [],
+    damageRatioByStack: [],
+    tickMs: 0,
+  };
+}
+
+function zeroCultivatorSwordQi(): CultivatorSwordQiTuning {
+  return {
+    everyNShots: 1,
+    damageRatioByStack: [],
+    halfWidthTilesByStack: [],
+    durationMsByStack: [],
+    speedTilesPerSecond: 0,
+  };
+}
+
+function zeroCultivatorQiBarrier(): CultivatorQiBarrierTuning {
+  return {
+    chargeByStack: [],
+    wavesByStack: [],
+    waveDamageRatioByStack: [],
+    waveHalfWidthTilesByStack: [],
+    waveDurationMsByStack: [],
+    waveSpeedTilesPerSecond: 0,
+  };
+}
+
+function zeroCultivatorMyriadSwords(): CultivatorMyriadSwordsTuning {
+  return {
+    arrayIntervalMs: 0,
+    miniWaveDamageRatio: 0,
+    miniWaveRadiusTiles: 0,
+    miniWaveDurationMs: 0,
+    miniWaveSpeedTilesPerSecond: 0,
+  };
+}
+
 function zeroClassSkills(): ClassSkillsTuning {
   return {
     ninja: {
@@ -2839,6 +3038,13 @@ function zeroClassSkills(): ClassSkillsTuning {
       smokeBomb: zeroNinjaSmokeBomb(),
     },
     archer: defaultArcherClassSkills(),
+    cultivator: {
+      orbitSwords: zeroCultivatorOrbitSwords(),
+      swordArray: zeroCultivatorSwordArray(),
+      swordQi: zeroCultivatorSwordQi(),
+      qiBarrier: zeroCultivatorQiBarrier(),
+      myriadSwords: zeroCultivatorMyriadSwords(),
+    },
   };
 }
 
@@ -2991,6 +3197,229 @@ function parseNinjaClassSkills(
   return { shadowClone, venomShuriken, kunaiBurst, smokeBomb };
 }
 
+function parseCultivatorClassSkills(
+  raw: Record<string, unknown>,
+  problems: ProblemList,
+): CultivatorClassSkillsTuning {
+  const rootPath = 'classSkills';
+  const source = readObject(raw, 'cultivator', rootPath, problems, CULTIVATOR_CLASS_SKILLS_FIELDS);
+  if (source === undefined) return zeroClassSkills().cultivator;
+
+  const path = `${rootPath}.cultivator`;
+
+  const orbitSource = readObject(
+    source,
+    'orbitSwords',
+    path,
+    problems,
+    CULTIVATOR_ORBIT_SWORDS_FIELDS,
+  );
+  const orbitPath = `${path}.orbitSwords`;
+  const orbitSwords: CultivatorOrbitSwordsTuning =
+    orbitSource === undefined
+      ? zeroCultivatorOrbitSwords()
+      : {
+          swordsByStack: readNumberArray(orbitSource, 'swordsByStack', orbitPath, problems, {
+            length: 3,
+            integer: true,
+            positive: true,
+          }),
+          slashIntervalMs:
+            readNumber(orbitSource, 'slashIntervalMs', orbitPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+          damageRatioByStack: readNumberArray(
+            orbitSource,
+            'damageRatioByStack',
+            orbitPath,
+            problems,
+            { length: 3, positive: true },
+          ),
+          reachTilesByStack: readNumberArray(
+            orbitSource,
+            'reachTilesByStack',
+            orbitPath,
+            problems,
+            { length: 3, positive: true },
+          ),
+          dartSpeedTilesPerSecond:
+            readNumber(orbitSource, 'dartSpeedTilesPerSecond', orbitPath, problems, {
+              positive: true,
+            }) ?? 0,
+          dartTravelMs:
+            readNumber(orbitSource, 'dartTravelMs', orbitPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+          orbitRadiusTiles:
+            readNumber(orbitSource, 'orbitRadiusTiles', orbitPath, problems, {
+              positive: true,
+            }) ?? 0,
+          orbitSpinRadiansPerSecond:
+            readNumber(orbitSource, 'orbitSpinRadiansPerSecond', orbitPath, problems, {
+              positive: true,
+            }) ?? 0,
+        };
+
+  const arraySource = readObject(
+    source,
+    'swordArray',
+    path,
+    problems,
+    CULTIVATOR_SWORD_ARRAY_FIELDS,
+  );
+  const arrayPath = `${path}.swordArray`;
+  const swordArray: CultivatorSwordArrayTuning =
+    arraySource === undefined
+      ? zeroCultivatorSwordArray()
+      : {
+          radiusTilesByStack: readNumberArray(
+            arraySource,
+            'radiusTilesByStack',
+            arrayPath,
+            problems,
+            { length: 2, positive: true },
+          ),
+          durationMsByStack: readNumberArray(
+            arraySource,
+            'durationMsByStack',
+            arrayPath,
+            problems,
+            { length: 2, positive: true },
+          ),
+          damageRatioByStack: readNumberArray(
+            arraySource,
+            'damageRatioByStack',
+            arrayPath,
+            problems,
+            { length: 2, positive: true },
+          ),
+          tickMs:
+            readNumber(arraySource, 'tickMs', arrayPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+        };
+
+  const qiSource = readObject(source, 'swordQi', path, problems, CULTIVATOR_SWORD_QI_FIELDS);
+  const qiPath = `${path}.swordQi`;
+  const swordQi: CultivatorSwordQiTuning =
+    qiSource === undefined
+      ? zeroCultivatorSwordQi()
+      : {
+          everyNShots:
+            readNumber(qiSource, 'everyNShots', qiPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 1,
+          damageRatioByStack: readNumberArray(qiSource, 'damageRatioByStack', qiPath, problems, {
+            length: 3,
+            positive: true,
+          }),
+          halfWidthTilesByStack: readNumberArray(
+            qiSource,
+            'halfWidthTilesByStack',
+            qiPath,
+            problems,
+            { length: 3, positive: true },
+          ),
+          durationMsByStack: readNumberArray(qiSource, 'durationMsByStack', qiPath, problems, {
+            length: 3,
+            positive: true,
+          }),
+          speedTilesPerSecond:
+            readNumber(qiSource, 'speedTilesPerSecond', qiPath, problems, { positive: true }) ?? 0,
+        };
+
+  const barrierSource = readObject(
+    source,
+    'qiBarrier',
+    path,
+    problems,
+    CULTIVATOR_QI_BARRIER_FIELDS,
+  );
+  const barrierPath = `${path}.qiBarrier`;
+  const qiBarrier: CultivatorQiBarrierTuning =
+    barrierSource === undefined
+      ? zeroCultivatorQiBarrier()
+      : {
+          chargeByStack: readNumberArray(barrierSource, 'chargeByStack', barrierPath, problems, {
+            length: 3,
+            positive: true,
+            max: 1,
+          }),
+          wavesByStack: readNumberArray(barrierSource, 'wavesByStack', barrierPath, problems, {
+            length: 3,
+            integer: true,
+            positive: true,
+          }),
+          waveDamageRatioByStack: readNumberArray(
+            barrierSource,
+            'waveDamageRatioByStack',
+            barrierPath,
+            problems,
+            { length: 3, positive: true },
+          ),
+          waveHalfWidthTilesByStack: readNumberArray(
+            barrierSource,
+            'waveHalfWidthTilesByStack',
+            barrierPath,
+            problems,
+            { length: 3, positive: true },
+          ),
+          waveDurationMsByStack: readNumberArray(
+            barrierSource,
+            'waveDurationMsByStack',
+            barrierPath,
+            problems,
+            { length: 3, positive: true },
+          ),
+          waveSpeedTilesPerSecond:
+            readNumber(barrierSource, 'waveSpeedTilesPerSecond', barrierPath, problems, {
+              positive: true,
+            }) ?? 0,
+        };
+
+  const myriadSource = readObject(
+    source,
+    'myriadSwords',
+    path,
+    problems,
+    CULTIVATOR_MYRIAD_SWORDS_FIELDS,
+  );
+  const myriadPath = `${path}.myriadSwords`;
+  const myriadSwords: CultivatorMyriadSwordsTuning =
+    myriadSource === undefined
+      ? zeroCultivatorMyriadSwords()
+      : {
+          arrayIntervalMs:
+            readNumber(myriadSource, 'arrayIntervalMs', myriadPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+          miniWaveDamageRatio:
+            readNumber(myriadSource, 'miniWaveDamageRatio', myriadPath, problems, {
+              positive: true,
+            }) ?? 0,
+          miniWaveRadiusTiles:
+            readNumber(myriadSource, 'miniWaveRadiusTiles', myriadPath, problems, {
+              positive: true,
+            }) ?? 0,
+          miniWaveDurationMs:
+            readNumber(myriadSource, 'miniWaveDurationMs', myriadPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+          miniWaveSpeedTilesPerSecond:
+            readNumber(myriadSource, 'miniWaveSpeedTilesPerSecond', myriadPath, problems, {
+              positive: true,
+            }) ?? 0,
+        };
+
+  return { orbitSwords, swordArray, swordQi, qiBarrier, myriadSwords };
+}
+
 function parseClassSkills(
   raw: Record<string, unknown>,
   problems: ProblemList,
@@ -3000,6 +3429,7 @@ function parseClassSkills(
   return {
     ninja: parseNinjaClassSkills(source, problems),
     archer: parseArcherClassSkills(source, problems),
+    cultivator: parseCultivatorClassSkills(source, problems),
   };
 }
 
