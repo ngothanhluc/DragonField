@@ -94,6 +94,11 @@ export interface CreateHubStateOptions {
   /** Start with a fade-in from black (e.g. entering Village from Title or returning from a run). */
   readonly fadeInOnEnter?: boolean;
   readonly fadeDurationMs?: number;
+  /**
+   * Hub location to build the session in. Defaults to `'village'`; `'shop-interior'` rebuilds the
+   * shop after a Meta Shop panel closes (#93) so the player returns to the counter, not the plaza.
+   */
+  readonly startLocation?: HubLocation;
 }
 
 /** Build `HubSpawnConfig` directly from parsed `village-hub.tmx` and `shop-interior.tmx` data. */
@@ -155,7 +160,7 @@ export function createHubState(options: CreateHubStateOptions = {}): HubState {
   const lastRunOutcome =
     origin === 'run-victory' ? 'victory' : origin === 'run-defeat' ? 'defeat' : null;
 
-  return {
+  const state: HubState = {
     location: 'village',
     playerPos: spawn.at,
     playerFacing: spawn.facing,
@@ -174,6 +179,19 @@ export function createHubState(options: CreateHubStateOptions = {}): HubState {
       target: null,
     },
     pendingRunLaunch: null,
+  };
+
+  if (options.startLocation !== 'shop-interior') return state;
+
+  const shopSpawn = resolveShopSpawn(options.spawns);
+  return {
+    ...state,
+    location: 'shop-interior',
+    playerPos: shopSpawn.at,
+    playerFacing: shopSpawn.facing,
+    dashEnabled: false,
+    cameraMode: 'static',
+    musicDucked: true,
   };
 }
 

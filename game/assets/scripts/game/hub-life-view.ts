@@ -9,7 +9,7 @@
  */
 import { Node as CocosNode, Sprite as CocosSprite } from 'cc';
 import type { AnimalState } from '../core/atmosphere/living-decor';
-import { NPC_BODY_RADIUS_TILES, type NpcPatrolState } from '../core/hub';
+import { NPC_BODY_RADIUS_TILES, resolveNpcAnimKey, type NpcPatrolState } from '../core/hub';
 import type { VillageAnimal, VillageLifeState } from '../core/hub/village-life';
 import type { CoverBody } from './cover-view';
 import { ACTOR_SCALE } from './level-view';
@@ -50,6 +50,8 @@ function feetOf(at: { readonly x: number; readonly y: number }, rows: number): {
 export class HubLifeView {
   private readonly villagers = new Map<string, VillagerSprite>();
   private readonly animals = new Map<string, AnimalSprite>();
+  /** Shopkeeper standing behind the counter inside the Shop Interior (#93); `null` outside it. */
+  private shopkeeper: (VillagerSprite & { rows: number }) | null = null;
   /** Every sprite is a direct child of the actors layer so the hub's Y-sort interleaves it with the player. */
   private readonly actorLayer: Node;
   private rows = 24;
@@ -125,6 +127,53 @@ export class HubLifeView {
         footY: animal.at.y,
       });
     }
+    const keeper = this.shopkeeper;
+    if (keeper !== null && keeper.node.isValid) {
+      out.push({
+        node: keeper.node,
+        position: keeper.at,
+        radiusTiles: NPC_BODY_RADIUS_TILES,
+        footY: keeper.at.y,
+      });
+    }
+  }
+
+  /**
+   * Village villagers and yard animals only exist in the village; the Shop Interior hides them
+   * (and shows its Shopkeeper) so nobody from the square is drawn inside the shop (#93).
+   */
+  setVillageVisible(visible: boolean): void {
+    if (this.destroyed) return;
+    for (const view of this.villagers.values()) {
+      if (view.node.isValid) view.node.active = visible;
+    }
+    for (const view of this.animals.values()) {
+      if (view.node.isValid) view.node.active = visible;
+    }
+  }
+
+  /** Stand the Shopkeeper at `at` (shop tiles) facing down, behind the counter. */
+  showShopkeeper(at: { readonly x: number; readonly y: number }, rows: number): void {
+    if (this.destroyed) return;
+    if (this.shopkeeper !== null) {
+      this.shopkeeper.at = { x: at.x, y: at.y };
+      this.shopkeeper.rows = rows;
+      this.placeShopkeeper(this.shopkeeper);
+      this.shopkeeper.node.active = true;
+      return;
+    }
+    const node = this.createActorNode('shopkeeper');
+    node.addComponent(SpriteAnimator);
+    const animator = node.getComponent(SpriteAnimator) as SpriteAnimator;
+    const view = { node, animator, playing: '', at: { x: at.x, y: at.y }, rows };
+    this.shopkeeper = view;
+    this.placeShopkeeper(view);
+  }
+
+  /** Hide the Shopkeeper again when the player leaves the shop. */
+  hideShopkeeper(): void {
+    if (this.shopkeeper === null) return;
+    if (this.shopkeeper.node.isValid) this.shopkeeper.node.active = false;
   }
 
   /** Number of sprites created (debug/proof helper). */
@@ -141,6 +190,8 @@ export class HubLifeView {
     for (const view of this.animals.values()) {
       if (view.node.isValid) view.node.destroy();
     }
+    if (this.shopkeeper !== null && this.shopkeeper.node.isValid) this.shopkeeper.node.destroy();
+    this.shopkeeper = null;
     this.villagers.clear();
     this.animals.clear();
   }
@@ -170,5 +221,18 @@ export class HubLifeView {
     const feet = feetOf(view.at, this.rows);
     view.node.setPosition(feet.x, feet.y, 0);
     view.node.setScale(ACTOR_SCALE * state.facing, ACTOR_SCALE, 1);
+  }
+
+  /** Shopkeeper: one standing clip (`npc.shopkeeper-stand.down`), feet on its tile centre. */
+  private placeShopkeeper(view: VillagerSprite & { rows: number }): void {
+    const feet = feetOf(view.at, view.rows);
+    view.node.setPosition(feet.x, feet.y, 0);
+    view.node.setScale(ACTOR_SCALE, ACTOR_SCALE, 1);
+    const stand = resolveNpcAnimKey('shopkeeper', 'stand', 'down');
+    const signature = stand.key;
+    if (view.playing !== signature) {
+      view.playing = signature;
+      view.animator.play(stand.key, 'down', stand.fallback);
+    }
   }
 }

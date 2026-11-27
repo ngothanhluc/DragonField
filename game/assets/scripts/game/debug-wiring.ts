@@ -20,6 +20,7 @@ import type {
   DebugDoorSnapshot,
   DebugEnemySnapshot,
   DebugHubLifeSnapshot,
+  DebugHubShopSnapshot,
   DebugHubSnapshot,
   DebugMenuBackdropSnapshot,
   DebugPlayerAttachmentSnapshot,
@@ -117,6 +118,8 @@ export interface DebugWiringHost {
   readonly hubInteract?: () => boolean;
   /** M21 #92: live Village Life snapshot (`null` outside the hub). */
   readonly hubLife?: () => DebugHubLifeSnapshot | null;
+  /** M21 #93: the Shop Interior visit (`null` outside the hub). */
+  readonly hubShop?: () => DebugHubShopSnapshot | null;
   /** M21 #92: advance/close the open DialogBox. */
   readonly hubAdvance?: () => boolean;
   /** M21 #94: live village snapshot (body/attachment, quick bar, codex, music cue). */
@@ -227,6 +230,7 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     hubTeleport: host.hubTeleport,
     hubInteract: host.hubInteract,
     hubLife: host.hubLife,
+    hubShop: host.hubShop,
     hubAdvance: host.hubAdvance,
     hubSnapshot: host.hubSnapshot,
     hubQuick: host.hubQuick,

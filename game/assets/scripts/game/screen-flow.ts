@@ -26,6 +26,7 @@ import {
   type HomeFlowState,
 } from '../core/hub/home-flow';
 import type { HubEntryOrigin } from '../core/hub/hub-state';
+import { shopPanelInitialFocus, type ShopPanelId } from '../core/hub/shop-visit';
 import { buy, canBuy, UPGRADE_TRACKS } from '../core/meta/upgrades';
 import type { UpgradeTrack } from '../core/meta/upgrades';
 import { clampAscension } from '../core/run/ascension';
@@ -308,11 +309,17 @@ export class ScreenFlow {
     });
   }
 
-  /** Hub shop door → interim Meta Shop screen; Back returns to the village. */
-  villageShopRequested(): void {
+  /**
+   * The Shopkeeper's dialog routed to one Meta Shop panel (M21 #93): the existing Meta Shop screen,
+   * opened on its 6 upgrade tracks (`meta-shop`) or on its `HERO UNLOCKS` column (`hero-unlocks`).
+   * Back re-enters the Shop Interior at the counter (the hub's return snapshot carries the location),
+   * so the player never lands back in the village square.
+   */
+  shopPanelRequested(panel: ShopPanelId): void {
     if (this.home.screen !== 'village') return;
+    const focus = shopPanelInitialFocus(panel);
     this.leaveVillageThen(() => {
-      void this.showShop(() => this.returnToVillage()).catch((error: unknown) =>
+      void this.showShop(() => this.returnToVillage(), focus).catch((error: unknown) =>
         this.host.fail(error),
       );
     });

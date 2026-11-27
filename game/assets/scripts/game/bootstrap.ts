@@ -52,36 +52,49 @@ import {
 import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
 import { getLocale, setLocale, t } from '../core/i18n';
 import {
+  advanceShopDialog,
   advanceVillageDialog,
   buildHubInteractables,
   canControlPlayerInHub,
   createHubInteractRegistry,
   createHubState,
+  createShopVisit,
   createVillageLife,
   dialogBoxView,
   findNearestInteractable,
   findStepTrigger,
+  hubTransitionForAction,
+  isShopVisitBusy,
   isVillageDialogOpen,
   moveDialogChoice,
   parseHubTmx,
   selectDialogChoice,
+  selectShopChoice,
+  spawnsFromHubMaps,
   startHubTransition,
   stepHubTransition,
+  stepShopVisit,
   stepTriggerEntered,
   stepVillageLife,
+  talkToShopkeeper,
   talkToVillager,
   updateHubPlayerPose,
   villageLiveNpcs,
   dojoSwapCharacter,
   hubMusicCue,
   villageQuickRoute,
+  type DialogState,
   type HubEntryOrigin,
   type HubInteractable,
+  type HubInteractAction,
   type HubInteractRegistry,
+  type HubLocation,
   type HubMapData,
+  type HubSpawnConfig,
   type HubState,
   type HubTriggerId,
   type HubVillagerId,
+  type ShopVisitState,
   type VillageLifeState,
   type VillageQuickItemId,
 } from '../core/hub';
@@ -181,6 +194,7 @@ import {
   type DebugCharacterStatsSnapshot,
   type DebugDoorSnapshot,
   type DebugHubLifeSnapshot,
+  type DebugHubShopSnapshot,
   type DebugHubSnapshot,
   type DebugSpecialSnapshot,
   type DebugStateSnapshot,
@@ -412,24 +426,38 @@ interface EndlessCarryover {
 /** Resource path of the Village Hub map (`game/assets/resources/data/levels/village/`). */
 const VILLAGE_HUB_PATH = 'data/levels/village/village-hub';
 
+/** Resource path of the Shop Interior (#93): the 16×12 room behind the village shop door. */
+const SHOP_HUB_PATH = 'data/levels/village/shop-interior';
+
 /** Where the hub returns the player after an interim screen (chapter select / shop / dojo). */
 interface HubReturnSnapshot {
   readonly position: Vec2;
   readonly facing: HubState['playerFacing'];
   readonly trigger: HubTriggerId | null;
+  /** Hub location to rebuild: the Shop Interior after a Meta Shop panel closes (#93). */
+  readonly location: HubLocation;
 }
 
-/** One live Village Hub session (M21 #91): map, player, prompt and interaction handlers. */
+/** One live Village Hub session (M21 #91 + #93): maps, player, prompt and interaction handlers. */
 interface HubRuntime {
-  readonly map: HubMapData;
+  /** Both hub locations, parsed once per session (`village-hub.tmx` + `shop-interior.tmx`). */
+  readonly maps: Readonly<Record<HubLocation, HubMapData>>;
+  readonly assets: Readonly<Record<HubLocation, TiledMapAsset>>;
+  /** Spawns from the two maps, fed to the fade machine (village square, shop front door, shop entry). */
+  readonly spawns: HubSpawnConfig;
   state: HubState;
-  /** Rebuilt each frame from the live villager positions so `[E]` follows walkers. */
+  /**
+   * Rebuilt each frame from the live villager positions so `[E]` follows walkers. Always built
+   * from the **active** map, so the shop's counter prompt and rug replace the village's.
+   */
   interactables: readonly HubInteractable[];
   readonly registry: HubInteractRegistry;
   readonly view: HubVillageView;
   /** Village Life session (#92): villagers, yard animals and the open DialogBox. */
   life: VillageLifeState;
-  /** Villager/animal sprites and the bottom DialogBox (#92); `null` until their textures load. */
+  /** Shop Visit session (#93): the Shopkeeper dialog and the Meta Shop panel it routed to. */
+  shopVisit: ShopVisitState;
+  /** Villager/animal/shopkeeper sprites and the bottom DialogBox; `null` until their textures load. */
   lifeView: HubLifeView | null;
   dialogBox: DialogBox | null;
   /** Character Codex overlay opened by the Dojo Master (#94); `null` when closed. */
@@ -916,8 +944,13 @@ export class Bootstrap extends Component {
 
   /**
    * Build the playable Village Hub: the real `village-hub.tmx` through `buildRoom`, the selected
-   * character moved by `PlayerController` against `map.collisionLevel`, the floating `[E]` prompt,
-   * and the per-session interactable registry. No combat loop, auto-fire, enemies or HUD bars.
+   * character moved by `PlayerController` against the active map's `collisionLevel`, the floating
+   * `[E]` prompt, and the per-session interactable registry. No combat loop, auto-fire, enemies or
+   * HUD bars.
+   *
+   * Since #93 both hub locations (`village-hub.tmx` + `shop-interior.tmx`) load together, so the
+   * shop door fades between the two rooms without a scene reload; `resume.location` rebuilds the
+   * Shop Interior when the player comes back from a Meta Shop panel.
    */
   async enterVillage(origin: HubEntryOrigin): Promise<void> {
     const save = this.save;
@@ -935,19 +968,40 @@ export class Bootstrap extends Component {
     this.status = 'loading';
     this.screens.setScreen('village');
 
-    const asset = await this.loadTiledMap(VILLAGE_HUB_PATH);
-    const map = parseHubTmx(asset.tmxXmlStr, {
+    const [villageAsset, shopAsset] = await Promise.all([
+      this.loadTiledMap(VILLAGE_HUB_PATH),
+      this.loadTiledMap(SHOP_HUB_PATH),
+    ]);
+    const villageMap = parseHubTmx(villageAsset.tmxXmlStr, {
       source: `resources/${VILLAGE_HUB_PATH}.tmx`,
     });
+    const shopMap = parseHubTmx(shopAsset.tmxXmlStr, {
+      source: `resources/${SHOP_HUB_PATH}.tmx`,
+    });
+    const maps: Record<HubLocation, HubMapData> = {
+      village: villageMap,
+      'shop-interior': shopMap,
+    };
+    const assets: Record<HubLocation, TiledMapAsset> = {
+      village: villageAsset,
+      'shop-interior': shopAsset,
+    };
+    const spawns = spawnsFromHubMaps(villageMap, shopMap);
 
-    let state = createHubState({ save, entryOrigin: origin, fadeInOnEnter: true });
+    let state = createHubState({
+      save,
+      entryOrigin: origin,
+      spawns,
+      fadeInOnEnter: true,
+      startLocation: resume?.location ?? 'village',
+    });
     if (resume !== null) {
       state = updateHubPlayerPose(state, resume.position, resume.facing);
     }
 
     // The hub player is the save's selected character (Character Select swaps it at the Dojo).
     this.runCharacter = state.character;
-    this.buildHubRoom(map, asset);
+    this.buildHubRoom(maps[state.location], assets[state.location]);
     const player = this.createPlayer(state.playerPos);
     player.teleport(state.playerPos);
 
@@ -955,11 +1009,13 @@ export class Bootstrap extends Component {
     registry.register('open-expedition', () => {
       void this.screens.villageGateInteracted().catch((error: unknown) => this.fail(error));
     });
-    registry.register('enter-shop', () => this.screens.villageShopRequested());
+    registry.register('enter-shop', (action) => this.fadeToHubDoor(action));
+    registry.register('exit-shop', (action) => this.fadeToHubDoor(action));
     registry.register('open-dojo', () => this.screens.villageDojoRequested());
     registry.register('talk-villager', (action) => {
       this.openVillageDialog(action.npcId);
     });
+    registry.register('talk-shopkeeper', () => this.openShopkeeperDialog());
 
     const view = new HubVillageView(this.ensureUiRoot());
     view.setGold(save.gold);
@@ -974,18 +1030,21 @@ export class Bootstrap extends Component {
     }
     const actorLayer = this.actorLayer;
     if (actorLayer === null) throw new Error('Bootstrap: no actor-layer for the village');
-    const life = createVillageLife(map, { seed: VILLAGE_ANIMAL_SEED, animalTuning });
-    const lifeView = new HubLifeView({ actorLayer, rows: map.size.rows });
+    const life = createVillageLife(villageMap, { seed: VILLAGE_ANIMAL_SEED, animalTuning });
+    const lifeView = new HubLifeView({ actorLayer, rows: villageMap.size.rows });
     lifeView.init(life);
     const dialogBox = this.createHubDialogBox();
 
-    this.hub = {
-      map,
+    const hub: HubRuntime = {
+      maps,
+      assets,
+      spawns,
       state,
-      interactables: buildHubInteractables(map, villageLiveNpcs(life)),
+      interactables: buildHubInteractables(maps[state.location]),
       registry,
       view,
       life,
+      shopVisit: createShopVisit(),
       lifeView,
       dialogBox,
       codexScreen: null,
@@ -993,14 +1052,18 @@ export class Bootstrap extends Component {
       clockMs: 0,
       leave: null,
     };
+    this.hub = hub;
+    this.syncHubActors(hub);
+
     this.status = 'hub';
     document.addEventListener('keydown', this.onHubKey, true);
     this.fpsMeter.clear();
     console.log(
-      `[YokaiField] Village Hub: ${map.size.cols}×${map.size.rows} tiles, ` +
-        `${map.obstacles.length} obstacle(s), ${map.triggers.length} trigger(s), ` +
+      `[YokaiField] Village Hub: ${villageMap.size.cols}×${villageMap.size.rows} tiles, ` +
+        `${villageMap.obstacles.length} obstacle(s), ${villageMap.triggers.length} trigger(s), ` +
         `${life.villagers.length} villager(s), ${life.animals.length} animal(s), ` +
-        `spawn ${JSON.stringify(state.playerPos)} (from ${origin}).`,
+        `shop-interior ${shopMap.size.cols}×${shopMap.size.rows}; ` +
+        `spawn ${JSON.stringify(state.playerPos)} in ${state.location} (from ${origin}).`,
     );
   }
 
@@ -1017,7 +1080,7 @@ export class Bootstrap extends Component {
   /** Talk to a villager in the active locale; ignored while another box is open. */
   private openVillageDialog(npcId: HubVillagerId): boolean {
     const hub = this.hub;
-    if (hub === null) return false;
+    if (hub === null || hub.state.location !== 'village') return false;
     const next = talkToVillager(hub.life, npcId, getLocale());
     if (next === hub.life) return false;
     hub.life = next;
@@ -1026,10 +1089,55 @@ export class Bootstrap extends Component {
     return true;
   }
 
+  /** Talk to the Shopkeeper at the counter (#93); ignored while a dialog or panel is open. */
+  private openShopkeeperDialog(): boolean {
+    const hub = this.hub;
+    const save = this.save;
+    if (hub === null || save === null || hub.state.location !== 'shop-interior') return false;
+    const next = talkToShopkeeper(
+      hub.shopVisit,
+      {
+        gold: save.gold,
+        chaptersUnlocked: save.chaptersUnlocked,
+        unlockedCharacters: save.unlockedCharacters,
+        lastRunOutcome: hub.state.lastRunOutcome,
+      },
+      getLocale(),
+    );
+    if (next === hub.shopVisit) return false;
+    hub.shopVisit = next;
+    playSfx('ui-confirm');
+    this.renderHubDialog();
+    return true;
+  }
+
+  /** The box open in the active location: the shop's Shopkeeper or a village villager. */
+  private currentHubDialog(): DialogState | null {
+    const hub = this.hub;
+    if (hub === null) return null;
+    return hub.state.location === 'shop-interior' ? hub.shopVisit.dialog : hub.life.dialog;
+  }
+
+  /** True while a DialogBox **or** a routed Meta Shop panel locks the hub player. */
+  private isHubDialogLocked(): boolean {
+    const hub = this.hub;
+    if (hub === null) return false;
+    return isVillageDialogOpen(hub.life) || isShopVisitBusy(hub.shopVisit);
+  }
+
   /** `E` / `Enter` / click: reveal the line, then close (or confirm the highlighted choice). */
   private advanceHubDialog(): boolean {
     const hub = this.hub;
-    if (hub === null || !isVillageDialogOpen(hub.life)) return false;
+    if (hub === null) return false;
+    if (hub.state.location === 'shop-interior') {
+      if (hub.shopVisit.dialog === null) return false;
+      hub.shopVisit = advanceShopDialog(hub.shopVisit);
+      if (hub.shopVisit.dialog === null) playSfx('ui-confirm');
+      this.renderHubDialog();
+      this.openHubShopPanel();
+      return true;
+    }
+    if (!isVillageDialogOpen(hub.life)) return false;
     hub.life = advanceVillageDialog(hub.life);
     this.renderHubDialog();
     return true;
@@ -1038,11 +1146,15 @@ export class Bootstrap extends Component {
   /** `W/S` / arrows: move the Shopkeeper-style choice highlight. */
   private moveHubDialogChoice(delta: number): boolean {
     const hub = this.hub;
-    const dialog = hub?.life.dialog ?? null;
+    const dialog = this.currentHubDialog();
     if (hub === null || dialog === null || dialog.choices.length === 0) return false;
     const moved = moveDialogChoice(dialog, delta);
     if (moved.selectedChoiceIndex === dialog.selectedChoiceIndex) return false;
-    hub.life = { ...hub.life, dialog: moved };
+    if (hub.state.location === 'shop-interior') {
+      hub.shopVisit = { ...hub.shopVisit, dialog: moved };
+    } else {
+      hub.life = { ...hub.life, dialog: moved };
+    }
     playSfx('ui-move');
     this.renderHubDialog();
     return true;
@@ -1051,20 +1163,38 @@ export class Bootstrap extends Component {
   /** Click a choice row: move the highlight onto it, then confirm exactly like `E`. */
   private selectHubDialogChoice(index: number): boolean {
     const hub = this.hub;
-    const dialog = hub?.life.dialog ?? null;
+    const dialog = this.currentHubDialog();
     if (hub === null || dialog === null || dialog.choices.length === 0) return false;
-    const outcome = selectDialogChoice(dialog, dialog.choices[index]?.id ?? dialog.choices[0]!.id);
-    hub.life = { ...hub.life, dialog: outcome.state.open ? outcome.state : null };
+    const choiceId = dialog.choices[index]?.id ?? dialog.choices[0]!.id;
     playSfx('ui-confirm');
+    if (hub.state.location === 'shop-interior') {
+      hub.shopVisit = selectShopChoice(hub.shopVisit, choiceId);
+      this.renderHubDialog();
+      this.openHubShopPanel();
+      return true;
+    }
+    const outcome = selectDialogChoice(dialog, choiceId);
+    hub.life = { ...hub.life, dialog: outcome.state.open ? outcome.state : null };
     this.renderHubDialog();
     return true;
+  }
+
+  /**
+   * A confirmed Shopkeeper choice named a panel: hand the existing Meta Shop screen to
+   * `ScreenFlow` (same purchases/save path). The dialog is already closed, so the box is hidden.
+   */
+  private openHubShopPanel(): void {
+    const hub = this.hub;
+    const panel = hub?.shopVisit.panel ?? null;
+    if (hub === null || panel === null) return;
+    this.screens.shopPanelRequested(panel);
   }
 
   /** Re-render the DialogBox from the session (hidden when no box is open). */
   private renderHubDialog(): void {
     const hub = this.hub;
     if (hub === null || hub.dialogBox === null) return;
-    const dialog = hub.life.dialog;
+    const dialog = this.currentHubDialog();
     hub.dialogBox.render(dialog === null ? null : dialogBoxView(dialog, getLocale()));
   }
 
@@ -1088,14 +1218,14 @@ export class Bootstrap extends Component {
     if (event.repeat) return;
     const hub = this.hub;
     if (hub === null) return;
-
     if (event.code === 'Escape' || event.key === 'Escape' || event.keyCode === 27) {
       if (hub.codexScreen !== null) {
         event.preventDefault();
         this.closeDojoOverlay();
         return;
       }
-      if (isVillageDialogOpen(hub.life) || !canControlPlayerInHub(hub.state)) return;
+      if (hub.state.location !== 'village') return;
+      if (this.isHubDialogLocked() || !canControlPlayerInHub(hub.state)) return;
       event.preventDefault();
       this.toggleVillageMenu();
       return;
@@ -1104,8 +1234,8 @@ export class Bootstrap extends Component {
     if (event.code !== 'KeyE') return;
     // The Codex overlay owns `[E]` (its own capture listener) while it is open.
     if (hub.codexScreen !== null) return;
-    // An open DialogBox consumes `[E]` (reveal → close) before any world interaction.
-    if (isVillageDialogOpen(hub.life)) {
+    // An open DialogBox consumes `[E]` (reveal → choice/close) before any world interaction.
+    if (this.currentHubDialog() !== null) {
       event.preventDefault();
       this.advanceHubDialog();
       return;
@@ -1119,7 +1249,7 @@ export class Bootstrap extends Component {
     const hub = this.hub;
     const player = this.player;
     if (hub === null || player === null || !canControlPlayerInHub(hub.state)) return false;
-    if (isVillageDialogOpen(hub.life)) return false;
+    if (this.isHubDialogLocked()) return false;
     const prompt = findNearestInteractable(player.position, hub.interactables);
     if (prompt === null) return false;
     return hub.registry.dispatch(prompt.action);
@@ -1237,10 +1367,71 @@ export class Bootstrap extends Component {
         position: { x: player.position.x, y: player.position.y },
         facing: player.facingDirection,
         trigger: hub.lastTrigger,
+        location: hub.state.location,
       },
       then,
     };
     hub.state = startHubTransition(hub.state, { kind: 'village', from: 'title' });
+  }
+
+  /** Put the floating `[E]` prompt away (fades, menu handoffs, location switches). */
+  private hideHubPrompt(hub: HubRuntime): void {
+    const camera = this.camera;
+    const map = hub.maps[hub.state.location];
+    hub.view.showPrompt(
+      null,
+      {
+        position: camera?.position ?? { x: map.size.cols / 2, y: map.size.rows / 2 },
+        hudScale: camera?.hudScale ?? 1,
+      },
+      map.size.rows,
+    );
+  }
+
+  /**
+   * `enter-shop` / `exit-shop`: start the ~200 ms fade the door action names for the current
+   * location (never the same door twice, never a shop door from inside the village square).
+   */
+  private fadeToHubDoor(action: HubInteractAction): boolean {
+    const hub = this.hub;
+    if (hub === null || !canControlPlayerInHub(hub.state) || this.isHubDialogLocked()) return false;
+    const target = hubTransitionForAction(action, hub.state.location);
+    if (target === null) return false;
+    hub.state = startHubTransition(hub.state, target);
+    return true;
+  }
+
+  /**
+   * At full black (the fade machine switched `state.location`): swap the room, put the player on
+   * the new spawn, re-aim the camera, and swap which people are drawn.
+   */
+  private applyHubLocation(hub: HubRuntime): void {
+    const location = hub.state.location;
+    // A door is a fresh arrival: no dialog survives the fade in either direction.
+    hub.shopVisit = createShopVisit();
+    this.buildHubRoom(hub.maps[location], hub.assets[location]);
+    this.player?.teleport(hub.state.playerPos);
+    hub.lastTrigger = null;
+    hub.interactables = buildHubInteractables(hub.maps[location]);
+    this.syncHubActors(hub);
+    this.hideHubPrompt(hub);
+    this.renderHubDialog();
+  }
+
+  /** Draw only the people of the active location: village villagers/animals, or the Shopkeeper. */
+  private syncHubActors(hub: HubRuntime): void {
+    const view = hub.lifeView;
+    if (view === null) return;
+    if (hub.state.location === 'village') {
+      view.setVillageVisible(true);
+      view.hideShopkeeper();
+      return;
+    }
+    view.setVillageVisible(false);
+    const shopkeeper = hub.maps['shop-interior'].npcs.find((npc) => npc.id === 'shopkeeper');
+    if (shopkeeper !== undefined) {
+      view.showShopkeeper(shopkeeper.at, hub.maps['shop-interior'].size.rows);
+    }
   }
 
   /** One hub frame: fades, player movement, prompt, and edge-triggered step zones. */
@@ -1252,7 +1443,7 @@ export class Bootstrap extends Component {
     this.fpsMeter.record(deltaMs);
     hub.clockMs += deltaMs;
 
-    const stepped = stepHubTransition(hub.state, deltaMs);
+    const stepped = stepHubTransition(hub.state, deltaMs, hub.spawns);
     hub.state = stepped.state;
     hub.view.setFade(hub.state.transition.fadeAlpha);
 
@@ -1265,7 +1456,11 @@ export class Bootstrap extends Component {
       return;
     }
 
-    const dialogOpen = isVillageDialogOpen(hub.life);
+    // At full black the fade machine already moved the player: swap the room and its people.
+    if (stepped.switchedLocation) this.applyHubLocation(hub);
+
+    const map = hub.maps[hub.state.location];
+    const dialogOpen = this.currentHubDialog() !== null;
     const cue = hubMusicCue(hub.state, { dialogOpen });
     if (cue.ducked !== this.hubMusicDucked) {
       this.hubMusicDucked = cue.ducked;
@@ -1275,15 +1470,7 @@ export class Bootstrap extends Component {
     // Codex overlay (#94): the village keeps running behind it, the walking player is parked.
     if (hub.codexScreen !== null) {
       player.resetInput();
-      const camera = this.camera;
-      hub.view.showPrompt(
-        null,
-        {
-          position: camera?.position ?? { x: hub.map.size.cols / 2, y: hub.map.size.rows / 2 },
-          hudScale: camera?.hudScale ?? 1,
-        },
-        hub.map.size.rows,
-      );
+      this.hideHubPrompt(hub);
       hub.view.setQuickVisible(false);
       this.updateDepthAndCover(deltaMs);
       return;
@@ -1291,48 +1478,60 @@ export class Bootstrap extends Component {
 
     if (!canControlPlayerInHub(hub.state)) {
       player.resetInput();
+      // No `[E]` prompt over a fade or a menu handoff (the old room's prompt would linger).
+      this.hideHubPrompt(hub);
       hub.view.setQuickVisible(false);
       this.updateDepthAndCover(deltaMs);
       return;
     }
 
-    hub.view.setQuickVisible(!dialogOpen && !hub.view.isMenuOpen());
-    if (dialogOpen || hub.view.isMenuOpen()) {
-      // The dialog / village menu locks the player: no walking, and the `[E]` prompt goes away.
+    // The quick bar is a village shortcut: never over the Shop Interior, a dialog, the menu or a Codex.
+    hub.view.setQuickVisible(
+      hub.state.location === 'village' && !dialogOpen && !hub.view.isMenuOpen(),
+    );
+    const locked = dialogOpen || hub.view.isMenuOpen();
+    if (locked) {
+      // The box/panel/menu locks the player: no walking while reading, and the `[E]` prompt goes away.
       player.resetInput();
     } else {
-      player.step(hub.clockMs, deltaMs, [], hub.map.collisionLevel);
+      player.step(hub.clockMs, deltaMs, [], map.collisionLevel);
     }
     hub.state = updateHubPlayerPose(hub.state, player.position, player.facingDirection);
 
-    // Village Life: villagers patrol/yield, animals roam their yards, the typewriter advances.
-    const lifeStep = stepVillageLife(hub.life, hub.map, {
-      dtMs: deltaMs,
-      playerPos: player.position,
-    });
-    hub.life = lifeStep.state;
-    if (lifeStep.blipCount > 0) playSfx('dialog-blip');
-    hub.lifeView?.apply(hub.life);
+    if (hub.state.location === 'village') {
+      // Village Life: villagers patrol/yield, animals roam their yards, the typewriter advances.
+      const lifeStep = stepVillageLife(hub.life, map, {
+        dtMs: deltaMs,
+        playerPos: player.position,
+      });
+      hub.life = lifeStep.state;
+      if (lifeStep.blipCount > 0) playSfx('dialog-blip');
+      hub.lifeView?.apply(hub.life);
+      hub.interactables = buildHubInteractables(map, villageLiveNpcs(hub.life));
+    } else {
+      // Shop Visit: only the Shopkeeper's typewriter advances; the room is static.
+      const visitStep = stepShopVisit(hub.shopVisit, deltaMs);
+      hub.shopVisit = visitStep.state;
+      if (visitStep.blipCount > 0) playSfx('dialog-blip');
+      hub.interactables = buildHubInteractables(map);
+    }
     this.renderHubDialog();
-    hub.interactables = buildHubInteractables(hub.map, villageLiveNpcs(hub.life));
 
     const camera = this.camera;
     hub.view.showPrompt(
-      isVillageDialogOpen(hub.life) || hub.view.isMenuOpen()
-        ? null
-        : findNearestInteractable(player.position, hub.interactables),
+      locked ? null : findNearestInteractable(player.position, hub.interactables),
       {
-        position: camera?.position ?? { x: hub.map.size.cols / 2, y: hub.map.size.rows / 2 },
+        position: camera?.position ?? { x: map.size.cols / 2, y: map.size.rows / 2 },
         hudScale: camera?.hudScale ?? 1,
       },
-      hub.map.size.rows,
+      map.size.rows,
     );
 
     // Step-in zones fire once when entered, then not again while the player stays inside.
-    const zone = findStepTrigger(player.position, hub.map.triggers);
+    const zone = findStepTrigger(player.position, map.triggers);
     const entered = stepTriggerEntered(hub.lastTrigger, zone?.id ?? null);
     hub.lastTrigger = zone?.id ?? null;
-    if (!isVillageDialogOpen(hub.life) && !hub.view.isMenuOpen() && entered !== null) {
+    if (!locked && entered !== null) {
       const trigger = hub.interactables.find((item) => item.id === entered);
       if (trigger !== undefined) hub.registry.dispatch(trigger.action);
     }
@@ -1410,7 +1609,7 @@ export class Bootstrap extends Component {
   private debugHubSnapshot(): DebugHubSnapshot | null {
     const hub = this.hub;
     if (hub === null) return null;
-    const cue = hubMusicCue(hub.state, { dialogOpen: isVillageDialogOpen(hub.life) });
+    const cue = hubMusicCue(hub.state, { dialogOpen: this.currentHubDialog() !== null });
     return {
       location: hub.state.location,
       characterId: hub.state.characterId,
@@ -1426,6 +1625,21 @@ export class Bootstrap extends Component {
   private debugHubQuick(item: string): boolean {
     if (item !== 'play' && item !== 'characters' && item !== 'settings') return false;
     return this.activateVillageQuick(item);
+  }
+
+  /** Debug-only: the Shop Interior visit (#93) — location, Shopkeeper dialog and routed panel. */
+  private debugHubShop(): DebugHubShopSnapshot | null {
+    const hub = this.hub;
+    const player = this.player;
+    if (hub === null || player === null) return null;
+    const dialog = hub.state.location === 'shop-interior' ? hub.shopVisit.dialog : null;
+    return {
+      location: hub.state.location,
+      player: { x: player.position.x, y: player.position.y },
+      dialog: dialog === null ? null : dialogBoxView(dialog, getLocale()),
+      panel: hub.shopVisit.panel,
+      busy: this.isHubDialogLocked(),
+    };
   }
 
   /** Latest rich M15 run summary captured before teardown (for `ResultScreen` / debug). */
@@ -4225,6 +4439,7 @@ export class Bootstrap extends Component {
       hubTeleport: (x, y) => this.debugHubTeleport(x, y),
       hubInteract: () => this.debugHubInteract(),
       hubLife: () => this.debugHubLife(),
+      hubShop: () => this.debugHubShop(),
       hubAdvance: () => this.advanceHubDialog(),
       hubSnapshot: () => this.debugHubSnapshot(),
       hubQuick: (item) => this.debugHubQuick(item),

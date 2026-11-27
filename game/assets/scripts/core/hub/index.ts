@@ -9,6 +9,7 @@ export * from './npc-patrol';
 export * from './interact';
 export * from './dialog';
 export * from './village-life';
+export * from './shop-visit';
 export * from './home-flow';
 export * from './dojo';
 export * from './quick-access';
