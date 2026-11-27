@@ -55,7 +55,11 @@ export type FxKey =
   | 'fx.big-kunai'
   | 'fx.cloud-shadow'
   // M20 Archer class skills (#85): Arrow Rain volley.
-  | 'fx.arrow-rain';
+  | 'fx.arrow-rain'
+  // M20 Cultivator class skills (#87): spirit sword, planted array, crescent wave.
+  | 'fx.orbit-sword'
+  | 'fx.sword-array'
+  | 'fx.sword-qi';
 
 interface FxStyle {
   /** Target width in world units (1 tile = 1 unit) when drawUnits is not passed. */
@@ -89,6 +93,10 @@ const STYLES: Readonly<Record<FxKey, FxStyle>> = {
   'fx.cloud-shadow': { drawUnits: 2.0, lifetimeMs: 700, frameMaxPx: 32 },
   // M20 Arrow Rain volley (ticket #85): 32 px frames, drawn ~2.2 tiles per side.
   'fx.arrow-rain': { drawUnits: 4.4, lifetimeMs: 720, frameMaxPx: 32 },
+  // M20 Cultivator (#87): 16 px spirit sword, 32 px array seal and crescent wave.
+  'fx.orbit-sword': { drawUnits: 0.8, lifetimeMs: 340, frameMaxPx: 16 },
+  'fx.sword-array': { drawUnits: 4.6, lifetimeMs: 420, frameMaxPx: 32 },
+  'fx.sword-qi': { drawUnits: 1.8, lifetimeMs: 360, frameMaxPx: 32 },
 };
 
 const POOL_SIZE = 40;
