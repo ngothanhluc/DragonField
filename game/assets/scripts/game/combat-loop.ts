@@ -2023,8 +2023,8 @@ export class CombatLoop {
     // *Hộ Tâm Linh Khí*: the Qi shield absorbs exactly the next hit (M20, #87). Respect i-frames
     // first, exactly like the sim's `damagePlayer`, so a dash never wastes the shield.
     if (
-      !this.player.isInvulnerable(this.nowMs) &&
       this.cultivator !== null &&
+      !this.player.isInvulnerable(this.nowMs) &&
       this.cultivator.consumeQiShield()
     ) {
       this.fx?.spawnShockwave(this.player.position, {
