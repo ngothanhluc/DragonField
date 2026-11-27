@@ -325,6 +325,8 @@ export interface TuningConfig {
   readonly dash: DashTuning;
   /** Signature Active Skill action buffer, base + hit/kill cooldown reduction, and barrage stats (M13, ADR-022). */
   readonly activeSkill: ActiveSkillTuning;
+  /** Class-exclusive skill numbers (M20, ADR-027); one block per class. */
+  readonly classSkills: ClassSkillsTuning;
   /** Playable 4-class unlock milestones, gold costs, base stats, passives, and signature active parameters (M14). */
   readonly characters: CharactersTuning;
 }
@@ -439,6 +441,74 @@ export interface ActiveSkillTuning {
   readonly barrageProjectiles: number;
   /** Damage multiplier per Shadow Barrage projectile relative to player base damage. */
   readonly barrageDamageMultiplier: number;
+}
+
+/** Ninja exclusive skill *Phân Thân Ám Ảnh* (shadow clone) tuning (M20, ADR-027). */
+export interface NinjaShadowCloneTuning {
+  /** Clone shuriken damage as a fraction of the player's shot damage, indexed per stack. */
+  readonly damageRatioByStack: readonly number[];
+  /** Clone lifetime, ms (GDD: 2500). */
+  readonly durationMs: number;
+  /** Time between two clone shurikens, ms. */
+  readonly fireIntervalMs: number;
+  /** Clone auto-aim range, tiles. */
+  readonly rangeTiles: number;
+  readonly projectileSpeedTilesPerSecond: number;
+  readonly projectileTtlMs: number;
+}
+
+/** Ninja exclusive skill *Phi Tiêu Độc Vụ* (venom shuriken) tuning (M20, ADR-027). */
+export interface NinjaVenomShurikenTuning {
+  /** Throw the giant venom shuriken every N auto-fire shots (GDD: 3). */
+  readonly everyNShots: number;
+  /** Cloud damage per tick (not per second), indexed per stack. */
+  readonly damageByStack: readonly number[];
+  /** Cloud radius, tiles, indexed per stack. */
+  readonly radiusTilesByStack: readonly number[];
+  /** Cloud lifetime, ms, indexed per stack. */
+  readonly durationMsByStack: readonly number[];
+  /** Time between two cloud damage ticks, ms. */
+  readonly damageTickMs: number;
+  readonly projectileSpeedTilesPerSecond: number;
+  readonly projectileTtlMs: number;
+}
+
+/** Ninja exclusive skill *Liên Hoàn Kunai* (kunai burst) tuning (M20, ADR-027). */
+export interface NinjaKunaiBurstTuning {
+  /** Kunai per kill at stack 1 (GDD: 4). */
+  readonly baseKunai: number;
+  /** Extra kunai per additional stack (GDD: +2). */
+  readonly kunaiPerStack: number;
+  /** Damage per kunai. */
+  readonly damage: number;
+  readonly speedTilesPerSecond: number;
+  readonly ttlMs: number;
+  readonly radiusTiles: number;
+}
+
+/** Ninja exclusive skill *Bom Khói Ẩn Thân* (smoke bomb) tuning (M20, ADR-027). */
+export interface NinjaSmokeBombTuning {
+  /** Enemy speed reduction fraction inside the smoke, indexed per stack (GDD stack 1: 0.45). */
+  readonly slowByStack: readonly number[];
+  /** Player fire-rate bonus fraction inside the smoke, indexed per stack (GDD stack 1: 0.30). */
+  readonly fireRateBonusByStack: readonly number[];
+  /** Smoke radius, tiles, indexed per stack (GDD stack 1: 2.8). */
+  readonly radiusTilesByStack: readonly number[];
+  /** Smoke lifetime, ms, indexed per stack (GDD stack 1: 3000). */
+  readonly durationMsByStack: readonly number[];
+}
+
+/** Complete Ninja class-exclusive skill tuning block. */
+export interface NinjaClassSkillsTuning {
+  readonly shadowClone: NinjaShadowCloneTuning;
+  readonly venomShuriken: NinjaVenomShurikenTuning;
+  readonly kunaiBurst: NinjaKunaiBurstTuning;
+  readonly smokeBomb: NinjaSmokeBombTuning;
+}
+
+/** Class-exclusive skill tuning (M20, ADR-027), one block per class. */
+export interface ClassSkillsTuning {
+  readonly ninja: NinjaClassSkillsTuning;
 }
 
 /** XP level-up threshold curve: `round((baseThreshold + linearStep·i + quadraticStep·i²) · chapterMultiplier)`. */
@@ -855,6 +925,50 @@ const ACTIVE_SKILL_FIELDS = [
   'barrageDamageMultiplier',
 ] as const;
 
+const CLASS_SKILLS_FIELDS = ['ninja'] as const;
+
+const NINJA_CLASS_SKILLS_FIELDS = [
+  'shadowClone',
+  'venomShuriken',
+  'kunaiBurst',
+  'smokeBomb',
+] as const;
+
+const NINJA_SHADOW_CLONE_FIELDS = [
+  'damageRatioByStack',
+  'durationMs',
+  'fireIntervalMs',
+  'rangeTiles',
+  'projectileSpeedTilesPerSecond',
+  'projectileTtlMs',
+] as const;
+
+const NINJA_VENOM_SHURIKEN_FIELDS = [
+  'everyNShots',
+  'damageByStack',
+  'radiusTilesByStack',
+  'durationMsByStack',
+  'damageTickMs',
+  'projectileSpeedTilesPerSecond',
+  'projectileTtlMs',
+] as const;
+
+const NINJA_KUNAI_BURST_FIELDS = [
+  'baseKunai',
+  'kunaiPerStack',
+  'damage',
+  'speedTilesPerSecond',
+  'ttlMs',
+  'radiusTiles',
+] as const;
+
+const NINJA_SMOKE_BOMB_FIELDS = [
+  'slowByStack',
+  'fireRateBonusByStack',
+  'radiusTilesByStack',
+  'durationMsByStack',
+] as const;
+
 const CHARACTER_FIELDS = [
   'unlockChapter',
   'unlockGoldCost',
@@ -1123,6 +1237,50 @@ function readNumber(
     return undefined;
   }
   return value;
+}
+
+/**
+ * Read an array of non-negative finite numbers with an exact length (per-stack tables).
+ * Returns `[]` on a shape error so callers keep a safe fallback.
+ */
+function readNumberArray(
+  source: Record<string, unknown>,
+  field: string,
+  path: string,
+  problems: ProblemList,
+  options: { readonly length?: number; readonly positive?: boolean } = {},
+): readonly number[] {
+  const fieldPath = joinPath(path, field);
+  const value = source[field];
+  if (!Array.isArray(value)) {
+    problems.add(fieldPath, `must be an array of numbers, got ${describe(value)}`);
+    return [];
+  }
+  if (options.length !== undefined && value.length !== options.length) {
+    problems.add(
+      fieldPath,
+      `must have exactly ${options.length} elements (one per stack), got ${value.length}`,
+    );
+    return [];
+  }
+  const result: number[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const entry: unknown = value[index];
+    if (typeof entry !== 'number' || !Number.isFinite(entry)) {
+      problems.add(`${fieldPath}[${index}]`, `must be a finite number, got ${describe(entry)}`);
+      continue;
+    }
+    if (entry < 0) {
+      problems.add(`${fieldPath}[${index}]`, `must not be negative, got ${entry}`);
+      continue;
+    }
+    if (options.positive === true && entry === 0) {
+      problems.add(`${fieldPath}[${index}]`, `must be > 0, got ${entry}`);
+      continue;
+    }
+    result.push(entry);
+  }
+  return result;
 }
 
 /** Read a signed integer within `[min, max]` (used for signed deltas like `maxHeartsDelta`). */
@@ -2496,6 +2654,218 @@ function parseActiveSkill(raw: Record<string, unknown>, problems: ProblemList): 
   };
 }
 
+function zeroNinjaShadowClone(): NinjaShadowCloneTuning {
+  return {
+    damageRatioByStack: [],
+    durationMs: 0,
+    fireIntervalMs: 1,
+    rangeTiles: 0,
+    projectileSpeedTilesPerSecond: 0,
+    projectileTtlMs: 0,
+  };
+}
+
+function zeroNinjaVenomShuriken(): NinjaVenomShurikenTuning {
+  return {
+    everyNShots: 1,
+    damageByStack: [],
+    radiusTilesByStack: [],
+    durationMsByStack: [],
+    damageTickMs: 1,
+    projectileSpeedTilesPerSecond: 0,
+    projectileTtlMs: 0,
+  };
+}
+
+function zeroNinjaKunaiBurst(): NinjaKunaiBurstTuning {
+  return {
+    baseKunai: 0,
+    kunaiPerStack: 0,
+    damage: 0,
+    speedTilesPerSecond: 0,
+    ttlMs: 0,
+    radiusTiles: 0,
+  };
+}
+
+function zeroNinjaSmokeBomb(): NinjaSmokeBombTuning {
+  return {
+    slowByStack: [],
+    fireRateBonusByStack: [],
+    radiusTilesByStack: [],
+    durationMsByStack: [],
+  };
+}
+
+function zeroClassSkills(): ClassSkillsTuning {
+  return {
+    ninja: {
+      shadowClone: zeroNinjaShadowClone(),
+      venomShuriken: zeroNinjaVenomShuriken(),
+      kunaiBurst: zeroNinjaKunaiBurst(),
+      smokeBomb: zeroNinjaSmokeBomb(),
+    },
+  };
+}
+
+function parseNinjaClassSkills(
+  raw: Record<string, unknown>,
+  problems: ProblemList,
+): NinjaClassSkillsTuning {
+  const rootPath = 'classSkills';
+  const source = readObject(raw, 'ninja', rootPath, problems, NINJA_CLASS_SKILLS_FIELDS);
+  if (source === undefined) return zeroClassSkills().ninja;
+
+  const path = `${rootPath}.ninja`;
+
+  const cloneSource = readObject(source, 'shadowClone', path, problems, NINJA_SHADOW_CLONE_FIELDS);
+  const clonePath = `${path}.shadowClone`;
+  const shadowClone: NinjaShadowCloneTuning =
+    cloneSource === undefined
+      ? zeroNinjaShadowClone()
+      : {
+          damageRatioByStack: readNumberArray(cloneSource, 'damageRatioByStack', clonePath, problems, {
+            length: 3,
+            positive: true,
+          }),
+          durationMs:
+            readNumber(cloneSource, 'durationMs', clonePath, problems, { positive: true }) ?? 0,
+          fireIntervalMs:
+            readNumber(cloneSource, 'fireIntervalMs', clonePath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 1,
+          rangeTiles:
+            readNumber(cloneSource, 'rangeTiles', clonePath, problems, { positive: true }) ?? 0,
+          projectileSpeedTilesPerSecond:
+            readNumber(cloneSource, 'projectileSpeedTilesPerSecond', clonePath, problems, {
+              positive: true,
+            }) ?? 0,
+          projectileTtlMs:
+            readNumber(cloneSource, 'projectileTtlMs', clonePath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+        };
+
+  const venomSource = readObject(source, 'venomShuriken', path, problems, NINJA_VENOM_SHURIKEN_FIELDS);
+  const venomPath = `${path}.venomShuriken`;
+  const venomShuriken: NinjaVenomShurikenTuning =
+    venomSource === undefined
+      ? zeroNinjaVenomShuriken()
+      : {
+          everyNShots:
+            readNumber(venomSource, 'everyNShots', venomPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 1,
+          damageByStack: readNumberArray(venomSource, 'damageByStack', venomPath, problems, {
+            length: 3,
+            positive: true,
+          }),
+          radiusTilesByStack: readNumberArray(
+            venomSource,
+            'radiusTilesByStack',
+            venomPath,
+            problems,
+            { length: 3, positive: true },
+          ),
+          durationMsByStack: readNumberArray(
+            venomSource,
+            'durationMsByStack',
+            venomPath,
+            problems,
+            { length: 3, positive: true },
+          ),
+          damageTickMs:
+            readNumber(venomSource, 'damageTickMs', venomPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 1,
+          projectileSpeedTilesPerSecond:
+            readNumber(venomSource, 'projectileSpeedTilesPerSecond', venomPath, problems, {
+              positive: true,
+            }) ?? 0,
+          projectileTtlMs:
+            readNumber(venomSource, 'projectileTtlMs', venomPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+        };
+
+  const kunaiSource = readObject(source, 'kunaiBurst', path, problems, NINJA_KUNAI_BURST_FIELDS);
+  const kunaiPath = `${path}.kunaiBurst`;
+  const kunaiBurst: NinjaKunaiBurstTuning =
+    kunaiSource === undefined
+      ? zeroNinjaKunaiBurst()
+      : {
+          baseKunai:
+            readNumber(kunaiSource, 'baseKunai', kunaiPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+          kunaiPerStack:
+            readNumber(kunaiSource, 'kunaiPerStack', kunaiPath, problems, { integer: true }) ?? 0,
+          damage:
+            readNumber(kunaiSource, 'damage', kunaiPath, problems, { positive: true }) ?? 0,
+          speedTilesPerSecond:
+            readNumber(kunaiSource, 'speedTilesPerSecond', kunaiPath, problems, {
+              positive: true,
+            }) ?? 0,
+          ttlMs:
+            readNumber(kunaiSource, 'ttlMs', kunaiPath, problems, {
+              integer: true,
+              positive: true,
+            }) ?? 0,
+          radiusTiles:
+            readNumber(kunaiSource, 'radiusTiles', kunaiPath, problems, { positive: true }) ?? 0,
+        };
+
+  const smokeSource = readObject(source, 'smokeBomb', path, problems, NINJA_SMOKE_BOMB_FIELDS);
+  const smokePath = `${path}.smokeBomb`;
+  const smokeBomb: NinjaSmokeBombTuning =
+    smokeSource === undefined
+      ? zeroNinjaSmokeBomb()
+      : {
+          slowByStack: readNumberArray(smokeSource, 'slowByStack', smokePath, problems, {
+            length: 2,
+            positive: true,
+          }),
+          fireRateBonusByStack: readNumberArray(
+            smokeSource,
+            'fireRateBonusByStack',
+            smokePath,
+            problems,
+            { length: 2 },
+          ),
+          radiusTilesByStack: readNumberArray(
+            smokeSource,
+            'radiusTilesByStack',
+            smokePath,
+            problems,
+            { length: 2, positive: true },
+          ),
+          durationMsByStack: readNumberArray(
+            smokeSource,
+            'durationMsByStack',
+            smokePath,
+            problems,
+            { length: 2, positive: true },
+          ),
+        };
+
+  return { shadowClone, venomShuriken, kunaiBurst, smokeBomb };
+}
+
+function parseClassSkills(
+  raw: Record<string, unknown>,
+  problems: ProblemList,
+): ClassSkillsTuning {
+  const source = readObject(raw, 'classSkills', '', problems, CLASS_SKILLS_FIELDS);
+  if (source === undefined) return zeroClassSkills();
+  return { ninja: parseNinjaClassSkills(source, problems) };
+}
+
 function zeroCharacter(): CharacterTuning {
   return {
     unlockChapter: 0,
@@ -2754,6 +3124,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     xp: parseXp(raw, problems),
     dash: parseDash(raw, problems),
     activeSkill: parseActiveSkill(raw, problems),
+    classSkills: parseClassSkills(raw, problems),
     characters: parseCharacters(raw, problems),
   };
 

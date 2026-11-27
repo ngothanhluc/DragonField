@@ -47,7 +47,13 @@ export type FxKey =
   | 'fx.boost'
   | 'fx.smoke-circular'
   | 'fx.aura'
-  | 'fx.bubble';
+  | 'fx.bubble'
+  // M20 Ninja class skills (#84): projectile + shadow silhouettes.
+  | 'fx.shuriken'
+  | 'fx.big-shuriken'
+  | 'fx.kunai'
+  | 'fx.big-kunai'
+  | 'fx.cloud-shadow';
 
 interface FxStyle {
   /** Target width in world units (1 tile = 1 unit) when drawUnits is not passed. */
@@ -73,6 +79,12 @@ const STYLES: Readonly<Record<FxKey, FxStyle>> = {
   'fx.smoke-circular': { drawUnits: 2.0, lifetimeMs: 580, frameMaxPx: 30 },
   'fx.aura': { drawUnits: 2.2, lifetimeMs: 0, frameMaxPx: 25 },
   'fx.bubble': { drawUnits: 0.5, lifetimeMs: 420, frameMaxPx: 16 },
+  // M20 Ninja (#84): small flying shuriken/kunai + a shadow puff for the clone silhouette.
+  'fx.shuriken': { drawUnits: 0.55, lifetimeMs: 340, frameMaxPx: 12 },
+  'fx.big-shuriken': { drawUnits: 1.4, lifetimeMs: 520, frameMaxPx: 24 },
+  'fx.kunai': { drawUnits: 0.6, lifetimeMs: 340, frameMaxPx: 14 },
+  'fx.big-kunai': { drawUnits: 1.3, lifetimeMs: 460, frameMaxPx: 24 },
+  'fx.cloud-shadow': { drawUnits: 2.0, lifetimeMs: 700, frameMaxPx: 32 },
 };
 
 const POOL_SIZE = 40;

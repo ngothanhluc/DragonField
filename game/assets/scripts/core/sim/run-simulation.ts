@@ -92,6 +92,7 @@ import {
 } from '../enemies/navigation';
 import {
   ACTIVE_SKILL_TUNING,
+  CLASS_SKILLS_TUNING,
   DASH_TUNING,
   DOORS_TUNING,
   ENEMY_TUNING,
@@ -155,7 +156,12 @@ import {
 } from '../run/special-rooms';
 import { computeDerivedStats } from '../skills/derived-stats';
 import { dispatchClassSkillEvent, hasAnyClassSkill } from '../skills/class-skills';
-import type { ClassSkillStackSource } from '../skills/class-skill-hooks';
+import type { ClassSkillEffect, ClassSkillStackSource } from '../skills/class-skill-hooks';
+import {
+  NinjaSkillRuntime,
+  type NinjaHit,
+  type NinjaTarget,
+} from '../skills/ninja-runtime';
 import type { SkillDef } from '../skills/pool';
 import { createSkillRollRng, rerollChoices, rollChoices } from '../skills/roll';
 import { screenViewAround } from '../view/view-rect';
@@ -391,6 +397,16 @@ export interface SimulationResult {
   readonly activeSkillsUsed: number;
   /** Legendary Evolution ids acquired during the run in deterministic `EVOLUTIONS` order (M13, ADR-022). */
   readonly evolutions: readonly string[];
+  /**
+   * Total damage dealt per class-exclusive skill id across the run (M20, #84+). Always present;
+   * empty when the run owns no class skill. Generic across classes so #85–#87 feed the same map.
+   */
+  readonly classSkillDamage: ReadonlyMap<string, number>;
+  /**
+   * Number of class-effect requests the sim applied per class skill id (M20, #84+). Always
+   * present; empty for runs without class skills.
+   */
+  readonly classSkillProcs: ReadonlyMap<string, number>;
   readonly durationMs: number;
   readonly events: readonly SimulationEvent[];
 }
@@ -433,6 +449,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const classSkillSource: ClassSkillStackSource = (id) => ownedSkills.get(id) ?? 0;
   /** 1-based auto-fire counter for on-shot class hooks (M20, ADR-027). */
   let shotsFired = 0;
+  /** Ninja-only class-skill runtime (clones, venom clouds, smoke, kunai) — M20, #84. */
+  const ninjaRuntime =
+    characterId === 'ninja' ? new NinjaSkillRuntime(CLASS_SKILLS_TUNING.ninja) : null;
+  /** Per-class-skill totals reported by `SimulationResult` (M20, #84+). */
+  const classSkillDamage = new Map<string, number>();
+  const classSkillProcs = new Map<string, number>();
   let stats = computeDerivedStats(ownedSkills, characterBase);
   const bulletTtlMs = Math.max(
     PLAYER_BULLET_TTL_MS,
@@ -538,6 +560,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     statuses.clear();
     burns.clear();
     activeBulletIds.clear();
+    ninjaRuntime?.reset();
     dashState = createDashState();
     actionBuffer.clear();
     postDashFireUntilMs = Number.NEGATIVE_INFINITY;
@@ -902,7 +925,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     }
   };
 
-  const killEnemy = (enemy: EnemyState, atMs: number): void => {
+  const bumpClassSkill = (map: Map<string, number>, skillId: string, amount = 1): void => {
+    if (amount <= 0) return;
+    map.set(skillId, (map.get(skillId) ?? 0) + amount);
+  };
+
+  const killEnemy = (enemy: EnemyState, atMs: number, killedBy?: string): void => {
     if (enemy.health <= 0 && enemy.action.kind === 'dead') return;
     enemy.health = 0;
     enemy.action = { kind: 'dead' };
@@ -912,12 +940,14 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     burns.delete(enemy.id);
     activeState = onActiveKill(activeState, activeConfig, 1);
     if (hasAnyClassSkill(characterId, classSkillSource)) {
-      dispatchClassSkillEvent('onKill', characterId, classSkillSource, {
+      const effects = dispatchClassSkillEvent('onKill', characterId, classSkillSource, {
         position: enemy.position,
         targetPosition: enemy.position,
         elite: enemy.elite,
+        ...(killedBy !== undefined ? { killedBy } : {}),
         rng,
       });
+      applyClassSkillEffects(effects);
     }
     const gold = Math.round(goldForKill(enemy.role, enemy.elite) * stats.goldMultiplier);
     kills += 1;
@@ -950,13 +980,66 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     }
   };
 
-  const damageEnemy = (enemy: EnemyState, amount: number): number => {
+  const damageEnemy = (enemy: EnemyState, amount: number, killedBy?: string): number => {
     if (amount <= 0 || enemy.health <= 0) return 0;
     const dealt = Math.min(amount, enemy.health);
     enemy.health = Math.max(0, enemy.health - amount);
-    if (enemy.health <= 0) killEnemy(enemy, durationMs);
+    if (enemy.health <= 0) killEnemy(enemy, durationMs, killedBy);
     else enemy.action = staggerAfterHit(enemy.action, durationMs, DEFAULT_COMBAT.enemyStaggerMs);
     return dealt;
+  };
+
+  /**
+   * Apply the class-skill requests one hook dispatch returned (M20, #84).
+   *
+   * Every request counts as a proc for `SimulationResult.classSkillProcs`; the Ninja runtime then
+   * turns the ones it understands into live clones/projectiles/clouds/zones.
+   */
+  const applyClassSkillEffects = (
+    effects: readonly ClassSkillEffect[],
+    aimDirection?: Vec2,
+  ): void => {
+    if (effects.length === 0) return;
+    for (const effect of effects) bumpClassSkill(classSkillProcs, effect.skillId);
+    if (ninjaRuntime === null) return;
+    ninjaRuntime.applyEffects(effects, durationMs, {
+      shotDamage: stats.damage,
+      critMultiplier: stats.critMultiplier,
+      ...(aimDirection !== undefined ? { aimDirection } : {}),
+    });
+  };
+
+  /** One class-skill damage event: normal enemy path so kills/gold/XP/onKill attribution match. */
+  const applyNinjaHit = (hit: NinjaHit): void => {
+    const enemy = enemies.find(
+      (candidate) =>
+        candidate.id === hit.targetId &&
+        candidate.health > 0 &&
+        candidate.action.kind !== 'dead',
+    );
+    if (enemy === undefined) return;
+    const dealt = damageEnemy(enemy, hit.amount, hit.skillId);
+    bumpClassSkill(classSkillDamage, hit.skillId, dealt);
+  };
+
+  /** Step the live Ninja state (clones fire, clouds tick, zones expire) and apply its hits. */
+  const stepClassSkillRuntime = (): void => {
+    const runtime = ninjaRuntime;
+    if (runtime === null || runtime.isEmpty) return;
+    const targets: NinjaTarget[] = [];
+    for (const enemy of enemies) {
+      if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
+      targets.push({
+        id: enemy.id,
+        position: enemy.position,
+        radiusTiles: DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role),
+      });
+    }
+    const hits = runtime.step(durationMs, SIM_STEP_MS, targets, {
+      shotDamage: stats.damage,
+      critMultiplier: stats.critMultiplier,
+    });
+    for (const hit of hits) applyNinjaHit(hit);
   };
 
   /** Enter the boss room: hand over to `simulateBossRun` and end the run. */
@@ -1080,6 +1163,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       dashesUsed,
       activeSkillsUsed,
       evolutions: stats.activeEvolutions,
+      classSkillDamage,
+      classSkillProcs,
       durationMs: bossRun.bossDurationMs,
       events,
     };
@@ -1101,11 +1186,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
     // Class-skill periodic tick (no-op until #84–#87; allocation-free when nothing is owned).
     if (hasAnyClassSkill(characterId, classSkillSource)) {
-      dispatchClassSkillEvent('tick', characterId, classSkillSource, {
+      const effects = dispatchClassSkillEvent('tick', characterId, classSkillSource, {
         dtMs: SIM_STEP_MS,
         position: player,
         rng,
       });
+      applyClassSkillEffects(effects);
     }
 
     const worldSnapshot: PolicyWorld = {
@@ -1140,10 +1226,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         dashState = started.state;
         dashesUsed += 1;
         if (hasAnyClassSkill(characterId, classSkillSource)) {
-          dispatchClassSkillEvent('onDash', characterId, classSkillSource, {
+          const effects = dispatchClassSkillEvent('onDash', characterId, classSkillSource, {
             position: player,
             rng,
           });
+          applyClassSkillEffects(effects);
         }
         events.push({
           kind: 'dash',
@@ -1218,10 +1305,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         activeState = triggered.state;
         activeSkillsUsed += 1;
         if (hasAnyClassSkill(characterId, classSkillSource)) {
-          dispatchClassSkillEvent('onActive', characterId, classSkillSource, {
+          const effects = dispatchClassSkillEvent('onActive', characterId, classSkillSource, {
             position: player,
             rng,
           });
+          applyClassSkillEffects(effects);
         }
 
         if (signatureSkillId === 'arcane-nova') {
@@ -1442,10 +1530,13 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       position: enemy.position,
       alive: enemy.health > 0 && enemy.action.kind !== 'dead',
     }));
-    const fireDeltaMs =
+    const postDashBonus =
       stats.postDashFireRate !== undefined && durationMs < postDashFireUntilMs
-        ? SIM_STEP_MS * (1 + stats.postDashFireRate.bonus)
-        : SIM_STEP_MS;
+        ? 1 + stats.postDashFireRate.bonus
+        : 1;
+    // *Bom Khói Ẩn Thân*: while the player stands in smoke, auto-fire runs faster (M20, #84).
+    const smokeFireBonus = ninjaRuntime?.fireRateBonusAt(player, durationMs) ?? 0;
+    const fireDeltaMs = SIM_STEP_MS * postDashBonus * (1 + smokeFireBonus);
     const shot = autoFire.update({
       deltaMs: fireDeltaMs,
       origin: player,
@@ -1465,13 +1556,17 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       });
       shotsFired += 1;
       if (hasAnyClassSkill(characterId, classSkillSource)) {
-        dispatchClassSkillEvent('onShot', characterId, classSkillSource, {
+        const effects = dispatchClassSkillEvent('onShot', characterId, classSkillSource, {
           shotCount: shotsFired,
           position: shot.origin,
           rng,
         });
+        applyClassSkillEffects(effects, shot.direction);
       }
     }
+
+    // Live Ninja state (clones/clouds/kunai) steps before enemy AI, so its kills land this frame.
+    stepClassSkillRuntime();
 
     // --- Enemy AI ---------------------------------------------------------
     for (const enemy of enemies) {
@@ -1537,7 +1632,9 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         random,
       );
       const haste = buffTracker.speedMultiplierFor(enemy.id, durationMs);
-      advanceEnemy(enemy, next, slow * haste, room, field, detour);
+      // *Bom Khói Ẩn Thân*: enemies standing in smoke walk slower (M20, #84).
+      const smokeSlow = ninjaRuntime?.enemySpeedMultiplierAt(enemy.position, durationMs) ?? 1;
+      advanceEnemy(enemy, next, slow * haste * smokeSlow, room, field, detour);
 
       const melee =
         enemy.role === 'chaser' ||
@@ -1618,11 +1715,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         statusOf(enemy).apply(stats, durationMs);
         applyBurn(enemy.id, durationMs);
         if (dealt > 0 && hasAnyClassSkill(characterId, classSkillSource)) {
-          dispatchClassSkillEvent('onHit', characterId, classSkillSource, {
+          const effects = dispatchClassSkillEvent('onHit', characterId, classSkillSource, {
             position: bullet.position,
             targetPosition: enemy.position,
             rng,
           });
+          applyClassSkillEffects(effects);
         }
         if (!activeBulletIds.has(bullet.id)) {
           activeState = onActiveHit(activeState, activeConfig, 1);
@@ -1901,6 +1999,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     dashesUsed,
     activeSkillsUsed,
     evolutions: stats.activeEvolutions,
+    classSkillDamage,
+    classSkillProcs,
     durationMs,
     events,
   };

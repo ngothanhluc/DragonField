@@ -576,6 +576,7 @@ export class PlayerController extends Component {
     targets: readonly Targetable[],
     level: LevelData,
     dashState: DashState | null = null,
+    fireRateBonus = 0,
   ): void {
     if (this.health.isDead) return;
 
@@ -653,10 +654,12 @@ export class PlayerController extends Component {
       this.applyKnockback(deltaMs, level);
     }
     const postDash = this.stats.postDashFireRate;
-    const fireDeltaMs =
+    const postDashDeltaMs =
       postDash !== undefined && nowMs < this.postDashFireUntilMs
         ? deltaMs * (1 + Math.max(0, postDash.bonus))
         : deltaMs;
+    // M20 Ninja *Bom Khói Ẩn Thân* (#84): fire faster while standing in a smoke zone.
+    const fireDeltaMs = postDashDeltaMs * (1 + Math.max(0, fireRateBonus));
     this.fireIfReady(nowMs, fireDeltaMs, targets);
     this.updateAura();
     this.playCurrentAnimation(nowMs, moving, dashing);

@@ -12,9 +12,8 @@
  * - `elite` marks an Elite kill, `dtMs` is the game-time step for periodic ticks,
  * - `rng` is the run RNG for deterministic proc rolls.
  *
- * Every hook returns effect requests the calling combat loop can apply later; this ticket's hooks
- * all return the shared empty array, so the whole seam is a no-op and allocation-free while no
- * class skill is owned.
+ * Every hook returns effect requests the calling combat loop applies; a class with nothing owned
+ * returns the shared empty array, so the seam stays allocation-free.
  */
 import type { CharacterId } from '../characters/roster';
 import type { Vec2 } from '../math/vec2';
@@ -37,12 +36,17 @@ export interface ClassSkillEventContext {
   /** Victim/target position when the event has one. */
   readonly targetPosition?: Vec2;
   readonly elite?: boolean;
+  /**
+   * On `onKill`, the `skillId` of the class effect that dealt the killing blow (M20, #84).
+   * `undefined` means the player's weapon or anything else (a DoT tick, contact thorns, …).
+   */
+  readonly killedBy?: string;
   readonly rng?: SeededRng;
 }
 
 /**
- * One requested gameplay effect. Nothing consumes these yet; the class tickets fill the fields
- * that their mechanic needs and the combat loop applies them in a later milestone.
+ * One requested gameplay effect. The class that requested it fills the fields its mechanic needs
+ * and the calling loop (headless sim / Cocos combat loop) applies it.
  */
 export interface ClassSkillEffect {
   readonly kind: 'damage' | 'spawn' | 'status' | 'heal' | 'buff';
@@ -51,6 +55,11 @@ export interface ClassSkillEffect {
   readonly amount?: number;
   readonly radiusTiles?: number;
   readonly durationMs?: number;
+  /**
+   * The spawned thing's shots always crit (M20, #84; used by *Ảnh Sát Tuyệt Kỹ* clones).
+   * Additive optional field: sibling class tickets may add their own, none may rename.
+   */
+  readonly crit?: boolean;
 }
 
 /** Event names a class implements (one hook per combat site, dispatched once from the loop). */

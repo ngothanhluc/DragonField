@@ -60,6 +60,7 @@ export const TYPICAL_LOADOUT: ReadonlyMap<string, number> = new Map([
  * pruned 21-skill shared pool.
  */
 const SKILL_PRIORITY: readonly string[] = [
+  'ninja-phantom-assassin',
   'phantom-volley',
   'cataclysm',
   'starfall-kunai',
@@ -67,6 +68,10 @@ const SKILL_PRIORITY: readonly string[] = [
   'tempest-barrage',
   'blightfrost',
   'shadowstep',
+  'ninja-kunai-burst',
+  'ninja-shadow-clone',
+  'ninja-venom-shuriken',
+  'ninja-smoke-bomb',
   'twin-shot',
   'sharpen',
   'shield',
@@ -90,8 +95,21 @@ const SKILL_PRIORITY: readonly string[] = [
   'afterimage',
 ];
 
+/** Ninja class-exclusive skills: one stack each is enough to exercise them and unlock the Evolution. */
+const NINJA_SKILLS: ReadonlySet<string> = new Set([
+  'ninja-kunai-burst',
+  'ninja-shadow-clone',
+  'ninja-venom-shuriken',
+  'ninja-smoke-bomb',
+]);
+
 /** Skills strong enough to accept without spending gold on a level-up reroll. */
 const CORE_COMBAT_SKILLS: ReadonlySet<string> = new Set([
+  'ninja-phantom-assassin',
+  'ninja-kunai-burst',
+  'ninja-shadow-clone',
+  'ninja-venom-shuriken',
+  'ninja-smoke-bomb',
   'phantom-volley',
   'cataclysm',
   'starfall-kunai',
@@ -123,6 +141,12 @@ const TYPICAL_REROLL_MAX_COST = 40;
 const SHARPEN_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('shield') + 0.5;
 const RAPID_FIRE_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('explosive') + 0.5;
 const EVOLUTION_PAIR_READY_RANK = SKILL_PRIORITY.indexOf('shield') + 0.25;
+/**
+ * The sim must *exercise* the Ninja exclusives without them monopolising every level-up: one stack
+ * each is enough to fire their mechanics and unlock Ảnh Sát Tuyệt Kỹ, then the shared DPS curve
+ * takes the picks again so the 9/9 + 12–16 level-up contract stays intact.
+ */
+const NINJA_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('shield') + 0.75;
 
 function completesEvolutionPair(skill: SkillDef, owned: ReadonlyMap<string, number>): boolean {
   if (skill.rarity === 'legendary') return false;
@@ -151,6 +175,9 @@ export const typicalSkillChoice: SkillPickPolicy = (
     }
     if (skill.id === 'rapid-fire' && rapidFireStacks >= 2) {
       effectiveRank = RAPID_FIRE_CAP_AFTER_RANK;
+    }
+    if (NINJA_SKILLS.has(skill.id) && (owned.get(skill.id) ?? 0) >= 1) {
+      effectiveRank = Math.max(effectiveRank, NINJA_CAP_AFTER_RANK);
     }
     if (!lowHearts && completesEvolutionPair(skill, owned)) {
       effectiveRank = Math.min(effectiveRank, EVOLUTION_PAIR_READY_RANK);
