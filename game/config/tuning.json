@@ -841,5 +841,9 @@
         "hideAttachmentMs": 1200
       }
     }
+  },
+  "hub": {
+    "animalYardLeashTiles": 4,
+    "animalPlazaKeepOutTiles": 6
   }
 }

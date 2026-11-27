@@ -219,6 +219,54 @@ export const VI: Readonly<Record<TranslationKey, string>> = {
   'hub.prompt.exitShop': 'Ra khỏi cửa hàng',
   'hub.prompt.dojo': 'Võ đường',
   'hub.prompt.expedition': 'Xuất chinh',
+  'hub.npc.villager1.name': 'Bà Hoa',
+  'hub.npc.villager2.name': 'Chú Bảy',
+  'hub.npc.villager3.name': 'Cô Lan',
+  'hub.npc.villager4.name': 'Minh',
+  'hub.npc.villager5.name': 'Bé Tí',
+  'hub.npc.shopkeeper.name': 'Chủ Shop',
+  'hub.dialog.villager1.tipPotions':
+    'Mang theo một bình hồi máu vào mỗi phòng. Chẳng ai biết khi nào trùm sẽ ép bạn vào góc.',
+  'hub.dialog.villager1.loreSquare':
+    'Quảng trường này đã tiễn hàng trăm anh hùng ra Bắc. Ngọn lửa trại chưa bao giờ tắt.',
+  'hub.dialog.villager1.tipClearSpeed':
+    'Dọn phòng càng nhanh, vàng thưởng càng nhiều. Cứ chạy và bắn, đừng đứng lại.',
+  'hub.dialog.villager2.tipBullets':
+    'Đạn bay thẳng. Hãy bước ngang, đừng lùi, và để tay ngắm tự lo phần còn lại.',
+  'hub.dialog.villager2.loreNorthGate':
+    'Qua Cổng Bắc, yêu quái mỗi chương một dữ. Nhớ quay về còn nguyên vẹn.',
+  'hub.dialog.villager2.tipDash':
+    'Lướt xuyên qua đạn, đừng lướt tránh nó. Khoảnh khắc đó bạn không thể bị chạm.',
+  'hub.dialog.villager3.tipShopUpgrades':
+    'Vàng tiêu ở cửa hàng không bao giờ phí. Nâng cấp vĩnh viễn theo mọi anh hùng.',
+  'hub.dialog.villager3.loreSmithy':
+    'Lò rèn sau cửa hàng giữ những thanh kiếm cũ. Vài thanh giờ đã nghe lời bạn.',
+  'hub.dialog.villager3.tipSpecialRoom':
+    'Một cánh cửa đóng có thể là hồi máu, cửa hàng hay rương. Chọn thứ lượt chạy cần.',
+  'hub.dialog.villager4.tipDojoCodex':
+    'Sư phụ võ đường giữ Bộ Kỹ Năng. Ghé ông ấy để biết mỗi kỹ năng tiến hóa thành gì.',
+  'hub.dialog.villager4.tipEvolutions':
+    'Hai kỹ năng có thể hợp thành một tuyệt kỹ. Hỏi Bộ Kỹ Năng để biết công thức.',
+  'hub.dialog.villager4.loreChapters':
+    'Bốn chương nằm giữa ngôi làng này và bình minh. Mỗi chương đều có một trùm.',
+  'hub.dialog.villager5.loreAnimals':
+    'Chó, mèo, gà và chim sống ở sân sau. Chúng chẳng bao giờ bước vào quảng trường.',
+  'hub.dialog.villager5.tipActiveSkill':
+    'Kỹ năng chủ động nạp dần khi bạn chiến đấu. Để dành cho đám đông, đừng dùng với một con.',
+  'hub.dialog.villager5.lorePeace':
+    'Ở đây không ai muốn làm bạn bị thương. Ngồi bên lửa một lát trước lượt chạy sau.',
+  'hub.dialog.shopkeeper.greetVictory':
+    'Thắng rồi! Chương {chapter} đã xong và {gold} vàng đang nóng trong túi bạn.',
+  'hub.dialog.shopkeeper.greetRich':
+    'Túi bạn có {gold} vàng. Thừa sức mua nâng cấp vĩnh viễn, anh hùng.',
+  'hub.dialog.shopkeeper.greetChapter':
+    'Chương {chapter} đã mở, và bạn mang {gold} vàng. Tiêu cho khôn ngoan.',
+  'hub.dialog.shopkeeper.greetBroke': 'Chưa có vàng ({gold})? Dọn vài phòng rồi quay lại nhé.',
+  'hub.dialog.shopkeeper.greetDefault': 'Chào mừng trở lại. Hôm nay bạn có {gold} vàng để tiêu.',
+  'hub.dialog.shopkeeper.choice.metaShop': 'Mua Nâng Cấp Vĩnh Viễn',
+  'hub.dialog.shopkeeper.choice.unlockHeroes': 'Mở Khóa Nhân Vật',
+  'hub.dialog.shopkeeper.choice.leave': 'Tạm Biệt',
+  'hub.dialog.continueHint': '[E] Tiếp',
 
   // --- Result / Death screen ---
   'result.titleWin': 'HOÀN THÀNH CHƯƠNG',

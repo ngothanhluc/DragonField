@@ -221,6 +221,55 @@ export const EN = {
   'hub.prompt.exitShop': 'Leave shop',
   'hub.prompt.dojo': 'Dojo',
   'hub.prompt.expedition': 'Set out',
+  'hub.npc.villager1.name': 'Grandma Hoa',
+  'hub.npc.villager2.name': 'Uncle Bay',
+  'hub.npc.villager3.name': 'Aunt Lan',
+  'hub.npc.villager4.name': 'Minh',
+  'hub.npc.villager5.name': 'Little Ti',
+  'hub.npc.shopkeeper.name': 'Shopkeeper',
+  'hub.dialog.villager1.tipPotions':
+    'Carry a health potion into every room. You never know when a boss will catch you short.',
+  'hub.dialog.villager1.loreSquare':
+    'This square has seen a hundred heroes set out north. The campfire never goes cold.',
+  'hub.dialog.villager1.tipClearSpeed':
+    'Clearing a room quickly pays extra gold. Keep moving and keep firing.',
+  'hub.dialog.villager2.tipBullets':
+    'Bullets fly straight. Step sideways, never backwards, and let your aim do the work.',
+  'hub.dialog.villager2.loreNorthGate':
+    'Past the North Gate the yokai grow bolder with every chapter. Come back alive.',
+  'hub.dialog.villager2.tipDash':
+    'Dash through a bullet, not away from it. The brief flash makes you untouchable.',
+  'hub.dialog.villager3.tipShopUpgrades':
+    'Gold spent at the shop is never wasted. Permanent upgrades follow every hero.',
+  'hub.dialog.villager3.loreSmithy':
+    'The smithy behind the shop keeps the old blades. Some of them now answer to you.',
+  'hub.dialog.villager3.tipSpecialRoom':
+    'A closed door may hide a heal, a shop or a chest. Choose what your run needs.',
+  'hub.dialog.villager4.tipDojoCodex':
+    'The dojo master keeps the Skill Codex. Visit him to learn what every skill becomes.',
+  'hub.dialog.villager4.tipEvolutions':
+    'Two skills can evolve into one legendary. Ask the Codex for the recipe.',
+  'hub.dialog.villager4.loreChapters':
+    'Four chapters stand between this village and the dawn. Each one keeps a boss.',
+  'hub.dialog.villager5.loreAnimals':
+    'The dog, cat, chicken and bird live in the yards. They never enter the plaza.',
+  'hub.dialog.villager5.tipActiveSkill':
+    'Your active skill charges as you fight. Save it for a crowd, not a single foe.',
+  'hub.dialog.villager5.lorePeace':
+    'Nothing here wants to hurt you. Sit by the fire a while before the next run.',
+  'hub.dialog.shopkeeper.greetVictory':
+    'Victory! Chapter {chapter} is clear and {gold} gold is burning in your pouch.',
+  'hub.dialog.shopkeeper.greetRich':
+    'That is {gold} gold in your pouch. Plenty for permanent upgrades, hero.',
+  'hub.dialog.shopkeeper.greetChapter':
+    'Chapter {chapter} is open, and you carry {gold} gold. Spend it well.',
+  'hub.dialog.shopkeeper.greetBroke': 'No gold yet ({gold})? Clear a few rooms and come back.',
+  'hub.dialog.shopkeeper.greetDefault':
+    'Welcome back. You have {gold} gold to spend today.',
+  'hub.dialog.shopkeeper.choice.metaShop': 'Permanent Upgrades',
+  'hub.dialog.shopkeeper.choice.unlockHeroes': 'Hero Unlocks',
+  'hub.dialog.shopkeeper.choice.leave': 'Leave',
+  'hub.dialog.continueHint': '[E] Continue',
 
   // --- Result / Death screen ---
   'result.titleWin': 'CHAPTER CLEAR',

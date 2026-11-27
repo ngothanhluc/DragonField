@@ -408,6 +408,16 @@ export interface TuningConfig {
   readonly characters: CharactersTuning;
   /** Class-exclusive skill numbers (M20, ADR-027; #84–#87). */
   readonly classSkills: ClassSkillsTuning;
+  /** Living Village Hub population (#92): animal yard leash and plaza keep-out. */
+  readonly hub: HubTuning;
+}
+
+/** Living Village Hub population numbers (#92). */
+export interface HubTuning {
+  /** How far (tiles) a village animal may stray from the spot the map placed it. */
+  readonly animalYardLeashTiles: number;
+  /** Animals never come closer than this (tiles) to the village spawn: the plaza stays people-only. */
+  readonly animalPlazaKeepOutTiles: number;
 }
 
 /** Playable character IDs validated in `config/tuning.json` (M14). */
@@ -1369,6 +1379,8 @@ const HEALTH_POTION_FIELDS = [
 ] as const;
 
 const ROOM_ART_FIELDS = ['detailDensity', 'pathStoneDensity'] as const;
+
+const HUB_FIELDS = ['animalYardLeashTiles', 'animalPlazaKeepOutTiles'] as const;
 
 const BOSS_FIELDS = ['introGraceMs', 'healthByChapter'] as const;
 
@@ -2342,6 +2354,24 @@ function parseWaveTotals(
     totals.push({ min, max: Math.max(min, max) });
   });
   return totals;
+}
+
+/**
+ * Living Village Hub population (#92): the animal yard leash and the plaza keep-out circle.
+ * Both must be real distances — a 0 leash pins every animal to one spot.
+ */
+function parseHub(raw: Record<string, unknown>, problems: ProblemList): HubTuning {
+  const source = readObject(raw, 'hub', '', problems, HUB_FIELDS);
+  if (source === undefined) {
+    return { animalYardLeashTiles: 4, animalPlazaKeepOutTiles: 6 };
+  }
+
+  return {
+    animalYardLeashTiles:
+      readNumber(source, 'animalYardLeashTiles', 'hub', problems, { positive: true }) ?? 4,
+    animalPlazaKeepOutTiles:
+      readNumber(source, 'animalPlazaKeepOutTiles', 'hub', problems, { positive: true }) ?? 6,
+  };
 }
 
 /**
@@ -4091,6 +4121,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     activeSkill: parseActiveSkill(raw, problems),
     classSkills: parseClassSkills(raw, problems),
     characters: parseCharacters(raw, problems),
+    hub: parseHub(raw, problems),
   };
 
   problems.throwIfAny();

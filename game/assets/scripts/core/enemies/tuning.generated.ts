@@ -847,4 +847,8 @@ export const TUNING_DATA = {
       },
     },
   },
+  hub: {
+    animalYardLeashTiles: 4,
+    animalPlazaKeepOutTiles: 6,
+  },
 } as const;
