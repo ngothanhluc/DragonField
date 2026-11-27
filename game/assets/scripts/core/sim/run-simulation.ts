@@ -160,6 +160,7 @@ import type {
   ClassSkillEffect,
   ClassSkillMemory,
   ClassSkillStackSource,
+  ClassSkillTarget,
 } from '../skills/class-skill-hooks';
 import {
   NinjaSkillRuntime,
@@ -684,13 +685,24 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const applyBurn = (enemyId: string, nowMs: number): void => {
     const burn = stats.burnOnHit;
     if (burn === undefined || !(burn.dps > 0) || !(burn.durationMs > 0)) return;
+    applyBurnEffect(enemyId, burn.dps, burn.durationMs, nowMs);
+  };
+
+  /** Apply an explicit burn (class skills, not the player's `burnOnHit` loadout stat). */
+  const applyBurnEffect = (
+    enemyId: string,
+    dps: number,
+    burnMs: number,
+    nowMs: number,
+  ): void => {
+    if (!(dps > 0) || !(burnMs > 0)) return;
     const prev = burns.get(enemyId);
     if (prev === undefined) {
-      burns.set(enemyId, { dps: burn.dps, untilMs: nowMs + burn.durationMs });
+      burns.set(enemyId, { dps, untilMs: nowMs + burnMs });
       return;
     }
-    prev.dps = Math.max(prev.dps, burn.dps);
-    prev.untilMs = Math.max(prev.untilMs, nowMs + burn.durationMs);
+    prev.dps = Math.max(prev.dps, dps);
+    prev.untilMs = Math.max(prev.untilMs, nowMs + burnMs);
   };
 
   const isBurning = (enemyId: string, nowMs: number): boolean => {
@@ -1014,6 +1026,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         elite: enemy.elite,
         ...(killedBy !== undefined ? { killedBy } : {}),
         nowMs: atMs,
+        damage: stats.damage,
+        enemies: classTargets(),
         rng,
         memory: classSkillMemory,
       });
@@ -1059,12 +1073,87 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     return dealt;
   };
 
+  const isAlive = (enemy: EnemyState): boolean =>
+    enemy.health > 0 && enemy.action.kind !== 'dead';
+
+  /** Living enemies in the shape a class hook targets (positions by reference, no copy). */
+  const classTargets = (): readonly ClassSkillTarget[] => {
+    const targets: ClassSkillTarget[] = [];
+    for (const enemy of enemies) {
+      if (!isAlive(enemy)) continue;
+      targets.push({
+        id: enemy.id,
+        position: enemy.position,
+        ignited: isBurning(enemy.id, durationMs),
+      });
+    }
+    return targets;
+  };
+
+  /** Apply one class-skill `damage` request: direct `targetId` or an AoE around `position`. */
+  const applyClassDamage = (effect: ClassSkillEffect, multiplier = 1): void => {
+    const amount = (effect.amount ?? 0) * Math.max(1, multiplier);
+    if (!(amount > 0)) return;
+
+    if (effect.targetId !== undefined) {
+      const target = enemies.find(
+        (enemy) => enemy.id === effect.targetId && isAlive(enemy),
+      );
+      if (target === undefined) return;
+      const dealt = damageEnemy(target, amount, effect.skillId);
+      if (dealt > 0) bumpClassSkill(classSkillDamage, effect.skillId, dealt);
+      return;
+    }
+
+    const radius = (effect.radiusTiles ?? 0) * Math.max(1, multiplier);
+    if (!(radius > 0)) return;
+    for (const enemy of enemies) {
+      if (!isAlive(enemy)) continue;
+      const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
+      if (distance(effect.position, enemy.position) > radius + enemyRadius) continue;
+      const dealt = damageEnemy(enemy, amount, effect.skillId);
+      if (dealt > 0) bumpClassSkill(classSkillDamage, effect.skillId, dealt);
+    }
+  };
+
+  /** Apply one class-skill `status` request (slow and/or burn) to a target or an AoE. */
+  const applyClassStatus = (effect: ClassSkillEffect): void => {
+    const slowFactor = effect.slowFactor;
+    const burnDps = effect.burnDps;
+    const effectMs = effect.durationMs ?? 0;
+    if (slowFactor === undefined && burnDps === undefined) return;
+
+    const applyTo = (enemy: EnemyState): void => {
+      if (slowFactor !== undefined && effectMs > 0) {
+        statusOf(enemy).applySlow({ factor: slowFactor, durationMs: effectMs }, durationMs);
+      }
+      if (burnDps !== undefined) applyBurnEffect(enemy.id, burnDps, effectMs, durationMs);
+    };
+
+    if (effect.targetId !== undefined) {
+      const target = enemies.find(
+        (enemy) => enemy.id === effect.targetId && isAlive(enemy),
+      );
+      if (target !== undefined) applyTo(target);
+      return;
+    }
+
+    const radius = effect.radiusTiles ?? 0;
+    if (!(radius > 0)) return;
+    for (const enemy of enemies) {
+      if (!isAlive(enemy)) continue;
+      const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
+      if (distance(effect.position, enemy.position) > radius + enemyRadius) continue;
+      applyTo(enemy);
+    }
+  };
+
   /**
-   * Apply the class-skill requests one hook dispatch returned (M20, #84 + #85).
+   * Apply the class-skill requests one hook dispatch returned (M20, #84–#87).
    *
    * Every request counts as a proc for `SimulationResult.classSkillProcs`. Ninja (#84) and
-   * Cultivator (#87) own stateful runtimes; every other class (Archer #85) uses the generic
-   * effect kinds below, so an effect is never interpreted twice.
+   * Cultivator (#87) own stateful runtimes, so their effects go there and nothing is interpreted
+   * twice. Every other class (Archer #85, Mage #86) uses the generic effect kinds below.
    */
   const applyClassSkillEffects = (
     effects: readonly ClassSkillEffect[],
@@ -1084,19 +1173,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
 
     for (const effect of effects) {
       switch (effect.kind) {
-        case 'damage': {
-          const aoeMult = Math.max(1, stats.aoePowerMult);
-          const amount = (effect.amount ?? 0) * aoeMult;
-          const reach = (effect.radiusTiles ?? 0) * aoeMult;
-          if (!(amount > 0)) break;
-          for (const enemy of enemies) {
-            if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
-            if (distance(effect.position, enemy.position) > reach) continue;
-            const dealt = damageEnemy(enemy, amount, effect.skillId);
-            bumpClassSkill(classSkillDamage, effect.skillId, dealt);
-          }
+        case 'damage':
+          applyClassDamage(effect, stats.aoePowerMult);
           break;
-        }
+        case 'status':
+          applyClassStatus(effect);
+          break;
         case 'spawn': {
           const direction = effect.direction;
           const amount = effect.amount ?? 0;
@@ -1123,7 +1205,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           };
           break;
         default:
-          // `status` is a visual mark and `heal` is unused by the Archer hooks.
+          // `heal` is unused by the class hooks.
           break;
       }
     }
@@ -1327,12 +1409,14 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     activeState = stepActiveSkill(activeState, SIM_STEP_MS);
     actionBuffer.step(SIM_STEP_MS);
 
-    // Class-skill periodic tick (no-op until #84–#87; allocation-free when nothing is owned).
+    // Class-skill periodic tick (Mage meteors/orbs/shards; allocation-free when nothing is owned).
     if (hasAnyClassSkill(characterId, classSkillSource)) {
       const effects = dispatchClassSkillEvent('tick', characterId, classSkillSource, {
-        dtMs: SIM_STEP_MS,
         nowMs: durationMs,
+        dtMs: SIM_STEP_MS,
         position: player,
+        damage: stats.damage,
+        enemies: classTargets(),
         memory: classSkillMemory,
         rng,
       });
@@ -1375,6 +1459,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
             position: player,
             nowMs: durationMs,
             memory: classSkillMemory,
+            damage: stats.damage,
+            enemies: classTargets(),
             rng,
           });
           applyClassSkillEffects(effects);
@@ -1456,6 +1542,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
             position: player,
             nowMs: durationMs,
             memory: classSkillMemory,
+            damage: stats.damage,
+            enemies: classTargets(),
             rng,
           });
           applyClassSkillEffects(effects);
@@ -1695,6 +1783,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       rangeTiles: stats.targetingRangeTiles,
     });
     if (shot !== null) {
+      const activeBefore = bullets.active();
+      const previousNewestId = activeBefore[activeBefore.length - 1]?.id ?? 0;
       firePlayerVolley({
         pool: bullets,
         stats,
@@ -1706,6 +1796,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         ttlMs: bulletTtlMs,
       });
       shotsFired += 1;
+      // Tag every bullet of this volley so `onHit` can read the shot that actually hit.
+      for (const bullet of bullets.active()) {
+        if (bullet.id > previousNewestId) bullet.shotCount = shotsFired;
+      }
       if (hasAnyClassSkill(characterId, classSkillSource)) {
         const shotTarget = targets.find((target) => target.id === shot.targetId);
         const effects = dispatchClassSkillEvent('onShot', characterId, classSkillSource, {
@@ -1714,6 +1808,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           damage: stats.damage,
           nowMs: durationMs,
           memory: classSkillMemory,
+          enemies: classTargets(),
           ...(shotTarget !== undefined ? { targetPosition: shotTarget.position } : {}),
           rng,
         });
@@ -1883,7 +1978,9 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
               crit: bullet.crit,
               damage: dealt,
               firstHit: firstEnemyHit,
+              shotCount: bullet.shotCount,
               nowMs: durationMs,
+              enemies: classTargets(),
               memory: classSkillMemory,
               ...(direction !== null ? { direction } : {}),
               ...(bullet.classSkillId !== undefined

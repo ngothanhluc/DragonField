@@ -64,7 +64,7 @@ import {
   type FlowField,
   type RoomNavigation,
 } from '../core/enemies/navigation';
-import type { DerivedStats } from '../core/skills/derived-stats';
+import type { BurnOnHit, DerivedStats, SlowOnHit } from '../core/skills/derived-stats';
 import { squashScale } from '../core/feel/squash';
 import { FEEL_TUNING, NAVIGATION_TUNING } from '../core/enemies/tuning';
 import { SpriteAnimator } from './anim/sprite-animator';
@@ -371,6 +371,21 @@ export class EnemyView extends Component {
 
   hasAnyStatus(nowMs: number): boolean {
     return this.statuses.hasAnyStatus(nowMs);
+  }
+
+  /** True while this enemy is burning — the Mage Evolution's shatter-burn reads it (M20). */
+  isBurning(nowMs: number): boolean {
+    return this.statuses.isBurned(nowMs);
+  }
+
+  /** Apply a class-skill slow (M20); core decides the numbers, the view holds state. */
+  applyClassSlow(slow: SlowOnHit, nowMs: number): void {
+    this.statuses.applySlow(slow, nowMs);
+  }
+
+  /** Apply a class-skill burn (M20); core decides the numbers, the view holds state. */
+  applyClassBurn(burn: BurnOnHit, nowMs: number): void {
+    this.statuses.applyBurn(burn, nowMs);
   }
 
   get contactRangeTiles(): number {

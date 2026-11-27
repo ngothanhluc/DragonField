@@ -292,6 +292,85 @@ export interface WavesTuning {
   readonly chapterTotals: readonly ChapterWaveTotal[];
 }
 
+/** Meteor (`mage-meteor`): periodic heavy AoE on the densest cluster (M20, #86). */
+export interface MageMeteorTuning {
+  /** Interval at 1 stack, ms (GDD: 4.5 s). */
+  readonly intervalMs: number;
+  /** Shorter interval per extra stack, ms (subtracted from `intervalMs`). */
+  readonly intervalStepMs: number;
+  /** Meteor AoE radius, tiles. */
+  readonly radiusTiles: number;
+  /** AoE damage as a multiple of the player's per-shot damage. */
+  readonly damageRatio: number;
+  /** Burn DPS as a multiple of the player's per-shot damage. */
+  readonly burnDpsRatio: number;
+  /** Burn duration, ms. */
+  readonly burnDurationMs: number;
+}
+
+/** Frost Orbs (`mage-frost-orbs`): orbiting contact spheres (M20, #86). */
+export interface MageFrostOrbsTuning {
+  /** Orbs at 1 stack (GDD: 2). */
+  readonly baseCount: number;
+  /** Extra orbs per additional stack (GDD: +1/stack). */
+  readonly countPerStack: number;
+  /** Orbit radius around the Mage, tiles. */
+  readonly radiusTiles: number;
+  /** Orbit angular speed at base, radians/second. */
+  readonly orbitRadiansPerSecond: number;
+  /** Orbit speed multiplier while the Evolution is owned. */
+  readonly evolvedOrbitMultiplier: number;
+  /** Contact radius of one orb, tiles. */
+  readonly hitRadiusTiles: number;
+  /** Contact DPS as a multiple of the player's per-shot damage. */
+  readonly damagePerSecondRatio: number;
+  /** Heavy slow speed factor `0..1` on contact. */
+  readonly slowFactor: number;
+  /** Slow duration, ms. */
+  readonly slowDurationMs: number;
+}
+
+/** Storm Strike (`mage-storm-strike`): on-hit lightning proc (M20, #86). */
+export interface MageStormStrikeTuning {
+  /** Proc chance at 1 stack (GDD: 0.2). */
+  readonly procChance: number;
+  /** Extra proc chance per additional stack (GDD: +0.1/stack). */
+  readonly procChancePerStack: number;
+  /** Bolt damage as a multiple of the player's per-shot damage. */
+  readonly damageRatio: number;
+}
+
+/** Arcane Pulse (`mage-arcane-pulse`): every-Nth-shot ring (M20, #86). */
+export interface MageArcanePulseTuning {
+  /** Ring fires on every Nth auto-fire shot (GDD: 4). */
+  readonly shotEvery: number;
+  /** Ring radius, tiles (GDD: 1.8). */
+  readonly radiusTiles: number;
+  /** Ring damage at 1 stack, as a multiple of the player's per-shot damage. */
+  readonly damageRatio: number;
+  /** Extra damage ratio per additional stack. */
+  readonly damageRatioPerStack: number;
+}
+
+/** Elemental Cataclysm (`mage-elemental-cataclysm`): Evolution extras (M20, #86). */
+export interface MageEvolutionTuning {
+  /** Ice-shard launch interval, ms. */
+  readonly shardIntervalMs: number;
+  /** Shard damage as a multiple of the player's per-shot damage. */
+  readonly shardDamageRatio: number;
+  /** Orb damage multiplier against ignited (burning) foes. */
+  readonly shatterBurnMultiplier: number;
+}
+
+/** One class's exclusive-skill tuning block (M20, ADR-027). */
+export interface MageClassSkillsTuning {
+  readonly meteor: MageMeteorTuning;
+  readonly frostOrbs: MageFrostOrbsTuning;
+  readonly stormStrike: MageStormStrikeTuning;
+  readonly arcanePulse: MageArcanePulseTuning;
+  readonly evolution: MageEvolutionTuning;
+}
+
 export interface TuningConfig {
   /** Bump when a field changes meaning, so old saves/replays can tell. */
   readonly version: number;
@@ -654,6 +733,7 @@ export interface CultivatorClassSkillsTuning {
 export interface ClassSkillsTuning {
   readonly ninja: NinjaClassSkillsTuning;
   readonly archer: ArcherClassSkillTuning;
+  readonly mage: MageClassSkillsTuning;
   readonly cultivator: CultivatorClassSkillsTuning;
 }
 
@@ -1071,7 +1151,7 @@ const ACTIVE_SKILL_FIELDS = [
   'barrageDamageMultiplier',
 ] as const;
 
-const CLASS_SKILLS_FIELDS = ['ninja', 'archer', 'cultivator'] as const;
+const CLASS_SKILLS_FIELDS = ['ninja', 'archer', 'mage', 'cultivator'] as const;
 
 const NINJA_CLASS_SKILLS_FIELDS = [
   'shadowClone',
@@ -1388,6 +1468,48 @@ const VFX_FIELDS = [
   'critImpactDrawUnits',
   'auraDrawUnits',
   'auraOffsetTiles',
+] as const;
+
+const MAGE_FIELDS = ['meteor', 'frostOrbs', 'stormStrike', 'arcanePulse', 'evolution'] as const;
+
+const MAGE_METEOR_FIELDS = [
+  'intervalMs',
+  'intervalStepMs',
+  'radiusTiles',
+  'damageRatio',
+  'burnDpsRatio',
+  'burnDurationMs',
+] as const;
+
+const MAGE_FROST_ORBS_FIELDS = [
+  'baseCount',
+  'countPerStack',
+  'radiusTiles',
+  'orbitRadiansPerSecond',
+  'evolvedOrbitMultiplier',
+  'hitRadiusTiles',
+  'damagePerSecondRatio',
+  'slowFactor',
+  'slowDurationMs',
+] as const;
+
+const MAGE_STORM_STRIKE_FIELDS = [
+  'procChance',
+  'procChancePerStack',
+  'damageRatio',
+] as const;
+
+const MAGE_ARCANE_PULSE_FIELDS = [
+  'shotEvery',
+  'radiusTiles',
+  'damageRatio',
+  'damageRatioPerStack',
+] as const;
+
+const MAGE_EVOLUTION_FIELDS = [
+  'shardIntervalMs',
+  'shardDamageRatio',
+  'shatterBurnMultiplier',
 ] as const;
 
 /** Collect every problem then throw a single `Error` (same shape as `level-data.ts`). */
@@ -3038,6 +3160,7 @@ function zeroClassSkills(): ClassSkillsTuning {
       smokeBomb: zeroNinjaSmokeBomb(),
     },
     archer: defaultArcherClassSkills(),
+    mage: zeroMageClassSkills(),
     cultivator: {
       orbitSwords: zeroCultivatorOrbitSwords(),
       swordArray: zeroCultivatorSwordArray(),
@@ -3429,6 +3552,7 @@ function parseClassSkills(
   return {
     ninja: parseNinjaClassSkills(source, problems),
     archer: parseArcherClassSkills(source, problems),
+    mage: parseMageClassSkills(source, problems),
     cultivator: parseCultivatorClassSkills(source, problems),
   };
 }
@@ -3616,6 +3740,181 @@ function parseCharacters(raw: Record<string, unknown>, problems: ProblemList): C
     result[id] = parseCharacterEntry(source, id, problems);
   }
   return result;
+}
+
+function zeroMageClassSkills(): MageClassSkillsTuning {
+  return {
+    meteor: {
+      intervalMs: 4500,
+      intervalStepMs: 1000,
+      radiusTiles: 2,
+      damageRatio: 2.5,
+      burnDpsRatio: 0.6,
+      burnDurationMs: 2500,
+    },
+    frostOrbs: {
+      baseCount: 2,
+      countPerStack: 1,
+      radiusTiles: 1.6,
+      orbitRadiansPerSecond: 1.2,
+      evolvedOrbitMultiplier: 2,
+      hitRadiusTiles: 0.55,
+      damagePerSecondRatio: 0.8,
+      slowFactor: 0.35,
+      slowDurationMs: 800,
+    },
+    stormStrike: { procChance: 0.2, procChancePerStack: 0.1, damageRatio: 1.6 },
+    arcanePulse: {
+      shotEvery: 4,
+      radiusTiles: 1.8,
+      damageRatio: 0.8,
+      damageRatioPerStack: 0.4,
+    },
+    evolution: { shardIntervalMs: 900, shardDamageRatio: 0.8, shatterBurnMultiplier: 2 },
+  };
+}
+
+function parseMageMeteor(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): MageMeteorTuning {
+  const block = readObject(source, 'meteor', 'classSkills.mage', problems, MAGE_METEOR_FIELDS);
+  if (block === undefined) return zeroMageClassSkills().meteor;
+
+  const path = 'classSkills.mage.meteor';
+  return {
+    intervalMs:
+      readNumber(block, 'intervalMs', path, problems, { positive: true }) ?? 4500,
+    intervalStepMs: readNumber(block, 'intervalStepMs', path, problems) ?? 0,
+    radiusTiles:
+      readNumber(block, 'radiusTiles', path, problems, { positive: true }) ?? 1,
+    damageRatio:
+      readNumber(block, 'damageRatio', path, problems, { positive: true }) ?? 1,
+    burnDpsRatio: readNumber(block, 'burnDpsRatio', path, problems) ?? 0,
+    burnDurationMs: readNumber(block, 'burnDurationMs', path, problems, { integer: true }) ?? 0,
+  };
+}
+
+function parseMageFrostOrbs(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): MageFrostOrbsTuning {
+  const block = readObject(
+    source,
+    'frostOrbs',
+    'classSkills.mage',
+    problems,
+    MAGE_FROST_ORBS_FIELDS,
+  );
+  if (block === undefined) return zeroMageClassSkills().frostOrbs;
+
+  const path = 'classSkills.mage.frostOrbs';
+  return {
+    baseCount: readNumber(block, 'baseCount', path, problems, { integer: true }) ?? 0,
+    countPerStack:
+      readNumber(block, 'countPerStack', path, problems, { integer: true }) ?? 0,
+    radiusTiles:
+      readNumber(block, 'radiusTiles', path, problems, { positive: true }) ?? 1,
+    orbitRadiansPerSecond:
+      readNumber(block, 'orbitRadiansPerSecond', path, problems, { positive: true }) ?? 1,
+    evolvedOrbitMultiplier:
+      readNumber(block, 'evolvedOrbitMultiplier', path, problems, { positive: true }) ?? 1,
+    hitRadiusTiles:
+      readNumber(block, 'hitRadiusTiles', path, problems, { positive: true }) ?? 0.5,
+    damagePerSecondRatio:
+      readNumber(block, 'damagePerSecondRatio', path, problems, { positive: true }) ?? 1,
+    slowFactor: readRatio(block, 'slowFactor', path, problems),
+    slowDurationMs:
+      readNumber(block, 'slowDurationMs', path, problems, { integer: true }) ?? 0,
+  };
+}
+
+function parseMageStormStrike(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): MageStormStrikeTuning {
+  const block = readObject(
+    source,
+    'stormStrike',
+    'classSkills.mage',
+    problems,
+    MAGE_STORM_STRIKE_FIELDS,
+  );
+  if (block === undefined) return zeroMageClassSkills().stormStrike;
+
+  const path = 'classSkills.mage.stormStrike';
+  return {
+    procChance: readRatio(block, 'procChance', path, problems),
+    procChancePerStack: readRatio(block, 'procChancePerStack', path, problems),
+    damageRatio:
+      readNumber(block, 'damageRatio', path, problems, { positive: true }) ?? 1,
+  };
+}
+
+function parseMageArcanePulse(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): MageArcanePulseTuning {
+  const block = readObject(
+    source,
+    'arcanePulse',
+    'classSkills.mage',
+    problems,
+    MAGE_ARCANE_PULSE_FIELDS,
+  );
+  if (block === undefined) return zeroMageClassSkills().arcanePulse;
+
+  const path = 'classSkills.mage.arcanePulse';
+  return {
+    shotEvery:
+      readNumber(block, 'shotEvery', path, problems, { integer: true, positive: true }) ?? 1,
+    radiusTiles:
+      readNumber(block, 'radiusTiles', path, problems, { positive: true }) ?? 1,
+    damageRatio: readNumber(block, 'damageRatio', path, problems) ?? 0,
+    damageRatioPerStack:
+      readNumber(block, 'damageRatioPerStack', path, problems) ?? 0,
+  };
+}
+
+function parseMageEvolution(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): MageEvolutionTuning {
+  const block = readObject(
+    source,
+    'evolution',
+    'classSkills.mage',
+    problems,
+    MAGE_EVOLUTION_FIELDS,
+  );
+  if (block === undefined) return zeroMageClassSkills().evolution;
+
+  const path = 'classSkills.mage.evolution';
+  return {
+    shardIntervalMs:
+      readNumber(block, 'shardIntervalMs', path, problems, { integer: true, positive: true }) ??
+      1,
+    shardDamageRatio:
+      readNumber(block, 'shardDamageRatio', path, problems, { positive: true }) ?? 1,
+    shatterBurnMultiplier:
+      readNumber(block, 'shatterBurnMultiplier', path, problems, { positive: true }) ?? 1,
+  };
+}
+
+function parseMageClassSkills(
+  source: Record<string, unknown>,
+  problems: ProblemList,
+): MageClassSkillsTuning {
+  const block = readObject(source, 'mage', 'classSkills', problems, MAGE_FIELDS);
+  if (block === undefined) return zeroMageClassSkills();
+
+  return {
+    meteor: parseMageMeteor(block, problems),
+    frostOrbs: parseMageFrostOrbs(block, problems),
+    stormStrike: parseMageStormStrike(block, problems),
+    arcanePulse: parseMageArcanePulse(block, problems),
+    evolution: parseMageEvolution(block, problems),
+  };
 }
 
 function zeroCover(): CoverTuning {
