@@ -55,9 +55,7 @@ import {
   computeSkillCardLayout,
   formatChapterAscensionHint,
   formatChapterButtonDetail,
-  formatCharacterCardText,
   formatCharacterPrimaryAction,
-  formatCharacterSelectSubtitle,
   formatCharacterSummaryLines,
   formatContinueRunDetail,
   formatResultScreenSummary,
@@ -73,6 +71,7 @@ import {
   toOwnedSkillsMap,
   upgradeRow,
 } from '../../assets/scripts/core/view/menu-layout';
+import { buildSkillCodex } from '../../assets/scripts/core/view/skill-codex';
 import { readPng } from '../../scripts/lib/png';
 import { LEVELS_ROOT, loadTmxLevels } from '../helpers/tmx-levels';
 
@@ -891,12 +890,12 @@ describe('M15 Chapter Select + Ascension 0–5 selector layout & bounds audit', 
   });
 });
 
-describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock buttons & live stage', () => {
+describe('M20 Character Detail & Skill Codex layout — 4 class tabs, stats, passive/active cards, exclusive-skill grid & Evolution', () => {
   const waterLayout = parseWaterLayout(
     JSON.parse(readFileSync(join(ASSETS, 'resources', 'data', 'water-layout.json'), 'utf8')) as unknown,
   );
 
-  it('fits plaque, 2×2 cards, 3-layer summary, and action buttons inside 512×288 while keeping the left backdrop preview hero uncovered across all 4 viewports', () => {
+  it('fits the panel, 4 stacked 64×64 tabs, skill grid, Evolution card and buttons inside 512×288 while keeping the live preview hero uncovered', () => {
     const ch1Room1 = loadTmxLevels(join(LEVELS_ROOT, 'chapter-1')).find(
       (entry) => entry.room === MENU_BACKDROP_ROOM,
     )!;
@@ -923,8 +922,27 @@ describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock b
       expect(shadowRight, `${vp.label} shadowRight`).toBeLessThanOrEqual(halfW);
       expect(shadowTop, `${vp.label} shadowTop`).toBeLessThanOrEqual(halfH);
       expect(shadowBottom, `${vp.label} shadowBottom`).toBeGreaterThanOrEqual(-halfH);
-      expect(layout.stageRightX).toBe(shadowLeft);
 
+      // Right panel leaves the middle of the stage open for the live rigged preview actor.
+      expect(layout.panelX - layout.panelWidth / 2).toBeGreaterThan(-halfW / 2);
+
+      // 4 stacked 64×64 class tabs stay on screen and clear of the panel.
+      expect(layout.tabs).toHaveLength(4);
+      layout.tabs.forEach((tab, index) => {
+        expect(tab.index, `${vp.label} tab ${index}`).toBe(index);
+        expect(tab.size).toBe(64);
+        expect(tab.x - tab.size / 2).toBeGreaterThanOrEqual(-halfW);
+        expect(tab.x + tab.size / 2).toBeLessThanOrEqual(layout.panelX - layout.panelWidth / 2 - 6);
+        expect(tab.y + tab.size / 2).toBeLessThanOrEqual(halfH);
+        expect(tab.y - tab.size / 2).toBeGreaterThanOrEqual(-halfH);
+        expect(tab.badgeWidth).toBeLessThanOrEqual(tab.size);
+        expect(tab.badgeHeight).toBeLessThanOrEqual(tab.size);
+      });
+      expect(layout.tabs[0]!.y).toBeGreaterThan(layout.tabs[1]!.y);
+      expect(layout.tabs[1]!.y).toBeGreaterThan(layout.tabs[2]!.y);
+      expect(layout.tabs[2]!.y).toBeGreaterThan(layout.tabs[3]!.y);
+
+      // Live preview actor (32×32 body) stands between the tabs and the panel.
       const worldScale = worldToUiScale(vp.width, vp.height, DESIGN_WIDTH, DESIGN_HEIGHT);
       const localKeepOut = localKeepOutForScale(worldScale);
       const frame = menuBackdropFrame(ch1Room1, {
@@ -936,79 +954,85 @@ describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock b
       const halfSpriteUiW = (TILE_SIZE_PX * worldScale) / 2;
       expect(
         actorUiX + halfSpriteUiW,
-        `${vp.label} backdrop hero right edge clear of Character Select plaque`,
-      ).toBeLessThanOrEqual(layout.stageRightX - 6);
+        `${vp.label} live preview right edge clear of the Codex panel`,
+      ).toBeLessThanOrEqual(layout.panelX - layout.panelWidth / 2 - 2);
+      expect(
+        actorUiX - halfSpriteUiW,
+        `${vp.label} live preview left edge clear of the class tabs`,
+      ).toBeGreaterThanOrEqual(layout.tabs[0]!.x + layout.tabs[0]!.size / 2 + 2);
 
-      // M19 64×64 portrait plaque sits in the upper-left stage, clear of the live hero & right panel.
-      const portraitLeft = layout.portraitFrame.x - layout.portraitFrame.frameSize / 2;
-      const portraitRight = layout.portraitFrame.x + layout.portraitFrame.frameSize / 2;
-      const portraitTop = layout.portraitFrame.y + layout.portraitFrame.frameSize / 2;
-      const portraitBottom = layout.portraitFrame.y - layout.portraitFrame.frameSize / 2;
-      expect(layout.portraitFrame.spriteSize).toBe(64);
-      expect(portraitLeft).toBeGreaterThanOrEqual(-halfW);
-      expect(portraitRight).toBeLessThanOrEqual(layout.stageRightX - 6);
-      expect(portraitTop).toBeLessThanOrEqual(halfH);
-      expect(portraitBottom).toBeGreaterThan(0);
-
+      // Panel header stack is ordered and inside the panel.
       const panelTop = layout.panelY + layout.panelHeight / 2;
       const panelBottom = layout.panelY - layout.panelHeight / 2;
-      expect(layout.titleY + (layout.titleFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThanOrEqual(
-        panelTop - 3,
+      const box = (fontSize: number): number => (fontSize * FONT_BOX_HEIGHT_RATIO) / 2;
+      expect(layout.titleY + box(layout.titleFontSize)).toBeLessThanOrEqual(panelTop - 2);
+      expect(layout.statusY + box(layout.statusFontSize)).toBeLessThan(layout.titleY - box(layout.titleFontSize));
+      expect(layout.dividerY).toBeLessThan(layout.statusY - box(layout.statusFontSize));
+      expect(layout.statsY + box(layout.statsFontSize)).toBeLessThan(layout.dividerY);
+      expect(layout.weaponY + box(layout.weaponFontSize)).toBeLessThan(layout.statsY - box(layout.statsFontSize));
+      expect(layout.passiveHeadingY + box(layout.passiveHeadingFontSize)).toBeLessThan(
+        layout.weaponY - box(layout.weaponFontSize),
       );
-      expect(layout.subtitleY).toBeLessThan(layout.titleY - 10);
-      expect(layout.dividerY).toBeLessThan(layout.subtitleY - 6);
+      expect(layout.passiveBodyY + box(layout.passiveBodyFontSize)).toBeLessThan(
+        layout.passiveHeadingY - box(layout.passiveHeadingFontSize),
+      );
+      expect(layout.activeHeadingY + box(layout.activeHeadingFontSize)).toBeLessThan(
+        layout.passiveBodyY - box(layout.passiveBodyFontSize),
+      );
+      expect(layout.activeBodyY + box(layout.activeBodyFontSize)).toBeLessThan(
+        layout.activeHeadingY - box(layout.activeHeadingFontSize),
+      );
+      expect(layout.exclusivesHeadingY + box(layout.exclusivesHeadingFontSize)).toBeLessThan(
+        layout.activeBodyY - box(layout.activeBodyFontSize),
+      );
 
-      expect(layout.cards).toHaveLength(4);
-      const row0TopRing = layout.cards[0]!.y + (layout.cardHeight + FOCUS_RING_EXPAND_PX) / 2;
-      const row0Bottom = layout.cards[0]!.y - layout.cardHeight / 2;
-      const row1Top = layout.cards[2]!.y + layout.cardHeight / 2;
-      const row1BottomRing = layout.cards[2]!.y - (layout.cardHeight + FOCUS_RING_EXPAND_PX) / 2;
-
-      expect(row0TopRing).toBeLessThan(layout.dividerY - 2);
-      expect(row0Bottom - row1Top).toBeGreaterThanOrEqual(layout.cardRowGap);
-      expect(layout.cards[1]!.x - layout.cards[0]!.x - layout.cardWidth).toBe(layout.cardColGap);
-
-      const summaryTop = layout.summaryY + layout.summaryHeight / 2;
-      const summaryBottom = layout.summaryY - layout.summaryHeight / 2;
-      expect(summaryTop).toBeLessThan(row1BottomRing - 2);
-
-      const primaryTopRing =
-        layout.primaryButton.y + (layout.primaryButton.height + FOCUS_RING_EXPAND_PX) / 2;
-      const primaryBottomRing =
-        layout.primaryButton.y - (layout.primaryButton.height + FOCUS_RING_EXPAND_PX) / 2;
-      expect(primaryTopRing).toBeLessThan(summaryBottom - 2);
+      // 2×2 exclusive-skill grid, Evolution card and buttons stack without overlap.
+      expect(layout.skillCards).toHaveLength(4);
+      const [topLeft, topRight, bottomLeft, bottomRight] = layout.skillCards;
+      expect(topLeft!.x).toBe(bottomLeft!.x);
+      expect(topRight!.x).toBe(bottomRight!.x);
+      expect(topLeft!.y).toBe(topRight!.y);
+      expect(bottomLeft!.y).toBe(bottomRight!.y);
+      expect(topLeft!.y - topLeft!.height / 2).toBeGreaterThanOrEqual(
+        bottomLeft!.y + bottomLeft!.height / 2,
+      );
+      expect(layout.skillCards[0]!.y + layout.skillCards[0]!.height / 2).toBeLessThanOrEqual(
+        layout.exclusivesHeadingY - box(layout.exclusivesHeadingFontSize),
+      );
+      expect(layout.evolution.width).toBeGreaterThan(layout.skillCards[0]!.width);
+      expect(layout.evolution.height).toBeGreaterThanOrEqual(layout.skillCards[0]!.height);
       expect(
-        layout.backButton.x -
-          layout.backButton.width / 2 -
-          (layout.primaryButton.x + layout.primaryButton.width / 2),
+        layout.evolution.y + layout.evolution.height / 2,
+      ).toBeLessThanOrEqual(bottomLeft!.y - bottomLeft!.height / 2);
+      expect(
+        layout.primaryButton.y + layout.primaryButton.height / 2,
+      ).toBeLessThanOrEqual(layout.evolution.y - layout.evolution.height / 2);
+      expect(layout.primaryButton.y - layout.primaryButton.height / 2).toBeGreaterThanOrEqual(
+        panelBottom + 2,
+      );
+      expect(
+        layout.backButton.x - layout.backButton.width / 2 - (layout.primaryButton.x + layout.primaryButton.width / 2),
       ).toBeGreaterThanOrEqual(6);
-
-      expect(layout.hintY + (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2).toBeLessThan(
-        primaryBottomRing - 2,
-      );
-      expect(
-        layout.hintY - (layout.hintFontSize * FONT_BOX_HEIGHT_RATIO) / 2,
-      ).toBeGreaterThanOrEqual(panelBottom + 3);
+      expect(layout.backButton.x + layout.backButton.width / 2).toBeLessThanOrEqual(shadowRight);
     }
   });
 
-  it('fits every class card badge, 3-layer summary line, and early-unlock/equip label with zero clipping or line overlap across all save states', () => {
+  it('fits every Codex line (status, stats, passive/active, 4 skills, Evolution recipe) with zero clipping across locales and save states', () => {
     const layout = computeCharacterSelectLayout({
       visibleWidth: DESIGN_WIDTH,
       visibleHeight: DESIGN_HEIGHT,
-    });
-
-    const cardTextLayout = computeMenuButtonTextLayout({
-      width: layout.cardWidth,
-      height: layout.cardHeight,
-      fontSize: layout.cardFontSize,
-      hasDetail: true,
     });
     const primaryTextLayout = computeMenuButtonTextLayout({
       width: layout.primaryButton.width,
       height: layout.primaryButton.height,
       fontSize: layout.primaryButton.fontSize,
       hasDetail: true,
+    });
+    const backTextLayout = computeMenuButtonTextLayout({
+      width: layout.backButton.width,
+      height: layout.backButton.height,
+      fontSize: layout.backButton.fontSize,
+      hasDetail: false,
     });
 
     const freshSave = createDefaultSave();
@@ -1022,110 +1046,96 @@ describe('M14 Character Select layout — 4 classes, 3-layer summaries, unlock b
       'mage',
     );
 
-    for (const save of [freshSave, richSave, chClearedSave, purchasedSave]) {
-      const sub = formatCharacterSelectSubtitle(save.gold);
-      expect(sub.length * layout.subtitleFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
-        layout.dividerWidth,
-      );
+    for (const locale of ['vi', 'en'] as const) {
+      for (const save of [freshSave, richSave, chClearedSave, purchasedSave]) {
+        for (const character of CHARACTER_ROSTER) {
+          const view = buildSkillCodex(save, locale).find((entry) => entry.id === character.id)!;
 
-      for (const character of CHARACTER_ROSTER) {
-        const card = formatCharacterCardText(character, save);
-        expect(
-          card.label.length * cardTextLayout.labelFontSize * GLYPH_WIDTH_RATIO,
-          `card label "${card.label}"`,
-        ).toBeLessThanOrEqual(cardTextLayout.safeTextWidth);
-        expect(
-          card.detail.length * cardTextLayout.detailFontSize * GLYPH_WIDTH_RATIO,
-          `card detail "${card.detail}"`,
-        ).toBeLessThanOrEqual(cardTextLayout.safeTextWidth);
+          const statusLine = formatCharacterSummaryLines(character, save, locale).statusLine;
+          expect(
+            statusLine.length * layout.statusFontSize * GLYPH_WIDTH_RATIO,
+            `${locale} ${character.id} status "${statusLine}"`,
+          ).toBeLessThanOrEqual(layout.statusWidth);
 
-        const summary = formatCharacterSummaryLines(character, save);
-        const lineSpecs = [
-          { name: 'status', text: summary.statusLine, fs: layout.statusFontSize, y: layout.statusLocalY },
-          { name: 'weapon', text: summary.weaponLine, fs: layout.weaponFontSize, y: layout.weaponLocalY },
-          {
-            name: 'passiveTitle',
-            text: summary.passiveTitle,
-            fs: layout.passiveTitleFontSize,
-            y: layout.passiveTitleLocalY,
-          },
-          {
-            name: 'passiveBody',
-            text: summary.passiveBody,
-            fs: layout.passiveBodyFontSize,
-            y: layout.passiveBodyLocalY,
-          },
-          {
-            name: 'signatureTitle',
-            text: summary.signatureTitle,
-            fs: layout.signatureTitleFontSize,
-            y: layout.signatureTitleLocalY,
-          },
-          {
-            name: 'signatureBody',
-            text: summary.signatureBody,
-            fs: layout.signatureBodyFontSize,
-            y: layout.signatureBodyLocalY,
-          },
-        ] as const;
-
-        for (let i = 0; i < lineSpecs.length; i += 1) {
-          const cur = lineSpecs[i]!;
-          const widthPx = cur.text.length * cur.fs * GLYPH_WIDTH_RATIO;
-          expect(widthPx, `${character.id} ${cur.name} "${cur.text}"`).toBeLessThanOrEqual(
-            layout.summarySafeTextWidth,
+          const stats = `${view.stats.maxHp} ${view.stats.attacksPerSecond} ${view.stats.weaponForm}`;
+          expect(stats.length * layout.statsFontSize * GLYPH_WIDTH_RATIO).toBeLessThanOrEqual(
+            layout.contentWidth,
           );
+          expect(
+            view.stats.weaponLine.length * layout.weaponFontSize * GLYPH_WIDTH_RATIO,
+            `${locale} ${character.id} weapon line`,
+          ).toBeLessThanOrEqual(layout.statusWidth);
 
-          const halfBoxH = (cur.fs * FONT_BOX_HEIGHT_RATIO) / 2;
-          expect(cur.y + halfBoxH, `${character.id} ${cur.name} top`).toBeLessThanOrEqual(
-            layout.summaryHeight / 2 - 2,
-          );
-          expect(cur.y - halfBoxH, `${character.id} ${cur.name} bottom`).toBeGreaterThanOrEqual(
-            -layout.summaryHeight / 2 + 2,
-          );
-
-          if (i > 0) {
-            const prev = lineSpecs[i - 1]!;
-            const prevBottom = prev.y - (prev.fs * FONT_BOX_HEIGHT_RATIO) / 2;
-            const curTop = cur.y + halfBoxH;
-            expect(curTop, `${character.id} ${prev.name} -> ${cur.name} non-overlap`).toBeLessThan(
-              prevBottom,
-            );
+          const headings = [
+            { text: `${view.passive.heading} · ${view.passive.name}`, fs: layout.passiveHeadingFontSize },
+            { text: view.passive.description, fs: layout.passiveBodyFontSize },
+            {
+              text: `${view.active.heading} · ${view.active.name} · ${view.active.cooldownLabel}`,
+              fs: layout.activeHeadingFontSize,
+            },
+            { text: view.active.description, fs: layout.activeBodyFontSize },
+            { text: view.exclusives.heading, fs: layout.exclusivesHeadingFontSize },
+          ] as const;
+          for (const line of headings) {
+            expect(
+              line.text.length * line.fs * GLYPH_WIDTH_RATIO,
+              `${locale} ${character.id} "${line.text}"`,
+            ).toBeLessThanOrEqual(layout.statusWidth);
           }
-        }
 
-        const primary = formatCharacterPrimaryAction(character, save);
-        expect(
-          primary.label.length * primaryTextLayout.labelFontSize * GLYPH_WIDTH_RATIO,
-          `primary label "${primary.label}"`,
-        ).toBeLessThanOrEqual(primaryTextLayout.safeTextWidth);
-        expect(
-          primary.detail.length * primaryTextLayout.detailFontSize * GLYPH_WIDTH_RATIO,
-          `primary detail "${primary.detail}"`,
-        ).toBeLessThanOrEqual(primaryTextLayout.safeTextWidth);
+          // Skill cards: short single-line names + wrapped descriptions sized to their own width.
+          expect(view.exclusives.skills).toHaveLength(4);
+          for (const skill of view.exclusives.skills) {
+            expect(
+              skill.name.length * layout.skillNameFontSize * GLYPH_WIDTH_RATIO,
+              `${locale} ${character.id} skill name "${skill.name}"`,
+            ).toBeLessThanOrEqual(layout.skillDescWidth);
+          }
+
+          const evolution = view.exclusives.evolution;
+          const evolutionTitleLine = `${evolution.name}`;
+          expect(
+            evolutionTitleLine.length * layout.evolutionNameFontSize * GLYPH_WIDTH_RATIO,
+            `${locale} ${character.id} evolution name`,
+          ).toBeLessThanOrEqual(layout.evolutionDescWidth);
+          expect(evolution.recipe).toHaveLength(2);
+
+          const primary = formatCharacterPrimaryAction(character, save, locale);
+          expect(
+            primary.label.length * primaryTextLayout.labelFontSize * GLYPH_WIDTH_RATIO,
+            `${locale} ${character.id} primary label "${primary.label}"`,
+          ).toBeLessThanOrEqual(primaryTextLayout.safeTextWidth);
+          expect(
+            primary.detail.length * primaryTextLayout.detailFontSize * GLYPH_WIDTH_RATIO,
+            `${locale} ${character.id} primary detail "${primary.detail}"`,
+          ).toBeLessThanOrEqual(primaryTextLayout.safeTextWidth);
+        }
       }
     }
+
+    const back = 'Quay lại';
+    expect(
+      back.length * backTextLayout.labelFontSize * GLYPH_WIDTH_RATIO,
+    ).toBeLessThanOrEqual(backTextLayout.safeTextWidth);
   });
 
-  it('navigates all 6 Character Select controls via 2D arrows and restores the highlighted card from the action bar', () => {
-    expect(nextCharacterSelectFocus(0, 'right', 0)).toBe(1);
-    expect(nextCharacterSelectFocus(1, 'right', 1)).toBe(2);
-    expect(nextCharacterSelectFocus(2, 'right', 2)).toBe(3);
-    expect(nextCharacterSelectFocus(3, 'right', 3)).toBe(0);
-    expect(nextCharacterSelectFocus(0, 'left', 0)).toBe(3);
+  it('navigates the 6 Codex controls: vertical class tabs, then the action bar, with digit shortcuts', () => {
+    expect(nextCharacterSelectFocus(0, 'down')).toBe(1);
+    expect(nextCharacterSelectFocus(1, 'down')).toBe(2);
+    expect(nextCharacterSelectFocus(2, 'down')).toBe(3);
+    expect(nextCharacterSelectFocus(3, 'down')).toBe(4);
+    expect(nextCharacterSelectFocus(0, 'up')).toBe(0);
+    expect(nextCharacterSelectFocus(2, 'up')).toBe(1);
+    expect(nextCharacterSelectFocus(4, 'up')).toBe(3);
+    expect(nextCharacterSelectFocus(5, 'up')).toBe(3);
 
-    expect(nextCharacterSelectFocus(4, 'right', 1)).toBe(5);
-    expect(nextCharacterSelectFocus(5, 'left', 1)).toBe(4);
-
-    expect(nextCharacterSelectFocus(0, 'down', 0)).toBe(2);
-    expect(nextCharacterSelectFocus(1, 'down', 1)).toBe(3);
-    expect(nextCharacterSelectFocus(2, 'down', 2)).toBe(4);
-    expect(nextCharacterSelectFocus(3, 'down', 3)).toBe(4);
-    expect(nextCharacterSelectFocus(4, 'up', 1)).toBe(1);
-    expect(nextCharacterSelectFocus(5, 'up', 3)).toBe(3);
+    expect(nextCharacterSelectFocus(0, 'right')).toBe(1);
+    expect(nextCharacterSelectFocus(3, 'right')).toBe(0);
+    expect(nextCharacterSelectFocus(0, 'left')).toBe(3);
+    expect(nextCharacterSelectFocus(4, 'right')).toBe(5);
+    expect(nextCharacterSelectFocus(5, 'left')).toBe(4);
   });
 });
-
 describe('M15 Expanded 3-column Meta Shop layout — STAT, UTILITY & HERO UNLOCKS', () => {
   it('groups all 6 tracks into STAT (3) + UTILITY (3, NO Revive) + HERO UNLOCKS (3) inside 512×288 across all 4 viewports', () => {
     expect(STAT_UPGRADE_TRACKS).toEqual(['hearts', 'damage', 'fireRate']);

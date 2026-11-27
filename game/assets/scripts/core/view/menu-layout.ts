@@ -472,13 +472,7 @@ export interface MenuButtonBox {
   readonly fontSize: number;
 }
 
-export interface CharacterCardSlot extends MenuButtonBox {
-  readonly index: number;
-  readonly row: number;
-  readonly col: number;
-}
-
-/** Crisp 1:1 64×64 hero portrait plaque geometry shared by Character Select & Results (M19). */
+/** Crisp 1:1 64×64 hero portrait geometry used by the Codex tabs & Results (M19). */
 export interface MenuPortraitFrameBox {
   readonly x: number;
   readonly y: number;
@@ -489,183 +483,227 @@ export interface MenuPortraitFrameBox {
 export const CHARACTER_SELECT_PORTRAIT_SIZE_PX = 64;
 export const CHARACTER_SELECT_PORTRAIT_FRAME_PX = 72;
 
-export interface CharacterSelectLayoutInput {
+/** One of the 4 class tabs in the Codex left column. */
+export interface CodexTabSlot {
+  readonly index: number;
+  readonly x: number;
+  readonly y: number;
+  /** 64×64 portrait / hit area side. */
+  readonly size: number;
+  readonly badgeWidth: number;
+  readonly badgeHeight: number;
+  readonly badgeLocalY: number;
+  readonly nameLocalY: number;
+}
+
+/** A rectangular block inside the Codex panel (skill card, Evolution card). */
+export interface CodexCardBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface CharacterCodexLayoutInput {
   readonly visibleWidth?: number;
   readonly visibleHeight?: number;
 }
 
-export interface CharacterSelectLayout {
-  /** Right X boundary of the open living-backdrop preview stage on the left (`[-visibleWidth/2, stageRightX]`). */
-  readonly stageRightX: number;
-  /** Top-left 64×64 hero portrait plaque over the open left stage, above the live preview actor (M19). */
-  readonly portraitFrame: MenuPortraitFrameBox;
+/**
+ * Pure 512×288 layout for the M20 Character Detail & Skill Codex screen.
+ *
+ * - Left column: 4 stacked 64×64 class tabs (`x ≈ -222`), leaving the living-room preview
+ *   actor (≈ `x = -144`) visible between the tabs and the panel.
+ * - Right panel (`328 × 280`, `x ∈ [-80, +248]`): title, lock status, base stats, weapon line,
+ *   Nội Tại card, Tuyệt Kỹ `[E]` card, then the exclusive-skill grid (2×2) + the Class Evolution
+ *   card and the select/unlock + Back buttons.
+ */
+export interface CharacterCodexLayout {
   readonly panelX: number;
   readonly panelY: number;
   readonly panelWidth: number;
   readonly panelHeight: number;
+  /** Safe inner text width of the panel (panel minus border padding). */
+  readonly contentWidth: number;
+  readonly tabs: readonly CodexTabSlot[];
   readonly titleFontSize: number;
   readonly titleY: number;
-  readonly subtitleFontSize: number;
-  readonly subtitleY: number;
+  readonly statusFontSize: number;
+  readonly statusY: number;
+  readonly statusWidth: number;
   readonly dividerY: number;
   readonly dividerWidth: number;
-  readonly cardWidth: number;
-  readonly cardHeight: number;
-  readonly cardColGap: number;
-  readonly cardRowGap: number;
-  readonly cardFontSize: number;
-  readonly cards: readonly CharacterCardSlot[];
-  readonly summaryX: number;
-  readonly summaryY: number;
-  readonly summaryWidth: number;
-  readonly summaryHeight: number;
-  readonly summarySafeTextWidth: number;
-  readonly statusFontSize: number;
-  readonly statusLocalY: number;
-  readonly summaryDividerLocalY: number;
-  readonly summaryDividerWidth: number;
+  readonly statsFontSize: number;
+  readonly statsY: number;
   readonly weaponFontSize: number;
-  readonly weaponLocalY: number;
-  readonly passiveTitleFontSize: number;
-  readonly passiveTitleLocalY: number;
+  readonly weaponY: number;
+  readonly passiveHeadingFontSize: number;
+  readonly passiveHeadingY: number;
   readonly passiveBodyFontSize: number;
-  readonly passiveBodyLocalY: number;
-  readonly signatureTitleFontSize: number;
-  readonly signatureTitleLocalY: number;
-  readonly signatureBodyFontSize: number;
-  readonly signatureBodyLocalY: number;
+  readonly passiveBodyY: number;
+  readonly activeHeadingFontSize: number;
+  readonly activeHeadingY: number;
+  readonly activeBodyFontSize: number;
+  readonly activeBodyY: number;
+  readonly exclusivesHeadingFontSize: number;
+  readonly exclusivesHeadingY: number;
+  readonly skillCards: readonly CodexCardBox[];
+  readonly skillIconSize: number;
+  readonly skillIconLocalX: number;
+  readonly skillIconLocalY: number;
+  readonly skillNameFontSize: number;
+  readonly skillNameLocalX: number;
+  readonly skillNameLocalY: number;
+  readonly skillDescFontSize: number;
+  readonly skillDescLocalX: number;
+  readonly skillDescLocalY: number;
+  readonly skillDescWidth: number;
+  readonly evolution: CodexCardBox;
+  readonly evolutionIconSize: number;
+  readonly evolutionIconLocalX: number;
+  readonly evolutionIconLocalY: number;
+  readonly evolutionNameFontSize: number;
+  readonly evolutionNameLocalX: number;
+  readonly evolutionNameLocalY: number;
+  readonly evolutionRecipeFontSize: number;
+  readonly evolutionRecipeLocalX: number;
+  readonly evolutionRecipeLocalY: number;
+  readonly evolutionDescFontSize: number;
+  readonly evolutionDescLocalX: number;
+  readonly evolutionDescLocalY: number;
+  readonly evolutionDescWidth: number;
   readonly primaryButton: MenuButtonBox;
   readonly backButton: MenuButtonBox;
-  readonly hintFontSize: number;
-  readonly hintY: number;
 }
 
-/**
- * Pure 512×288 layout for the 4-class Character Select screen (M14-T3):
- * - Leaves `x ∈ [-256, -126]` completely open on the left so the living-room hero + weapon
- *   attachment (`uiX ≈ -144..-140.8`) stands clearly visible in Chapter 1's sunlit forest.
- * - Docks a `372 × 280` `Theme Wood` plaque on the right (`center x = +62`, `[-124, +248]`)
- *   housing a 2×2 class card grid, a recessed 3-layer class summary well, an early-unlock /
- *   equip action button, and a Back button.
- */
 export function computeCharacterSelectLayout(
-  input: CharacterSelectLayoutInput = {},
-): CharacterSelectLayout {
+  input: CharacterCodexLayoutInput = {},
+): CharacterCodexLayout {
   const visibleWidth = input.visibleWidth ?? 512;
   const visibleHeight = input.visibleHeight ?? 288;
-  const panelWidth = Math.min(372, Math.max(280, Math.round(visibleWidth - 140)));
+  const panelWidth = Math.min(328, Math.max(280, Math.round(visibleWidth - 184)));
   const panelHeight = Math.min(280, Math.max(240, Math.round(visibleHeight - 8)));
   const panelX = Math.round(visibleWidth / 2 - 8 - panelWidth / 2);
   const panelY = 0;
-  const stageRightX = panelX - panelWidth / 2 - PANEL_SHADOW_EXPAND_PX / 2;
+  const contentWidth = panelWidth - 24;
 
-  const innerWidth = panelWidth - 24;
-  const cardColGap = 8;
-  const cardRowGap = 6;
-  const cardWidth = Math.floor((innerWidth - cardColGap) / 2);
-  const cardHeight = 32;
-  const cardFontSize = 10;
-  const rowYs = [78, 78 - cardHeight - cardRowGap] as const;
-  const colOffset = (cardWidth + cardColGap) / 2;
+  const tabSize = CHARACTER_SELECT_PORTRAIT_SIZE_PX;
+  const tabGap = 4;
+  const tabsHeight = tabSize * 4 + tabGap * 3;
+  const tabsTop = Math.round(Math.min(134, panelHeight / 2 - 6));
+  const tabX = Math.round(-visibleWidth / 2 + tabSize / 2 + 2);
+  const tabs: CodexTabSlot[] = [0, 1, 2, 3].map((index) => ({
+    index,
+    x: tabX,
+    y: tabsTop - tabSize / 2 - index * (tabSize + tabGap),
+    size: tabSize,
+    badgeWidth: 48,
+    badgeHeight: 10,
+    badgeLocalY: -tabSize / 2 + 5,
+    nameLocalY: tabSize / 2 - 5.5,
+  }));
+  // Keep the whole column on screen when the panel is shorter than the 4 tabs need.
+  if (tabsHeight > panelHeight - 8) {
+    const top = panelHeight / 2 - 4;
+    const bottom = -panelHeight / 2 + 4;
+    const pitch = (top - bottom - tabSize) / 3;
+    tabs.forEach((tab, index) => {
+      (tab as { y: number }).y = top - tabSize / 2 - index * pitch;
+    });
+  }
 
-  const cards: CharacterCardSlot[] = [
-    { index: 0, row: 0, col: 0, x: panelX - colOffset, y: rowYs[0], width: cardWidth, height: cardHeight, fontSize: cardFontSize },
-    { index: 1, row: 0, col: 1, x: panelX + colOffset, y: rowYs[0], width: cardWidth, height: cardHeight, fontSize: cardFontSize },
-    { index: 2, row: 1, col: 0, x: panelX - colOffset, y: rowYs[1], width: cardWidth, height: cardHeight, fontSize: cardFontSize },
-    { index: 3, row: 1, col: 1, x: panelX + colOffset, y: rowYs[1], width: cardWidth, height: cardHeight, fontSize: cardFontSize },
+  const cardWidth = Math.floor((contentWidth - 8) / 2);
+  const cardHeight = 36;
+  const cardOffset = (cardWidth + 8) / 2;
+  const skillCards: CodexCardBox[] = [
+    { x: -cardOffset, y: -4, width: cardWidth, height: cardHeight },
+    { x: cardOffset, y: -4, width: cardWidth, height: cardHeight },
+    { x: -cardOffset, y: -44, width: cardWidth, height: cardHeight },
+    { x: cardOffset, y: -44, width: cardWidth, height: cardHeight },
   ];
 
-  const summaryWidth = cardWidth * 2 + cardColGap;
-  const summaryHeight = 98;
-  const summaryX = panelX;
-  const summaryY = -32;
-  const summarySafeTextWidth = summaryWidth - 16;
-
-  const actionY = -103;
-  const actionHeight = 30;
-  const actionGap = 8;
-  const backWidth = 108;
-  const primaryWidth = summaryWidth - backWidth - actionGap;
-
-  const stageCenterX = Math.round((-visibleWidth / 2 + stageRightX) / 2);
-  const portraitFrame: MenuPortraitFrameBox = {
-    x: stageCenterX,
-    y: Math.round(panelHeight / 2 - CHARACTER_SELECT_PORTRAIT_FRAME_PX / 2 - 6),
-    frameSize: CHARACTER_SELECT_PORTRAIT_FRAME_PX,
-    spriteSize: CHARACTER_SELECT_PORTRAIT_SIZE_PX,
-  };
-
   return {
-    stageRightX,
-    portraitFrame,
     panelX,
     panelY,
     panelWidth,
     panelHeight,
-    titleFontSize: 16,
-    titleY: 124,
-    subtitleFontSize: 9,
-    subtitleY: 109,
-    dividerY: 101,
-    dividerWidth: summaryWidth,
-    cardWidth,
-    cardHeight,
-    cardColGap,
-    cardRowGap,
-    cardFontSize,
-    cards,
-    summaryX,
-    summaryY,
-    summaryWidth,
-    summaryHeight,
-    summarySafeTextWidth,
-    statusFontSize: 9,
-    statusLocalY: 39,
-    summaryDividerLocalY: 30,
-    summaryDividerWidth: summaryWidth - 20,
-    weaponFontSize: 9,
-    weaponLocalY: 21,
-    passiveTitleFontSize: 9,
-    passiveTitleLocalY: 6,
-    passiveBodyFontSize: 8,
-    passiveBodyLocalY: -7,
-    signatureTitleFontSize: 9,
-    signatureTitleLocalY: -22,
-    signatureBodyFontSize: 8,
-    signatureBodyLocalY: -35,
+    contentWidth,
+    tabs,
+    titleFontSize: 13,
+    titleY: 128,
+    statusFontSize: 8,
+    statusY: 112,
+    statusWidth: contentWidth,
+    dividerY: 103,
+    dividerWidth: contentWidth,
+    statsFontSize: 8,
+    statsY: 94,
+    weaponFontSize: 7,
+    weaponY: 82,
+    passiveHeadingFontSize: 8,
+    passiveHeadingY: 70,
+    passiveBodyFontSize: 7,
+    passiveBodyY: 58,
+    activeHeadingFontSize: 8,
+    activeHeadingY: 46,
+    activeBodyFontSize: 7,
+    activeBodyY: 34,
+    exclusivesHeadingFontSize: 9,
+    exclusivesHeadingY: 21.5,
+    skillCards,
+    skillIconSize: 24,
+    skillIconLocalX: -58,
+    skillIconLocalY: 6,
+    skillNameFontSize: 7,
+    skillNameLocalX: -42,
+    skillNameLocalY: 10,
+    skillDescFontSize: 6,
+    skillDescLocalX: -42,
+    skillDescLocalY: -7,
+    skillDescWidth: 108,
+    evolution: { x: 0, y: -86, width: contentWidth, height: 42 },
+    evolutionIconSize: 24,
+    evolutionIconLocalX: -contentWidth / 2 + 12,
+    evolutionIconLocalY: 4,
+    evolutionNameFontSize: 8,
+    evolutionNameLocalX: -contentWidth / 2 + 28,
+    evolutionNameLocalY: 12,
+    evolutionRecipeFontSize: 6,
+    evolutionRecipeLocalX: -contentWidth / 2 + 28,
+    evolutionRecipeLocalY: 2,
+    evolutionDescFontSize: 6,
+    evolutionDescLocalX: -contentWidth / 2 + 28,
+    evolutionDescLocalY: -11,
+    evolutionDescWidth: contentWidth - 42,
     primaryButton: {
-      x: panelX - summaryWidth / 2 + primaryWidth / 2,
-      y: actionY,
-      width: primaryWidth,
-      height: actionHeight,
-      fontSize: 10,
+      x: panelX - contentWidth / 2 + 108,
+      y: -124,
+      width: 216,
+      height: 28,
+      fontSize: 9,
     },
     backButton: {
-      x: panelX + summaryWidth / 2 - backWidth / 2,
-      y: actionY,
-      width: backWidth,
-      height: actionHeight,
-      fontSize: 11,
+      x: panelX + contentWidth / 2 - 38,
+      y: -124,
+      width: 76,
+      height: 28,
+      fontSize: 10,
     },
-    hintFontSize: 8,
-    hintY: -130,
   };
 }
 
 export type MenuGridDirection = 'up' | 'down' | 'left' | 'right';
 
 /**
- * 2D focus navigation across Character Select's 6 controls:
- * - `0..3`: 2×2 character cards (`Ninja`, `Archer`, `Mage`, `Cultivator`)
- * - `4`: Primary Select / Unlock Early button
+ * Focus navigation across the Codex's 6 controls:
+ * - `0..3`: left-column class tabs (vertical list)
+ * - `4`: Select / Unlock button
  * - `5`: Back button
  */
 export function nextCharacterSelectFocus(
   current: number,
   direction: MenuGridDirection,
-  highlightedCard = 0,
 ): number {
-  const clampedCard = Math.min(3, Math.max(0, Math.trunc(highlightedCard)));
   const index = Math.min(5, Math.max(0, Math.trunc(current)));
 
   if (direction === 'left' || direction === 'right') {
@@ -675,19 +713,15 @@ export function nextCharacterSelectFocus(
   }
 
   if (direction === 'down') {
-    if (index === 0) return 2;
-    if (index === 1) return 3;
-    if (index === 2) return 4;
+    if (index <= 2) return index + 1;
     if (index === 3) return 4;
-    return clampedCard;
+    return index;
   }
 
   // direction === 'up'
-  if (index === 0) return 4;
-  if (index === 1) return 5;
-  if (index === 2) return 0;
-  if (index === 3) return 1;
-  return clampedCard;
+  if (index >= 1 && index <= 3) return index - 1;
+  if (index === 4 || index === 5) return 3;
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1729,12 +1763,6 @@ export function formatTitleCharacterDetail(
   return t('title.characterDetailCycle', { subtitle }, locale);
 }
 
-export interface CharacterCardText {
-  readonly label: string;
-  readonly detail: string;
-  readonly status: 'selected' | 'unlocked' | 'locked';
-}
-
 export interface CharacterPrimaryActionSpec {
   readonly label: string;
   readonly detail: string;
@@ -1750,53 +1778,6 @@ export interface CharacterSummaryLines {
   readonly passiveBody: string;
   readonly signatureTitle: string;
   readonly signatureBody: string;
-}
-
-/** Format label + detail for one of the 4 character cards (`170 × 32`). */
-export function formatCharacterCardText(
-  character: CharacterDef,
-  save: SaveData,
-  locale: Locale = getLocale(),
-): CharacterCardText {
-  const activeId = resolveSelectedCharacter(save).id;
-  const unlocked = isCharacterUnlocked(character.id, save);
-  const name = localizeCharacterName(character.id, locale);
-  const subtitle = localizeCharacterField(character.id, 'subtitle', locale);
-  if (unlocked && character.id === activeId) {
-    return {
-      label: t(
-        'charSelect.cardLabel',
-        { name, status: t('charSelect.statusSelected', undefined, locale) },
-        locale,
-      ),
-      detail: subtitle,
-      status: 'selected',
-    };
-  }
-  if (unlocked) {
-    return {
-      label: t(
-        'charSelect.cardLabel',
-        { name, status: t('charSelect.statusUnlocked', undefined, locale) },
-        locale,
-      ),
-      detail: subtitle,
-      status: 'unlocked',
-    };
-  }
-  return {
-    label: t(
-      'charSelect.cardLabel',
-      { name, status: t('charSelect.statusLocked', undefined, locale) },
-      locale,
-    ),
-    detail: t(
-      'charSelect.cardLockedDetail',
-      { chapter: character.unlockChapter, cost: character.unlockGoldCost },
-      locale,
-    ),
-    status: 'locked',
-  };
 }
 
 /** Format all 3 class-identity layers + unlock status line for the recessed summary well. */
@@ -1882,11 +1863,4 @@ export function formatCharacterPrimaryAction(
     disabled: !affordable,
     kind: 'unlock',
   };
-}
-
-export function formatCharacterSelectSubtitle(
-  gold: number,
-  locale: Locale = getLocale(),
-): string {
-  return t('charSelect.subtitle', { gold }, locale);
 }
