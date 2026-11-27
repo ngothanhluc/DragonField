@@ -101,3 +101,24 @@ export function playPortalOpenSfx(isBoss = false): void {
 export function playPotionHealSfx(): void {
   playSfx('skill-acquired');
 }
+
+/** M20 Ninja exclusive-skill cues (#84) — one distinct pair of existing bank clips per skill. */
+export function playNinjaCloneSfx(): void {
+  playSfx('freeze');
+  playSfx('ui-move');
+}
+
+export function playNinjaVenomSfx(): void {
+  playSfx('poison');
+  playSfx('shoot');
+}
+
+export function playNinjaKunaiSfx(): void {
+  playSfx('enemy-hit');
+  playSfx('shoot');
+}
+
+export function playNinjaSmokeSfx(): void {
+  playSfx('shield');
+  playSfx('ui-confirm');
+}

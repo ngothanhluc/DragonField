@@ -26,7 +26,16 @@ import { BOSS_FEET_OFFSET_TILES } from '../core/boss/boss-defs';
 import { summonedEnemies } from '../core/boss/summon';
 import type { CharacterId } from '../core/characters/roster';
 import { dispatchClassSkillEvent, hasAnyClassSkill } from '../core/skills/class-skills';
-import type { ClassSkillEventName, ClassSkillStackSource } from '../core/skills/class-skill-hooks';
+import type {
+  ClassSkillEffect,
+  ClassSkillEventName,
+  ClassSkillStackSource,
+} from '../core/skills/class-skill-hooks';
+import {
+  NinjaSkillRuntime,
+  type NinjaHit,
+  type NinjaTarget,
+} from '../core/skills/ninja-runtime';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
 import {
   fireEnemyVolley,
@@ -69,6 +78,7 @@ import {
   DASH_TUNING,
   FEEL_TUNING,
   NAVIGATION_TUNING,
+  CLASS_SKILLS_TUNING,
   XP_TUNING,
 } from '../core/enemies/tuning';
 import { eliteVolleyAngles } from '../core/enemies/elite';
@@ -142,6 +152,7 @@ import type { CoverBody } from './cover-view';
 import { EnemyView } from './enemy-view';
 import { spawnLevelUpBurst, type FxPool } from './fx/effect-pool';
 import { ACTOR_FEET_OFFSET_TILES, ACTOR_SCALE } from './level-view';
+import { NinjaSkillView } from './ninja-skill-view';
 import type { PlayerController } from './player-controller';
 import { pointInCullRect, type CullRect } from './world-culler';
 import {
@@ -149,6 +160,10 @@ import {
   playBomberBlastSfx,
   playBufferPulseSfx,
   playDashNovaSfx,
+  playNinjaCloneSfx,
+  playNinjaKunaiSfx,
+  playNinjaSmokeSfx,
+  playNinjaVenomSfx,
   playSfx,
   playShockSfx,
 } from './audio/sfx';
@@ -368,6 +383,11 @@ export class CombatLoop {
   private readonly classSkills: ClassSkillHookSource | null;
   /** 1-based auto-fire shot counter for on-shot class hooks. */
   private shotsFired = 0;
+  /** Ninja class-skill runtime + view (M20, #84); `null` for every other class. */
+  private readonly ninja: NinjaSkillRuntime | null;
+  private readonly ninjaView: NinjaSkillView | null;
+  /** Class skill that last damaged an enemy/boss this frame, for `onKill.killedBy`. */
+  private readonly classSkillKilledBy = new Map<string, string>();
 
   /** Debug stress: keep 24 enemies + 44 enemy bullets on screen to measure fps. */
   private stress = false;
@@ -399,6 +419,16 @@ export class CombatLoop {
     this.viewProvider = options.view ?? (() => null);
     this.difficulty = options.difficulty ?? combinedDifficultyModifiers(0, 0);
     this.classSkills = options.classSkills ?? null;
+    if (options.classSkills?.characterId === 'ninja') {
+      this.ninja = new NinjaSkillRuntime(CLASS_SKILLS_TUNING.ninja);
+      this.ninjaView =
+        options.fx !== undefined
+          ? new NinjaSkillView(options.actorLayer, options.player.node, options.fx)
+          : null;
+    } else {
+      this.ninja = null;
+      this.ninjaView = null;
+    }
   }
 
   /** Live Ascension + Endless difficulty modifiers applied to enemies and bosses (M15). */
@@ -764,7 +794,7 @@ export class CombatLoop {
     return source !== null && hasAnyClassSkill(source.characterId, source.stacks);
   }
 
-  /** Forward one event to the active character's no-op class hooks (#84–#87 fill them in). */
+  /** Forward one event to the active character's class hooks and apply what they request. */
   private dispatchClassSkill(
     event: ClassSkillEventName,
     context: {
@@ -773,14 +803,113 @@ export class CombatLoop {
       readonly position?: Vec2;
       readonly targetPosition?: Vec2;
       readonly elite?: boolean;
+      readonly killedBy?: string;
     },
   ): void {
     const source = this.classSkills;
     if (source === null) return;
-    dispatchClassSkillEvent(event, source.characterId, source.stacks, {
+    const effects = dispatchClassSkillEvent(event, source.characterId, source.stacks, {
       ...context,
       rng: this.rng,
     });
+    this.applyClassSkillEffects(effects);
+  }
+
+  /** Feed one dispatch's effect requests to the Ninja runtime and play one cue per skill. */
+  private applyClassSkillEffects(effects: readonly ClassSkillEffect[]): void {
+    const runtime = this.ninja;
+    if (runtime === null || effects.length === 0) return;
+
+    const origin = this.player.position;
+    const aim = this.nearestTarget(origin);
+    const aimDirection =
+      aim === null ? undefined : { x: aim.x - origin.x, y: aim.y - origin.y };
+    const stats = this.player.derivedStats;
+    runtime.applyEffects(effects, this.nowMs, {
+      shotDamage: stats.damage,
+      critMultiplier: stats.critMultiplier,
+      ...(aimDirection !== undefined ? { aimDirection } : {}),
+    });
+
+    let clone = false;
+    let venom = false;
+    let kunai = false;
+    let smoke = false;
+    for (const effect of effects) {
+      switch (effect.skillId) {
+        case 'ninja-shadow-clone':
+          clone = true;
+          break;
+        case 'ninja-venom-shuriken':
+          venom = true;
+          break;
+        case 'ninja-kunai-burst':
+          kunai = true;
+          break;
+        case 'ninja-smoke-bomb':
+          smoke = true;
+          break;
+        default:
+          break;
+      }
+    }
+    // One cue per skill per dispatch, not one per kunai.
+    if (clone) playNinjaCloneSfx();
+    if (venom) playNinjaVenomSfx();
+    if (kunai) playNinjaKunaiSfx();
+    if (smoke) playNinjaSmokeSfx();
+  }
+
+  /** One class-skill hit through the real damage path (kills, gold, floating numbers). */
+  private applyClassSkillHit(hit: NinjaHit): void {
+    for (const enemy of this.enemies) {
+      if (enemy.isDead || enemy.id !== hit.targetId) continue;
+      enemy.takeDamage(hit.amount, null, this.nowMs);
+      this.classSkillKilledBy.set(enemy.id, hit.skillId);
+      this.reportDamage(hit.amount, enemy.position, hit.crit);
+      return;
+    }
+    const boss = this.boss;
+    if (boss !== null && !boss.isDefeated && boss.id === hit.targetId) {
+      boss.takeDamage(hit.amount, this.nowMs);
+      this.classSkillKilledBy.set(boss.id, hit.skillId);
+      this.reportDamage(hit.amount, boss.position, hit.crit);
+    }
+  }
+
+  /** Step clones/projectiles/clouds/zones and apply their hits (M20, #84). */
+  private stepClassSkills(deltaMs: number): void {
+    const runtime = this.ninja;
+    if (runtime === null) return;
+    if (runtime.isEmpty) {
+      // Still sync so clone/zones that just expired disappear.
+      this.ninjaView?.sync(runtime);
+      return;
+    }
+    const targets: NinjaTarget[] = [];
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) continue;
+      targets.push({
+        id: enemy.id,
+        position: enemy.position,
+        radiusTiles: enemy.radiusTiles,
+      });
+    }
+    const boss = this.boss;
+    if (boss !== null && !boss.isDefeated) {
+      targets.push({
+        id: boss.id,
+        position: boss.position,
+        radiusTiles: boss.hitboxRadiusTiles,
+      });
+    }
+    const stats = this.player.derivedStats;
+    const hits = runtime.step(this.nowMs, deltaMs, targets, {
+      shotDamage: stats.damage,
+      critMultiplier: stats.critMultiplier,
+    });
+    for (const hit of hits) this.applyClassSkillHit(hit);
+    this.ninjaView?.sync(runtime);
   }
 
   /** One combat frame. `realDeltaMs` has already been capped by bootstrap. */
@@ -823,7 +952,14 @@ export class CombatLoop {
     }
 
     const shotIdBefore = newestBulletId(player.bullets.active());
-    player.step(this.nowMs, deltaMs, targets, level, this.dashState);
+    player.step(
+      this.nowMs,
+      deltaMs,
+      targets,
+      level,
+      this.dashState,
+      this.ninja?.fireRateBonusAt(player.position, this.nowMs) ?? 0,
+    );
     const shotIdAfter = newestBulletId(player.bullets.active());
     if (shotIdAfter !== shotIdBefore) {
       this.shotsFired += 1;
@@ -834,6 +970,8 @@ export class CombatLoop {
         });
       }
     }
+    // Live Ninja state (clones/clouds/kunai) before enemy AI, so its kills land this frame.
+    this.stepClassSkills(deltaMs);
     // What the player can see this frame (#41): the camera's view, or one screen around the player.
     const view = this.viewNow();
     this.stepSpawns(view);
@@ -996,7 +1134,16 @@ export class CombatLoop {
       if (enemy.isDead) continue;
 
       const hasteMult = this.enemyBuffs.speedMultiplierFor(enemy.id, this.nowMs);
-      const step = enemy.step(this.nowMs, deltaMs, player.position, this.navigation, view, hasteMult);
+      // *Bom Khói Ẩn Thân* (#84): enemies inside a smoke zone walk slower.
+      const smokeMult = this.ninja?.enemySpeedMultiplierAt(enemy.position, this.nowMs) ?? 1;
+      const step = enemy.step(
+        this.nowMs,
+        deltaMs,
+        player.position,
+        this.navigation,
+        view,
+        hasteMult * smokeMult,
+      );
 
       if (step.released === 'shot') {
         const role = enemy.role;
@@ -1649,10 +1796,12 @@ export class CombatLoop {
       const role = enemy.role;
       if (role !== null) this.onKill(role, enemy.isElite, enemy.position);
       if (this.hasClassSkills()) {
+        const killedBy = this.classSkillKilledBy.get(enemy.id);
         this.dispatchClassSkill('onKill', {
           position: enemy.position,
           targetPosition: enemy.position,
           elite: enemy.isElite,
+          ...(killedBy !== undefined ? { killedBy } : {}),
         });
       }
       // Gold sparkle at the death spot (there are no pickups in a run).
@@ -1689,13 +1838,18 @@ export class CombatLoop {
       this.activeSkillState = onActiveKill(this.activeSkillState, this.activeConfig, 1);
       this.onBossKilled();
       if (this.hasClassSkills()) {
+        const killedBy = this.classSkillKilledBy.get(boss.id);
         this.dispatchClassSkill('onKill', {
           position: boss.position,
           targetPosition: boss.position,
           elite: false,
+          ...(killedBy !== undefined ? { killedBy } : {}),
         });
       }
     }
+
+    // Attribution only matters for the frame the killing blow landed.
+    this.classSkillKilledBy.clear();
   }
 
   /** Try consuming buffered `'dash'` (or start directly in debug) and execute Dash + Dash Nova. */
