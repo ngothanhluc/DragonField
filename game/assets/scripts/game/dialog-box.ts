@@ -43,7 +43,12 @@ const DESIGN_WIDTH = 512;
 const DESIGN_HEIGHT = 288;
 
 const PANEL_WIDTH = 480;
-const PANEL_HEIGHT = 104;
+/**
+ * Tall enough for a 64×64 portrait, three wrapped body lines **and** the Shopkeeper's 3 choice
+ * rows with a margin below the last one (row 3 at y=-46, label bottom -52, panel bottom -60).
+ * A shorter panel pushed "Tạm Biệt"/"Leave" onto the bottom edge (`uiText` insideParent=false).
+ */
+const PANEL_HEIGHT = 120;
 /** Panel centre: bottom edge sits 6 design px above the canvas bottom. */
 const PANEL_Y = -DESIGN_HEIGHT / 2 + 6 + PANEL_HEIGHT / 2;
 
