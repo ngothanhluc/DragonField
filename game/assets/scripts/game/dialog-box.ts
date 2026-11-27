@@ -256,6 +256,7 @@ export class DialogBox {
     label.color = TEXT_COLOR;
     label.enableWrapText = true;
     label.overflow = CocosLabel.Overflow.RESIZE_HEIGHT;
+    label.horizontalAlign = CocosLabel.HorizontalAlign.LEFT;
     const transform: UITransform | null = label.node.getComponent(CocosUITransform);
     if (transform !== null) {
       transform.setAnchorPoint(0, 1);
