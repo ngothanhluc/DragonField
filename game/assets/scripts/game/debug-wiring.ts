@@ -20,6 +20,7 @@ import type {
   DebugDoorSnapshot,
   DebugEnemySnapshot,
   DebugHubLifeSnapshot,
+  DebugHubSnapshot,
   DebugMenuBackdropSnapshot,
   DebugPlayerAttachmentSnapshot,
   DebugProvider,
@@ -118,6 +119,10 @@ export interface DebugWiringHost {
   readonly hubLife?: () => DebugHubLifeSnapshot | null;
   /** M21 #92: advance/close the open DialogBox. */
   readonly hubAdvance?: () => boolean;
+  /** M21 #94: live village snapshot (body/attachment, quick bar, codex, music cue). */
+  readonly hubSnapshot?: () => DebugHubSnapshot | null;
+  /** M21 #94: trigger a quick-access shortcut by id. */
+  readonly hubQuick?: (item: string) => boolean;
 }
 
 /** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
@@ -223,6 +228,8 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     hubInteract: host.hubInteract,
     hubLife: host.hubLife,
     hubAdvance: host.hubAdvance,
+    hubSnapshot: host.hubSnapshot,
+    hubQuick: host.hubQuick,
     nodeCount: () => {
       const scene: Node | null = director.getScene() as Node | null;
       return scene === null ? 0 : countNodes(scene);

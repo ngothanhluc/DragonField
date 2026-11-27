@@ -72,6 +72,9 @@ import {
   talkToVillager,
   updateHubPlayerPose,
   villageLiveNpcs,
+  dojoSwapCharacter,
+  hubMusicCue,
+  villageQuickRoute,
   type HubEntryOrigin,
   type HubInteractable,
   type HubInteractRegistry,
@@ -80,6 +83,7 @@ import {
   type HubTriggerId,
   type HubVillagerId,
   type VillageLifeState,
+  type VillageQuickItemId,
 } from '../core/hub';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
@@ -177,6 +181,7 @@ import {
   type DebugCharacterStatsSnapshot,
   type DebugDoorSnapshot,
   type DebugHubLifeSnapshot,
+  type DebugHubSnapshot,
   type DebugSpecialSnapshot,
   type DebugStateSnapshot,
   type DebugStatus,
@@ -229,6 +234,10 @@ import { MenuBackdrop } from './menu-backdrop';
 import { HubVillageView } from './hub-village';
 import { HubLifeView } from './hub-life-view';
 import { DialogBox } from './dialog-box';
+import {
+  buildCharacterSelectScreen,
+  type CharacterSelectScreen,
+} from './screens/character-select-screen';
 import {
   buildRichRunResult,
   commitRunEnd,
@@ -423,6 +432,8 @@ interface HubRuntime {
   /** Villager/animal sprites and the bottom DialogBox (#92); `null` until their textures load. */
   lifeView: HubLifeView | null;
   dialogBox: DialogBox | null;
+  /** Character Codex overlay opened by the Dojo Master (#94); `null` when closed. */
+  codexScreen: CharacterSelectScreen | null;
   /** Step-trigger zone the player was standing in last frame (fires only on entering). */
   lastTrigger: HubTriggerId | null;
   clockMs: number;
@@ -531,6 +542,8 @@ export class Bootstrap extends Component {
   private hub: HubRuntime | null = null;
   /** Position/origin to restore when re-entering the village after an interim screen. */
   private hubReturn: HubReturnSnapshot | null = null;
+  /** Last village music ducking state pushed to `AudioManager` (#94). */
+  private hubMusicDucked = false;
 
   private player: PlayerController | null = null;
   /** Playable character locked for the active run (M10: one character per run, no mid-run swap). */
@@ -665,6 +678,7 @@ export class Bootstrap extends Component {
     enterVillage: (origin) => {
       void this.enterVillage(origin).catch((error: unknown) => this.fail(error));
     },
+    openDojoOverlay: () => this.openDojoOverlay(),
     leaveVillage: (then) => this.leaveVillage(then),
     onContinueEndless: () => {
       void this.continueEndless().catch((error: unknown) => this.fail(error));
@@ -950,6 +964,7 @@ export class Bootstrap extends Component {
     const view = new HubVillageView(this.ensureUiRoot());
     view.setGold(save.gold);
     view.setPromptHandler(() => this.dispatchNearestHubInteraction());
+    view.setQuickHandler((item) => this.activateVillageQuick(item));
 
     // Village Life (#92): the pure session owns the villagers/animals/dialog; the UI and the
     // villager sprites only render it.
@@ -973,6 +988,7 @@ export class Bootstrap extends Component {
       life,
       lifeView,
       dialogBox,
+      codexScreen: null,
       lastTrigger: resume?.trigger ?? null,
       clockMs: 0,
       leave: null,
@@ -1067,11 +1083,27 @@ export class Bootstrap extends Component {
     this.lastFocus = null;
   }
 
-  /** `[E]` on `document` capture (physical key, like `keyboard-move.ts`), only while in the hub. */
+  /** `[E]` / `Esc` on `document` capture (physical key, like `keyboard-move.ts`), only in the hub. */
   private readonly onHubKey = (event: KeyboardEvent): void => {
-    if (event.repeat || event.code !== 'KeyE') return;
+    if (event.repeat) return;
     const hub = this.hub;
     if (hub === null) return;
+
+    if (event.code === 'Escape' || event.key === 'Escape' || event.keyCode === 27) {
+      if (hub.codexScreen !== null) {
+        event.preventDefault();
+        this.closeDojoOverlay();
+        return;
+      }
+      if (isVillageDialogOpen(hub.life) || !canControlPlayerInHub(hub.state)) return;
+      event.preventDefault();
+      this.toggleVillageMenu();
+      return;
+    }
+
+    if (event.code !== 'KeyE') return;
+    // The Codex overlay owns `[E]` (its own capture listener) while it is open.
+    if (hub.codexScreen !== null) return;
     // An open DialogBox consumes `[E]` (reveal → close) before any world interaction.
     if (isVillageDialogOpen(hub.life)) {
       event.preventDefault();
@@ -1091,6 +1123,104 @@ export class Bootstrap extends Component {
     const prompt = findNearestInteractable(player.position, hub.interactables);
     if (prompt === null) return false;
     return hub.registry.dispatch(prompt.action);
+  }
+
+  /** Dojo Master `[E]` or quick-bar Characters: open the Codex over the live village (#94). */
+  private openDojoOverlay(): void {
+    const hub = this.hub;
+    if (hub === null || hub.codexScreen !== null) return;
+    if (!canControlPlayerInHub(hub.state) || isVillageDialogOpen(hub.life)) return;
+    this.player?.resetInput();
+    void this.buildDojoOverlay(hub).catch((error: unknown) => this.fail(error));
+  }
+
+  private async buildDojoOverlay(hub: HubRuntime): Promise<void> {
+    const save = this.save;
+    if (save === null || this.hub !== hub) return;
+    const screen = await buildCharacterSelectScreen({
+      parent: this.ensureUiRoot(),
+      save,
+      initialCharacterId: hub.state.characterId,
+      onSelectCharacter: (characterId) => {
+        if (!this.swapHubCharacter(characterId)) return;
+        const latest = this.save;
+        if (latest !== null) screen.setSave(latest);
+      },
+      onUnlockCharacter: (characterId) => {
+        const next = this.screens.unlockCharacterForHub(characterId);
+        if (next === null) return;
+        playSfx('skill-acquired');
+        this.swapHubCharacter(characterId);
+        screen.setSave(this.save ?? next);
+      },
+      onBack: () => this.closeDojoOverlay(),
+    });
+    // The player may have left the village while the Codex was loading its textures.
+    if (this.hub !== hub || hub.codexScreen !== null) {
+      screen.destroy();
+      return;
+    }
+    hub.codexScreen = screen;
+    hub.view.setQuickVisible(false);
+    console.log(`[YokaiField] Dojo Codex opened over the village (${hub.state.characterId}).`);
+  }
+
+  /** Codex `Back` / `Esc`: close the overlay and hand control back to the walking player. */
+  private closeDojoOverlay(): void {
+    const hub = this.hub;
+    if (hub === null) return;
+    hub.codexScreen?.destroy();
+    hub.codexScreen = null;
+  }
+
+  /**
+   * Persist + apply a Dojo pick: the save and the live walking body (sprite + weapon attachment)
+   * change together, at the same position and facing, with no fade or village reload.
+   */
+  private swapHubCharacter(characterId: string): boolean {
+    const hub = this.hub;
+    const save = this.save;
+    const repo = this.saveRepo;
+    if (hub === null || save === null || repo === null) return false;
+    const result = dojoSwapCharacter(hub.state, save, characterId);
+    if (!result.ok) return false;
+    if (!result.changed) return true;
+    try {
+      repo.save(result.save);
+    } catch (error: unknown) {
+      console.warn(`[YokaiField] Could not persist the Dojo swap: ${errorMessage(error)}`);
+      return false;
+    }
+    this.save = result.save;
+    hub.state = result.hub;
+    this.runCharacter = result.hub.character;
+    this.player?.switchCharacter(result.hub.character, this.attachments);
+    hub.view.setGold(result.save.gold);
+    console.log(
+      `[YokaiField] Dojo swap → ${result.hub.character.id} ` +
+        `(attachment ${result.hub.character.defaultLoadout.attachmentItemId ?? 'none'}).`,
+    );
+    return true;
+  }
+
+  /** Quick bar / `Esc` menu: route exactly like walking to the gate or the Dojo. */
+  private activateVillageQuick(item: VillageQuickItemId): boolean {
+    const hub = this.hub;
+    if (hub === null || hub.codexScreen !== null) return false;
+    if (!canControlPlayerInHub(hub.state) || isVillageDialogOpen(hub.life)) return false;
+    const route = villageQuickRoute(item);
+    if (route.kind === 'open-settings') {
+      this.screens.villageSettingsRequested();
+      return true;
+    }
+    return hub.registry.dispatch(route.action);
+  }
+
+  /** `Esc` toggles the village menu (a mouse path exists because fullscreen eats `Esc`). */
+  private toggleVillageMenu(): void {
+    const hub = this.hub;
+    if (hub === null) return;
+    hub.view.setMenuOpen(!hub.view.isMenuOpen());
   }
 
   /** Fade to black, then tear the hub down and run `then` (menu screen / chapter select). */
@@ -1135,15 +1265,40 @@ export class Bootstrap extends Component {
       return;
     }
 
-    if (!canControlPlayerInHub(hub.state)) {
+    const dialogOpen = isVillageDialogOpen(hub.life);
+    const cue = hubMusicCue(hub.state, { dialogOpen });
+    if (cue.ducked !== this.hubMusicDucked) {
+      this.hubMusicDucked = cue.ducked;
+      this.audio?.setMusicDucked(cue.ducked);
+    }
+
+    // Codex overlay (#94): the village keeps running behind it, the walking player is parked.
+    if (hub.codexScreen !== null) {
       player.resetInput();
+      const camera = this.camera;
+      hub.view.showPrompt(
+        null,
+        {
+          position: camera?.position ?? { x: hub.map.size.cols / 2, y: hub.map.size.rows / 2 },
+          hudScale: camera?.hudScale ?? 1,
+        },
+        hub.map.size.rows,
+      );
+      hub.view.setQuickVisible(false);
       this.updateDepthAndCover(deltaMs);
       return;
     }
 
-    const dialogOpen = isVillageDialogOpen(hub.life);
-    if (dialogOpen) {
-      // The box locks the player: no walking while reading, and the `[E]` prompt goes away.
+    if (!canControlPlayerInHub(hub.state)) {
+      player.resetInput();
+      hub.view.setQuickVisible(false);
+      this.updateDepthAndCover(deltaMs);
+      return;
+    }
+
+    hub.view.setQuickVisible(!dialogOpen && !hub.view.isMenuOpen());
+    if (dialogOpen || hub.view.isMenuOpen()) {
+      // The dialog / village menu locks the player: no walking, and the `[E]` prompt goes away.
       player.resetInput();
     } else {
       player.step(hub.clockMs, deltaMs, [], hub.map.collisionLevel);
@@ -1163,7 +1318,7 @@ export class Bootstrap extends Component {
 
     const camera = this.camera;
     hub.view.showPrompt(
-      isVillageDialogOpen(hub.life)
+      isVillageDialogOpen(hub.life) || hub.view.isMenuOpen()
         ? null
         : findNearestInteractable(player.position, hub.interactables),
       {
@@ -1177,7 +1332,7 @@ export class Bootstrap extends Component {
     const zone = findStepTrigger(player.position, hub.map.triggers);
     const entered = stepTriggerEntered(hub.lastTrigger, zone?.id ?? null);
     hub.lastTrigger = zone?.id ?? null;
-    if (!isVillageDialogOpen(hub.life) && entered !== null) {
+    if (!isVillageDialogOpen(hub.life) && !hub.view.isMenuOpen() && entered !== null) {
       const trigger = hub.interactables.find((item) => item.id === entered);
       if (trigger !== undefined) hub.registry.dispatch(trigger.action);
     }
@@ -1188,10 +1343,15 @@ export class Bootstrap extends Component {
   /** Destroy the hub's nodes, input listener and camera state (safe when already gone). */
   private leaveHubWorld(): void {
     document.removeEventListener('keydown', this.onHubKey, true);
+    this.hub?.codexScreen?.destroy();
     this.hub?.dialogBox?.destroy();
     this.hub?.lifeView?.destroy();
     this.hub?.view.destroy();
     this.hub = null;
+    if (this.hubMusicDucked) {
+      this.hubMusicDucked = false;
+      this.audio?.setMusicDucked(false);
+    }
     this.player?.node.destroy();
     this.player = null;
     this.runCharacter = null;
@@ -1244,6 +1404,28 @@ export class Bootstrap extends Component {
       dialog: dialog === null ? null : dialogBoxView(dialog, getLocale()),
       player: { x: player.position.x, y: player.position.y },
     };
+  }
+
+  /** Debug-only: live village snapshot for the #94 browser proof. */
+  private debugHubSnapshot(): DebugHubSnapshot | null {
+    const hub = this.hub;
+    if (hub === null) return null;
+    const cue = hubMusicCue(hub.state, { dialogOpen: isVillageDialogOpen(hub.life) });
+    return {
+      location: hub.state.location,
+      characterId: hub.state.characterId,
+      attachmentItemId: hub.state.character.defaultLoadout.attachmentItemId,
+      quickBarVisible: hub.view.isQuickVisible(),
+      menuOpen: hub.view.isMenuOpen(),
+      codexOpen: hub.codexScreen !== null,
+      music: { track: cue.track, ducked: cue.ducked },
+    };
+  }
+
+  /** Debug-only: trigger a quick-access shortcut (`play` / `characters` / `settings`). */
+  private debugHubQuick(item: string): boolean {
+    if (item !== 'play' && item !== 'characters' && item !== 'settings') return false;
+    return this.activateVillageQuick(item);
   }
 
   /** Latest rich M15 run summary captured before teardown (for `ResultScreen` / debug). */
@@ -4044,6 +4226,8 @@ export class Bootstrap extends Component {
       hubInteract: () => this.debugHubInteract(),
       hubLife: () => this.debugHubLife(),
       hubAdvance: () => this.advanceHubDialog(),
+      hubSnapshot: () => this.debugHubSnapshot(),
+      hubQuick: (item) => this.debugHubQuick(item),
     });
   }
 

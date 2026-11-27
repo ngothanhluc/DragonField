@@ -10,3 +10,6 @@ export * from './interact';
 export * from './dialog';
 export * from './village-life';
 export * from './home-flow';
+export * from './dojo';
+export * from './quick-access';
+export * from './hub-audio';

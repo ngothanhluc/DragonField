@@ -143,6 +143,18 @@ export interface DebugHubLifeSnapshot {
   readonly player: { readonly x: number; readonly y: number };
 }
 
+/** Village Hub session snapshot (#94): live body, quick bar and music cue, read from the adapters. */
+export interface DebugHubSnapshot {
+  readonly location: string;
+  readonly characterId: string;
+  /** Weapon attachment on the live walking body (`bow-hand` / `staff-hand` / `sword-back`; `null` for Ninja). */
+  readonly attachmentItemId: string | null;
+  readonly quickBarVisible: boolean;
+  readonly menuOpen: boolean;
+  readonly codexOpen: boolean;
+  readonly music: { readonly track: string; readonly ducked: boolean };
+}
+
 /** The living room drawn behind title / chapter select (#8), read from the live adapter. */
 export interface DebugMenuBackdropSnapshot {
   readonly chapter: number;
@@ -432,6 +444,10 @@ export interface DebugProvider {
   readonly hubLife?: () => DebugHubLifeSnapshot | null;
   /** M21 #92: advance/close the open DialogBox exactly like `[E]`. */
   readonly hubAdvance?: () => boolean;
+  /** M21 #94: live village snapshot (body/attachment, quick bar, codex, music cue); `null` outside. */
+  readonly hubSnapshot?: () => DebugHubSnapshot | null;
+  /** M21 #94: trigger a quick-access shortcut by id (`play` / `characters` / `settings`). */
+  readonly hubQuick?: (item: string) => boolean;
 }
 
 /** Alias for `DebugProvider`. */
@@ -615,6 +631,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
   const hubLife =
     provider.hubLife ?? ((): DebugHubLifeSnapshot | null => null);
   const hubAdvance = provider.hubAdvance ?? ((): boolean => false);
+  const hubSnapshot = provider.hubSnapshot ?? ((): DebugHubSnapshot | null => null);
+  const hubQuick = provider.hubQuick ?? ((): boolean => false);
 
   const api: YokaiDebugApi = Object.defineProperties({} as YokaiDebugApi, {
     status: { get: provider.status, enumerable: true },
@@ -687,6 +705,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
     hubInteract: { value: hubInteract, enumerable: true },
     hubLife: { value: hubLife, enumerable: true },
     hubAdvance: { value: hubAdvance, enumerable: true },
+    hubSnapshot: { value: hubSnapshot, enumerable: true },
+    hubQuick: { value: hubQuick, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 
@@ -701,7 +721,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, ' +
       'dash, activeSkill, actions, triggerEvolution, state, runSave, setAscension, unlockAllAscensions, ' +
       'triggerDeath, continueRun, continueEndless, setMusicVolume, setSfxVolume, setMusicDucked, ' +
-      'hubTeleport, hubInteract, hubLife, hubAdvance, classSkillState, keyLog).',
+      'hubTeleport, hubInteract, hubLife, hubAdvance, hubSnapshot, hubQuick, classSkillState, keyLog).',
   );
   return true;
 }

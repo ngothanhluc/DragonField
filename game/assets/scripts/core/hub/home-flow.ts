@@ -26,10 +26,14 @@ export type HomeFlowEvent =
   | { readonly kind: 'title-select'; readonly item: TitleMenuItemId }
   | { readonly kind: 'back' }
   | { readonly kind: 'hub-interact'; readonly action: HubInteractAction }
+  | { readonly kind: 'open-settings' }
   | { readonly kind: 'start-run'; readonly chapter: number; readonly ascension: number }
   | { readonly kind: 'run-ended'; readonly outcome: 'victory' | 'defeat' }
   | { readonly kind: 'result-to-village' }
   | { readonly kind: 'result-to-chapter-select' };
+
+/** Where Settings was opened from, so `back` returns there (M21 §4 village quick access). */
+export type SettingsReturnScreen = 'title' | 'village';
 
 export interface HomeFlowState {
   readonly screen: HomeScreenId;
@@ -37,6 +41,8 @@ export interface HomeFlowState {
   readonly hubEntryOrigin: HubEntryOrigin | null;
   /** Outcome of the run that just ended, consumed by `result-to-village`. */
   readonly lastRunOutcome: 'victory' | 'defeat' | null;
+  /** Screen Settings was opened from (`null` outside Settings); `back` returns there. */
+  readonly settingsReturn: SettingsReturnScreen | null;
 }
 
 /**
@@ -51,7 +57,7 @@ export function titleMenuItems(hasValidRunSave: boolean): readonly TitleMenuItem
 }
 
 export function initialHomeFlow(): HomeFlowState {
-  return { screen: 'title', hubEntryOrigin: null, lastRunOutcome: null };
+  return { screen: 'title', hubEntryOrigin: null, lastRunOutcome: null, settingsReturn: null };
 }
 
 /** Total reducer: an event that is invalid on the current screen returns the state unchanged. */
@@ -65,14 +71,19 @@ export function stepHomeFlow(state: HomeFlowState, event: HomeFlowEvent): HomeFl
         case 'continue-run':
           return { ...state, screen: 'run' };
         case 'settings':
-          return { ...state, screen: 'settings' };
+          return { ...state, screen: 'settings', settingsReturn: 'title' };
       }
       return state;
 
     case 'settings':
-      return event.kind === 'back' ? { ...state, screen: 'title' } : state;
+      return event.kind === 'back'
+        ? { ...state, screen: state.settingsReturn ?? 'title', settingsReturn: null }
+        : state;
 
     case 'village':
+      if (event.kind === 'open-settings') {
+        return { ...state, screen: 'settings', settingsReturn: 'village' };
+      }
       if (event.kind !== 'hub-interact') return state;
       return event.action.kind === 'open-expedition'
         ? { ...state, screen: 'chapter-select' }
