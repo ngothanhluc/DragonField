@@ -142,15 +142,17 @@ export class CultivatorSkillView {
       live.add(array.id);
       let slot = this.arraySlots.get(array.id);
       if (slot === undefined) {
+        // An array never moves, so draw its disc exactly once: rebuilding a filled 3.2-tile
+        // `Graphics` circle every frame cost ~17 fps in the stress run (M20, #87 R1).
         slot = makeDiscNode(this.parent, 'cultivator-sword-array', ARRAY_FILL, ARRAY_EDGE);
         this.arraySlots.set(array.id, slot);
+        drawDisc(slot, array.position, array.radiusTiles);
         fx?.spawn('fx.sword-array', array.position, {
           drawUnits: array.radiusTiles * 2.4,
           tint: QI_TINT,
           lifetimeMs: 460,
         });
       }
-      drawDisc(slot, array.position, array.radiusTiles);
     }
     for (const [id, slot] of this.arraySlots) {
       if (live.has(id)) continue;
@@ -183,12 +185,18 @@ export class CultivatorSkillView {
   private syncShield(runtime: CultivatorSkillRuntime, playerPosition: Vec2): void {
     const up = runtime.hasQiShield;
     if (up && this.shieldRing === null) {
-      this.shieldRing = makeDiscNode(
+      const ring = makeDiscNode(
         this.parent,
         'cultivator-qi-shield',
         new CocosColor(0, 0, 0, 0),
         SHIELD_EDGE,
       );
+      // Constant shape: draw once, then only move the node with the player.
+      ring.graphics.circle(0, 0, 1.05);
+      ring.graphics.stroke();
+      ring.graphics.circle(0, 0, 0.92);
+      ring.graphics.stroke();
+      this.shieldRing = ring;
     }
     const ring = this.shieldRing;
     if (ring !== null) {
@@ -196,11 +204,6 @@ export class CultivatorSkillView {
       if (up) {
         const world = tileToWorld(playerPosition);
         ring.node.setPosition(world.x, world.y, 0);
-        ring.graphics.clear();
-        ring.graphics.circle(0, 0, 1.05);
-        ring.graphics.stroke();
-        ring.graphics.circle(0, 0, 0.92);
-        ring.graphics.stroke();
       }
     }
     if (up && !this.shieldWasUp) {
