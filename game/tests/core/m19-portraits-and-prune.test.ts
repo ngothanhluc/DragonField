@@ -660,7 +660,7 @@ describe('M19 64×64 Hero Portrait integration (HUD, Character Select, Result Sc
         },
         onShop: vi.fn(),
         onChapterSelect: vi.fn(),
-        onTitle: vi.fn(),
+        onVillage: vi.fn(),
       });
       await flushMicrotasks();
 

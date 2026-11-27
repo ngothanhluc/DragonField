@@ -107,6 +107,10 @@ export interface DebugWiringHost {
   readonly setMusicVolume: (volume: number) => number;
   readonly setSfxVolume: (volume: number) => number;
   readonly setMusicDucked: (ducked: boolean) => boolean;
+  /** M21 #91: teleport the village-hub player; omitted when the hub is not wired. */
+  readonly hubTeleport?: (x: number, y: number) => boolean;
+  /** M21 #91: dispatch the nearest hub interactable. */
+  readonly hubInteract?: () => boolean;
 }
 
 /** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
@@ -207,6 +211,8 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     setMusicVolume: host.setMusicVolume,
     setSfxVolume: host.setSfxVolume,
     setMusicDucked: host.setMusicDucked,
+    hubTeleport: host.hubTeleport,
+    hubInteract: host.hubInteract,
     nodeCount: () => {
       const scene: Node | null = director.getScene() as Node | null;
       return scene === null ? 0 : countNodes(scene);

@@ -51,6 +51,25 @@ import {
 } from '../core/characters/roster';
 import { BOSSES, BOSS_IDS, type BossId } from '../core/boss/boss-defs';
 import { setLocale, t } from '../core/i18n';
+import {
+  buildHubInteractables,
+  canControlPlayerInHub,
+  createHubInteractRegistry,
+  createHubState,
+  findNearestInteractable,
+  findStepTrigger,
+  parseHubTmx,
+  startHubTransition,
+  stepHubTransition,
+  stepTriggerEntered,
+  updateHubPlayerPose,
+  type HubEntryOrigin,
+  type HubInteractable,
+  type HubInteractRegistry,
+  type HubMapData,
+  type HubState,
+  type HubTriggerId,
+} from '../core/hub';
 import { pickBoss } from '../core/boss/boss-pool';
 import { DEFAULT_COMBAT } from '../core/config';
 import { DOORS_TUNING, PICKUPS_TUNING, SPECIAL_ROOMS_TUNING, XP_TUNING } from '../core/enemies/tuning';
@@ -195,6 +214,7 @@ import type { MusicId } from './audio/audio-manager';
 import { playEvolutionPickSfx, playPotionHealSfx, playSfx } from './audio/sfx';
 import { installDebugWiring } from './debug-wiring';
 import { MenuBackdrop } from './menu-backdrop';
+import { HubVillageView } from './hub-village';
 import {
   buildRichRunResult,
   commitRunEnd,
@@ -366,6 +386,30 @@ interface EndlessCarryover {
   readonly elapsedMs: number;
 }
 
+/** Resource path of the Village Hub map (`game/assets/resources/data/levels/village/`). */
+const VILLAGE_HUB_PATH = 'data/levels/village/village-hub';
+
+/** Where the hub returns the player after an interim screen (chapter select / shop / dojo). */
+interface HubReturnSnapshot {
+  readonly position: Vec2;
+  readonly facing: HubState['playerFacing'];
+  readonly trigger: HubTriggerId | null;
+}
+
+/** One live Village Hub session (M21 #91): map, player, prompt and interaction handlers. */
+interface HubRuntime {
+  readonly map: HubMapData;
+  state: HubState;
+  readonly interactables: readonly HubInteractable[];
+  readonly registry: HubInteractRegistry;
+  readonly view: HubVillageView;
+  /** Step-trigger zone the player was standing in last frame (fires only on entering). */
+  lastTrigger: HubTriggerId | null;
+  clockMs: number;
+  /** Set while fading out to a menu screen; `then` runs at full black. */
+  leave: { readonly from: HubReturnSnapshot; readonly then: () => void } | null;
+}
+
 @ccclass('Bootstrap')
 export class Bootstrap extends Component {
   private manifest: AnimationManifest | null = null;
@@ -460,6 +504,10 @@ export class Bootstrap extends Component {
   private runSeed = 1;
   /** Living title / chapter-select room (#8); `null` before boot creates it. */
   private menuBackdrop: MenuBackdrop | null = null;
+  /** Live Village Hub (M21 #91); `null` everywhere except while the player walks the village. */
+  private hub: HubRuntime | null = null;
+  /** Position/origin to restore when re-entering the village after an interim screen. */
+  private hubReturn: HubReturnSnapshot | null = null;
 
   private player: PlayerController | null = null;
   /** Playable character locked for the active run (M10: one character per run, no mid-run swap). */
@@ -591,6 +639,10 @@ export class Bootstrap extends Component {
     onContinueRun: (run) => {
       void this.resumeSavedRun(run).catch((error: unknown) => this.fail(error));
     },
+    enterVillage: (origin) => {
+      void this.enterVillage(origin).catch((error: unknown) => this.fail(error));
+    },
+    leaveVillage: (then) => this.leaveVillage(then),
     onContinueEndless: () => {
       void this.continueEndless().catch((error: unknown) => this.fail(error));
     },
@@ -620,6 +672,10 @@ export class Bootstrap extends Component {
     if (this.status === 'dying') {
       this.fx?.update(rawDeltaMs);
       this.updateDepthAndCover(rawDeltaMs);
+      return;
+    }
+    if (this.status === 'hub') {
+      this.updateHub(rawDeltaMs);
       return;
     }
     if (this.status !== 'playing') return;
@@ -817,6 +873,219 @@ export class Bootstrap extends Component {
     return this.runSaveRepo?.load() ?? null;
   }
 
+  // -------------------------------------------------------------------------
+  // Village Hub (M21 #91): the home between runs
+  // -------------------------------------------------------------------------
+
+  /**
+   * Build the playable Village Hub: the real `village-hub.tmx` through `buildRoom`, the selected
+   * character moved by `PlayerController` against `map.collisionLevel`, the floating `[E]` prompt,
+   * and the per-session interactable registry. No combat loop, auto-fire, enemies or HUD bars.
+   */
+  async enterVillage(origin: HubEntryOrigin): Promise<void> {
+    const save = this.save;
+    const manifest = this.manifest;
+    if (save === null || manifest === null) return;
+
+    // Consume the snapshot *before* `teardownRun` (which invalidates it for every run start).
+    const resume = this.hubReturn;
+    this.hubReturn = null;
+
+    this.leaveHubWorld();
+    this.screens.clearMenu();
+    this.menuBackdrop?.clear();
+    this.teardownRun(false);
+    this.status = 'loading';
+    this.screens.setScreen('village');
+
+    const asset = await this.loadTiledMap(VILLAGE_HUB_PATH);
+    const map = parseHubTmx(asset.tmxXmlStr, {
+      source: `resources/${VILLAGE_HUB_PATH}.tmx`,
+    });
+
+    let state = createHubState({ save, entryOrigin: origin, fadeInOnEnter: true });
+    if (resume !== null) {
+      state = updateHubPlayerPose(state, resume.position, resume.facing);
+    }
+
+    // The hub player is the save's selected character (Character Select swaps it at the Dojo).
+    this.runCharacter = state.character;
+    this.buildHubRoom(map, asset);
+    const player = this.createPlayer(state.playerPos);
+    player.teleport(state.playerPos);
+
+    const registry = createHubInteractRegistry();
+    registry.register('open-expedition', () => {
+      void this.screens.villageGateInteracted().catch((error: unknown) => this.fail(error));
+    });
+    registry.register('enter-shop', () => this.screens.villageShopRequested());
+    registry.register('open-dojo', () => this.screens.villageDojoRequested());
+
+    const view = new HubVillageView(this.ensureUiRoot());
+    view.setGold(save.gold);
+    const interactables = buildHubInteractables(map);
+    view.setPromptHandler(() => this.dispatchNearestHubInteraction());
+
+    this.hub = {
+      map,
+      state,
+      interactables,
+      registry,
+      view,
+      lastTrigger: resume?.trigger ?? null,
+      clockMs: 0,
+      leave: null,
+    };
+    this.status = 'hub';
+    document.addEventListener('keydown', this.onHubKey, true);
+    this.fpsMeter.clear();
+    console.log(
+      `[YokaiField] Village Hub: ${map.size.cols}×${map.size.rows} tiles, ` +
+        `${map.obstacles.length} obstacle(s), ${map.triggers.length} trigger(s), ` +
+        `spawn ${JSON.stringify(state.playerPos)} (from ${origin}).`,
+    );
+  }
+
+  /** Build/replace the hub room without chapter atmosphere or water (village art is in the map). */
+  private buildHubRoom(map: HubMapData, asset: TiledMapAsset): void {
+    const roomLayer = this.roomLayer;
+    if (roomLayer === null) throw new Error('Bootstrap: no room-layer');
+
+    this.roomRoot?.destroy();
+    this.cover?.destroy();
+    this.cover = null;
+    this.depth?.clearProps();
+    this.roomRoot = buildRoom(roomLayer, map.collisionLevel, asset, this.roomLayers());
+    this.currentLevel = map.collisionLevel;
+    this.camera?.enterRoom(map.collisionLevel);
+    this.lastFocus = null;
+  }
+
+  /** `[E]` on `document` capture (physical key, like `keyboard-move.ts`), only while in the hub. */
+  private readonly onHubKey = (event: KeyboardEvent): void => {
+    if (event.repeat || event.code !== 'KeyE') return;
+    const hub = this.hub;
+    if (hub === null || !canControlPlayerInHub(hub.state)) return;
+    if (this.dispatchNearestHubInteraction()) event.preventDefault();
+  };
+
+  /** Dispatch the nearest in-range interactable's action; `false` when nothing is in range. */
+  private dispatchNearestHubInteraction(): boolean {
+    const hub = this.hub;
+    const player = this.player;
+    if (hub === null || player === null || !canControlPlayerInHub(hub.state)) return false;
+    const prompt = findNearestInteractable(player.position, hub.interactables);
+    if (prompt === null) return false;
+    return hub.registry.dispatch(prompt.action);
+  }
+
+  /** Fade to black, then tear the hub down and run `then` (menu screen / chapter select). */
+  private leaveVillage(then: () => void): void {
+    const hub = this.hub;
+    const player = this.player;
+    if (hub === null || player === null) {
+      then();
+      return;
+    }
+    if (hub.leave !== null) return;
+    hub.leave = {
+      from: {
+        position: { x: player.position.x, y: player.position.y },
+        facing: player.facingDirection,
+        trigger: hub.lastTrigger,
+      },
+      then,
+    };
+    hub.state = startHubTransition(hub.state, { kind: 'village', from: 'title' });
+  }
+
+  /** One hub frame: fades, player movement, prompt, and edge-triggered step zones. */
+  private updateHub(deltaMs: number): void {
+    const hub = this.hub;
+    const player = this.player;
+    if (hub === null || player === null) return;
+
+    this.fpsMeter.record(deltaMs);
+    hub.clockMs += deltaMs;
+
+    const stepped = stepHubTransition(hub.state, deltaMs);
+    hub.state = stepped.state;
+    hub.view.setFade(hub.state.transition.fadeAlpha);
+
+    if (stepped.destinationReached !== null && hub.leave !== null) {
+      const leave = hub.leave;
+      this.hubReturn = leave.from;
+      this.leaveHubWorld();
+      this.status = 'loading';
+      leave.then();
+      return;
+    }
+
+    if (!canControlPlayerInHub(hub.state)) {
+      player.resetInput();
+      this.updateDepthAndCover(deltaMs);
+      return;
+    }
+
+    player.step(hub.clockMs, deltaMs, [], hub.map.collisionLevel);
+
+    const camera = this.camera;
+    hub.view.showPrompt(
+      findNearestInteractable(player.position, hub.interactables),
+      {
+        position: camera?.position ?? { x: hub.map.size.cols / 2, y: hub.map.size.rows / 2 },
+        hudScale: camera?.hudScale ?? 1,
+      },
+      hub.map.size.rows,
+    );
+
+    // Step-in zones fire once when entered, then not again while the player stays inside.
+    const zone = findStepTrigger(player.position, hub.map.triggers);
+    const entered = stepTriggerEntered(hub.lastTrigger, zone?.id ?? null);
+    hub.lastTrigger = zone?.id ?? null;
+    hub.state = updateHubPlayerPose(hub.state, player.position, player.facingDirection);
+    if (entered !== null) {
+      const trigger = hub.interactables.find((item) => item.id === entered);
+      if (trigger !== undefined) hub.registry.dispatch(trigger.action);
+    }
+
+    this.updateDepthAndCover(deltaMs);
+  }
+
+  /** Destroy the hub's nodes, input listener and camera state (safe when already gone). */
+  private leaveHubWorld(): void {
+    document.removeEventListener('keydown', this.onHubKey, true);
+    this.hub?.view.destroy();
+    this.hub = null;
+    this.player?.node.destroy();
+    this.player = null;
+    this.runCharacter = null;
+    this.roomRoot?.destroy();
+    this.roomRoot = null;
+    this.cover?.destroy();
+    this.cover = null;
+    this.depth?.clearProps();
+    this.currentLevel = null;
+    this.camera?.showScreen();
+    this.lastFocus = null;
+  }
+
+  /** Debug-only: move the hub player (browser proof) without changing its session state. */
+  private debugHubTeleport(x: number, y: number): boolean {
+    const hub = this.hub;
+    const player = this.player;
+    if (hub === null || player === null) return false;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    player.teleport({ x, y });
+    hub.state = updateHubPlayerPose(hub.state, { x, y }, player.facingDirection);
+    return true;
+  }
+
+  /** Debug-only: dispatch the nearest hub interactable (same path as `[E]` / a click). */
+  private debugHubInteract(): boolean {
+    return this.dispatchNearestHubInteraction();
+  }
+
   /** Latest rich M15 run summary captured before teardown (for `ResultScreen` / debug). */
   getLastRunResult(): RichRunResultData | null {
     return this.lastRunResult;
@@ -966,6 +1235,9 @@ export class Bootstrap extends Component {
     seedArg?: number,
     ascensionArg?: number,
   ): Promise<void> {
+    // A run starts fresh: the position saved for "Back from Chapter Select" must not leak into
+    // the village the player returns to after Results (they respawn in the Village Square).
+    this.hubReturn = null;
     const folder = CHAPTER_FOLDERS[chapterNumber];
     if (folder === undefined) {
       console.warn(`[YokaiField] Chapter ${chapterNumber} has no .tmx data — not opening.`);
@@ -3386,6 +3658,9 @@ export class Bootstrap extends Component {
    * pollutes the "no console errors" gate), while this teardown drops only the run's own nodes.
    */
   private teardownRun(clearSavedRun = false): void {
+    // Any run teardown (start, resume, death/victory, Quit to Title) invalidates the position
+    // kept for Chapter Select / Shop / Dojo Back, so the next Vào Làng uses the square spawn.
+    this.hubReturn = null;
     if (clearSavedRun) {
       this.runSaveRepo?.clear();
     }
@@ -3595,6 +3870,8 @@ export class Bootstrap extends Component {
       setMusicVolume: (volume) => this.setMusicVolume(volume),
       setSfxVolume: (volume) => this.setSfxVolume(volume),
       setMusicDucked: (ducked) => this.setMusicDucked(ducked),
+      hubTeleport: (x, y) => this.debugHubTeleport(x, y),
+      hubInteract: () => this.debugHubInteract(),
     });
   }
 

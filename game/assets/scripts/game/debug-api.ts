@@ -15,6 +15,7 @@ import { keyLog } from './keyboard-move';
 export type DebugStatus =
   | 'loading'
   | 'menu'
+  | 'hub'
   | 'playing'
   | 'paused'
   | 'room-clear'
@@ -28,6 +29,7 @@ export type DebugStatus =
 /** Screen id for `screen()` — the visible UI, not the run status. */
 export type DebugScreenId =
   | 'title'
+  | 'village'
   | 'chapter-select'
   | 'playing'
   | 'paused'
@@ -380,6 +382,10 @@ export interface DebugProvider {
   readonly setSfxVolume?: (volume: number) => number;
   /** M15: toggle music ducking directly and return the new ducked state. */
   readonly setMusicDucked?: (ducked: boolean) => boolean;
+  /** M21 #91: teleport the village-hub player (browser proof) in tile space; `false` outside the hub. */
+  readonly hubTeleport?: (x: number, y: number) => boolean;
+  /** M21 #91: dispatch the nearest hub interactable (same path as `[E]` / a click). */
+  readonly hubInteract?: () => boolean;
 }
 
 /** Alias for `DebugProvider`. */
@@ -548,6 +554,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
   const setMusicVolume = provider.setMusicVolume ?? ((): number => 0);
   const setSfxVolume = provider.setSfxVolume ?? ((): number => 0);
   const setMusicDucked = provider.setMusicDucked ?? ((): boolean => false);
+  const hubTeleport = provider.hubTeleport ?? ((): boolean => false);
+  const hubInteract = provider.hubInteract ?? ((): boolean => false);
 
   const api: YokaiDebugApi = Object.defineProperties({} as YokaiDebugApi, {
     status: { get: provider.status, enumerable: true },
@@ -615,6 +623,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
     setMusicVolume: { value: setMusicVolume, enumerable: true },
     setSfxVolume: { value: setSfxVolume, enumerable: true },
     setMusicDucked: { value: setMusicDucked, enumerable: true },
+    hubTeleport: { value: hubTeleport, enumerable: true },
+    hubInteract: { value: hubInteract, enumerable: true },
     keyLog: { value: keyLog, enumerable: true },
   });
 

@@ -91,7 +91,8 @@ export interface ResultScreenOptions {
   readonly onContinueEndless?: () => void;
   readonly onShop: () => void;
   readonly onChapterSelect: () => void;
-  readonly onTitle: () => void;
+  /** Return to the Village Hub with the kept gold (M21 #91 — replaces the Title button). */
+  readonly onVillage: () => void;
 }
 
 export async function buildResultScreen(options: ResultScreenOptions): Promise<MenuScreen> {
@@ -305,10 +306,10 @@ export async function buildResultScreen(options: ResultScreenOptions): Promise<M
       activate: options.onChapterSelect,
     },
     {
-      name: 'result-title-btn',
-      label: t('result.titleBtn'),
-      detail: t('result.titleDetail'),
-      activate: options.onTitle,
+      name: 'result-village-btn',
+      label: t('result.villageBtn'),
+      detail: t('result.villageDetail'),
+      activate: options.onVillage,
     },
   ] as const;
 
