@@ -19,7 +19,7 @@ const ATTACHMENTS_PATH = join(ASSETS, 'resources', 'data', 'attachments.json');
 const manifest = validateManifest(JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) as unknown);
 const attachments = validateAttachments(JSON.parse(readFileSync(ATTACHMENTS_PATH, 'utf8')) as unknown);
 
-function resolvePackDir(): string {
+function resolvePackDir(): string | null {
   const candidates = [join(PROJECT, '..', 'art-source', 'ninja-adventure')];
   try {
     const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
@@ -30,13 +30,16 @@ function resolvePackDir(): string {
   } catch {
     // Fallback to relative path.
   }
-  const found = candidates.find((candidate) => existsSync(candidate));
-  if (found === undefined) throw new Error('missing ninja-adventure art-source');
-  return found;
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
+/** `art-source/` is gitignored (not in CI), so palette checks only run where the pack exists. */
+const PACK_AVAILABLE = resolvePackDir() !== null;
+
 function loadPalette(): ReadonlySet<string> {
-  const pal = readPng(join(resolvePackDir(), 'Palette.png'));
+  const packDir = resolvePackDir();
+  if (packDir === null) return new Set();
+  const pal = readPng(join(packDir, 'Palette.png'));
   const set = new Set<string>();
   for (let i = 0; i < pal.data.length; i += 4) {
     if (pal.data[i + 3]! > 0) {
@@ -92,7 +95,7 @@ describe('M14 character animations, weapon attachments, and class projectiles', 
     }
   });
 
-  it('uses strictly binary alpha and exact 53-color Palette.png on generated cultivator, attachment, and projectile sheets', () => {
+  it.skipIf(!PACK_AVAILABLE)('uses strictly binary alpha and exact 53-color Palette.png on generated cultivator, attachment, and projectile sheets', () => {
     const palette = loadPalette();
     expect(palette.size).toBe(53);
 
