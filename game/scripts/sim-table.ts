@@ -14,6 +14,11 @@
  */
 import { CHARACTER_IDS, type CharacterId } from '../assets/scripts/core/characters/roster';
 import {
+  classEvolutionFor,
+  classSkillsFor,
+  findClassSkillOrEvolution,
+} from '../assets/scripts/core/skills/class-skills';
+import {
   LEVEL_UP_TARGET_MAX,
   LEVEL_UP_TARGET_MIN,
   formatDuration,
@@ -59,6 +64,8 @@ const rowsWithEvo = rows.filter((row) => row.loadout.evolutions.length > 0).leng
 const totalEvos = rows.reduce((sum, row) => sum + row.loadout.evolutions.length, 0);
 const rowsHit = rows.filter((row) => row.loadout.hits > 0).length;
 const totalHits = rows.reduce((sum, row) => sum + row.loadout.hits, 0);
+const rowsWithClassSkill = rows.filter((row) => row.loadout.classSkills.length > 0).length;
+const totalClassSkills = rows.reduce((sum, row) => sum + row.loadout.classSkills.length, 0);
 const totalDashes = rows.reduce((sum, row) => sum + row.loadout.dashesUsed, 0);
 const totalActives = rows.reduce((sum, row) => sum + row.loadout.activeSkillsUsed, 0);
 
@@ -71,12 +78,14 @@ const avgActives = totalActives / Math.max(1, rows.length);
 
 const perClassLines = [
   '',
-  '| class | rows | stand still lost | wins (9/9) | clear time (avg / range) | level-ups | dashes/run | actives/run | hits (rows / total) | evolutions |',
-  '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+  '| class | rows | stand still lost | wins (9/9) | clear time (avg / range) | level-ups | dashes/run | actives/run | hits (rows / total) | evolutions | class skills | class evolution |',
+  '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 ];
 
 let anyClassMissingEvo = false;
 let anyClassLowDash = false;
+let anyClassMissingClassSkill = false;
+let anyClassLeak = false;
 for (const characterId of CHARACTER_IDS) {
   const classRows = rows.filter((row) => row.characterId === characterId);
   const count = Math.max(1, classRows.length);
@@ -101,14 +110,29 @@ for (const characterId of CHARACTER_IDS) {
   const classTotalHits = classRows.reduce((sum, r) => sum + r.loadout.hits, 0);
   const classEvoRows = classRows.filter((r) => r.loadout.evolutions.length > 0).length;
   const classTotalEvos = classRows.reduce((sum, r) => sum + r.loadout.evolutions.length, 0);
+  const ownSkillIds = classSkillsFor(characterId).map((skill) => skill.id);
+  const ownIds = new Set([...ownSkillIds, classEvolutionFor(characterId).id]);
+  const classSkillRows = classRows.filter((r) =>
+    r.loadout.classSkills.some((id) => ownSkillIds.includes(id)),
+  );
+  const classEvoOwnedRows = classRows.filter((r) =>
+    r.loadout.classSkills.includes(classEvolutionFor(characterId).id),
+  );
+  const classLeakRows = classRows.filter((r) =>
+    r.loadout.classSkills.some((id) => findClassSkillOrEvolution(id) !== undefined && !ownIds.has(id)),
+  );
   if (classEvoRows === 0) anyClassMissingEvo = true;
+  if (classEvoOwnedRows.length === 0) anyClassMissingEvo = true;
+  if (classSkillRows.length < classRows.length) anyClassMissingClassSkill = true;
+  if (classLeakRows.length > 0) anyClassLeak = true;
   if (classDashRows < classRows.length - 1) anyClassLowDash = true;
 
   perClassLines.push(
     `| ${characterId as CharacterId} | ${classRows.length} | ${classStandLost}/${classRows.length} | ` +
       `${classWins}/${classRows.length} | ${formatDuration(avgDurationMs)} (${formatDuration(minDurationMs)}–${formatDuration(maxDurationMs)}) | ` +
       `${loLv}–${hiLv} (avg ${avgLv.toFixed(1)}) | ${classAvgDashes.toFixed(1)} | ${classAvgActives.toFixed(1)} | ` +
-      `${classHitRows}/${classRows.length} (${classTotalHits}) | ${classEvoRows}/${classRows.length} (${classTotalEvos}) |`,
+      `${classHitRows}/${classRows.length} (${classTotalHits}) | ${classEvoRows}/${classRows.length} (${classTotalEvos}) | ` +
+      `${classSkillRows.length}/${classRows.length} | ${classEvoOwnedRows.length}/${classRows.length} |`,
   );
 }
 
@@ -120,7 +144,8 @@ console.log(
     `(range ${minLevelUps}–${maxLevelUps}, avg ${avgLevelUps.toFixed(1)}), ` +
     `dashes ${rowsWithDash}/${rows.length} (Ch2–Ch4 ${lateRowsWithDash}/${lateRows.length}, avg ${avgDashes.toFixed(1)}/run), ` +
     `actives ${rowsWithActive}/${rows.length} (avg ${avgActives.toFixed(1)}/run), ` +
-    `evolutions ${rowsWithEvo}/${rows.length} (${totalEvos} unlocked).`,
+    `evolutions ${rowsWithEvo}/${rows.length} (${totalEvos} unlocked), ` +
+    `class skills ${rowsWithClassSkill}/${rows.length} rows (${totalClassSkills} owned).`,
 );
 
 if (
@@ -131,7 +156,9 @@ if (
   anyClassLowDash ||
   rowsWithActive !== rows.length ||
   rowsWithEvo === 0 ||
-  anyClassMissingEvo
+  anyClassMissingEvo ||
+  anyClassMissingClassSkill ||
+  anyClassLeak
 ) {
   process.exit(1);
 }

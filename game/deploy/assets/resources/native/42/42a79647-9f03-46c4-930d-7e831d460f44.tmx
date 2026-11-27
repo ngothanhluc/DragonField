@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="16" height="12" tilewidth="16" tileheight="16" infinite="0" nextlayerid="7" nextobjectid="15">
+ <properties>
+    <property name="hubLocation" value="shop-interior"/>
+ </properties>
+ <tileset firstgid="1" source="interior-floor.tsx"/>
+ <tileset firstgid="375" source="interior-wall.tsx"/>
+ <tileset firstgid="485" source="interior.tsx"/>
+ <tileset firstgid="805" source="interior-elements.tsx"/>
+ <tileset firstgid="832" source="bed.tsx"/>
+ <tileset firstgid="1000" source="camp.tsx"/>
+ <tileset firstgid="1207" source="element.tsx"/>
+ <layer id="1" name="floor" width="16" height="12">
+  <data encoding="csv">
+425,425,425,425,425,425,425,425,425,425,425,425,425,425,425,425,
+425,425,425,425,425,425,425,425,425,425,425,425,425,425,425,425,
+425,289,288,288,289,288,310,289,288,288,289,310,288,289,288,425,
+425,288,288,289,310,288,289,288,288,289,288,288,289,288,310,425,
+425,288,289,288,288,289,288,310,289,288,288,289,310,288,289,425,
+425,289,288,288,289,310,288,289,288,288,289,288,288,289,288,425,
+425,288,288,289,288,288,289,288,310,289,288,288,289,310,288,425,
+425,310,289,288,288,289,310,288,289,288,288,289,288,288,289,425,
+425,289,288,288,289,288,288,289,288,310,289,288,288,289,310,425,
+425,288,310,289,288,288,289,310,288,289,288,288,289,288,288,425,
+425,288,289,288,288,289,288,288,289,288,310,289,288,288,289,425,
+425,425,425,425,425,425,425,288,289,425,425,425,425,425,425,425
+  </data>
+ </layer>
+ <layer id="2" name="walls" width="16" height="12">
+  <data encoding="csv">
+421,392,392,392,392,392,392,392,392,392,392,392,392,392,392,421,
+421,402,402,402,402,402,402,402,402,402,402,402,402,402,402,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,0,0,0,0,0,0,0,0,0,0,0,0,0,0,421,
+421,381,381,381,381,381,381,0,0,381,381,381,381,381,381,421
+  </data>
+ </layer>
+ <layer id="3" name="rugs" width="16" height="12">
+  <data encoding="csv">
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,877,878,878,879,0,0,0,0,0,0,
+0,0,0,0,0,0,891,892,892,893,0,0,0,0,0,0,
+0,0,0,0,0,0,905,906,906,907,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,877,879,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,905,907,0,0,0,0,0,0,0
+  </data>
+ </layer>
+ <layer id="4" name="furniture" width="16" height="12">
+  <data encoding="csv">
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,923,924,925,0,0,0,0,0,0,926,927,928,0,0,
+0,0,937,938,939,0,0,0,0,0,0,940,941,942,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,1100,849,849,849,849,849,849,849,849,849,849,849,849,1101,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,1259,1260,0,0,0,0,0,0,0,0,1100,1101,0,0,
+0,0,1275,1276,0,0,0,0,0,0,0,0,1214,1215,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+  </data>
+ </layer>
+ <layer id="5" name="decor" width="16" height="12">
+  <data encoding="csv">
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,805,0,817,0,0,0,0,0,0,0,0,818,0,806,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,808,0,0,812,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+  </data>
+ </layer>
+ <objectgroup id="6" name="objects">
+  <object id="1" name="playerStart" x="128" y="147.2">
+   <properties>
+    <property name="facing" value="up"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="2" name="obstacle" x="0" y="0" width="256" height="32">
+   <properties>
+    <property name="kind" value="wall"/>
+   </properties>
+  </object>
+  <object id="3" name="obstacle" x="0" y="32" width="16" height="160">
+   <properties>
+    <property name="kind" value="wall"/>
+   </properties>
+  </object>
+  <object id="4" name="obstacle" x="240" y="32" width="16" height="160">
+   <properties>
+    <property name="kind" value="wall"/>
+   </properties>
+  </object>
+  <object id="5" name="obstacle" x="16" y="176" width="96" height="16">
+   <properties>
+    <property name="kind" value="wall"/>
+   </properties>
+  </object>
+  <object id="6" name="obstacle" x="144" y="176" width="96" height="16">
+   <properties>
+    <property name="kind" value="wall"/>
+   </properties>
+  </object>
+  <object id="7" name="obstacle" x="112" y="188.8" width="32" height="3.2">
+   <properties>
+    <property name="kind" value="edge"/>
+   </properties>
+  </object>
+  <object id="8" name="obstacle" x="32" y="32" width="48" height="16">
+   <properties>
+    <property name="kind" value="pillar"/>
+   </properties>
+  </object>
+  <object id="9" name="obstacle" x="176" y="32" width="48" height="16">
+   <properties>
+    <property name="kind" value="pillar"/>
+   </properties>
+  </object>
+  <object id="10" name="obstacle" x="16" y="64" width="224" height="9.6">
+   <properties>
+    <property name="kind" value="pillar"/>
+   </properties>
+  </object>
+  <object id="11" name="obstacle" x="32" y="96" width="32" height="32">
+   <properties>
+    <property name="kind" value="pillar"/>
+   </properties>
+  </object>
+  <object id="12" name="obstacle" x="192" y="96" width="32" height="32">
+   <properties>
+    <property name="kind" value="pillar"/>
+   </properties>
+  </object>
+  <object id="13" name="npc" x="128" y="55.2">
+   <properties>
+    <property name="id" value="shopkeeper"/>
+    <property name="role" value="shopkeeper"/>
+    <property name="facing" value="down"/>
+    <property name="promptKey" value="hub.prompt.talk"/>
+    <property name="interactRadius" type="float" value="2"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="14" name="trigger" x="108.8" y="168" width="38.4" height="20.8">
+   <properties>
+    <property name="id" value="shop-exit"/>
+    <property name="promptKey" value="hub.prompt.exitShop"/>
+    <property name="interactRadius" type="float" value="2"/>
+    <property name="autoEnterOnStep" type="bool" value="true"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

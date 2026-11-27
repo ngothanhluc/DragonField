@@ -14,11 +14,11 @@ Design source: [docs/gdd.md](gdd.md) · Technical decisions: [docs/tech-decision
 | **M0 – M7** | Tooling, core loop, art taste test, rooms, combat depth, skills/bosses, meta/UI, art integration, web ship | ✅ Done | [m0-m10.md](milestones/m0-m10.md) |
 | **M8 – M10** | Visuals & juice, big rooms + 4 chapters + 8 bosses, playable character rig framework | ✅ Done | [m0-m10.md](milestones/m0-m10.md) |
 | **M11 – M15** | Map/weather/UI overhaul, XP & level-up, Dash/Active + pure-combat skills/Evolutions, 4 classes, Save/Resume + Ascension + Endless | ✅ Done | [m11-m15.md](milestones/m11-m15.md) |
-| **M16** | Tiếng Việt mặc định, Font Pixel VI & Sửa lỗi nổ vuông (`fx.explosion`) | 📋 Planned | [m16-m21.md](milestones/m16-m21.md#m16--tiếng-việt-mặc-định-font-pixel-vi--sửa-lỗi-nổ-vuông) |
-| **M17** | Hệ HP RPG (`100 HP`), HUD mới (HP+XP trên-trái), Pickup phát sáng + Bình Máu, 1 Cổng Bắc VFX mới & Tăng tốc khi dọn phòng | 📋 Planned | [m16-m21.md](milestones/m16-m21.md#m17--hệ-hp-rpg-hud-mới-vật-phẩm-phát-sáng--1-cổng-bắc-vfx-mới) |
-| **M18** | Độ khó Bullet-Hell, Bỏ knockback/stagger, 2 quái mới (`dasher`, `gunner`) & Chống lẫn môi trường | 📋 Planned | [m16-m21.md](milestones/m16-m21.md#m18--độ-khó-bullet-hell-bỏ-knockback-2-quái-mới--chống-lẫn-môi-trường) |
-| **M19** | Generate bộ Art mới (6 Avatar, 20 Icon skill, Sprite FX) & Lọc bỏ 6 skill nền nhàm chán | 📋 Planned | [m16-m21.md](milestones/m16-m21.md#m19--generate-bộ-art-mới--tinh-gọn-kho-skill-nền) |
-| **M20** | 16 Skill độc quyền + 4 Class Evolution cho 4 nhân vật & Skill Codex | 📋 Planned | [m16-m21.md](milestones/m16-m21.md#m20--bộ-skill-độc-quyền-theo-nhân-vật--codex-chi-tiết-skill) |
+| **M16** | Tiếng Việt mặc định, Font Pixel VI & Sửa lỗi nổ vuông (`fx.explosion`) | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m16--tiếng-việt-mặc-định-font-pixel-vi--sửa-lỗi-nổ-vuông) |
+| **M17** | Hệ HP RPG (`100 HP`), HUD mới (HP+XP trên-trái), Pickup phát sáng + Bình Máu, 1 Cổng Bắc VFX mới & Tăng tốc khi dọn phòng | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m17--hệ-hp-rpg-hud-mới-vật-phẩm-phát-sáng--1-cổng-bắc-vfx-mới) |
+| **M18** | Độ khó Bullet-Hell, Bỏ knockback/stagger, 2 quái mới (`dasher`, `gunner`) & Chống lẫn môi trường | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m18--độ-khó-bullet-hell-bỏ-knockback-2-quái-mới--chống-lẫn-môi-trường) |
+| **M19** | Generate bộ Art mới (6 Avatar, 20 Icon skill, Sprite FX) & Lọc bỏ 6 skill nền nhàm chán | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m19--generate-bộ-art-mới--tinh-gọn-kho-skill-nền) |
+| **M20** | 16 Skill độc quyền + 4 Class Evolution cho 4 nhân vật & Skill Codex | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m20--bộ-skill-độc-quyền-theo-nhân-vật--codex-chi-tiết-skill) |
 | **M21** | Sảnh Ngôi Làng 2D tương tác, Cửa Hàng đi vào được trò chuyện, Võ Đường & Cổng Xuất Chinh | 📋 Planned | [m16-m21.md](milestones/m16-m21.md#m21--sảnh-ngôi-làng-tương-tác-cửa-hàng-đi-vào-được--võ-đường) |
 
 ---
