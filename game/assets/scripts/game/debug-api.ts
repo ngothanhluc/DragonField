@@ -155,6 +155,19 @@ export interface DebugHubSnapshot {
   readonly music: { readonly track: string; readonly ducked: boolean };
 }
 
+/** M21 #93: the Shop Interior visit — location, open Shopkeeper dialog and routed panel. */
+export interface DebugHubShopSnapshot {
+  readonly location: 'village' | 'shop-interior';
+  /** Hub player position in tile units (top-left origin). */
+  readonly player: { readonly x: number; readonly y: number };
+  /** `null` when the Shopkeeper is not being talked to. */
+  readonly dialog: DialogBoxView | null;
+  /** `'meta-shop' | 'hero-unlocks'` while the Meta Shop panel is on its way in, else `null`. */
+  readonly panel: 'meta-shop' | 'hero-unlocks' | null;
+  /** True while a dialog or panel locks movement and hides the `[E]` prompt. */
+  readonly busy: boolean;
+}
+
 /** The living room drawn behind title / chapter select (#8), read from the live adapter. */
 export interface DebugMenuBackdropSnapshot {
   readonly chapter: number;
@@ -442,6 +455,8 @@ export interface DebugProvider {
   readonly hubInteract?: () => boolean;
   /** M21 #92: live Village Life snapshot (villagers, animals, open dialog); `null` outside the hub. */
   readonly hubLife?: () => DebugHubLifeSnapshot | null;
+  /** M21 #93: the Shop Interior visit (location, Shopkeeper dialog, routed panel); `null` outside the hub. */
+  readonly hubShop?: () => DebugHubShopSnapshot | null;
   /** M21 #92: advance/close the open DialogBox exactly like `[E]`. */
   readonly hubAdvance?: () => boolean;
   /** M21 #94: live village snapshot (body/attachment, quick bar, codex, music cue); `null` outside. */
@@ -630,6 +645,8 @@ export function installDebugApi(provider: DebugProvider): boolean {
   const hubInteract = provider.hubInteract ?? ((): boolean => false);
   const hubLife =
     provider.hubLife ?? ((): DebugHubLifeSnapshot | null => null);
+  const hubShop =
+    provider.hubShop ?? ((): DebugHubShopSnapshot | null => null);
   const hubAdvance = provider.hubAdvance ?? ((): boolean => false);
   const hubSnapshot = provider.hubSnapshot ?? ((): DebugHubSnapshot | null => null);
   const hubQuick = provider.hubQuick ?? ((): boolean => false);
@@ -704,6 +721,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
     hubTeleport: { value: hubTeleport, enumerable: true },
     hubInteract: { value: hubInteract, enumerable: true },
     hubLife: { value: hubLife, enumerable: true },
+    hubShop: { value: hubShop, enumerable: true },
     hubAdvance: { value: hubAdvance, enumerable: true },
     hubSnapshot: { value: hubSnapshot, enumerable: true },
     hubQuick: { value: hubQuick, enumerable: true },
@@ -721,7 +739,7 @@ export function installDebugApi(provider: DebugProvider): boolean {
       'hideAttachmentForSkill, showAttachmentForSkill, xp, grantXp, rerollSkill, playerIframeMs, ' +
       'dash, activeSkill, actions, triggerEvolution, state, runSave, setAscension, unlockAllAscensions, ' +
       'triggerDeath, continueRun, continueEndless, setMusicVolume, setSfxVolume, setMusicDucked, ' +
-      'hubTeleport, hubInteract, hubLife, hubAdvance, hubSnapshot, hubQuick, classSkillState, keyLog).',
+      'hubTeleport, hubInteract, hubLife, hubShop, hubAdvance, hubSnapshot, hubQuick, classSkillState, keyLog).',
   );
   return true;
 }

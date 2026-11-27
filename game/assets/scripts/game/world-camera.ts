@@ -106,11 +106,19 @@ export class WorldCamera {
    * Room entry (and every rebuild): hard cut, no smoothing, to the player's start, with the
    * view clamped to the new room. A bigger room therefore starts centred on the player instead
    * of sliding over from the previous room.
+   *
+   * A room **smaller** than one screen (the M21 16×12 Shop Interior) clamps its view to the room
+   * itself, which pins the camera to the room centre: the room is drawn centred and static inside
+   * the one-screen band instead of pinned to the band's top-left corner.
    */
   enterRoom(level: LevelData): void {
     this.room = level.size;
     this.roomRows = level.size.rows;
-    this.follow = new FollowCamera(level.size, VIEW, CAMERA_TUNING);
+    const view: RoomSize = {
+      cols: Math.min(VIEW.cols, level.size.cols),
+      rows: Math.min(VIEW.rows, level.size.rows),
+    };
+    this.follow = new FollowCamera(level.size, view, CAMERA_TUNING);
     this.follow.reset(level.playerStart);
     this.apply();
   }
