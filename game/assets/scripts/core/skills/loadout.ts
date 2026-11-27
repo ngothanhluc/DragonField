@@ -9,13 +9,10 @@
  * the instance's own state.
  */
 import { DEFAULT_COMBAT } from '../config';
+import { resolveOwnedClassEvolutions, resolveOwnedClassSkills } from './class-skills';
 import { computeDerivedStats, type DerivedStats, type StatsBaseline } from './derived-stats';
-import {
-  findSkillOrEvolution,
-  resolveOwnedEvolutions,
-  type OwnedEvolutionStacks,
-} from './evolutions';
-import { resolveOwnedSkills, type OwnedSkillStacks, type SkillDef } from './pool';
+import { findSkillOrEvolution, resolveOwnedEvolutions } from './evolutions';
+import { resolveOwnedSkills, type SkillDef } from './pool';
 
 /** Result of one skill pickup — enough for the UI/run to decide sound, healing, logging. */
 export interface AcquireResult {
@@ -47,7 +44,13 @@ export class SkillLoadout {
     for (const skill of resolveOwnedSkills(entries)) {
       loadout.owned.set(skill.def.id, skill.stacks);
     }
+    for (const skill of resolveOwnedClassSkills(entries)) {
+      loadout.owned.set(skill.def.id, skill.stacks);
+    }
     for (const evo of resolveOwnedEvolutions(entries)) {
+      loadout.owned.set(evo.def.id, evo.stacks);
+    }
+    for (const evo of resolveOwnedClassEvolutions(entries)) {
       loadout.owned.set(evo.def.id, evo.stacks);
     }
     return loadout;
@@ -58,14 +61,16 @@ export class SkillLoadout {
     return this.owned.get(id) ?? 0;
   }
 
-  /** Owned base skills in `SKILLS` order (deterministic). */
-  get entries(): OwnedSkillStacks[] {
-    return resolveOwnedSkills(this.owned);
+  /** Owned shared base skills then owned class-exclusive skills (deterministic order). */
+  get entries(): OwnedCardStacks[] {
+    const shared: OwnedCardStacks[] = resolveOwnedSkills(this.owned);
+    return [...shared, ...resolveOwnedClassSkills(this.owned)];
   }
 
-  /** Owned Legendary Evolutions in `EVOLUTIONS` order (deterministic). */
-  get evolutions(): OwnedEvolutionStacks[] {
-    return resolveOwnedEvolutions(this.owned);
+  /** Owned shared Legendary Evolutions then owned Class Evolutions (deterministic order). */
+  get evolutions(): OwnedCardStacks[] {
+    const shared: OwnedCardStacks[] = resolveOwnedEvolutions(this.owned);
+    return [...shared, ...resolveOwnedClassEvolutions(this.owned)];
   }
 
   /** Owned base skills followed by owned Legendary Evolutions. */

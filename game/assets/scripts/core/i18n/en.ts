@@ -350,6 +350,69 @@ export const EN = {
   'evolution.shadowstep': 'Shadowstep',
   'evolution.tempest-barrage': 'Tempest Barrage',
 
+  // --- Class-exclusive skill & Class Evolution names (20, M20 ADR-027) ---
+  'skill.ninja-shadow-clone': 'Shadow Clone',
+  'skill.ninja-venom-shuriken': 'Venom Shuriken',
+  'skill.ninja-kunai-burst': 'Kunai Burst',
+  'skill.ninja-smoke-bomb': 'Smoke Bomb',
+  'skill.ninja-phantom-assassin': 'Phantom Assassin',
+  'skill.archer-arrow-rain': 'Arrow Rain',
+  'skill.archer-split-arrow': 'Split Arrow',
+  'skill.archer-hunters-mark': "Hunter's Mark",
+  'skill.archer-wind-arrow': 'Wind Arrow',
+  'skill.archer-sky-tempest': 'Sky Tempest',
+  'skill.mage-meteor': 'Meteor',
+  'skill.mage-frost-orbs': 'Frost Orbs',
+  'skill.mage-storm-strike': 'Storm Strike',
+  'skill.mage-arcane-pulse': 'Arcane Pulse',
+  'skill.mage-elemental-cataclysm': 'Elemental Cataclysm',
+  'skill.cultivator-orbit-swords': 'Orbit Swords',
+  'skill.cultivator-sword-array': 'Sword Array',
+  'skill.cultivator-sword-qi': 'Sword Qi',
+  'skill.cultivator-qi-barrier': 'Qi Barrier',
+  'skill.cultivator-myriad-swords': 'Myriad Swords',
+
+  // --- Class-exclusive skill & Class Evolution descriptions (20, M20 ADR-027) ---
+  'skill.desc.ninja-shadow-clone':
+    'Dash leaves a shadow decoy that fires shurikens (50% dmg) for 2.5s.',
+  'skill.desc.ninja-venom-shuriken':
+    'Every 3rd shot hurls a venom shuriken that bursts into a poison cloud.',
+  'skill.desc.ninja-kunai-burst': 'Killing an enemy bursts 4 kunai radially (+2 per stack).',
+  'skill.desc.ninja-smoke-bomb':
+    'Dash or Active drops smoke: foes slow 45%, fire rate +30% for 3s.',
+  'skill.desc.ninja-phantom-assassin':
+    'Clones fire guaranteed crits and trigger Kunai Burst on kill.',
+  'skill.desc.archer-arrow-rain':
+    'Every 5th shot calls an arrow volley (2.2 tiles) on the target.',
+  'skill.desc.archer-split-arrow':
+    'Arrows that pierce their first target split into 2 angled arrows (±18°).',
+  'skill.desc.archer-hunters-mark':
+    'Hits mark foes; a crit on a marked foe detonates the mark for AoE.',
+  'skill.desc.archer-wind-arrow':
+    'Consecutive hits stack Wind (max 10): faster projectiles and fire rate.',
+  'skill.desc.archer-sky-tempest':
+    'Arrow Rain pierces and spawns split-arrow volleys on impact.',
+  'skill.desc.mage-meteor':
+    'Every 4.5s a meteor falls on the densest cluster (faster per stack).',
+  'skill.desc.mage-frost-orbs':
+    'Summon 2 orbiting frost orbs (+1 per stack) that damage and heavily slow.',
+  'skill.desc.mage-storm-strike':
+    'Hits have a 20% (+10% per stack) chance to call lightning on the nearest foe.',
+  'skill.desc.mage-arcane-pulse':
+    'Every 4th shot triggers an arcane blast ring (1.8 tiles) on the target.',
+  'skill.desc.mage-elemental-cataclysm':
+    'Orbs spin faster, fire ice shards, and double damage on ignited foes.',
+  'skill.desc.cultivator-orbit-swords':
+    '2 spirit swords orbit you (+1 per stack) and dart out to slash nearby foes.',
+  'skill.desc.cultivator-sword-array':
+    'Active or an Elite kill plants a 3.2-tile Sword Array for 3s.',
+  'skill.desc.cultivator-sword-qi':
+    'Every 3rd shot unleashes a wide crescent Sword Qi that pierces all foes.',
+  'skill.desc.cultivator-qi-barrier':
+    'Damage dealt charges Qi; at 100% gain a shield and blast sword-qi waves.',
+  'skill.desc.cultivator-myriad-swords':
+    'Orbit swords fire mini Sword Qi waves and periodically plant Sword Arrays.',
+
   // --- Skill tag descriptions ---
   'tag.damageAdd': '+{amount} damage',
   'tag.fireRateMult': '+{pct} fire rate',

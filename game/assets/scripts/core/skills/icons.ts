@@ -8,6 +8,7 @@
  * paths into `SpriteFrame`s.
  */
 
+import { findClassSkillOrEvolution } from './class-skills';
 import type { SkillDef } from './pool';
 
 /** Skill or Evolution id → icon file name in `resources/art/ui/skill-icons/` (no extension, no `Disabled` suffix). */
@@ -52,9 +53,20 @@ export const SKILL_ICONS: Readonly<Record<string, string>> = {
 };
 
 const ICON_DIR = 'resources/art/ui/skill-icons';
+/** Class-exclusive skills + Class Evolutions share one generated sheet directory (M20, ADR-027). */
+const CLASS_ICON_DIR = 'resources/art/generated/icons/class-skills';
 
-/** Resources sheet path of a skill/Evolution icon; `disabled` picks the `<Name>Disabled.png` variant. */
+/**
+ * Resources sheet path of a skill/Evolution icon; `disabled` picks the `<Name>Disabled.png` variant.
+ *
+ * Shared cards keep their pack icon from `SKILL_ICONS`; class cards map to their own staged
+ * `<id>.png` (and `<id>-disabled.png`) file, so no per-id table is needed.
+ */
 export function skillIconSheet(id: string, options: { readonly disabled?: boolean } = {}): string {
+  if (findClassSkillOrEvolution(id) !== undefined) {
+    const suffix = options.disabled === true ? '-disabled' : '';
+    return `${CLASS_ICON_DIR}/${id}${suffix}.png`;
+  }
   const icon = SKILL_ICONS[id];
   if (icon === undefined) {
     throw new Error(`No skill icon mapped for skill id: "${id}"`);

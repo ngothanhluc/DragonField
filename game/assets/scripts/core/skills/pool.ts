@@ -8,6 +8,8 @@
  * so `derived-stats.ts` stacks every skill & Evolution uniformly without a per-id `switch`.
  */
 
+import type { CharacterId } from '../characters/roster';
+
 export const SKILL_PILLARS = ['weapon', 'elemental', 'defense', 'mobility'] as const;
 
 export type SkillPillar = (typeof SKILL_PILLARS)[number];
@@ -113,6 +115,11 @@ export interface SkillDef {
   readonly pillar?: SkillPillar;
   readonly requires?: readonly [string, string];
   readonly minStacksEach?: number;
+  /**
+   * Owning character for a class-exclusive skill or Class Evolution (M20, ADR-027).
+   * Absent on every shared skill and shared Evolution.
+   */
+  readonly characterId?: CharacterId;
 }
 
 /** One of the 21 base pure-combat skills organized by pillar. */

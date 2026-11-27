@@ -348,6 +348,69 @@ export const VI: Readonly<Record<TranslationKey, string>> = {
   'evolution.shadowstep': 'Ảnh Bộ Đoạt Mệnh',
   'evolution.tempest-barrage': 'Bão Đạn Cuồng Phong',
 
+  // --- Class-exclusive skill & Class Evolution names (20, M20 ADR-027, GDD §3) ---
+  'skill.ninja-shadow-clone': 'Phân Thân Ám Ảnh',
+  'skill.ninja-venom-shuriken': 'Phi Tiêu Độc Vụ',
+  'skill.ninja-kunai-burst': 'Liên Hoàn Kunai',
+  'skill.ninja-smoke-bomb': 'Bom Khói Ẩn Thân',
+  'skill.ninja-phantom-assassin': 'Ảnh Sát Tuyệt Kỹ',
+  'skill.archer-arrow-rain': 'Mưa Tên',
+  'skill.archer-split-arrow': 'Tên Tách Chùm',
+  'skill.archer-hunters-mark': 'Ấn Ký Săn Mồi',
+  'skill.archer-wind-arrow': 'Phong Tiễn',
+  'skill.archer-sky-tempest': 'Thiên Tiễn Lôi Đình',
+  'skill.mage-meteor': 'Thiên Thạch',
+  'skill.mage-frost-orbs': 'Vệ Tinh Băng',
+  'skill.mage-storm-strike': 'Lôi Ngục',
+  'skill.mage-arcane-pulse': 'Xung Năng Ma Pháp',
+  'skill.mage-elemental-cataclysm': 'Thiên Tai Nguyên Tố',
+  'skill.cultivator-orbit-swords': 'Ngự Kiếm Hộ Thể',
+  'skill.cultivator-sword-array': 'Kiếm Trận',
+  'skill.cultivator-sword-qi': 'Kiếm Khí Bán Nguyệt',
+  'skill.cultivator-qi-barrier': 'Hộ Tâm Linh Khí',
+  'skill.cultivator-myriad-swords': 'Vạn Kiếm Quy Tông',
+
+  // --- Class-exclusive skill & Class Evolution descriptions (20, M20 ADR-027) ---
+  'skill.desc.ninja-shadow-clone':
+    'Lướt đi để lại phân thân bắn phi tiêu (50% sát thương) trong 2.5 giây.',
+  'skill.desc.ninja-venom-shuriken':
+    'Mỗi phát thứ 3 ném phi tiêu độc, nổ thành đám mây độc.',
+  'skill.desc.ninja-kunai-burst': 'Hạ gục kẻ địch phóng 4 kunai tỏa tròn (+2 mỗi tầng).',
+  'skill.desc.ninja-smoke-bomb':
+    'Lướt hoặc Tuyệt kỹ thả khói: địch chậm 45%, tốc bắn +30% trong 3 giây.',
+  'skill.desc.ninja-phantom-assassin':
+    'Phân thân bắn chí mạng và kích hoạt Liên Hoàn Kunai khi hạ gục.',
+  'skill.desc.archer-arrow-rain':
+    'Mỗi phát thứ 5 gọi mưa tên (2.2 ô) xuống mục tiêu.',
+  'skill.desc.archer-split-arrow':
+    'Tên xuyên mục tiêu đầu tách thành 2 mũi chéo (±18°).',
+  'skill.desc.archer-hunters-mark':
+    'Đánh trúng gắn ấn; chí mạng lên mục tiêu có ấn sẽ nổ sát thương diện rộng.',
+  'skill.desc.archer-wind-arrow':
+    'Đánh trúng liên tiếp tích Phong (tối đa 10): tên bay nhanh và tốc bắn tăng.',
+  'skill.desc.archer-sky-tempest':
+    'Mưa Tên xuyên thấu và sinh loạt tên tách chùm khi trúng.',
+  'skill.desc.mage-meteor':
+    'Mỗi 4.5 giây thiên thạch rơi vào cụm địch đông nhất (nhanh hơn mỗi tầng).',
+  'skill.desc.mage-frost-orbs':
+    'Triệu hồi 2 cầu băng bay quanh (+1 mỗi tầng) gây sát thương và làm chậm mạnh.',
+  'skill.desc.mage-storm-strike':
+    'Đánh trúng có 20% (+10% mỗi tầng) gọi sét lên kẻ địch gần nhất.',
+  'skill.desc.mage-arcane-pulse':
+    'Mỗi phát thứ 4 tạo vòng nổ ma pháp (1.8 ô) tại mục tiêu.',
+  'skill.desc.mage-elemental-cataclysm':
+    'Cầu băng quay nhanh hơn, bắn mảnh băng và gấp đôi sát thương lên mục tiêu cháy.',
+  'skill.desc.cultivator-orbit-swords':
+    '2 phi kiếm bay quanh bạn (+1 mỗi tầng) và lao ra chém kẻ địch gần.',
+  'skill.desc.cultivator-sword-array':
+    'Tuyệt kỹ hoặc hạ gục Tinh Anh đặt Kiếm Trận 3.2 ô trong 3 giây.',
+  'skill.desc.cultivator-sword-qi':
+    'Mỗi phát thứ 3 phóng kiếm khí trăng lưỡi liềm xuyên mọi kẻ địch.',
+  'skill.desc.cultivator-qi-barrier':
+    'Sát thương gây ra tích nội lực; đầy 100% nhận khiên và phóng sóng kiếm khí.',
+  'skill.desc.cultivator-myriad-swords':
+    'Phi kiếm phóng kiếm khí nhỏ và định kỳ đặt Kiếm Trận.',
+
   // --- Skill tag descriptions ---
   'tag.damageAdd': '+{amount} sát thương',
   'tag.fireRateMult': '+{pct} tốc độ bắn',

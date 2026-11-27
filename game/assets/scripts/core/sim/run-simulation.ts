@@ -154,6 +154,8 @@ import {
   type SpecialKind,
 } from '../run/special-rooms';
 import { computeDerivedStats } from '../skills/derived-stats';
+import { dispatchClassSkillEvent, hasAnyClassSkill } from '../skills/class-skills';
+import type { ClassSkillStackSource } from '../skills/class-skill-hooks';
 import type { SkillDef } from '../skills/pool';
 import { createSkillRollRng, rerollChoices, rollChoices } from '../skills/roll';
 import { screenViewAround } from '../view/view-rect';
@@ -427,6 +429,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   /** Dedicated skill-roll RNG stream, strictly decoupled from combat RNG (ADR-021). */
   const skillRollRng = createSkillRollRng(options.seed);
   const ownedSkills = new Map<string, number>(options.skills ?? []);
+  /** Read-only stack accessor for class-skill hooks (no Map copy per tick). */
+  const classSkillSource: ClassSkillStackSource = (id) => ownedSkills.get(id) ?? 0;
+  /** 1-based auto-fire counter for on-shot class hooks (M20, ADR-027). */
+  let shotsFired = 0;
   let stats = computeDerivedStats(ownedSkills, characterBase);
   const bulletTtlMs = Math.max(
     PLAYER_BULLET_TTL_MS,
@@ -678,7 +684,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       }
 
       openedModal = true;
-      let offers = rollChoices({ rng: skillRollRng, owned: ownedSkills });
+      let offers = rollChoices({ rng: skillRollRng, owned: ownedSkills, characterId });
       // Optional M12 gold reroll (`core/xp/reroll.ts` + `rerollChoices` on `skillRollRng`).
       while (
         offers.length > 0 &&
@@ -696,7 +702,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         if (!spentGold.ok) break;
         goldEarned = spentGold.remainingGold;
         rerollsUsed = spentGold.nextRerollsUsed;
-        offers = rerollChoices({ rng: skillRollRng, owned: ownedSkills, previous: offers });
+        offers = rerollChoices({
+          rng: skillRollRng,
+          owned: ownedSkills,
+          previous: offers,
+          characterId,
+        });
         events.push({
           kind: 'skill-reroll',
           nowMs: durationMs,
@@ -900,6 +911,14 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     buffTracker.forget(enemy.id);
     burns.delete(enemy.id);
     activeState = onActiveKill(activeState, activeConfig, 1);
+    if (hasAnyClassSkill(characterId, classSkillSource)) {
+      dispatchClassSkillEvent('onKill', characterId, classSkillSource, {
+        position: enemy.position,
+        targetPosition: enemy.position,
+        elite: enemy.elite,
+        rng,
+      });
+    }
     const gold = Math.round(goldForKill(enemy.role, enemy.elite) * stats.goldMultiplier);
     kills += 1;
     goldEarned += gold;
@@ -1080,6 +1099,15 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     activeState = stepActiveSkill(activeState, SIM_STEP_MS);
     actionBuffer.step(SIM_STEP_MS);
 
+    // Class-skill periodic tick (no-op until #84–#87; allocation-free when nothing is owned).
+    if (hasAnyClassSkill(characterId, classSkillSource)) {
+      dispatchClassSkillEvent('tick', characterId, classSkillSource, {
+        dtMs: SIM_STEP_MS,
+        position: player,
+        rng,
+      });
+    }
+
     const worldSnapshot: PolicyWorld = {
       nowMs: durationMs,
       room: room.room,
@@ -1111,6 +1139,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         actionBuffer.consume('dash');
         dashState = started.state;
         dashesUsed += 1;
+        if (hasAnyClassSkill(characterId, classSkillSource)) {
+          dispatchClassSkillEvent('onDash', characterId, classSkillSource, {
+            position: player,
+            rng,
+          });
+        }
         events.push({
           kind: 'dash',
           nowMs: durationMs,
@@ -1183,6 +1217,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         actionBuffer.consume('active');
         activeState = triggered.state;
         activeSkillsUsed += 1;
+        if (hasAnyClassSkill(characterId, classSkillSource)) {
+          dispatchClassSkillEvent('onActive', characterId, classSkillSource, {
+            position: player,
+            rng,
+          });
+        }
 
         if (signatureSkillId === 'arcane-nova') {
           const nova = computeArcaneNovaSpec(player, stats.activePowerMult, {
@@ -1423,6 +1463,14 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         radiusTiles: BULLET_RADIUS_TILES,
         ttlMs: bulletTtlMs,
       });
+      shotsFired += 1;
+      if (hasAnyClassSkill(characterId, classSkillSource)) {
+        dispatchClassSkillEvent('onShot', characterId, classSkillSource, {
+          shotCount: shotsFired,
+          position: shot.origin,
+          rng,
+        });
+      }
     }
 
     // --- Enemy AI ---------------------------------------------------------
@@ -1569,6 +1617,13 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         healPlayer(lifestealHeal(stats, dealt));
         statusOf(enemy).apply(stats, durationMs);
         applyBurn(enemy.id, durationMs);
+        if (dealt > 0 && hasAnyClassSkill(characterId, classSkillSource)) {
+          dispatchClassSkillEvent('onHit', characterId, classSkillSource, {
+            position: bullet.position,
+            targetPosition: enemy.position,
+            rng,
+          });
+        }
         if (!activeBulletIds.has(bullet.id)) {
           activeState = onActiveHit(activeState, activeConfig, 1);
         }
@@ -1754,7 +1809,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
           if (chest.kind === 'gold') {
             bonusGold = chest.amount;
           } else if (options.chooseSkill !== undefined) {
-            const chestOffers = rollChoices({ rng: skillRollRng, owned: ownedSkills });
+            const chestOffers = rollChoices({
+              rng: skillRollRng,
+              owned: ownedSkills,
+              characterId,
+            });
             if (chestOffers.length > 0) {
               const pickedIndex = pickSkillIndex(
                 options.chooseSkill,
