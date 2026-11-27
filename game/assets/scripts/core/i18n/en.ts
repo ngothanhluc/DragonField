@@ -221,6 +221,11 @@ export const EN = {
   'hub.prompt.exitShop': 'Leave shop',
   'hub.prompt.dojo': 'Dojo',
   'hub.prompt.expedition': 'Set out',
+  // Village corner quick-access bar + Esc village menu (M21 §4).
+  'village.quick.play': 'Play',
+  'village.quick.characters': 'Characters',
+  'village.quick.settings': 'Settings',
+  'village.quick.menuTitle': 'VILLAGE',
   'hub.npc.villager1.name': 'Grandma Hoa',
   'hub.npc.villager2.name': 'Uncle Bay',
   'hub.npc.villager3.name': 'Aunt Lan',

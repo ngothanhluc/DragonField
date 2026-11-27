@@ -219,6 +219,11 @@ export const VI: Readonly<Record<TranslationKey, string>> = {
   'hub.prompt.exitShop': 'Ra khỏi cửa hàng',
   'hub.prompt.dojo': 'Võ đường',
   'hub.prompt.expedition': 'Xuất chinh',
+  // Village corner quick-access bar + Esc village menu (M21 §4).
+  'village.quick.play': 'Cổng Xuất Chinh',
+  'village.quick.characters': 'Võ Đường',
+  'village.quick.settings': 'Cài Đặt',
+  'village.quick.menuTitle': 'LÀNG YÊN BÌNH',
   'hub.npc.villager1.name': 'Bà Hoa',
   'hub.npc.villager2.name': 'Chú Bảy',
   'hub.npc.villager3.name': 'Cô Lan',
