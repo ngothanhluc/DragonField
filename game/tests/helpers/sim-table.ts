@@ -21,6 +21,12 @@ import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import type { ChapterData } from '../../assets/scripts/core/level/level-data';
 import type { UpgradeState } from '../../assets/scripts/core/meta/upgrades';
 import type { DoorReward } from '../../assets/scripts/core/run/doors';
+import {
+  CLASS_EVOLUTIONS,
+  CLASS_SKILLS,
+  findClassSkillOrEvolution,
+  isClassEvolutionId,
+} from '../../assets/scripts/core/skills/class-skills';
 import { evolutionHintsForSkill } from '../../assets/scripts/core/skills/evolutions';
 import type { SkillDef } from '../../assets/scripts/core/skills/pool';
 import {
@@ -61,6 +67,8 @@ export const TYPICAL_LOADOUT: ReadonlyMap<string, number> = new Map([
  */
 const SKILL_PRIORITY: readonly string[] = [
   'ninja-phantom-assassin',
+  'archer-sky-tempest',
+  'mage-elemental-cataclysm',
   'phantom-volley',
   'cataclysm',
   'starfall-kunai',
@@ -80,6 +88,14 @@ const SKILL_PRIORITY: readonly string[] = [
   'twin-shot',
   'sharpen',
   'shield',
+  'archer-arrow-rain',
+  'archer-split-arrow',
+  'archer-hunters-mark',
+  'archer-wind-arrow',
+  'mage-meteor',
+  'mage-frost-orbs',
+  'mage-storm-strike',
+  'mage-arcane-pulse',
   'rapid-fire',
   'piercing',
   'ricochet',
@@ -111,6 +127,8 @@ const NINJA_SKILLS: ReadonlySet<string> = new Set([
 /** Skills strong enough to accept without spending gold on a level-up reroll. */
 const CORE_COMBAT_SKILLS: ReadonlySet<string> = new Set([
   'ninja-phantom-assassin',
+  'archer-sky-tempest',
+  'mage-elemental-cataclysm',
   'ninja-kunai-burst',
   'ninja-shadow-clone',
   'ninja-venom-shuriken',
@@ -120,6 +138,14 @@ const CORE_COMBAT_SKILLS: ReadonlySet<string> = new Set([
   'cultivator-orbit-swords',
   'cultivator-qi-barrier',
   'cultivator-sword-qi',
+  'archer-arrow-rain',
+  'archer-split-arrow',
+  'archer-hunters-mark',
+  'archer-wind-arrow',
+  'mage-meteor',
+  'mage-frost-orbs',
+  'mage-storm-strike',
+  'mage-arcane-pulse',
   'phantom-volley',
   'cataclysm',
   'starfall-kunai',
@@ -168,6 +194,33 @@ const CULTIVATOR_SKILLS: ReadonlySet<string> = new Set([
 
 const CULTIVATOR_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('shield') + 0.75;
 
+/** Archer exclusives: same rule as Ninja — one stack each, then the shared DPS curve. */
+const ARCHER_SKILLS: ReadonlySet<string> = new Set([
+  'archer-arrow-rain',
+  'archer-split-arrow',
+  'archer-hunters-mark',
+  'archer-wind-arrow',
+]);
+
+const ARCHER_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('shield') + 0.75;
+
+/** Mage exclusives: same rule as Ninja — one stack each, then the shared DPS curve. */
+const MAGE_SKILLS: ReadonlySet<string> = new Set([
+  'mage-meteor',
+  'mage-frost-orbs',
+  'mage-storm-strike',
+  'mage-arcane-pulse',
+]);
+
+const MAGE_CAP_AFTER_RANK = SKILL_PRIORITY.indexOf('shield') + 0.75;
+
+/**
+ * Archer/Mage kits are taken after the core shared build, unlike Ninja/Cultivator whose
+ * exclusives carry enough early damage on their own. A competent player secures `twin-shot`,
+ * `sharpen` and `shield` first, then adds the class kit from this level on (M20, #89).
+ */
+const ARCHER_MAGE_KIT_LEVEL = 8;
+
 function completesEvolutionPair(skill: SkillDef, owned: ReadonlyMap<string, number>): boolean {
   if (skill.rarity === 'legendary') return false;
   return evolutionHintsForSkill(skill.id, owned).some((hint) => hint.ready);
@@ -176,12 +229,13 @@ function completesEvolutionPair(skill: SkillDef, owned: ReadonlyMap<string, numb
 export const typicalSkillChoice: SkillPickPolicy = (
   offers: readonly SkillDef[],
   owned: ReadonlyMap<string, number>,
-  _level: number,
+  level: number,
   context,
 ): number => {
   const sharpenStacks = owned.get('sharpen') ?? 0;
   const rapidFireStacks = owned.get('rapid-fire') ?? 0;
   const lowHearts = context.hearts <= context.maxHearts * 0.6;
+  const classKitReady = level >= ARCHER_MAGE_KIT_LEVEL;
   let bestIndex = 0;
   let bestRank = Number.POSITIVE_INFINITY;
   for (let index = 0; index < offers.length; index += 1) {
@@ -189,6 +243,10 @@ export const typicalSkillChoice: SkillPickPolicy = (
     if (skill === undefined) continue;
     const rank = SKILL_PRIORITY.indexOf(skill.id);
     let effectiveRank = rank === -1 ? SKILL_PRIORITY.length : rank;
+    if (!classKitReady && (ARCHER_SKILLS.has(skill.id) || MAGE_SKILLS.has(skill.id))) {
+      // Early shared build first: the kit only competes from `ARCHER_MAGE_KIT_LEVEL` on.
+      effectiveRank = SKILL_PRIORITY.length + 1;
+    }
     if (skill.id === 'sharpen' && sharpenStacks >= 2) {
       // Ranks behind `shield` once base damage is already stacked 2+.
       effectiveRank = SHARPEN_CAP_AFTER_RANK;
@@ -201,6 +259,12 @@ export const typicalSkillChoice: SkillPickPolicy = (
     }
     if (CULTIVATOR_SKILLS.has(skill.id) && (owned.get(skill.id) ?? 0) >= 1) {
       effectiveRank = Math.max(effectiveRank, CULTIVATOR_CAP_AFTER_RANK);
+    }
+    if (ARCHER_SKILLS.has(skill.id) && (owned.get(skill.id) ?? 0) >= 1) {
+      effectiveRank = Math.max(effectiveRank, ARCHER_CAP_AFTER_RANK);
+    }
+    if (MAGE_SKILLS.has(skill.id) && (owned.get(skill.id) ?? 0) >= 1) {
+      effectiveRank = Math.max(effectiveRank, MAGE_CAP_AFTER_RANK);
     }
     if (!lowHearts && completesEvolutionPair(skill, owned)) {
       effectiveRank = Math.min(effectiveRank, EVOLUTION_PAIR_READY_RANK);
@@ -300,8 +364,14 @@ export interface SimOutcome {
   readonly dashesUsed: number;
   /** Total Signature Active (*Shadow Barrage*) casts used across the run (M13, ADR-022). */
   readonly activeSkillsUsed: number;
-  /** Legendary Evolution ids unlocked and acquired during the run (M13, ADR-022). */
+  /** Legendary Evolution ids unlocked and acquired during the run (M13, ADR-022; M20 class Evolutions). */
   readonly evolutions: readonly string[];
+  /**
+   * Every owned class-exclusive skill **or** Class Evolution id at run end (M20, ADR-027), in
+   * `CLASS_SKILLS` then `CLASS_EVOLUTIONS` order. Empty for the standing player. Listing ids of
+   * any class keeps a cross-class leak visible in the table.
+   */
+  readonly classSkills: readonly string[];
 }
 
 export interface SimTableRow {
@@ -316,7 +386,28 @@ export interface SimTableRow {
   readonly loadout: SimOutcome & { readonly doors: DoorReward[] };
 }
 
+/** Stable id order for the `classSkills` column: all 16 exclusives, then the 4 Evolutions. */
+const CLASS_SKILL_ORDER: ReadonlyMap<string, number> = new Map(
+  [...CLASS_SKILLS.map((skill) => skill.id), ...CLASS_EVOLUTIONS.map((evolution) => evolution.id)].map(
+    (id, index) => [id, index] as const,
+  ),
+);
+
+/**
+ * Owned class-exclusive skills + Class Evolutions at run end, in `CLASS_SKILL_ORDER`. Iterating
+ * `acquiredSkills` (not the row's class) is deliberate: another class's id can only appear if the
+ * roll leaked, and the table must show that.
+ */
+function classSkillsOf(result: ReturnType<typeof simulateRun>): readonly string[] {
+  const owned: string[] = [];
+  for (const [id, stacks] of result.acquiredSkills) {
+    if (stacks > 0 && findClassSkillOrEvolution(id) !== undefined) owned.push(id);
+  }
+  return owned.sort((left, right) => (CLASS_SKILL_ORDER.get(left) ?? 0) - (CLASS_SKILL_ORDER.get(right) ?? 0));
+}
+
 function outcomeOf(result: ReturnType<typeof simulateRun>): SimOutcome {
+  const classSkills = classSkillsOf(result);
   return {
     status: result.status,
     roomsCleared: result.roomsCleared,
@@ -327,7 +418,12 @@ function outcomeOf(result: ReturnType<typeof simulateRun>): SimOutcome {
     xpEarned: result.xpEarned,
     dashesUsed: result.dashesUsed,
     activeSkillsUsed: result.activeSkillsUsed,
-    evolutions: result.evolutions,
+    // `simulateRun` reports shared Evolutions only; the owning helper adds Class Evolutions.
+    evolutions: [
+      ...result.evolutions,
+      ...classSkills.filter((id) => isClassEvolutionId(id)),
+    ],
+    classSkills,
   };
 }
 
@@ -444,22 +540,23 @@ function formatHits(hits: number): string {
 /**
  * The Markdown table for the PR: one line per row, in the order given.
  *
- * `| class | chapter | seed | boss | stand still | dodge + M14 kit | level-ups | dashes | actives | evolutions | doors |`
+ * `| class | chapter | seed | boss | stand still | dodge + M14 kit | level-ups | dashes | actives | evolutions | class skills | doors |`
  */
 export function formatSimTable(rows: readonly SimTableRow[]): string {
   const lines = [
-    '| class | chapter | seed | boss | stand still | dodge + M14 kit | level-ups | dashes | actives | evolutions | doors |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| class | chapter | seed | boss | stand still | dodge + M14 kit | level-ups | dashes | actives | evolutions | class skills | doors |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
 
   for (const row of rows) {
     const doors = row.loadout.doors.join(', ') || '—';
     const evolutions = row.loadout.evolutions.join(', ') || '—';
+    const classSkills = row.loadout.classSkills.join(', ') || '—';
     lines.push(
       `| ${row.characterId} | ${row.chapter} | ${row.seed} | ${row.boss} | ${formatOutcome(row.standStill)} | ` +
         `${formatOutcome(row.loadout)}, ${formatHits(row.loadout.hits)} | ` +
         `${row.loadout.levelUps} (Lv ${row.loadout.finalLevel}) | ` +
-        `${row.loadout.dashesUsed} | ${row.loadout.activeSkillsUsed} | ${evolutions} | ${doors} |`,
+        `${row.loadout.dashesUsed} | ${row.loadout.activeSkillsUsed} | ${evolutions} | ${classSkills} | ${doors} |`,
     );
   }
 
