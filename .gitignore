@@ -34,6 +34,3 @@ NewProject/
 .shots/
 # committed deploy build for Cloudflare: native/ here is texture/audio, not a native build
 !game/deploy/**/native/
-
-# Brief, report and ledger of the automation loop in each ticket worktree
-.agent-auto/
