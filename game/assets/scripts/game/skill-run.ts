@@ -19,9 +19,9 @@ import {
   type RunStatsSource,
 } from '../core/meta/run-stats';
 import { MAX_FREE_REROLLS_TRACK } from '../core/meta/upgrades';
-import { SkillLoadout, type AcquireResult } from '../core/skills/loadout';
+import { SkillLoadout, type AcquireResult, type OwnedCardStacks } from '../core/skills/loadout';
 import type { DerivedStats, StatsBaseline } from '../core/skills/derived-stats';
-import type { OwnedSkillStacks, SkillDef } from '../core/skills/pool';
+import type { SkillDef } from '../core/skills/pool';
 import {
   createSkillRollRng,
   hasAlternativeSkills,
@@ -126,7 +126,7 @@ export class SkillRun {
     return this.characterId;
   }
 
-  get entries(): OwnedSkillStacks[] {
+  get entries(): OwnedCardStacks[] {
     return this.loadout.entries;
   }
 
@@ -178,12 +178,16 @@ export class SkillRun {
   /** Whether at least one eligible skill outside the current offer remains for Gold Reroll. */
   hasAlternatives(): boolean {
     if (this.offered === null) return false;
-    return hasAlternativeSkills(this.loadout.snapshot(), this.offered);
+    return hasAlternativeSkills(this.loadout.snapshot(), this.offered, this.characterId);
   }
 
   /** Roll cards with the dedicated skill-roll RNG; an exhausted pool returns fewer than 3. */
   roll(): SkillDef[] {
-    return rollChoices({ rng: this.rng, owned: this.loadout.snapshot() });
+    return rollChoices({
+      rng: this.rng,
+      owned: this.loadout.snapshot(),
+      characterId: this.characterId,
+    });
   }
 
   /**
@@ -198,6 +202,7 @@ export class SkillRun {
       rng: this.rng,
       owned: this.loadout.snapshot(),
       previous: this.offered,
+      characterId: this.characterId,
     });
     if (next.length === 0) return null;
     if (this.freeRerolls > 0) {

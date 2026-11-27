@@ -24,9 +24,10 @@ import {
   view,
 } from 'cc';
 import { localizeRarity, localizeSkillName, t } from '../core/i18n';
+import { CLASS_CRESTS } from '../core/skills/class-skills';
 import { describeSkill } from '../core/skills/description';
-import { evolutionHintsForSkill } from '../core/skills/evolutions';
-import { getSkill, type Rarity, type SkillDef } from '../core/skills/pool';
+import { evolutionHintsForSkill, findSkillOrEvolution } from '../core/skills/evolutions';
+import type { Rarity, SkillDef } from '../core/skills/pool';
 import {
   PANEL_SHADOW_EXPAND_PX,
   PANEL_WELL_INSET_PX,
@@ -55,6 +56,7 @@ import {
 type Button = InstanceType<typeof CocosButton>;
 type Color = InstanceType<typeof CocosColor>;
 type Graphics = InstanceType<typeof CocosGraphics>;
+type Label = InstanceType<typeof CocosLabel>;
 type Node = InstanceType<typeof CocosNode>;
 type Sprite = InstanceType<typeof CocosSprite>;
 type UITransform = InstanceType<typeof CocosUITransform>;
@@ -72,6 +74,21 @@ const PAIR_HINT_MUTED_COLOR = new CocosColor(196, 184, 156, 255);
 const PAIR_HINT_READY_COLOR = new CocosColor(255, 214, 72, 255);
 const ICON_SLOT_TINT = new CocosColor(255, 255, 255, 240);
 const HOTKEY_COLOR = new CocosColor(232, 210, 168, 255);
+const CREST_GLYPH_COLOR = new CocosColor(20, 18, 26, 255);
+
+/** `#RRGGBB` → engine colour (crest colours stay engine-free data in `core/`). */
+function crestColor(hex: string): Color {
+  const value = hex.startsWith('#') ? hex.slice(1) : hex;
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  return new CocosColor(
+    Number.isFinite(r) ? r : 255,
+    Number.isFinite(g) ? g : 255,
+    Number.isFinite(b) ? b : 255,
+    255,
+  );
+}
 
 function rarityColorFor(rarity: Rarity): Color {
   return rarity === 'legendary' ? LEGENDARY_GOLD_COLOR : RARITY_COLORS[rarity];
@@ -422,6 +439,14 @@ function addDim(parent: Node): void {
   createBackdropPanel(parent, 'skill-pick-dim', size.width, size.height, 206);
 }
 
+/** Fit a one-line pick-card hint: shrink to the card width instead of overflowing it. */
+function fitPairHint(label: Label, width: number): void {
+  label.enableWrapText = true;
+  label.overflow = CocosLabel.Overflow.SHRINK;
+  const transform: UITransform | null = label.node.getComponent(CocosUITransform);
+  if (transform !== null) transform.setContentSize(width, 12);
+}
+
 function makeCard(
   parent: Node,
   frames: MenuFrames,
@@ -571,14 +596,17 @@ function makeCard(
 
   if (isLegendary && skill.requires !== undefined) {
     const [reqA, reqB] = skill.requires;
-    const defA = getSkill(reqA);
-    const defB = getSkill(reqB);
-    const recipe = `${localizeSkillName(defA.id, defA.name)} + ${localizeSkillName(defB.id, defB.name)}`;
-    const pairHint = createLabel(node, 'pair-hint', recipe);
-    pairHint.fontSize = 8;
-    pairHint.lineHeight = 12;
-    pairHint.color = LEGENDARY_GOLD_COLOR;
-    pairHint.node.setPosition(0, layout.pairHintY, 0);
+    const defA = findSkillOrEvolution(reqA);
+    const defB = findSkillOrEvolution(reqB);
+    if (defA !== undefined && defB !== undefined) {
+      const recipe = `${localizeSkillName(defA.id, defA.name)} + ${localizeSkillName(defB.id, defB.name)}`;
+      const pairHint = createLabel(node, 'pair-hint', recipe);
+      pairHint.fontSize = 8;
+      pairHint.lineHeight = 12;
+      pairHint.color = LEGENDARY_GOLD_COLOR;
+      pairHint.node.setPosition(0, layout.pairHintY, 0);
+      fitPairHint(pairHint, layout.effectWidth);
+    }
   } else if (!isLegendary) {
     const hint = evolutionHintsForSkill(skill.id, owned)[0];
     if (hint !== undefined) {
@@ -587,6 +615,7 @@ function makeCard(
       pairHint.lineHeight = 12;
       pairHint.color = hint.ready ? PAIR_HINT_READY_COLOR : PAIR_HINT_MUTED_COLOR;
       pairHint.node.setPosition(0, layout.pairHintY, 0);
+      fitPairHint(pairHint, layout.effectWidth);
     }
   }
 
@@ -600,6 +629,25 @@ function makeCard(
   stack.lineHeight = 13;
   stack.color = isLegendary || stacks > 0 ? rarityColor : MENU_MUTED_COLOR;
   stack.node.setPosition(0, layout.stackY, 0);
+
+  // Class crest (M20, ADR-027): one Graphics node in the class colour + a 1-character glyph.
+  // Pure per-class data lives in `core/skills/class-skills.ts`, never as a path here.
+  if (skill.characterId !== undefined) {
+    const crest = CLASS_CRESTS[skill.characterId];
+    const badge = new CocosNode('class-crest');
+    badge.layer = Layers.Enum.UI_2D;
+    badge.parent = node;
+    badge.setPosition(layout.cardWidth / 2 - 14, layout.cardHeight / 2 - 14, 0);
+    const crestGfx: Graphics = badge.addComponent(CocosGraphics);
+    crestGfx.fillColor = crestColor(crest.color);
+    crestGfx.rect(-8, -8, 16, 16);
+    crestGfx.fill();
+    const glyph = createLabel(badge, 'crest-glyph', crest.glyph);
+    glyph.fontSize = 10;
+    glyph.lineHeight = 12;
+    glyph.color = CREST_GLYPH_COLOR;
+    glyph.node.setPosition(0, 0, 0);
+  }
 
   return {
     node,

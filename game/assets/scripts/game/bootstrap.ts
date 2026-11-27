@@ -1094,6 +1094,10 @@ export class Bootstrap extends Component {
       level: firstRoom,
       monsterFor: (role) => this.monsterFor(firstRoom.chapter, role),
       rng: this.combatRng,
+      classSkills: {
+        characterId: this.skills.activeCharacterId,
+        stacks: (id) => this.skills.stacks(id),
+      },
       difficulty: this.difficulty,
       onBossPhase: (phase) => this.bossPhases.show(phase),
       onKill: (role, elite, position) => this.awardKill(role, elite, position),
@@ -1243,6 +1247,10 @@ export class Bootstrap extends Component {
       level: entryLevel,
       monsterFor: (role) => this.monsterFor(entryLevel.chapter, role),
       rng: this.combatRng,
+      classSkills: {
+        characterId: this.skills.activeCharacterId,
+        stacks: (id) => this.skills.stacks(id),
+      },
       difficulty: this.difficulty,
       onBossPhase: (phase) => this.bossPhases.show(phase),
       onKill: (role, elite, position) => this.awardKill(role, elite, position),
@@ -1392,6 +1400,10 @@ export class Bootstrap extends Component {
       level: firstRoom,
       monsterFor: (role) => this.monsterFor(firstRoom.chapter, role),
       rng: this.combatRng,
+      classSkills: {
+        characterId: this.skills.activeCharacterId,
+        stacks: (id) => this.skills.stacks(id),
+      },
       difficulty: this.difficulty,
       onBossPhase: (phase) => this.bossPhases.show(phase),
       onKill: (role, elite, position) => this.awardKill(role, elite, position),
@@ -2412,7 +2424,11 @@ export class Bootstrap extends Component {
     const availableGold = this.shopGoldTotal();
     const freeRerollsLeft = this.skills.freeRerollsLeft;
     const cost = freeRerollsLeft > 0 ? 0 : rerollCost(this.skills.rerollsUsed);
-    const hasAlternatives = hasAlternativeSkills(this.skills.snapshot(), choices);
+    const hasAlternatives = hasAlternativeSkills(
+      this.skills.snapshot(),
+      choices,
+      this.skills.activeCharacterId,
+    );
 
     void this.skills
       .open(
@@ -2444,7 +2460,14 @@ export class Bootstrap extends Component {
   private rerollActiveSkillPick(): boolean {
     if (this.status !== 'skill-pick' || this.specialRoom !== null) return false;
     const currentChoices = this.skills.choices;
-    if (currentChoices === null || !hasAlternativeSkills(this.skills.snapshot(), currentChoices)) {
+    if (
+      currentChoices === null ||
+      !hasAlternativeSkills(
+        this.skills.snapshot(),
+        currentChoices,
+        this.skills.activeCharacterId,
+      )
+    ) {
       return false;
     }
 

@@ -24,6 +24,9 @@ import type { AnimationManifest } from '../core/art/manifest';
 import type { BossDef, BossPhase } from '../core/boss/boss-defs';
 import { BOSS_FEET_OFFSET_TILES } from '../core/boss/boss-defs';
 import { summonedEnemies } from '../core/boss/summon';
+import type { CharacterId } from '../core/characters/roster';
+import { dispatchClassSkillEvent, hasAnyClassSkill } from '../core/skills/class-skills';
+import type { ClassSkillEventName, ClassSkillStackSource } from '../core/skills/class-skill-hooks';
 import { firstHit, hitsCircle } from '../core/combat/bullets';
 import {
   fireEnemyVolley,
@@ -228,6 +231,23 @@ export interface CombatLoopOptions {
   readonly onDamage?: (info: DamagePopupInfo) => void;
   /** Unified Ascension + Endless difficulty modifiers (M15; defaults to Ascension 0 / Loop 0). */
   readonly difficulty?: RunDifficultyModifiers;
+  /**
+   * Active character + class-skill stacks for the no-op class hooks (M20, ADR-027). Omitted in
+   * tests/tools that do not run a class; the whole seam then costs one null check per event.
+   */
+  readonly classSkills?: ClassSkillHookSource;
+}
+
+/** The active character and a stack accessor for its class-exclusive hooks. */
+export interface ClassSkillHookSource {
+  readonly characterId: CharacterId;
+  readonly stacks: ClassSkillStackSource;
+}
+
+/** Newest live bullet id (0 for an empty pool); used to count auto-fire shots without a callback. */
+function newestBulletId(bullets: readonly { readonly id: number }[]): number {
+  const last = bullets[bullets.length - 1];
+  return last === undefined ? 0 : last.id;
 }
 
 /** One enemy/boss hit, enough to show a floating number. */
@@ -344,6 +364,10 @@ export class CombatLoop {
   private difficulty: RunDifficultyModifiers;
   private awaitingAdvance = false;
   private god = false;
+  /** No-op class hooks (M20, ADR-027): active character + class-skill stack accessor. */
+  private readonly classSkills: ClassSkillHookSource | null;
+  /** 1-based auto-fire shot counter for on-shot class hooks. */
+  private shotsFired = 0;
 
   /** Debug stress: keep 24 enemies + 44 enemy bullets on screen to measure fps. */
   private stress = false;
@@ -374,6 +398,7 @@ export class CombatLoop {
     this.onDamage = options.onDamage ?? (() => undefined);
     this.viewProvider = options.view ?? (() => null);
     this.difficulty = options.difficulty ?? combinedDifficultyModifiers(0, 0);
+    this.classSkills = options.classSkills ?? null;
   }
 
   /** Live Ascension + Endless difficulty modifiers applied to enemies and bosses (M15). */
@@ -733,6 +758,31 @@ export class CombatLoop {
     this.bulletView?.sync();
   }
 
+  /** True when the active character owns at least one class skill/Evolution (cheap, alloc-free). */
+  private hasClassSkills(): boolean {
+    const source = this.classSkills;
+    return source !== null && hasAnyClassSkill(source.characterId, source.stacks);
+  }
+
+  /** Forward one event to the active character's no-op class hooks (#84–#87 fill them in). */
+  private dispatchClassSkill(
+    event: ClassSkillEventName,
+    context: {
+      readonly shotCount?: number;
+      readonly dtMs?: number;
+      readonly position?: Vec2;
+      readonly targetPosition?: Vec2;
+      readonly elite?: boolean;
+    },
+  ): void {
+    const source = this.classSkills;
+    if (source === null) return;
+    dispatchClassSkillEvent(event, source.characterId, source.stacks, {
+      ...context,
+      rng: this.rng,
+    });
+  }
+
   /** One combat frame. `realDeltaMs` has already been capped by bootstrap. */
   update(realDeltaMs: number): CombatUpdateResult {
     const player = this.player;
@@ -759,6 +809,11 @@ export class CombatLoop {
     this.tryConsumeOrStartDash(true);
     this.tryConsumeOrStartActive(true);
 
+    // Class-skill periodic tick (no-op until #84–#87; allocation-free when nothing is owned).
+    if (this.hasClassSkills()) {
+      this.dispatchClassSkill('tick', { dtMs: deltaMs, position: player.position });
+    }
+
     const targets: Targetable[] = this.enemies
       .filter((enemy) => !enemy.isDead)
       .map((enemy) => ({ id: enemy.id, position: enemy.position, alive: true }));
@@ -767,7 +822,18 @@ export class CombatLoop {
       targets.push({ id: BOSS_TARGET_ID, position: boss.position, alive: true });
     }
 
+    const shotIdBefore = newestBulletId(player.bullets.active());
     player.step(this.nowMs, deltaMs, targets, level, this.dashState);
+    const shotIdAfter = newestBulletId(player.bullets.active());
+    if (shotIdAfter !== shotIdBefore) {
+      this.shotsFired += 1;
+      if (this.hasClassSkills()) {
+        this.dispatchClassSkill('onShot', {
+          shotCount: this.shotsFired,
+          position: player.position,
+        });
+      }
+    }
     // What the player can see this frame (#41): the camera's view, or one screen around the player.
     const view = this.viewNow();
     this.stepSpawns(view);
@@ -1173,6 +1239,12 @@ export class CombatLoop {
         const crit = bullet.damage > stats.damage * 1.01;
         boss.takeDamage(damage, this.nowMs);
         this.reportDamage(damage, boss.position, crit);
+        if (this.hasClassSkills()) {
+          this.dispatchClassSkill('onHit', {
+            position: bullet.position,
+            targetPosition: boss.position,
+          });
+        }
         this.activeSkillState = onActiveHit(this.activeSkillState, this.activeConfig, 1);
         playSfx('enemy-hit');
         const heartsBefore = player.hearts;
@@ -1210,6 +1282,12 @@ export class CombatLoop {
         const crit = bullet.damage > stats.damage * 1.01;
         victim.takeDamage(damage, bullet.position, this.nowMs);
         this.reportDamage(damage, victim.position, crit);
+        if (this.hasClassSkills()) {
+          this.dispatchClassSkill('onHit', {
+            position: bullet.position,
+            targetPosition: victim.position,
+          });
+        }
         this.activeSkillState = onActiveHit(this.activeSkillState, this.activeConfig, 1);
         playSfx('enemy-hit');
         const heartsBefore = player.hearts;
@@ -1570,6 +1648,13 @@ export class CombatLoop {
       this.activeSkillState = onActiveKill(this.activeSkillState, this.activeConfig, 1);
       const role = enemy.role;
       if (role !== null) this.onKill(role, enemy.isElite, enemy.position);
+      if (this.hasClassSkills()) {
+        this.dispatchClassSkill('onKill', {
+          position: enemy.position,
+          targetPosition: enemy.position,
+          elite: enemy.isElite,
+        });
+      }
       // Gold sparkle at the death spot (there are no pickups in a run).
       this.fx?.spawn('fx.impact', enemy.position, {
         tint: new CocosColor(255, 214, 90, 255),
@@ -1603,6 +1688,13 @@ export class CombatLoop {
       this.bossRewarded = true;
       this.activeSkillState = onActiveKill(this.activeSkillState, this.activeConfig, 1);
       this.onBossKilled();
+      if (this.hasClassSkills()) {
+        this.dispatchClassSkill('onKill', {
+          position: boss.position,
+          targetPosition: boss.position,
+          elite: false,
+        });
+      }
     }
   }
 
@@ -1625,6 +1717,9 @@ export class CombatLoop {
     this.dashState = result.state;
     this.dashesUsed += 1;
     this.player.startDash(this.nowMs, result.state);
+    if (this.hasClassSkills()) {
+      this.dispatchClassSkill('onDash', { position: this.player.position });
+    }
     this.triggerDashNova(stats);
     return true;
   }
@@ -1711,6 +1806,10 @@ export class CombatLoop {
       case 'ten-thousand-swords':
         this.castTenThousandSwords(origin, aimDir, stats);
         break;
+    }
+
+    if (this.hasClassSkills()) {
+      this.dispatchClassSkill('onActive', { position: origin });
     }
 
     return true;

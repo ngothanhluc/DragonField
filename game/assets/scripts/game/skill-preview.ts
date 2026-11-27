@@ -5,7 +5,7 @@
  * in game. It never touches the run's loadout/RNG.
  */
 import type { Node as CocosNode } from 'cc';
-import { getSkill } from '../core/skills/pool';
+import { findSkillOrEvolution } from '../core/skills/evolutions';
 import type { SkillDef } from '../core/skills/pool';
 import { buildSkillPick } from './skill-pick';
 import type { SkillPickScreen } from './skill-pick';
@@ -23,12 +23,12 @@ export class SkillPreview {
 
     const choices: SkillDef[] = [];
     for (const id of ids) {
-      try {
-        choices.push(getSkill(id));
-      } catch {
+      const def = findSkillOrEvolution(id);
+      if (def === undefined) {
         console.warn(`[YokaiField] debug skillPreview: unknown id "${id}"`);
         return false;
       }
+      choices.push(def);
     }
 
     try {

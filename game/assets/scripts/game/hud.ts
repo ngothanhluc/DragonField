@@ -34,7 +34,7 @@ import {
   type CharacterId,
 } from '../core/characters/roster';
 import { localizeBossDisplayName, t } from '../core/i18n';
-import type { OwnedSkillStacks } from '../core/skills/pool';
+import type { OwnedCardStacks } from '../core/skills/loadout';
 import { skillAbbreviation } from '../core/skills/description';
 import type { Vec2 } from '../core/math/vec2';
 import type { DoorReward } from '../core/run/doors';
@@ -206,6 +206,7 @@ export const RARITY_COLORS = {
   common: new CocosColor(222, 222, 222, 255),
   rare: new CocosColor(110, 170, 255, 255),
   epic: new CocosColor(200, 140, 255, 255),
+  legendary: new CocosColor(255, 214, 72, 255),
 } as const;
 
 /** One HUD skill slot: icon + rarity frame + stack count, with the abbreviation as load fallback. */
@@ -787,7 +788,7 @@ export class Hud extends Component {
    * Skills picked up: icon + stack count (up to 20 distinct slots in a 10×2 grid), framed by rarity
    * inside a compact bottom-right plate above M12's XP bar and clear of M13's Dash/Active band.
    */
-  setSkills(entries: readonly OwnedSkillStacks[]): void {
+  setSkills(entries: readonly OwnedCardStacks[]): void {
     const shownCount = Math.min(HUD_SKILL_SLOTS, entries.length);
     const hasOverflow = entries.length > HUD_SKILL_SLOTS;
     const extra = hasOverflow ? entries.length - (HUD_SKILL_SLOTS - 1) : 0;
@@ -1048,7 +1049,7 @@ export class Hud extends Component {
 
   /** Fast check avoiding array/string allocation when `setSkills` is called with identical state. */
   private skillsMatch(
-    entries: readonly OwnedSkillStacks[],
+    entries: readonly OwnedCardStacks[],
     shownCount: number,
     extra: number,
   ): boolean {
