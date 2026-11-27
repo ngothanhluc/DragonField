@@ -138,6 +138,25 @@ export const EN = {
   'charSelect.reasonPurchased': 'Unlocked (Purchased)',
   'charSelect.reasonLocked': 'Clear Chapter {chapter} or buy for {cost} gold',
 
+  // --- Character Detail & Skill Codex (M20) ---
+  'codex.title': 'CHARACTER CODEX',
+  'codex.subtitle': 'Inspect every class before you embark',
+  'codex.hint': 'Arrows/Digit select · Enter equip/unlock · Esc back',
+  'codex.passiveHeading': 'Passive',
+  'codex.activeHeading': 'Signature [E]',
+  'codex.exclusiveHeading': 'Exclusive Skills',
+  'codex.statHp': 'HP {hp}',
+  'codex.statAttackSpeed': 'Attack {rate}/s',
+  'codex.cooldown': 'Cooldown {cooldown}',
+  'codex.evolutionHeading': 'Class Evolution',
+  'codex.recipe': 'Recipe: {a} + {b}',
+  'codex.weaponFormProjectile': 'Projectile',
+  'codex.weaponFormHand': 'Hand weapon',
+  'codex.weaponFormBack': 'Back weapon',
+  'codex.badgeSelected': 'SEL',
+  'codex.badgeUnlocked': 'OPEN',
+  'codex.badgeLocked': 'LOCK',
+
   // --- Characters (4 classes) ---
   'char.ninja.name': 'Ninja',
   'char.ninja.subtitle': 'Shuriken & kunai',

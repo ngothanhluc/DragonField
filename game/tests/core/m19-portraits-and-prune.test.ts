@@ -582,7 +582,7 @@ describe('M19 64×64 Hero Portrait integration (HUD, Character Select, Result Sc
     expect(sprite!.spriteFrame?.texture?.sheet).toBe(HERO_PORTRAIT_SHEETS.cultivator);
   });
 
-  it('renders 64×64 nearest-filtered portrait on Character Select and updates live on focus & save changes', async () => {
+  it('renders 64×64 nearest-filtered portrait tabs on the Character Codex and updates the inspected class on focus & save changes', async () => {
     const parent = new MockNode('ui-root');
     const save: SaveData = {
       ...createDefaultSave(),
@@ -599,42 +599,71 @@ describe('M19 64×64 Hero Portrait integration (HUD, Character Select, Result Sc
     });
     await flushMicrotasks();
 
-    const portraitNode = findNodeByName(parent, 'character-portrait');
-    expect(portraitNode).not.toBeNull();
-    const sprite = portraitNode!.getComponent(MockSprite)!;
-    const transform = portraitNode!.getComponent(MockUITransform)!;
+    // One crisp 64×64 nearest-filtered portrait per class tab.
+    for (const heroId of CHARACTER_IDS) {
+      const portraitNode = findNodeByName(parent, `character-portrait-${heroId}`);
+      expect(portraitNode, `character-portrait-${heroId}`).not.toBeNull();
+      const sprite = portraitNode!.getComponent(MockSprite)!;
+      const transform = portraitNode!.getComponent(MockUITransform)!;
 
-    expect(sprite.type).toBe(MockSprite.Type.SIMPLE);
-    expect(sprite.sizeMode).toBe(MockSprite.SizeMode.CUSTOM);
-    expect(sprite.trim).toBe(false);
-    expect([transform.width, transform.height]).toEqual([
-      CHARACTER_SELECT_PORTRAIT_SIZE_PX,
-      CHARACTER_SELECT_PORTRAIT_SIZE_PX,
-    ]);
-    expect(transform.width).toBe(64);
-    expect(sprite.spriteFrame?.texture?.sheet).toBe(HERO_PORTRAIT_SHEETS.ninja);
-    expect(sprite.color?.r).toBe(255);
+      expect(sprite.type).toBe(MockSprite.Type.SIMPLE);
+      expect(sprite.sizeMode).toBe(MockSprite.SizeMode.CUSTOM);
+      expect(sprite.trim).toBe(false);
+      expect([transform.width, transform.height]).toEqual([
+        CHARACTER_SELECT_PORTRAIT_SIZE_PX,
+        CHARACTER_SELECT_PORTRAIT_SIZE_PX,
+      ]);
+      expect(transform.width).toBe(64);
+      expect(sprite.spriteFrame?.texture?.sheet).toBe(HERO_PORTRAIT_SHEETS[heroId]);
+    }
 
-    // ArrowRight -> Archer (unlocked, full tint).
-    dispatchKey('ArrowRight', 39);
-    await flushMicrotasks();
-    expect(sprite.spriteFrame?.texture?.sheet).toBe(HERO_PORTRAIT_SHEETS.archer);
-    expect(sprite.color?.r).toBe(255);
+    // Unlocked/selected tabs stay full tint; locked tabs are cool-muted but still crisp.
+    expect(
+      findNodeByName(parent, 'character-portrait-ninja')!.getComponent(MockSprite)!.color?.r,
+    ).toBe(255);
+    expect(
+      findNodeByName(parent, 'character-portrait-archer')!.getComponent(MockSprite)!.color?.r,
+    ).toBe(255);
+    expect(
+      findNodeByName(parent, 'character-portrait-mage')!.getComponent(MockSprite)!.color?.r,
+    ).toBeLessThan(200);
+    expect(
+      findNodeByName(parent, 'character-portrait-cultivator')!.getComponent(MockSprite)!.color?.r,
+    ).toBeLessThan(200);
 
-    // ArrowDown -> Cultivator (card index 3, locked -> cool muted tint, still crisp 64×64).
+    const status = findNodeByName(parent, 'codex-status')!.getComponent(MockLabel)!;
+    expect(status.string).toContain('NINJA');
+    expect(status.string).toContain('ĐANG CHỌN');
+
+    // ArrowDown walks the vertical class tabs and re-inspects each class (locked included).
     dispatchKey('ArrowDown', 40);
     await flushMicrotasks();
-    expect(sprite.spriteFrame?.texture?.sheet).toBe(HERO_PORTRAIT_SHEETS.cultivator);
-    expect(sprite.color?.r).toBeLessThan(200);
+    expect(status.string).toContain('CUNG THỦ');
+    expect(status.string).toContain('ĐÃ MỞ');
 
-    // ArrowLeft -> Mage (card index 2).
-    dispatchKey('ArrowLeft', 37);
+    dispatchKey('ArrowDown', 40);
     await flushMicrotasks();
-    expect(sprite.spriteFrame?.texture?.sheet).toBe(HERO_PORTRAIT_SHEETS.mage);
+    expect(status.string).toContain('PHÁP SƯ');
+    expect(status.string).toContain('KHÓA');
+
+    dispatchKey('ArrowDown', 40);
+    await flushMicrotasks();
+    expect(status.string).toContain('TU TIÊN');
+
+    // Left/right cycles the same roster: from Cultivator, right wraps to Ninja.
+    dispatchKey('ArrowRight', 39);
+    await flushMicrotasks();
+    expect(status.string).toContain('NINJA');
+
+    // Saving a new selected character updates the inspected class live.
+    handle.setSave({ ...save, chaptersUnlocked: 3, selectedCharacter: 'archer' });
+    dispatchKey('ArrowDown', 40);
+    await flushMicrotasks();
+    expect(status.string).toContain('CUNG THỦ');
+    expect(status.string).toContain('ĐANG CHỌN');
 
     handle.destroy();
   });
-
   it('renders 64×64 nearest-filtered portrait on Victory & Defeat Results screens for all 4 heroes', async () => {
     for (const [idx, heroId] of CHARACTER_IDS.entries()) {
       const parent = new MockNode(`result-root-${heroId}`);

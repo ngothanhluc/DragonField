@@ -63,6 +63,9 @@ const {
       this.height = h;
       this.contentSize = { width: w, height: h };
     }
+    setAnchorPoint(x: number, y: number): void {
+      this.anchorPoint = { x, y };
+    }
   }
 
   class HoistedLabel {
