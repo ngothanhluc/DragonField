@@ -19,6 +19,7 @@ import type {
   DebugClassSkillSnapshot,
   DebugDoorSnapshot,
   DebugEnemySnapshot,
+  DebugHubLifeSnapshot,
   DebugMenuBackdropSnapshot,
   DebugPlayerAttachmentSnapshot,
   DebugProvider,
@@ -113,6 +114,10 @@ export interface DebugWiringHost {
   readonly hubTeleport?: (x: number, y: number) => boolean;
   /** M21 #91: dispatch the nearest hub interactable. */
   readonly hubInteract?: () => boolean;
+  /** M21 #92: live Village Life snapshot (`null` outside the hub). */
+  readonly hubLife?: () => DebugHubLifeSnapshot | null;
+  /** M21 #92: advance/close the open DialogBox. */
+  readonly hubAdvance?: () => boolean;
 }
 
 /** Nodes of the whole scene, recursively — proves the menu backdrop leaves nothing behind. */
@@ -216,6 +221,8 @@ export function installDebugWiring(host: DebugWiringHost): boolean {
     setMusicDucked: host.setMusicDucked,
     hubTeleport: host.hubTeleport,
     hubInteract: host.hubInteract,
+    hubLife: host.hubLife,
+    hubAdvance: host.hubAdvance,
     nodeCount: () => {
       const scene: Node | null = director.getScene() as Node | null;
       return scene === null ? 0 : countNodes(scene);
