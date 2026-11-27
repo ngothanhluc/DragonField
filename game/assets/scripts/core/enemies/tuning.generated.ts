@@ -538,6 +538,43 @@ export const TUNING_DATA = {
         damageRatio: 0.5,
       },
     },
+    mage: {
+      meteor: {
+        intervalMs: 4500,
+        intervalStepMs: 1000,
+        radiusTiles: 2,
+        damageRatio: 2.5,
+        burnDpsRatio: 0.6,
+        burnDurationMs: 2500,
+      },
+      frostOrbs: {
+        baseCount: 2,
+        countPerStack: 1,
+        radiusTiles: 1.6,
+        orbitRadiansPerSecond: 1.2,
+        evolvedOrbitMultiplier: 2,
+        hitRadiusTiles: 0.55,
+        damagePerSecondRatio: 0.8,
+        slowFactor: 0.35,
+        slowDurationMs: 800,
+      },
+      stormStrike: {
+        procChance: 0.2,
+        procChancePerStack: 0.1,
+        damageRatio: 1.6,
+      },
+      arcanePulse: {
+        shotEvery: 4,
+        radiusTiles: 1.8,
+        damageRatio: 0.8,
+        damageRatioPerStack: 0.4,
+      },
+      evolution: {
+        shardIntervalMs: 900,
+        shardDamageRatio: 0.8,
+        shatterBurnMultiplier: 2,
+      },
+    },
     cultivator: {
       orbitSwords: {
         swordsByStack: [

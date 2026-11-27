@@ -32,6 +32,14 @@ export type ClassSkillStackSource = (id: string) => number;
  */
 export type ClassSkillMemory = Map<string, number>;
 
+/** One enemy a class hook may target (room tiles, y down). Bosses use the id `'boss'`. */
+export interface ClassSkillTarget {
+  readonly id: string;
+  readonly position: Vec2;
+  /** True while the enemy is burning (`status` burn DoT) — Mage Evolution shatter-burn. */
+  readonly ignited?: boolean;
+}
+
 /** Everything a class hook may inspect for one event. */
 export interface ClassSkillEventContext {
   readonly characterId: CharacterId;
@@ -41,7 +49,7 @@ export interface ClassSkillEventContext {
   /** Game-time step of a periodic tick, ms. */
   readonly dtMs?: number;
   /**
-   * Run game-time clock in ms, the same clock as `dtMs` (M20, #87). Periodic mechanics use the
+   * Run game-time clock in ms, the same clock as `dtMs` (M20, #86/#87). Periodic mechanics use the
    * stateless crossing rule `floor(nowMs / P) > floor((nowMs - dtMs) / P)`.
    */
   readonly nowMs?: number;
@@ -49,6 +57,12 @@ export interface ClassSkillEventContext {
   readonly position?: Vec2;
   /** Victim/target position when the event has one. */
   readonly targetPosition?: Vec2;
+  /** `onShot`: the shot's damage; `onHit`: the damage actually dealt. */
+  readonly damage?: number;
+  /** Victim actor id: an enemy `id` string, or `'boss'` for a boss (`onHit`/status targets). */
+  readonly targetId?: string;
+  /** Living enemies in the room, for targeting mechanics. */
+  readonly enemies?: readonly ClassSkillTarget[];
   readonly elite?: boolean;
   /**
    * On `onKill`, the `skillId` of the class effect that dealt the killing blow (M20, #84).
@@ -56,12 +70,8 @@ export interface ClassSkillEventContext {
    */
   readonly killedBy?: string;
   readonly rng?: SeededRng;
-  /** Victim actor id: an enemy `id` string, or `'boss'` for a boss. */
-  readonly targetId?: string;
   /** The hitting bullet rolled a crit. */
   readonly crit?: boolean;
-  /** `onShot`: the shot's damage; `onHit`: the damage actually dealt. */
-  readonly damage?: number;
   /** Unit flight direction of the hitting bullet (room tiles, y down). */
   readonly direction?: Vec2;
   /** The hitting bullet had not hit any enemy before this one (`hitIds` was empty). */
@@ -74,7 +84,9 @@ export interface ClassSkillEventContext {
 
 /**
  * One requested gameplay effect. The class that requested it fills the fields its mechanic needs
- * and the calling loop (headless sim / Cocos combat loop) applies it.
+ * and the calling loop (headless sim / Cocos combat loop) applies it. `amount` on a `damage`
+ * effect is **absolute damage**, computed from `context.damage` × tuning. An effect with
+ * `radiusTiles` is an AoE around `position`; one with `targetId` hits that enemy.
  */
 export interface ClassSkillEffect {
   readonly kind: 'damage' | 'spawn' | 'status' | 'heal' | 'buff';
@@ -94,7 +106,7 @@ export interface ClassSkillEffect {
   readonly pierce?: number;
   /** `spawn`: actor id the new projectile must never hit (the split victim). */
   readonly ignoreTargetId?: string;
-  /** `status`: actor id the status/mark is applied to. */
+  /** Direct victim / status target (otherwise `position` + `radiusTiles` is an AoE). */
   readonly targetId?: string;
   /** `buff`: temporary fire-rate multiplier (`1` = unchanged). */
   readonly fireRateMult?: number;
@@ -102,6 +114,10 @@ export interface ClassSkillEffect {
   readonly projectileSpeedMult?: number;
   /** Manifest FX key to play with this effect (e.g. `'fx.arrow-rain'`). */
   readonly fx?: string;
+  /** Speed multiplier `0..1` for a `status` slow (`1` = no slow). */
+  readonly slowFactor?: number;
+  /** Burn damage per second for a `status` effect. */
+  readonly burnDps?: number;
 }
 
 /** Event names a class implements (one hook per combat site, dispatched once from the loop). */

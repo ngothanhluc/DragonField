@@ -55,6 +55,8 @@ export interface Bullet {
   crit: boolean;
   /** Actor ids already hit — a piercing/ricocheting bullet never hits the same target twice. */
   hitIds: string[];
+  /** 1-based auto-fire shot index this bullet was fired by (M20 class skills, e.g. every 4th shot). */
+  shotCount: number;
   /** Optional killer attribution for enemy/boss bullets (M15 rich death cause). */
   source?: DeathCause | undefined;
   /**
@@ -82,6 +84,8 @@ export interface BulletSpawnArgs {
   readonly explosiveRadiusTiles?: number;
   readonly explosiveDamage?: number;
   readonly crit?: boolean;
+  /** 1-based auto-fire shot index (class skills like Arcane Pulse read it on hit). */
+  readonly shotCount?: number;
   readonly source?: DeathCause;
   readonly classSkillId?: string;
 }
@@ -231,6 +235,7 @@ export class BulletPool {
     bullet.explosiveDamage = Math.max(0, args.explosiveDamage ?? 0);
     bullet.crit = args.crit === true;
     bullet.hitIds.length = 0;
+    bullet.shotCount = Math.max(0, Math.floor(args.shotCount ?? 0));
     bullet.source = args.source;
     bullet.classSkillId = args.classSkillId;
 
@@ -346,6 +351,7 @@ export class BulletPool {
       explosiveDamage: bullet.explosiveDamage,
       crit: bullet.crit,
       hitIds: bullet.hitIds.slice(),
+      shotCount: bullet.shotCount,
       ...(bullet.source !== undefined ? { source: bullet.source } : {}),
       ...(bullet.classSkillId !== undefined ? { classSkillId: bullet.classSkillId } : {}),
     }));
@@ -398,6 +404,7 @@ export class BulletPool {
       explosiveDamage: 0,
       crit: false,
       hitIds: [],
+      shotCount: 0,
     };
   }
 }
