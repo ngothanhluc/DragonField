@@ -15,11 +15,18 @@ import {
   Color as CocosColor,
 } from 'cc';
 import type { HubPromptDescriptor } from '../core/hub';
+import {
+  VILLAGE_QUICK_ITEMS,
+  VILLAGE_QUICK_LABEL_KEYS,
+  type VillageQuickItemId,
+} from '../core/hub/quick-access';
 import { t } from '../core/i18n';
 import type { Vec2 } from '../core/math/vec2';
 import { createBackdropPanel, createLabel } from './hud';
+import { visibleUiSize } from './screens/menu';
 
 type Node = InstanceType<typeof CocosNode>;
+type Button = InstanceType<typeof CocosButton>;
 type Label = ReturnType<typeof createLabel>;
 type UIOpacity = InstanceType<typeof CocosUIOpacity>;
 
@@ -32,6 +39,18 @@ const PROMPT_FONT_SIZE = 10;
 const PROMPT_HEIGHT = 20;
 /** Wide enough for the longest localized prompt (`[E] Ra khỏi cửa hàng`) at this font size. */
 const PROMPT_WIDTH = 168;
+
+/** Corner quick-access bar + `Esc` village menu (#94): compact, pixel-font labels. */
+const QUICK_FONT_SIZE = 10;
+const QUICK_HEIGHT = 20;
+const QUICK_GAP = 6;
+const QUICK_EDGE = 8;
+const QUICK_PAD_X = 10;
+const QUICK_BOTTOM_MARGIN = 8;
+const MENU_BUTTON_WIDTH = 220;
+const MENU_BUTTON_HEIGHT = 26;
+const MENU_BUTTON_GAP = 8;
+const MENU_TITLE_FONT_SIZE = 14;
 
 /** Camera state the prompt needs to project a world anchor into UI coordinates. */
 export interface HubPromptCamera {
@@ -47,6 +66,16 @@ export class HubVillageView {
   private readonly goldLabel: Label;
   private readonly fadeRoot: Node;
   private readonly fadeOpacity: UIOpacity;
+  /** Corner quick-access bar (#94); hidden while a dialog, the Codex or a fade owns input. */
+  private readonly quickRoot: Node;
+  /** `Esc` village menu (#94) with the same three shortcuts plus a mouse Close. */
+  private readonly menuRoot: Node;
+  private quickAllowed = false;
+  private menuOpen = false;
+  private onQuickItem: ((item: VillageQuickItemId) => void) | null = null;
+  private readonly onQuickClick = (item: VillageQuickItemId): void => {
+    this.onQuickItem?.(item);
+  };
   private onActivate: (() => void) | null = null;
   private destroyed = false;
 
@@ -65,7 +94,7 @@ export class HubVillageView {
     this.promptLabel.lineHeight = PROMPT_FONT_SIZE + 2;
     this.promptLabel.node.setPosition(0, 0, 0);
 
-    const button: InstanceType<typeof CocosButton> = this.promptRoot.addComponent(CocosButton);
+    const button: Button = this.promptRoot.addComponent(CocosButton);
     button.transition = CocosButton.Transition.NONE;
     this.promptRoot.on(CocosButton.EventType.CLICK, () => {
       this.onActivate?.();
@@ -77,6 +106,18 @@ export class HubVillageView {
     this.goldLabel.lineHeight = PROMPT_FONT_SIZE + 2;
     this.goldLabel.node.setPosition(-200, DESIGN_HEIGHT / 2 - 14, 0);
 
+    this.quickRoot = new CocosNode('hub-quick-bar');
+    this.quickRoot.layer = Layers.Enum.UI_2D;
+    this.quickRoot.parent = parent;
+    this.quickRoot.active = false;
+    this.buildQuickBar();
+
+    this.menuRoot = new CocosNode('hub-village-menu');
+    this.menuRoot.layer = Layers.Enum.UI_2D;
+    this.menuRoot.parent = parent;
+    this.menuRoot.active = false;
+    this.buildVillageMenu();
+
     this.fadeRoot = new CocosNode('hub-fade');
     this.fadeRoot.layer = Layers.Enum.UI_2D;
     this.fadeRoot.parent = parent;
@@ -87,6 +128,138 @@ export class HubVillageView {
     this.fadeOpacity = this.fadeRoot.addComponent(CocosUIOpacity);
     this.fadeOpacity.opacity = 0;
     this.fadeRoot.active = false;
+  }
+
+  /** Called when the player clicks a shortcut on the corner bar or the `Esc` village menu. */
+  setQuickHandler(handler: ((item: VillageQuickItemId) => void) | null): void {
+    this.onQuickItem = handler;
+  }
+
+  /** Show/hide the corner bar; the village menu, a dialog, the Codex or a fade hides it. */
+  setQuickVisible(visible: boolean): void {
+    if (this.destroyed) return;
+    this.quickAllowed = visible;
+    this.syncQuickVisibility();
+  }
+
+  /** Toggle the `Esc` village menu (same three shortcuts plus a mouse Close). */
+  setMenuOpen(open: boolean): void {
+    if (this.destroyed) return;
+    if (this.menuOpen === open) return;
+    this.menuOpen = open;
+    this.menuRoot.active = open;
+    this.syncQuickVisibility();
+  }
+
+  isMenuOpen(): boolean {
+    return this.menuOpen;
+  }
+
+  /** Whether the corner bar is actually drawn (proof + hide rules). */
+  isQuickVisible(): boolean {
+    return this.quickRoot.active;
+  }
+
+  private syncQuickVisibility(): void {
+    this.quickRoot.active = this.quickAllowed && !this.menuOpen;
+  }
+
+  /** One compact wooden plate + centered pixel label, clickable as a whole. */
+  private addHubButton(
+    parent: Node,
+    name: string,
+    text: string,
+    width: number,
+    height: number,
+    x: number,
+    y: number,
+    onClick: () => void,
+  ): void {
+    const node = new CocosNode(name);
+    node.layer = Layers.Enum.UI_2D;
+    node.parent = parent;
+    const transform = node.addComponent(CocosUITransform);
+    transform.setContentSize(width, height);
+    node.setPosition(x, y, 0);
+
+    createBackdropPanel(node, `${name}-plate`, width, height, 210);
+    const label = createLabel(node, `${name}-text`, text);
+    label.fontSize = QUICK_FONT_SIZE;
+    label.lineHeight = QUICK_FONT_SIZE + 2;
+    label.node.setPosition(0, 0, 0);
+
+    const button: Button = node.addComponent(CocosButton);
+    button.transition = CocosButton.Transition.NONE;
+    node.on(CocosButton.EventType.CLICK, onClick);
+  }
+
+  /** Bottom-right bar: `Cổng Xuất Chinh · Võ Đường · Cài Đặt` (widths fit the localized text). */
+  private buildQuickBar(): void {
+    const labels = VILLAGE_QUICK_ITEMS.map((item) => t(VILLAGE_QUICK_LABEL_KEYS[item]));
+    const widths = labels.map((text) =>
+      Math.max(
+        56,
+        Math.ceil(text.length * QUICK_FONT_SIZE * 0.68) + QUICK_PAD_X * 2,
+      ),
+    );
+    const total = widths.reduce((sum, width) => sum + width, 0) + QUICK_GAP * (widths.length - 1);
+    let x = DESIGN_WIDTH / 2 - QUICK_EDGE - total;
+    const y = -DESIGN_HEIGHT / 2 + QUICK_HEIGHT / 2 + QUICK_BOTTOM_MARGIN;
+
+    VILLAGE_QUICK_ITEMS.forEach((item, index) => {
+      const width = widths[index] ?? 56;
+      this.addHubButton(
+        this.quickRoot,
+        `hub-quick-${item}`,
+        labels[index] ?? item,
+        width,
+        QUICK_HEIGHT,
+        x + width / 2,
+        y,
+        () => this.onQuickClick(item),
+      );
+      x += width + QUICK_GAP;
+    });
+  }
+
+  /** `Esc` village menu: dark backdrop, title and the same three shortcuts as large rows. */
+  private buildVillageMenu(): void {
+    const size = visibleUiSize();
+    createBackdropPanel(this.menuRoot, 'hub-menu-backdrop', size.width, size.height, 205);
+
+    const title = createLabel(this.menuRoot, 'hub-menu-title', t('village.quick.menuTitle'));
+    title.fontSize = MENU_TITLE_FONT_SIZE;
+    title.lineHeight = MENU_TITLE_FONT_SIZE + 3;
+    title.node.setPosition(0, size.height / 2 - 34, 0);
+
+    const startY = 24;
+    const step = MENU_BUTTON_HEIGHT + MENU_BUTTON_GAP;
+    VILLAGE_QUICK_ITEMS.forEach((item, index) => {
+      this.addHubButton(
+        this.menuRoot,
+        `hub-menu-${item}`,
+        t(VILLAGE_QUICK_LABEL_KEYS[item]),
+        MENU_BUTTON_WIDTH,
+        MENU_BUTTON_HEIGHT,
+        0,
+        startY - index * step,
+        () => {
+          this.setMenuOpen(false);
+          this.onQuickClick(item);
+        },
+      );
+    });
+
+    this.addHubButton(
+      this.menuRoot,
+      'hub-menu-close',
+      `[Esc] ${t('common.back')}`,
+      MENU_BUTTON_WIDTH,
+      MENU_BUTTON_HEIGHT,
+      0,
+      startY - VILLAGE_QUICK_ITEMS.length * step,
+      () => this.setMenuOpen(false),
+    );
   }
 
   /** Gold kept from the last run, shown top-left (`Vàng {gold}` / `Gold {gold}`). */
@@ -142,8 +315,11 @@ export class HubVillageView {
     if (this.destroyed) return;
     this.destroyed = true;
     this.onActivate = null;
+    this.onQuickItem = null;
     this.promptRoot.destroy();
     this.goldLabel.node.destroy();
+    this.quickRoot.destroy();
+    this.menuRoot.destroy();
     this.fadeRoot.destroy();
   }
 }

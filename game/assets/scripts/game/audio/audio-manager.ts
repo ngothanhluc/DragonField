@@ -34,6 +34,7 @@ import {
 } from "../../core/audio/sfx-bank";
 import { bossMusicPath } from "../../core/boss/boss-pool";
 import type { BossId } from "../../core/boss/boss-defs";
+import { VILLAGE_MUSIC_PATH } from "../../core/hub/hub-tmx";
 import { SeededRng } from "../../core/rng";
 import { SFX_IDS, setSfxSink } from "./sfx";
 
@@ -45,6 +46,7 @@ type Node = InstanceType<typeof CocosNode>;
 
 export type MusicId =
   | "title"
+  | "village"
   | "chapter-1"
   | "chapter-2"
   | "chapter-3"
@@ -63,6 +65,7 @@ export type MusicId =
  */
 const MUSIC_PATH: Readonly<Record<MusicId, string>> = {
   title: "audio/music/title",
+  village: VILLAGE_MUSIC_PATH,
   "chapter-1": "audio/music/chapter-1",
   "chapter-2": "audio/music/chapter-2",
   "chapter-3": "audio/music/chapter-3",

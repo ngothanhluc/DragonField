@@ -142,6 +142,8 @@ export interface ScreenFlowHost {
   readonly onContinueRun?: (run: ActiveRunSave) => void;
   /** M21 #91: build the playable Village Hub at the spawn for `origin`. */
   readonly enterVillage?: (origin: HubEntryOrigin) => void;
+  /** M21 #94: open the Character Detail & Skill Codex over the live village (Dojo Master). */
+  readonly openDojoOverlay?: () => void;
   /**
    * M21 #91: leave the Village Hub (fade out, tear down) and call `then` at full black. When the
    * hub is not live the callback runs immediately.
@@ -273,8 +275,8 @@ export class ScreenFlow {
     this.nextMenuToken();
     this.currentScreen = 'village';
     this.host.setStatus('hub');
-    // The village has no music track of its own yet (M21 audio polish is a later ticket).
-    this.host.setMusic('title');
+    // The village has its own track; the hub adapter ducks it for shop interior / dialogs.
+    this.host.setMusic('village');
     if (this.host.enterVillage === undefined) {
       console.warn('[YokaiField] Village Hub is not available on this host.');
       return;
@@ -316,11 +318,20 @@ export class ScreenFlow {
     });
   }
 
-  /** Hub dojo → interim Character Select; Back returns to the village. */
+  /** Hub Dojo Master / quick-bar Characters: the Codex opens as an overlay in the live hub. */
   villageDojoRequested(): void {
     if (this.home.screen !== 'village') return;
+    this.host.openDojoOverlay?.();
+  }
+
+  /**
+   * Hub quick bar / `Esc` menu → Settings. Leaves the hub at full black, then routes the pure
+   * `open-settings` event so the village remembers where Settings must return to.
+   */
+  villageSettingsRequested(): void {
+    if (this.home.screen !== 'village') return;
     this.leaveVillageThen(() => {
-      void this.showCharacterSelect(() => this.returnToVillage()).catch((error: unknown) =>
+      void this.advanceHome({ kind: 'open-settings' }).catch((error: unknown) =>
         this.host.fail(error),
       );
     });
@@ -1133,6 +1144,11 @@ export class ScreenFlow {
   selectedCharacter(): CharacterDef {
     const save = this.host.save();
     return save === null ? CHARACTERS[DEFAULT_CHARACTER_ID] : resolveSelectedCharacter(save);
+  }
+
+  /** M21 #94: buy + equip a class from the Dojo Codex overlay (same save path as Character Select). */
+  unlockCharacterForHub(characterId: CharacterId): SaveData | null {
+    return this.tryBuyCharacter(characterId, true);
   }
 
   /** Roster + unlock snapshot for `window.__yokai.character()`. */
