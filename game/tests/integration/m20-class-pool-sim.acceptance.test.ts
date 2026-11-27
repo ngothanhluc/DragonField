@@ -139,7 +139,6 @@ describe('#89 M20 docs', () => {
     for (const milestone of ['M16', 'M17', 'M18', 'M19', 'M20']) {
       expect(statusOf(milestone), `${milestone} status line`).toMatch(/^\*\*Status: ✅ Done/);
     }
-    expect(statusOf('M21'), 'M21 status line').not.toMatch(/✅ Done/);
 
     const overview = readFileSync(join(REPO_ROOT, 'docs/milestones.md'), 'utf8');
     for (const milestone of ['M16', 'M17', 'M18', 'M19', 'M20']) {

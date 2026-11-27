@@ -19,7 +19,7 @@ Design source: [docs/gdd.md](gdd.md) · Technical decisions: [docs/tech-decision
 | **M18** | Độ khó Bullet-Hell, Bỏ knockback/stagger, 2 quái mới (`dasher`, `gunner`) & Chống lẫn môi trường | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m18--độ-khó-bullet-hell-bỏ-knockback-2-quái-mới--chống-lẫn-môi-trường) |
 | **M19** | Generate bộ Art mới (6 Avatar, 20 Icon skill, Sprite FX) & Lọc bỏ 6 skill nền nhàm chán | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m19--generate-bộ-art-mới--tinh-gọn-kho-skill-nền) |
 | **M20** | 16 Skill độc quyền + 4 Class Evolution cho 4 nhân vật & Skill Codex | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m20--bộ-skill-độc-quyền-theo-nhân-vật--codex-chi-tiết-skill) |
-| **M21** | Sảnh Ngôi Làng 2D tương tác, Cửa Hàng đi vào được trò chuyện, Võ Đường & Cổng Xuất Chinh | 📋 Planned | [m16-m21.md](milestones/m16-m21.md#m21--sảnh-ngôi-làng-tương-tác-cửa-hàng-đi-vào-được--võ-đường) |
+| **M21** | Sảnh Ngôi Làng 2D tương tác, Cửa Hàng đi vào được trò chuyện, Võ Đường & Cổng Xuất Chinh | ✅ Done | [m16-m21.md](milestones/m16-m21.md#m21--sảnh-ngôi-làng-tương-tác-cửa-hàng-đi-vào-được--võ-đường) |
 
 ---
 

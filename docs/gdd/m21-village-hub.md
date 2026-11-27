@@ -1,6 +1,6 @@
 # GDD — M21: Interactive Village Hub & Enterable Shop
 
-**Status:** `designed` · **Milestone:** [M21](../milestones/m16-m21.md#m21--sảnh-ngôi-làng-tương-tác-cửa-hàng-đi-vào-được--võ-đường) · **ADR:** [ADR-028](../tech-decisions.md#adr-028--playable-2d-village-hub--enterable-shop-interior-m21)
+**Status:** `implemented` · **Milestone:** [M21](../milestones/m16-m21.md#m21--sảnh-ngôi-làng-tương-tác-cửa-hàng-đi-vào-được--võ-đường) · **ADR:** [ADR-028](../tech-decisions.md#adr-028--playable-2d-village-hub--enterable-shop-interior-m21)
 
 ---
 
