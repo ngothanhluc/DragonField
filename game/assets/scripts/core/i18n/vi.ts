@@ -136,6 +136,25 @@ export const VI: Readonly<Record<TranslationKey, string>> = {
   'charSelect.reasonPurchased': 'Đã mở (Đã mua)',
   'charSelect.reasonLocked': 'Vượt Chương {chapter} hoặc mua {cost} vàng',
 
+  // --- Character Detail & Skill Codex (M20) ---
+  'codex.title': 'HỒ SƠ NHÂN VẬT',
+  'codex.subtitle': 'Xem kỹ mọi hệ phái trước khi ra trận',
+  'codex.hint': 'Mũi tên/1-4 xem · Enter chọn/mở khóa · Esc quay lại',
+  'codex.passiveHeading': 'Nội Tại',
+  'codex.activeHeading': 'Tuyệt Kỹ [E]',
+  'codex.exclusiveHeading': 'Bộ Kỹ Năng Độc Quyền',
+  'codex.statHp': 'HP {hp}',
+  'codex.statAttackSpeed': 'Tốc bắn {rate}/s',
+  'codex.cooldown': 'Hồi chiêu {cooldown}',
+  'codex.evolutionHeading': 'Tiến Hóa Hệ Phái',
+  'codex.recipe': 'Công thức: {a} + {b}',
+  'codex.weaponFormProjectile': 'Phi tiêu',
+  'codex.weaponFormHand': 'Vũ khí tay',
+  'codex.weaponFormBack': 'Vũ khí lưng',
+  'codex.badgeSelected': 'CHỌN',
+  'codex.badgeUnlocked': 'MỞ',
+  'codex.badgeLocked': 'KHÓA',
+
   // --- Characters (4 classes) ---
   'char.ninja.name': 'Ninja',
   'char.ninja.subtitle': 'Phi tiêu & kunai',
