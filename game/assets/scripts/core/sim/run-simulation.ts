@@ -156,7 +156,11 @@ import {
 } from '../run/special-rooms';
 import { computeDerivedStats } from '../skills/derived-stats';
 import { dispatchClassSkillEvent, hasAnyClassSkill } from '../skills/class-skills';
-import type { ClassSkillEffect, ClassSkillStackSource } from '../skills/class-skill-hooks';
+import type {
+  ClassSkillEffect,
+  ClassSkillMemory,
+  ClassSkillStackSource,
+} from '../skills/class-skill-hooks';
 import {
   NinjaSkillRuntime,
   type NinjaHit,
@@ -447,6 +451,14 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const ownedSkills = new Map<string, number>(options.skills ?? []);
   /** Read-only stack accessor for class-skill hooks (no Map copy per tick). */
   const classSkillSource: ClassSkillStackSource = (id) => ownedSkills.get(id) ?? 0;
+  /** Per-run mutable scratch store for stateful class hooks (marks, momentum). */
+  const classSkillMemory: ClassSkillMemory = new Map();
+  /** Temporary class-skill buff (Wind Arrow); expired by the run clock. */
+  let classSkillBuff: {
+    fireRateMult: number;
+    projectileSpeedMult: number;
+    untilMs: number;
+  } | null = null;
   /** 1-based auto-fire counter for on-shot class hooks (M20, ADR-027). */
   let shotsFired = 0;
   /** Ninja-only class-skill runtime (clones, venom clouds, smoke, kunai) — M20, #84. */
@@ -943,9 +955,12 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       const effects = dispatchClassSkillEvent('onKill', characterId, classSkillSource, {
         position: enemy.position,
         targetPosition: enemy.position,
+        targetId: enemy.id,
         elite: enemy.elite,
         ...(killedBy !== undefined ? { killedBy } : {}),
+        nowMs: atMs,
         rng,
+        memory: classSkillMemory,
       });
       applyClassSkillEffects(effects);
     }
@@ -990,10 +1005,11 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   };
 
   /**
-   * Apply the class-skill requests one hook dispatch returned (M20, #84).
+   * Apply the class-skill requests one hook dispatch returned (M20, #84 + #85).
    *
-   * Every request counts as a proc for `SimulationResult.classSkillProcs`; the Ninja runtime then
-   * turns the ones it understands into live clones/projectiles/clouds/zones.
+   * Every request counts as a proc for `SimulationResult.classSkillProcs`. Ninja owns its own
+   * runtime (clones/projectiles/clouds/zones); every other class uses the generic effect kinds
+   * below, so a Ninja effect is never interpreted twice.
    */
   const applyClassSkillEffects = (
     effects: readonly ClassSkillEffect[],
@@ -1001,12 +1017,61 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   ): void => {
     if (effects.length === 0) return;
     for (const effect of effects) bumpClassSkill(classSkillProcs, effect.skillId);
-    if (ninjaRuntime === null) return;
-    ninjaRuntime.applyEffects(effects, durationMs, {
-      shotDamage: stats.damage,
-      critMultiplier: stats.critMultiplier,
-      ...(aimDirection !== undefined ? { aimDirection } : {}),
-    });
+
+    if (ninjaRuntime !== null) {
+      ninjaRuntime.applyEffects(effects, durationMs, {
+        shotDamage: stats.damage,
+        critMultiplier: stats.critMultiplier,
+        ...(aimDirection !== undefined ? { aimDirection } : {}),
+      });
+      return;
+    }
+
+    for (const effect of effects) {
+      switch (effect.kind) {
+        case 'damage': {
+          const aoeMult = Math.max(1, stats.aoePowerMult);
+          const amount = (effect.amount ?? 0) * aoeMult;
+          const reach = (effect.radiusTiles ?? 0) * aoeMult;
+          if (!(amount > 0)) break;
+          for (const enemy of enemies) {
+            if (enemy.health <= 0 || enemy.action.kind === 'dead') continue;
+            if (distance(effect.position, enemy.position) > reach) continue;
+            const dealt = damageEnemy(enemy, amount, effect.skillId);
+            bumpClassSkill(classSkillDamage, effect.skillId, dealt);
+          }
+          break;
+        }
+        case 'spawn': {
+          const direction = effect.direction;
+          const amount = effect.amount ?? 0;
+          if (direction === undefined || !(amount > 0)) break;
+          const speed = currentProjectileSpeed();
+          const shot = bullets.spawn({
+            position: effect.position,
+            velocity: { x: direction.x * speed, y: direction.y * speed },
+            radiusTiles: BULLET_RADIUS_TILES,
+            damage: amount,
+            owner: 'player',
+            ttlMs: Math.max(1200, Math.ceil((stats.targetingRangeTiles / speed) * 1000 * 1.5)),
+            pierceRemaining: effect.pierce ?? 0,
+            classSkillId: effect.skillId,
+          });
+          if (effect.ignoreTargetId !== undefined) shot.hitIds.push(effect.ignoreTargetId);
+          break;
+        }
+        case 'buff':
+          classSkillBuff = {
+            fireRateMult: Math.max(1, effect.fireRateMult ?? 1),
+            projectileSpeedMult: Math.max(1, effect.projectileSpeedMult ?? 1),
+            untilMs: durationMs + (effect.durationMs ?? 0),
+          };
+          break;
+        default:
+          // `status` is a visual mark and `heal` is unused by the Archer hooks.
+          break;
+      }
+    }
   };
 
   /** One class-skill damage event: normal enemy path so kills/gold/XP/onKill attribution match. */
@@ -1040,6 +1105,29 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       critMultiplier: stats.critMultiplier,
     });
     for (const hit of hits) applyNinjaHit(hit);
+  };
+
+  /** Active class-skill buff fire-rate multiplier (1 when none/expired). */
+  const classSkillFireRateMult = (): number =>
+    classSkillBuff !== null && durationMs < classSkillBuff.untilMs
+      ? classSkillBuff.fireRateMult
+      : 1;
+
+  /** Active class-skill buff projectile-speed multiplier (1 when none/expired). */
+  const classSkillProjectileSpeedMult = (): number =>
+    classSkillBuff !== null && durationMs < classSkillBuff.untilMs
+      ? classSkillBuff.projectileSpeedMult
+      : 1;
+
+  /** Current projectile speed including a live Wind buff (spawned arrows use it too). */
+  const currentProjectileSpeed = (): number =>
+    stats.projectileSpeedTilesPerSecond * classSkillProjectileSpeedMult();
+
+  /** Unit flight direction of a bullet velocity (room tiles, y down); null for a zero vector. */
+  const unitDirection = (velocity: Vec2): Vec2 | null => {
+    const length = Math.hypot(velocity.x, velocity.y);
+    if (!(length > 0)) return null;
+    return { x: velocity.x / length, y: velocity.y / length };
   };
 
   /** Enter the boss room: hand over to `simulateBossRun` and end the run. */
@@ -1189,6 +1277,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       const effects = dispatchClassSkillEvent('tick', characterId, classSkillSource, {
         dtMs: SIM_STEP_MS,
         position: player,
+        nowMs: durationMs,
+        memory: classSkillMemory,
         rng,
       });
       applyClassSkillEffects(effects);
@@ -1228,6 +1318,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         if (hasAnyClassSkill(characterId, classSkillSource)) {
           const effects = dispatchClassSkillEvent('onDash', characterId, classSkillSource, {
             position: player,
+            nowMs: durationMs,
+            memory: classSkillMemory,
             rng,
           });
           applyClassSkillEffects(effects);
@@ -1307,6 +1399,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         if (hasAnyClassSkill(characterId, classSkillSource)) {
           const effects = dispatchClassSkillEvent('onActive', characterId, classSkillSource, {
             position: player,
+            nowMs: durationMs,
+            memory: classSkillMemory,
             rng,
           });
           applyClassSkillEffects(effects);
@@ -1535,8 +1629,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         ? 1 + stats.postDashFireRate.bonus
         : 1;
     // *Bom Khói Ẩn Thân*: while the player stands in smoke, auto-fire runs faster (M20, #84).
+    // *Phong Tiễn*: Wind momentum multiplies the same delta (M20, #85).
     const smokeFireBonus = ninjaRuntime?.fireRateBonusAt(player, durationMs) ?? 0;
-    const fireDeltaMs = SIM_STEP_MS * postDashBonus * (1 + smokeFireBonus);
+    const fireDeltaMs =
+      SIM_STEP_MS * postDashBonus * (1 + smokeFireBonus) * classSkillFireRateMult();
     const shot = autoFire.update({
       deltaMs: fireDeltaMs,
       origin: player,
@@ -1550,15 +1646,20 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         rng,
         origin: shot.origin,
         direction: shot.direction,
-        speedTilesPerSecond: stats.projectileSpeedTilesPerSecond,
+        speedTilesPerSecond: currentProjectileSpeed(),
         radiusTiles: BULLET_RADIUS_TILES,
         ttlMs: bulletTtlMs,
       });
       shotsFired += 1;
       if (hasAnyClassSkill(characterId, classSkillSource)) {
+        const shotTarget = targets.find((target) => target.id === shot.targetId);
         const effects = dispatchClassSkillEvent('onShot', characterId, classSkillSource, {
           shotCount: shotsFired,
           position: shot.origin,
+          damage: stats.damage,
+          nowMs: durationMs,
+          memory: classSkillMemory,
+          ...(shotTarget !== undefined ? { targetPosition: shotTarget.position } : {}),
           rng,
         });
         applyClassSkillEffects(effects, shot.direction);
@@ -1675,6 +1776,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     // disappears in this frame instead of living one more frame with `ttlMs = 0`.
     const seconds = SIM_STEP_MS / 1000;
     spent.clear();
+    /** `onHit` effects are applied after the loop: spawning into `active()` mid-iteration is unsafe. */
+    const classHitEffects: ClassSkillEffect[] = [];
     for (const bullet of bullets.active()) {
       if (spent.has(bullet.id)) continue;
 
@@ -1705,6 +1808,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         const enemyRadius = DEFAULT_ENEMY_RADIUS_TILES * visualScaleFor(enemy.role);
         if (!hitsCircle(area, { position: enemy.position, radiusTiles: enemyRadius })) continue;
 
+        const firstEnemyHit = bullet.hitIds.length === 0;
         bullet.hitIds.push(enemy.id);
         let damage = damageAfterExecute(stats, bullet.damage, enemy.health / enemy.maxHealth);
         if (stats.statusDamageBonus > 0 && isAfflicted(enemy, durationMs)) {
@@ -1715,12 +1819,24 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         statusOf(enemy).apply(stats, durationMs);
         applyBurn(enemy.id, durationMs);
         if (dealt > 0 && hasAnyClassSkill(characterId, classSkillSource)) {
-          const effects = dispatchClassSkillEvent('onHit', characterId, classSkillSource, {
-            position: bullet.position,
-            targetPosition: enemy.position,
-            rng,
-          });
-          applyClassSkillEffects(effects);
+          const direction = unitDirection(bullet.velocity);
+          classHitEffects.push(
+            ...dispatchClassSkillEvent('onHit', characterId, classSkillSource, {
+              position: bullet.position,
+              targetPosition: enemy.position,
+              targetId: enemy.id,
+              crit: bullet.crit,
+              damage: dealt,
+              firstHit: firstEnemyHit,
+              nowMs: durationMs,
+              memory: classSkillMemory,
+              ...(direction !== null ? { direction } : {}),
+              ...(bullet.classSkillId !== undefined
+                ? { projectileSkillId: bullet.classSkillId }
+                : {}),
+              rng,
+            }),
+          );
         }
         if (!activeBulletIds.has(bullet.id)) {
           activeState = onActiveHit(activeState, activeConfig, 1);
@@ -1791,6 +1907,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
       bullets.consumeWhere((bullet) => spent.has(bullet.id));
       for (const id of spent) activeBulletIds.delete(id);
     }
+
+    if (classHitEffects.length > 0) applyClassSkillEffects(classHitEffects);
 
     // Splitters killed this frame leave their splitlings behind, before the clear check
     // (otherwise the room would clear with the brood still to come).
