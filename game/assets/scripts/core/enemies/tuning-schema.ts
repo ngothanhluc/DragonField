@@ -14,6 +14,16 @@
  */
 import { ENEMY_ROLES, type EnemyRole } from '../level/level-data';
 import { CHAPTERS_PER_RUN } from '../run/run-state';
+import {
+  describe,
+  isRecord,
+  joinPath,
+  numberField,
+  parseBlock,
+  readNumber,
+  readObject,
+  type InferBlock,
+} from './tuning-spec';
 
 /** Player combat numbers (GDD §3). */
 export interface CombatTuning {
@@ -565,19 +575,21 @@ export interface ArcherClassSkillTuning {
   readonly skyTempest: SkyTempestTuning;
 }
 
-/** Player Dash tuning (M13, ADR-022). */
-export interface DashTuning {
+/** Player dash timing, speed and i-frames (ADR-022). */
+export const DASH_SPEC = {
   /** Game-time action buffer window, ms (freezes during pause/hitstop). */
-  readonly bufferMs: number;
+  bufferMs: numberField({ integer: true }),
   /** Base cooldown between dashes, ms. */
-  readonly cooldownMs: number;
+  cooldownMs: numberField({ integer: true, positive: true }),
   /** Dash movement duration, ms. */
-  readonly durationMs: number;
+  durationMs: numberField({ integer: true, positive: true }),
   /** Dash speed, tiles/second. */
-  readonly speedTilesPerSecond: number;
+  speedTilesPerSecond: numberField({ positive: true }),
   /** Invulnerability window granted when starting a dash, ms. */
-  readonly invulnerabilityMs: number;
-}
+  invulnerabilityMs: numberField({ integer: true }),
+} as const;
+
+export type DashTuning = InferBlock<typeof DASH_SPEC>;
 
 /** Signature Active Skill tuning (M13, ADR-022). */
 export interface ActiveSkillTuning {
@@ -1134,14 +1146,6 @@ const ENEMY_AI_FIELDS = [
   'gunnerSpreadRadians',
 ] as const;
 
-const DASH_FIELDS = [
-  'bufferMs',
-  'cooldownMs',
-  'durationMs',
-  'speedTilesPerSecond',
-  'invulnerabilityMs',
-] as const;
-
 const ACTIVE_SKILL_FIELDS = ['bufferMs'] as const;
 
 const CLASS_SKILLS_FIELDS = ['ninja', 'archer', 'mage', 'cultivator'] as const;
@@ -1525,58 +1529,6 @@ class ProblemList {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function describe(value: unknown): string {
-  if (value === undefined) return 'undefined (missing field?)';
-  if (typeof value === 'string') return JSON.stringify(value);
-  if (typeof value === 'number' || typeof value === 'boolean')
-    return String(value);
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return 'array';
-  return typeof value;
-}
-
-function joinPath(prefix: string, key: string): string {
-  return prefix === '' ? key : `${prefix}.${key}`;
-}
-
-/**
- * Read one number field; `options` decides the constraints. Returns `undefined` on error so
- * the caller can use a safe default (a bad config yields one clear error instead of
- * NaN leaking into combat).
- */
-function readNumber(
-  source: Record<string, unknown>,
-  field: string,
-  path: string,
-  problems: ProblemList,
-  options: { readonly integer?: boolean; readonly positive?: boolean } = {},
-): number | undefined {
-  const value = source[field];
-  const fieldPath = joinPath(path, field);
-
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    problems.add(fieldPath, `must be a finite number, got ${describe(value)}`);
-    return undefined;
-  }
-  if (value < 0) {
-    problems.add(fieldPath, `must not be negative, got ${value}`);
-    return undefined;
-  }
-  if (options.positive === true && value === 0) {
-    problems.add(fieldPath, `must be > 0, got ${value}`);
-    return undefined;
-  }
-  if (options.integer === true && !Number.isInteger(value)) {
-    problems.add(fieldPath, `must be an integer, got ${value}`);
-    return undefined;
-  }
-  return value;
-}
-
 /**
  * Read an array of non-negative finite numbers with an exact length (per-stack tables).
  * Returns `[]` on a shape error so callers keep a safe fallback.
@@ -1672,30 +1624,6 @@ function readOptionalNumber(
 ): number | undefined {
   if (source[field] === undefined) return undefined;
   return readNumber(source, field, path, problems, options);
-}
-
-/** Report exactly the missing field, plus the list of expected fields. */
-function readObject(
-  source: Record<string, unknown>,
-  field: string,
-  path: string,
-  problems: ProblemList,
-  expected: readonly string[],
-): Record<string, unknown> | undefined {
-  const value = source[field];
-  if (!isRecord(value)) {
-    problems.add(
-      joinPath(path, field),
-      `must be an object { ${expected.join(', ')} }, got ${describe(value)}`,
-    );
-    return undefined;
-  }
-
-  for (const key of expected) {
-    if (!(key in value))
-      problems.add(joinPath(joinPath(path, field), key), 'missing field');
-  }
-  return value;
 }
 
 /** Read an array of exactly `length` numbers, every element finite and > 0. */
@@ -2990,34 +2918,6 @@ function parseXp(raw: Record<string, unknown>, problems: ProblemList): XpTuning 
   return { curve, roles, eliteMultiplier, orbs, reroll, levelUpWave };
 }
 
-function zeroDash(): DashTuning {
-  return {
-    bufferMs: 150,
-    cooldownMs: 1800,
-    durationMs: 180,
-    speedTilesPerSecond: 14,
-    invulnerabilityMs: 220,
-  };
-}
-
-function parseDash(raw: Record<string, unknown>, problems: ProblemList): DashTuning {
-  const source = readObject(raw, 'dash', '', problems, DASH_FIELDS);
-  if (source === undefined) return zeroDash();
-
-  const path = 'dash';
-  return {
-    bufferMs: readNumber(source, 'bufferMs', path, problems, { integer: true }) ?? 0,
-    cooldownMs:
-      readNumber(source, 'cooldownMs', path, problems, { integer: true, positive: true }) ?? 1,
-    durationMs:
-      readNumber(source, 'durationMs', path, problems, { integer: true, positive: true }) ?? 1,
-    speedTilesPerSecond:
-      readNumber(source, 'speedTilesPerSecond', path, problems, { positive: true }) ?? 1,
-    invulnerabilityMs:
-      readNumber(source, 'invulnerabilityMs', path, problems, { integer: true }) ?? 0,
-  };
-}
-
 function zeroActiveSkill(): ActiveSkillTuning {
   return { bufferMs: 150 };
 }
@@ -4080,7 +3980,7 @@ export function parseTuning(raw: unknown): TuningConfig {
     roomArt: parseRoomArt(raw, problems),
     boss: parseBoss(raw, problems),
     xp: parseXp(raw, problems),
-    dash: parseDash(raw, problems),
+    dash: parseBlock(DASH_SPEC, raw, 'dash', '', problems),
     activeSkill: parseActiveSkill(raw, problems),
     classSkills: parseClassSkills(raw, problems),
     characters: parseCharacters(raw, problems),
