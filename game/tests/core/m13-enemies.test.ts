@@ -112,14 +112,7 @@ describe('M13 tuning schema (dash, activeSkill, enemies.ai, bomber, buffer, xp)'
       speedTilesPerSecond: 14,
       invulnerabilityMs: 220,
     });
-    expect(ACTIVE_SKILL_TUNING).toEqual({
-      bufferMs: 150,
-      cooldownMs: 15000,
-      hitCooldownReductionMs: 0,
-      killCooldownReductionMs: 0,
-      barrageProjectiles: 10,
-      barrageDamageMultiplier: 1.2,
-    });
+    expect(ACTIVE_SKILL_TUNING).toEqual({ bufferMs: 150 });
     expect(ENEMY_ROLES).toContain('bomber');
     expect(ENEMY_ROLES).toContain('buffer');
     expect(ENEMY_TUNING.roles.bomber.blastRadiusTiles).toBeGreaterThanOrEqual(2);
@@ -139,8 +132,8 @@ describe('M13 tuning schema (dash, activeSkill, enemies.ai, bomber, buffer, xp)'
     expect(() => parseTuning(missingDash)).toThrowError(/dash/);
 
     const badActive = structuredClone(TUNING_SOURCE) as Record<string, unknown>;
-    (badActive.activeSkill as Record<string, unknown>).cooldownMs = 0;
-    expect(() => parseTuning(badActive)).toThrowError(/activeSkill\.cooldownMs/);
+    (badActive.activeSkill as Record<string, unknown>).bufferMs = 1.5;
+    expect(() => parseTuning(badActive)).toThrowError(/activeSkill\.bufferMs/);
 
     const invertedFlank = structuredClone(TUNING_SOURCE) as Record<string, unknown>;
     const ai = (invertedFlank.enemies as { ai: Record<string, unknown> }).ai;

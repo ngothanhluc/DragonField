@@ -11,7 +11,6 @@ import {
 } from '../helpers/sim-table';
 import { CHASER_CONTACT_RANGE_TILES } from '../../assets/scripts/core/enemies/behaviours';
 import {
-  ACTIVE_SKILL_TUNING,
   CHARACTERS_TUNING,
   DASH_TUNING,
   DOORS_TUNING,
@@ -881,15 +880,15 @@ describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', 
       event.kind === 'active-skill' ? [event] : [],
     );
     expect(activeEvents[0]?.skillId).toBe('shadow-barrage');
-    expect(activeEvents[0]?.projectiles).toBe(ACTIVE_SKILL_TUNING.barrageProjectiles);
+    expect(activeEvents[0]?.projectiles).toBe(CHARACTERS_TUNING.ninja.signature.projectileCount);
     // #108: no hit/kill recharge, so the second cast waits for the full base cooldown.
     const castGapMs = (activeEvents[1]?.nowMs ?? 0) - (activeEvents[0]?.nowMs ?? 0);
-    expect(castGapMs).toBeGreaterThanOrEqual(ACTIVE_SKILL_TUNING.cooldownMs);
+    expect(castGapMs).toBeGreaterThanOrEqual(CHARACTERS_TUNING.ninja.signature.cooldownMs);
 
     const surgedCast = surgedActive.events.find((event) => event.kind === 'active-skill');
     expect(
       surgedCast?.kind === 'active-skill' ? surgedCast.projectiles : 0,
-    ).toBeGreaterThan(ACTIVE_SKILL_TUNING.barrageProjectiles);
+    ).toBeGreaterThan(CHARACTERS_TUNING.ninja.signature.projectileCount);
     expect(surgedActive.durationMs).toBeLessThan(baseActive.durationMs);
   });
 

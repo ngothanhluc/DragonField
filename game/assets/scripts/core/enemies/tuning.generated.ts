@@ -430,11 +430,6 @@ export const TUNING_DATA = {
   },
   activeSkill: {
     bufferMs: 150,
-    cooldownMs: 15000,
-    hitCooldownReductionMs: 0,
-    killCooldownReductionMs: 0,
-    barrageProjectiles: 10,
-    barrageDamageMultiplier: 1.2,
   },
   classSkills: {
     ninja: {
