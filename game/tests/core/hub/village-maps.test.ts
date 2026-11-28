@@ -29,7 +29,7 @@ import {
   buildM21SpriteEntries,
   m21ManifestKeys,
   mergeM21ManifestEntries,
-} from '../../../scripts/lib/m21-manifest';
+} from '../../helpers/village-npc-manifest';
 import { bottomPadding, readPng } from '../../../scripts/lib/png';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

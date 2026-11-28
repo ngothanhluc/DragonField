@@ -1,7 +1,8 @@
 /**
- * Clean, conflict-free manifest merge helper for M21 NPC and village animal animations.
+ * Deterministic manifest entries for the village NPCs and the village bird, kept in the tests because
+ * the one-off staging script that produced them is gone (git history keeps it).
  *
- * Appends or updates ONLY M21-owned keys (`npc.<id>*` and `animal.bird`) at the end of
+ * Appends or updates ONLY village-owned keys (`npc.<id>*` and `animal.bird`) at the end of
  * `animations.json` while leaving every existing entry in the manifest untouched in both content
  * and key order. Validated with `validateManifest` before returning.
  */
@@ -13,29 +14,23 @@ import {
   type SpriteEntry,
 } from '../../assets/scripts/core/art/manifest';
 
-/** Non-playable village NPC ids staged from `Actor/Character/`. */
-export const M21_NPC_SOURCES = [
-  { id: 'villager-1', packFolder: 'Villager' },
-  { id: 'villager-2', packFolder: 'Villager2' },
-  { id: 'villager-3', packFolder: 'Villager3' },
-  { id: 'villager-4', packFolder: 'Villager4' },
-  { id: 'villager-5', packFolder: 'Woman' },
-  { id: 'shopkeeper', packFolder: 'OldMan' },
-  { id: 'dojo-master', packFolder: 'Master' },
+const NPC_SOURCES = [
+  { id: 'villager-1' },
+  { id: 'villager-2' },
+  { id: 'villager-3' },
+  { id: 'villager-4' },
+  { id: 'villager-5' },
+  { id: 'shopkeeper' },
+  { id: 'dojo-master' },
 ] as const;
 
-export type M21NpcId = (typeof M21_NPC_SOURCES)[number]['id'];
+type NpcId = (typeof NPC_SOURCES)[number]['id'];
 
-export const M21_NPC_IDS: readonly M21NpcId[] = M21_NPC_SOURCES.map((entry) => entry.id);
-
-export interface MeasuredSheetFoot {
-  readonly sheet: string;
-  readonly footPx: number;
-}
+export const M21_NPC_IDS: readonly NpcId[] = NPC_SOURCES.map((entry) => entry.id);
 
 /**
- * Build the deterministic map of M21 sprite entries given measured `footPx` values per sheet path
- * (relative to `game/assets/`, e.g. `resources/art/npc/villager-1/villager-1.png`).
+ * Build the deterministic map of village sprite entries given measured `footPx` values per sheet
+ * path (relative to `game/assets/`, e.g. `resources/art/npc/villager-1/villager-1.png`).
  */
 export function buildM21SpriteEntries(
   footBySheet: ReadonlyMap<string, number>,
@@ -43,14 +38,14 @@ export function buildM21SpriteEntries(
   const footOf = (sheet: string): number => {
     const measured = footBySheet.get(sheet);
     if (measured === undefined) {
-      throw new Error(`m21-manifest: missing measured footPx for "${sheet}"`);
+      throw new Error(`village-npc-manifest: missing measured footPx for "${sheet}"`);
     }
     return measured;
   };
 
   const out: Record<string, SpriteEntry> = {};
 
-  for (const { id } of M21_NPC_SOURCES) {
+  for (const { id } of NPC_SOURCES) {
     const baseDir = `resources/art/npc/${id}`;
     const lookSheet = `${baseDir}/${id}.png`;
     out[`npc.${id}`] = {
@@ -114,10 +109,10 @@ export function buildM21SpriteEntries(
   return out;
 }
 
-/** All manifest keys owned by M21 staging (`npc.<id>*` + `animal.bird`). */
+/** All manifest keys owned by the village staging (`npc.<id>*` + `animal.bird`). */
 export function m21ManifestKeys(): readonly string[] {
   const keys: string[] = [];
-  for (const { id } of M21_NPC_SOURCES) {
+  for (const { id } of NPC_SOURCES) {
     keys.push(`npc.${id}`);
     for (const dir of DIRECTIONS as readonly Direction[]) {
       keys.push(`npc.${id}-stand.${dir}`);
@@ -129,9 +124,9 @@ export function m21ManifestKeys(): readonly string[] {
 }
 
 /**
- * Non-destructively merge M21 entries into an existing raw `animations.json` object:
- * - Preserves all non-M21 keys and their exact insertion order.
- * - Appends M21 keys cleanly at the bottom.
+ * Non-destructively merge the village entries into an existing raw `animations.json` object:
+ * - Preserves all other keys and their exact insertion order.
+ * - Appends village keys cleanly at the bottom.
  * - Validates the resulting manifest via `validateManifest`.
  */
 export function mergeM21ManifestEntries(

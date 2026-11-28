@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { validateManifest } from '../../assets/scripts/core/art/manifest';
-import { CLASS_SKILL_ICON_IDS, PORTRAIT_IDS } from '../../scripts/stage-m19-art';
+import { CLASS_SKILL_ICON_IDS, PORTRAIT_IDS } from '../helpers/generated-art-ids';
 import { readPng, type PngImage } from '../../scripts/lib/png';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

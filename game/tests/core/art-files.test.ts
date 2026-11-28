@@ -24,7 +24,7 @@ import { EVOLUTIONS } from '../../assets/scripts/core/skills/evolutions';
 import { SKILLS } from '../../assets/scripts/core/skills/pool';
 import { skillIconSheet } from '../../assets/scripts/core/skills/icons';
 import { bottomPadding, readPng } from '../../scripts/lib/png';
-import { CLASS_SKILL_ICON_IDS, PORTRAIT_IDS } from '../../scripts/stage-m19-art';
+import { CLASS_SKILL_ICON_IDS, PORTRAIT_IDS } from '../helpers/generated-art-ids';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(HERE, '..', '..', 'assets');
