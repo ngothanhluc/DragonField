@@ -255,6 +255,8 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 
 **Consequences.** `core/skills/` expands with Evolution definitions and pairing metadata; `core/sim/run-simulation.ts` models Dash, Active Skill, and the rebuilt pool; all existing `Greed`/`Luck` references move out of the combat skill pool.
 
+**Amendment (#108, 2026-11-28).** The Signature Active no longer accelerates its cooldown on hits or kills: each class ships a fixed **19–22 s** base cooldown (`characters.*.signature.hitCooldownReductionMs` / `killCooldownReductionMs` = 0), and the projectiles do **20% less** damage. Hitstop for a Signature cast is requested **once per cast** (`core/combat/hit-hitstop.ts`) instead of on every projectile hit.
+
 ---
 
 ## ADR-023 — Split profile and active-run saves with safe-boundary autosave (M15)
