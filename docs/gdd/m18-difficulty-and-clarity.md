@@ -39,7 +39,7 @@ Using unused monster sheets from `art-source/ninja-adventure/Actor/Monster/` (pl
 | **`dasher`** | *Ám Sát* (Shadow Stalker) | Fast diagonal flanker (`~4.0` tiles/s); when within `3–6` tiles, plays a brief **`350 ms` telegraph** then **dashes at `9.5` tiles/s for `280 ms`** to cut off escape lines. Elite dashes twice. | HP `6`, contact `20 HP`, CD `1800 ms` | `Owl` / `Reptile` / `Spirit` / `Beast` |
 | **`gunner`** | *Pháo Thủ Chùm* (Volley Shooter) | Maintains medium range (`5–8` tiles); `550 ms` telegraph then fires a **3-bullet fan spread at `7.5` tiles/s** (scaling to 5-bullet fan in Ch3–4; Elite fires 2 staggered alternating volleys). | HP `7`, bullet `18 HP`, CD `2300 ms` | `Lizard` / `Octopus2` / `Skull` / `Dragon` |
 
-Both roles integrate cleanly with the flow-field navigator, line-of-sight checks, on-screen attack fairness gate (ADR-018), XP orb table, and headless simulator (`core/sim/`).
+Both roles integrate cleanly with the flow-field navigator, line-of-sight checks, on-screen attack fairness gate (ADR-018), XP orb table, and headless simulator (`sim/`).
 
 ---
 
