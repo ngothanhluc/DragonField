@@ -46,14 +46,14 @@ const MONSTERS = [
   'bear',
   'trex',
   'cyclope',
-  // #42 — sniper and splitter monsters (staged by `stage-m9-monsters.ts`).
+  // Sniper and splitter monsters.
   'kappagreen',
   'kappared',
   'skullblue',
   'slimegreen',
   'slime2',
   'slime3',
-  // M13 — bomber and buffer monsters (staged by `stage-m13-monsters.ts`).
+  // Bomber and buffer monsters.
   'flam',
   'mushroom',
   'flam2',
@@ -62,7 +62,7 @@ const MONSTERS = [
   'lanterngreen',
   'spirit2',
   'owl2',
-  // M18 — dasher and gunner monsters (staged by `stage-m18-monsters.ts`; `spirit` already listed above).
+  // Dasher and gunner monsters (`spirit` already listed above).
   'owl',
   'reptile',
   'beast',
