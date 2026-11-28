@@ -114,7 +114,7 @@ describe('M13 tuning schema (dash, activeSkill, enemies.ai, bomber, buffer, xp)'
     });
     expect(ACTIVE_SKILL_TUNING).toEqual({
       bufferMs: 150,
-      cooldownMs: 20000,
+      cooldownMs: 15000,
       hitCooldownReductionMs: 0,
       killCooldownReductionMs: 0,
       barrageProjectiles: 10,

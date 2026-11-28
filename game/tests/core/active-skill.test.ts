@@ -35,19 +35,19 @@ describe('ActiveSkill recharge — base time + hit CDR + kill CDR', () => {
     const cast = tryActivateSkill(ready, DEFAULT_ACTIVE_SKILL_CONFIG, 1);
     expect(cast.triggered).toBe(true);
     expect(cast.state.activations).toBe(1);
-    expect(cast.state.cooldownTotalMs).toBe(20_000);
-    expect(cast.state.cooldownRemainingMs).toBe(20_000);
+    expect(cast.state.cooldownTotalMs).toBe(15_000);
+    expect(cast.state.cooldownRemainingMs).toBe(15_000);
     expect(isActiveSkillReady(cast.state)).toBe(false);
     expect(activeReadyRatio(cast.state)).toBe(0);
-    expect(activeCooldownSeconds(cast.state)).toBe(20);
+    expect(activeCooldownSeconds(cast.state)).toBe(15);
 
     // Spamming E while cooling down does not reset progress or increment activations.
     const mid = stepActiveSkill(cast.state, 4000);
     const blocked = tryActivateSkill(mid, DEFAULT_ACTIVE_SKILL_CONFIG, 1);
     expect(blocked.triggered).toBe(false);
     expect(blocked.state).toBe(mid);
-    expect(activeReadyRatio(mid)).toBeCloseTo(0.2, 6);
-    expect(activeCooldownSeconds(mid)).toBeCloseTo(16, 6);
+    expect(activeReadyRatio(mid)).toBeCloseTo(4 / 15, 6);
+    expect(activeCooldownSeconds(mid)).toBeCloseTo(11, 6);
   });
 
   it('recharges cleanly in single-boss arenas via time + onActiveHit with zero kills', () => {
@@ -97,9 +97,9 @@ describe('ActiveSkill recharge — base time + hit CDR + kill CDR', () => {
     expect(onActiveKill(state, config, 2)).toBe(state);
   });
 
-  it('ships the #108 Signature values: 20 s cooldown, no hit or kill recharge', () => {
+  it('ships the #108 Signature values: 15 s cooldown, no hit or kill recharge', () => {
     expect(DEFAULT_ACTIVE_SKILL_CONFIG).toEqual({
-      cooldownMs: 20_000,
+      cooldownMs: 15_000,
       hitCooldownReductionMs: 0,
       killCooldownReductionMs: 0,
     });

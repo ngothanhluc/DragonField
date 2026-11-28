@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { BOSS_POOLS, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
 import type { BossId } from '../../assets/scripts/core/boss/boss-defs';
 import {
+  CHARACTER_IDS,
   DEFAULT_CHARACTER_ID,
   type CharacterId,
 } from '../../assets/scripts/core/characters/roster';
@@ -24,6 +25,8 @@ import type { DoorReward } from '../../assets/scripts/core/run/doors';
 import {
   CLASS_EVOLUTIONS,
   CLASS_SKILLS,
+  classEvolutionFor,
+  classSkillsFor,
   findClassSkillOrEvolution,
   isClassEvolutionId,
 } from '../../assets/scripts/core/skills/class-skills';
@@ -45,6 +48,40 @@ import { LEVELS_ROOT, loadTmxLevels } from './tmx-levels';
 /** M12 target band for level-ups earned during a full 9-room chapter run (GDD §15.2, ADR-021). */
 export const LEVEL_UP_TARGET_MIN = 12;
 export const LEVEL_UP_TARGET_MAX = 16;
+
+/** A row count that is both a minimum and the exact size of the matrix it was measured on. */
+export interface FloorCount {
+  readonly won: number;
+  readonly rows: number;
+}
+
+/**
+ * The #108 balance floor: the measured ×1.5 `bun run sim:table` table (owner decision, board #13).
+ *
+ * "Win" is a 9/9 clear. The floor only means something on the exact sim:table matrix, which is why
+ * every count carries the row total it was measured against. Raising a floor is fine; lowering one
+ * needs an owner decision (ADR-013 consequences).
+ */
+export const BALANCE_FLOOR: {
+  readonly total: FloorCount;
+  readonly byClass: Readonly<Record<CharacterId, FloorCount>>;
+} = {
+  total: { won: 55, rows: 72 },
+  byClass: {
+    ninja: { won: 19, rows: 24 },
+    archer: { won: 12, rows: 16 },
+    mage: { won: 8, rows: 16 },
+    cultivator: { won: 16, rows: 16 },
+  },
+};
+
+/** Seeds per boss of the `bun run sim:table` matrix: ninja 3, archer 2, mage 2, cultivator 2. */
+export const SIM_TABLE_SEEDS_PER_BOSS: Readonly<Record<CharacterId, number>> = {
+  ninja: 3,
+  archer: 2,
+  mage: 2,
+  cultivator: 2,
+};
 
 /** A fixed mid-run loadout used by unit/integration tests that compare DPS with vs without skills. */
 export const TYPICAL_LOADOUT: ReadonlyMap<string, number> = new Map([
@@ -425,6 +462,135 @@ function outcomeOf(result: ReturnType<typeof simulateRun>): SimOutcome {
     ],
     classSkills,
   };
+}
+
+/** Both halves of a row's own class pool: its exclusive skills and its Class Evolution. */
+function ownClassIds(characterId: CharacterId): ReadonlySet<string> {
+  return new Set([
+    ...classSkillsFor(characterId).map((skill) => skill.id),
+    classEvolutionFor(characterId).id,
+  ]);
+}
+
+/** A 9/9 clear: the only kind of row the #108 floor is about. */
+function isWin(row: SimTableRow): boolean {
+  return row.loadout.status === 'won' && row.loadout.roomsCleared === 9;
+}
+
+/**
+ * Every reason the `sim:table` exit gate fails; `[]` = the gate passes. Pure: reads the table only.
+ *
+ * The win-dependent rules (#108) are floors on the measured ×1.5 matrix, because the Signature
+ * nerf costs rows and the owner replaced "every row wins 9/9" with that floor. Every rule that does
+ * not depend on winning stays as strict as it was before #108.
+ */
+export function simTableGateFailures(rows: readonly SimTableRow[]): string[] {
+  const failures: string[] = [];
+
+  if (rows.length !== BALANCE_FLOOR.total.rows) {
+    failures.push(`matrix: ${rows.length} rows, expected ${BALANCE_FLOOR.total.rows}`);
+  }
+
+  const wins = rows.filter(isWin);
+  if (wins.length < BALANCE_FLOOR.total.won) {
+    failures.push(
+      `total: ${wins.length}/${BALANCE_FLOOR.total.rows} rows won 9/9, floor ${BALANCE_FLOOR.total.won}`,
+    );
+  }
+
+  // Winners only: a lost run ends early, so its level-ups and doors say nothing about balance.
+  for (const row of wins) {
+    if (
+      row.loadout.levelUps < LEVEL_UP_TARGET_MIN ||
+      row.loadout.levelUps > LEVEL_UP_TARGET_MAX
+    ) {
+      failures.push(
+        `${row.characterId} chapter ${row.chapter} seed ${row.seed}: ${row.loadout.levelUps} level-ups, ` +
+          `expected ${LEVEL_UP_TARGET_MIN}–${LEVEL_UP_TARGET_MAX}`,
+      );
+    }
+  }
+
+  for (const characterId of CHARACTER_IDS) {
+    const floor = BALANCE_FLOOR.byClass[characterId];
+    const classRows = rows.filter((row) => row.characterId === characterId);
+    if (classRows.length !== floor.rows) {
+      failures.push(`${characterId}: ${classRows.length} rows, expected ${floor.rows}`);
+    }
+
+    const classWins = classRows.filter(isWin).length;
+    if (classWins < floor.won) {
+      failures.push(`${characterId}: ${classWins}/${floor.rows} rows won 9/9, floor ${floor.won}`);
+    }
+
+    const ownSkillIds = classSkillsFor(characterId).map((skill) => skill.id);
+    const classSkillRows = classRows.filter((row) =>
+      row.loadout.classSkills.some((id) => ownSkillIds.includes(id)),
+    ).length;
+    if (classSkillRows < floor.won) {
+      failures.push(
+        `${characterId}: ${classSkillRows}/${floor.rows} rows own a class skill, floor ${floor.won}`,
+      );
+    }
+
+    const classDashRows = classRows.filter((row) => row.loadout.dashesUsed > 0).length;
+    if (classDashRows < classRows.length - 1) {
+      failures.push(
+        `${characterId}: only ${classDashRows}/${classRows.length} rows dashed, expected all but at most one`,
+      );
+    }
+
+    if (!classRows.some((row) => row.loadout.evolutions.length > 0)) {
+      failures.push(`${characterId}: no row unlocked an Evolution`);
+    }
+
+    const evolutionId = classEvolutionFor(characterId).id;
+    if (!classRows.some((row) => row.loadout.classSkills.includes(evolutionId))) {
+      failures.push(`${characterId}: no row owns its Class Evolution ${evolutionId}`);
+    }
+  }
+
+  // Rules that do not depend on winning: still checked over every row.
+  const standStillLost = rows.filter(
+    (row) => row.standStill.status === 'lost' && row.standStill.roomsCleared === 0,
+  ).length;
+  if (standStillLost !== rows.length) {
+    failures.push(
+      `stand still lost room 1 in ${standStillLost}/${rows.length} rows, expected every row`,
+    );
+  }
+
+  const lateRows = rows.filter((row) => row.chapter >= 2);
+  const lateRowsWithDash = lateRows.filter((row) => row.loadout.dashesUsed > 0).length;
+  if (lateRowsWithDash !== lateRows.length) {
+    failures.push(
+      `Ch2+ rows dashed in ${lateRowsWithDash}/${lateRows.length}, expected every row`,
+    );
+  }
+
+  const rowsWithActive = rows.filter((row) => row.loadout.activeSkillsUsed > 0).length;
+  if (rowsWithActive !== rows.length) {
+    failures.push(
+      `${rowsWithActive}/${rows.length} rows cast a Signature, expected every row`,
+    );
+  }
+
+  if (!rows.some((row) => row.loadout.evolutions.length > 0)) {
+    failures.push('no row unlocked an Evolution');
+  }
+
+  for (const row of rows) {
+    const ownIds = ownClassIds(row.characterId);
+    for (const id of row.loadout.classSkills) {
+      if (findClassSkillOrEvolution(id) !== undefined && !ownIds.has(id)) {
+        failures.push(
+          `${row.characterId} chapter ${row.chapter} seed ${row.seed}: owns another class's ${id}`,
+        );
+      }
+    }
+  }
+
+  return failures;
 }
 
 function chapterLevels(chapter: number): ChapterData {

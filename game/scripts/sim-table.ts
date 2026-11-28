@@ -10,39 +10,34 @@
  *   XP-earned pure-combat skills & Legendary Evolutions + typical door choice).
  *
  * Prints the full Markdown table + per-class summary comparison. The same matrix contract is
- * verified in `tests/integration/sim-table.acceptance.test.ts`.
+ * verified in `tests/integration/sim-table.acceptance.test.ts`, and the exit gate is the #108
+ * balance floor (`BALANCE_FLOOR` / `simTableGateFailures` in `tests/helpers/sim-table.ts`).
  */
 import { CHARACTER_IDS, type CharacterId } from '../assets/scripts/core/characters/roster';
 import {
   classEvolutionFor,
   classSkillsFor,
-  findClassSkillOrEvolution,
 } from '../assets/scripts/core/skills/class-skills';
 import {
   LEVEL_UP_TARGET_MAX,
   LEVEL_UP_TARGET_MIN,
+  SIM_TABLE_SEEDS_PER_BOSS,
   formatDuration,
   formatSimTable,
+  simTableGateFailures,
   simTableRows,
   type SimTableRow,
 } from '../tests/helpers/sim-table';
 
 const CHAPTERS = [1, 2, 3, 4] as const;
-const NINJA_SEEDS_PER_BOSS = 3;
-const OTHER_CLASS_SEEDS_PER_BOSS = 2;
 
-const rows: SimTableRow[] = [
-  ...simTableRows({
+const rows: SimTableRow[] = CHARACTER_IDS.flatMap((characterId) =>
+  simTableRows({
     chapters: CHAPTERS,
-    seedsPerBoss: NINJA_SEEDS_PER_BOSS,
-    characters: ['ninja'],
+    seedsPerBoss: SIM_TABLE_SEEDS_PER_BOSS[characterId],
+    characters: [characterId],
   }),
-  ...simTableRows({
-    chapters: CHAPTERS,
-    seedsPerBoss: OTHER_CLASS_SEEDS_PER_BOSS,
-    characters: ['archer', 'mage', 'cultivator'],
-  }),
-];
+);
 
 process.stdout.write(formatSimTable(rows));
 
@@ -82,10 +77,6 @@ const perClassLines = [
   '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 ];
 
-let anyClassMissingEvo = false;
-let anyClassLowDash = false;
-let anyClassMissingClassSkill = false;
-let anyClassLeak = false;
 for (const characterId of CHARACTER_IDS) {
   const classRows = rows.filter((row) => row.characterId === characterId);
   const count = Math.max(1, classRows.length);
@@ -103,7 +94,6 @@ for (const characterId of CHARACTER_IDS) {
   const loLv = Math.min(...levels);
   const hiLv = Math.max(...levels);
   const avgLv = levels.reduce((sum, n) => sum + n, 0) / count;
-  const classDashRows = classRows.filter((r) => r.loadout.dashesUsed > 0).length;
   const classAvgDashes = classRows.reduce((sum, r) => sum + r.loadout.dashesUsed, 0) / count;
   const classAvgActives = classRows.reduce((sum, r) => sum + r.loadout.activeSkillsUsed, 0) / count;
   const classHitRows = classRows.filter((r) => r.loadout.hits > 0).length;
@@ -111,21 +101,12 @@ for (const characterId of CHARACTER_IDS) {
   const classEvoRows = classRows.filter((r) => r.loadout.evolutions.length > 0).length;
   const classTotalEvos = classRows.reduce((sum, r) => sum + r.loadout.evolutions.length, 0);
   const ownSkillIds = classSkillsFor(characterId).map((skill) => skill.id);
-  const ownIds = new Set([...ownSkillIds, classEvolutionFor(characterId).id]);
   const classSkillRows = classRows.filter((r) =>
     r.loadout.classSkills.some((id) => ownSkillIds.includes(id)),
   );
   const classEvoOwnedRows = classRows.filter((r) =>
     r.loadout.classSkills.includes(classEvolutionFor(characterId).id),
   );
-  const classLeakRows = classRows.filter((r) =>
-    r.loadout.classSkills.some((id) => findClassSkillOrEvolution(id) !== undefined && !ownIds.has(id)),
-  );
-  if (classEvoRows === 0) anyClassMissingEvo = true;
-  if (classEvoOwnedRows.length === 0) anyClassMissingEvo = true;
-  if (classSkillRows.length < classRows.length) anyClassMissingClassSkill = true;
-  if (classLeakRows.length > 0) anyClassLeak = true;
-  if (classDashRows < classRows.length - 1) anyClassLowDash = true;
 
   perClassLines.push(
     `| ${characterId as CharacterId} | ${classRows.length} | ${classStandLost}/${classRows.length} | ` +
@@ -148,17 +129,8 @@ console.log(
     `class skills ${rowsWithClassSkill}/${rows.length} rows (${totalClassSkills} owned).`,
 );
 
-if (
-  standStillLost !== rows.length ||
-  loadoutWon !== rows.length ||
-  levelUpsInBand !== rows.length ||
-  lateRowsWithDash !== lateRows.length ||
-  anyClassLowDash ||
-  rowsWithActive !== rows.length ||
-  rowsWithEvo === 0 ||
-  anyClassMissingEvo ||
-  anyClassMissingClassSkill ||
-  anyClassLeak
-) {
+const failures = simTableGateFailures(rows);
+if (failures.length > 0) {
+  for (const failure of failures) console.error(failure);
   process.exit(1);
 }
