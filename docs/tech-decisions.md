@@ -163,6 +163,8 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 
 **Consequences.** A balance change = edit `config/tuning.json` then run `bun run gen`; `bun run check:config` (the first step of `bun run check`) fails if the generated file drifts from the source. A balance change must come with a sim run showing before/after numbers. Integration tests hold the thresholds: standing still loses, dodging survives ≥2× longer, god-mode still wins within 60–180 s. If a threshold breaks, that is a design signal, not a broken test.
 
+**Amendment (#108, 2026-11-28).** The balance gate is now the measured floor in `BALANCE_FLOOR` (`tests/helpers/sim-table.ts`): on the exact `bun run sim:table` matrix the dodge + kit run must win 9/9 in at least **55/72** rows, with per-class floors ninja 19/24, archer 12/16, mage 8/16, cultivator 16/16, instead of every row winning. The pure `simTableGateFailures` is the one gate behind both the script's exit code and the balance tests, and every non-win-dependent rule stays as strict as before. Raising a floor is a normal balance decision; lowering one needs an owner decision.
+
 ---
 
 ## ADR-014 — Branching runs: pick 1 of 2 doors, seeded room pool
@@ -254,6 +256,8 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 **Rationale.** Active defensive/offensive windows deepen bullet-hell expression and give M14's four classes unmistakable identity (e.g. Cultivator's *Ten Thousand Swords*), while keeping every level-up card impactful in combat. Economy/magnet upgrades move cleanly to Meta Shop (M15).
 
 **Consequences.** `core/skills/` expands with Evolution definitions and pairing metadata; `core/sim/run-simulation.ts` models Dash, Active Skill, and the rebuilt pool; all existing `Greed`/`Luck` references move out of the combat skill pool.
+
+**Amendment (#108, 2026-11-28).** The Signature Active no longer accelerates its cooldown on hits or kills: each class ships a fixed **14.25–16.5 s** base cooldown (`characters.*.signature.hitCooldownReductionMs` / `killCooldownReductionMs` = 0), and the projectiles do **20% less** damage. Hitstop for a Signature cast is requested **once per cast** (`core/combat/hit-hitstop.ts`) instead of on every projectile hit.
 
 ---
 

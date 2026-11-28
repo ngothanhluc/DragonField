@@ -35,19 +35,19 @@ describe('ActiveSkill recharge — base time + hit CDR + kill CDR', () => {
     const cast = tryActivateSkill(ready, DEFAULT_ACTIVE_SKILL_CONFIG, 1);
     expect(cast.triggered).toBe(true);
     expect(cast.state.activations).toBe(1);
-    expect(cast.state.cooldownTotalMs).toBe(10_000);
-    expect(cast.state.cooldownRemainingMs).toBe(10_000);
+    expect(cast.state.cooldownTotalMs).toBe(15_000);
+    expect(cast.state.cooldownRemainingMs).toBe(15_000);
     expect(isActiveSkillReady(cast.state)).toBe(false);
     expect(activeReadyRatio(cast.state)).toBe(0);
-    expect(activeCooldownSeconds(cast.state)).toBe(10);
+    expect(activeCooldownSeconds(cast.state)).toBe(15);
 
     // Spamming E while cooling down does not reset progress or increment activations.
     const mid = stepActiveSkill(cast.state, 4000);
     const blocked = tryActivateSkill(mid, DEFAULT_ACTIVE_SKILL_CONFIG, 1);
     expect(blocked.triggered).toBe(false);
     expect(blocked.state).toBe(mid);
-    expect(activeReadyRatio(mid)).toBeCloseTo(0.4, 6);
-    expect(activeCooldownSeconds(mid)).toBeCloseTo(6, 6);
+    expect(activeReadyRatio(mid)).toBeCloseTo(4 / 15, 6);
+    expect(activeCooldownSeconds(mid)).toBeCloseTo(11, 6);
   });
 
   it('recharges cleanly in single-boss arenas via time + onActiveHit with zero kills', () => {
@@ -71,24 +71,38 @@ describe('ActiveSkill recharge — base time + hit CDR + kill CDR', () => {
   });
 
   it('recharges briskly in wave rooms via time + onActiveHit + onActiveKill and clamps at 0', () => {
-    let state = tryActivateSkill(createActiveSkillState(), DEFAULT_ACTIVE_SKILL_CONFIG, 0.8).state;
+    // CDR channels still work; #108 sets the shipped values to 0, so this scenario passes its own.
+    const config: ActiveSkillConfig = {
+      cooldownMs: 10_000,
+      hitCooldownReductionMs: 200,
+      killCooldownReductionMs: 650,
+    };
+    let state = tryActivateSkill(createActiveSkillState(), config, 0.8).state;
     // 0.8x cooldownMult (`shadow-conduit`) -> 8000 ms effective cooldown.
     expect(state.cooldownTotalMs).toBe(8000);
 
     state = stepActiveSkill(state, 2000); // 6000 ms left
-    state = onActiveHit(state, DEFAULT_ACTIVE_SKILL_CONFIG, 6); // -1200 ms -> 4800 ms left
-    state = onActiveKill(state, DEFAULT_ACTIVE_SKILL_CONFIG, 5); // -3250 ms -> 1550 ms left
+    state = onActiveHit(state, config, 6); // -1200 ms -> 4800 ms left
+    state = onActiveKill(state, config, 5); // -3250 ms -> 1550 ms left
     expect(state.cooldownRemainingMs).toBe(1550);
     expect(activeReadyRatio(state)).toBeCloseTo((8000 - 1550) / 8000, 6);
 
     // Overkill multi-kill never pushes cooldown below 0.
-    state = onActiveKill(state, DEFAULT_ACTIVE_SKILL_CONFIG, 10);
+    state = onActiveKill(state, config, 10);
     expect(state.cooldownRemainingMs).toBe(0);
     expect(isActiveSkillReady(state)).toBe(true);
 
     // Extra hits/kills when already ready return the exact state object untouched.
-    expect(onActiveHit(state, DEFAULT_ACTIVE_SKILL_CONFIG, 3)).toBe(state);
-    expect(onActiveKill(state, DEFAULT_ACTIVE_SKILL_CONFIG, 2)).toBe(state);
+    expect(onActiveHit(state, config, 3)).toBe(state);
+    expect(onActiveKill(state, config, 2)).toBe(state);
+  });
+
+  it('ships the #108 Signature values: 15 s cooldown, no hit or kill recharge', () => {
+    expect(DEFAULT_ACTIVE_SKILL_CONFIG).toEqual({
+      cooldownMs: 15_000,
+      hitCooldownReductionMs: 0,
+      killCooldownReductionMs: 0,
+    });
   });
 
   it('freezes on dtMs === 0 and rejects negative or non-finite dtMs', () => {

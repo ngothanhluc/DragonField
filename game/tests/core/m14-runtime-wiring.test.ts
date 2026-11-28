@@ -664,8 +664,8 @@ describe('M14-T4 CombatLoop 4 Signature Actives & Cultivator sword-back lifecycl
     }
     expect(fake.showCalls).toEqual(['ten-thousand-swords']);
 
-    // Cast again after cooldown & verify room change restores immediately.
-    const nextReadyAt = loop.clockMs + 12000;
+    // Cast again after cooldown (22 s since #108) & verify room change restores immediately.
+    const nextReadyAt = loop.clockMs + 23000;
     while (loop.clockMs < nextReadyAt) loop.update(50);
     expect(loop.triggerActiveSkill()).toBe(true);
     expect(fake.hideCalls).toHaveLength(2);

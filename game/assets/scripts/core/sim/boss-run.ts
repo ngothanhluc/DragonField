@@ -42,6 +42,7 @@ import {
 } from '../characters/roster';
 import { AutoFire } from '../combat/auto-fire';
 import { BulletPool, hitsCircle, type Bullet } from '../combat/bullets';
+import { PlayerHitHitstop } from '../combat/hit-hitstop';
 import { HealthState } from '../combat/health';
 import { accumulateDamage } from '../combat/integer-damage';
 import { firePlayerVolley } from '../combat/player-fire';
@@ -57,7 +58,7 @@ import { StatusEffects } from '../combat/status-effects';
 import type { Targetable } from '../combat/targeting';
 import { DEFAULT_COMBAT } from '../config';
 import { maxHealthFor } from '../enemies/behaviours';
-import { DASH_TUNING } from '../enemies/tuning';
+import { DASH_TUNING, FEEL_TUNING } from '../enemies/tuning';
 import { ActionBuffer } from '../input/action-buffer';
 import {
   activeSkillConfigFor,
@@ -383,6 +384,22 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
   const spent = new Set<number>();
   /** Ids of Signature Active projectiles so Shadow Barrage does not self-refund its own cooldown. */
   const activeBulletIds = new Set<number>();
+  /** Cast id + base damage of each Signature projectile, so a volley stops once (#108). */
+  const activeBulletSignature = new Map<number, { castId: number; baseDamage: number }>();
+  const hitstopGate = new PlayerHitHitstop({
+    normalMs: DEFAULT_COMBAT.enemyHitstopMs,
+    critMs: FEEL_TUNING.vfx.critHitstopMs,
+  });
+  let signatureCastCount = 0;
+  /** Hitstop a player hit asks for: one beat per Signature cast, every hit for auto-fire (#108). */
+  const punchHitstop = (bullet: Bullet): number => {
+    const signature = activeBulletSignature.get(bullet.id);
+    return hitstopGate.hitstopFor({
+      damage: bullet.damage,
+      baseDamage: signature?.baseDamage ?? stats.damage,
+      signatureCastId: signature?.castId ?? null,
+    });
+  };
   let hitstopMs = 0;
 
   const hitboxRadius = BOSSES[options.bossId].hitboxRadiusTiles;
@@ -651,6 +668,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         actionBuffer.consume('active');
         activeState = triggered.state;
         activeSkillsUsed += 1;
+        signatureCastCount += 1;
 
         if (signatureSkillId === 'arcane-nova') {
           const nova = computeArcaneNovaSpec(player, stats.activePowerMult, {
@@ -715,6 +733,10 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
               homing: bolt.homing,
             });
             activeBulletIds.add(spawned.id);
+            activeBulletSignature.set(spawned.id, {
+              castId: signatureCastCount,
+              baseDamage: spawned.damage,
+            });
           }
           events.push({
             kind: 'active-skill',
@@ -739,6 +761,10 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
               homing: arrow.homing,
             });
             activeBulletIds.add(spawned.id);
+            activeBulletSignature.set(spawned.id, {
+              castId: signatureCastCount,
+              baseDamage: spawned.damage,
+            });
           }
           events.push({
             kind: 'active-skill',
@@ -767,6 +793,10 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
               homing: sword.homing,
             });
             activeBulletIds.add(spawned.id);
+            activeBulletSignature.set(spawned.id, {
+              castId: signatureCastCount,
+              baseDamage: spawned.damage,
+            });
           }
           events.push({
             kind: 'active-skill',
@@ -796,6 +826,10 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
               homing: blade.homing,
             });
             activeBulletIds.add(spawned.id);
+            activeBulletSignature.set(spawned.id, {
+              castId: signatureCastCount,
+              baseDamage: spawned.damage,
+            });
           }
           events.push({
             kind: 'active-skill',
@@ -992,7 +1026,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         }
         applyShockArcs(BOSS_TARGET_ID, boss.position, damage);
         bullet.hitIds.push(BOSS_TARGET_ID);
-        hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
+        hitstopMs = Math.max(hitstopMs, punchHitstop(bullet));
         splashDamage(stats, bullet, boss.position, summoned, (target) => {
           damageSummon(target, bullet.explosiveDamage * stats.aoePowerMult);
         });
@@ -1023,7 +1057,7 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
         }
         applyShockArcs(victim.id, victim.position, damage);
         bullet.hitIds.push(victim.id);
-        hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
+        hitstopMs = Math.max(hitstopMs, punchHitstop(bullet));
         consumed = resolveBulletAfterHit(bullet, victim.position, summoned);
         if (consumed) break;
       }
@@ -1032,7 +1066,10 @@ export function simulateBossRun(options: BossRunOptions): BossRunResult {
     }
     if (spent.size > 0) {
       bullets.consumeWhere((bullet) => spent.has(bullet.id));
-      for (const id of spent) activeBulletIds.delete(id);
+      for (const id of spent) {
+        activeBulletIds.delete(id);
+        activeBulletSignature.delete(id);
+      }
     }
 
     // --- End -----------------------------------------------------------

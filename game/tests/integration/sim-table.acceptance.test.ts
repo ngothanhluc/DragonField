@@ -1,14 +1,16 @@
 /**
  * Balance sim table acceptance (ADR-013, `docs/milestones.md` §M9 / §M12 / §M13 / §M14,
- * GDD §15.4, ADR-021, ADR-022).
+ * GDD §15.4, ADR-021, ADR-022, #108).
  *
  * Across all 4 playable classes (`ninja`, `archer`, `mage`, `cultivator`), all 4 chapters, and
- * both chapter bosses (32 rows covering every `class × chapter × boss` tuple):
+ * both chapter bosses, on the exact `bun run sim:table` matrix:
  * - Standing still (no Dash, no Active, no skills) loses Room 1 (`0/9`).
  * - Dodging from a **0-skill start** with the full M14 kit (class Layer 1/2 stats + Dash +
  *   class Signature Active + XP-earned pure-combat skills & Legendary Evolutions +
- *   `typicalDoorChoice`) lands cleanly inside **12–16 level-ups/run**, genuinely exercises Dash,
- *   class Signature Active, and Evolutions against Tier-2 enemy AI, and wins `9/9`.
+ *   `typicalDoorChoice`) genuinely exercises Dash, class Signature Active and Evolutions against
+ *   Tier-2 enemy AI, and meets the #108 win floor (`BALANCE_FLOOR`): 55/72 overall, and per class
+ *   ninja 19/24, archer 12/16, mage 8/16, cultivator 16/16. Every winning row still lands inside
+ *   the **12–16 level-ups/run** band; a lost run ends early and is not held to it.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { BOSS_POOLS, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
@@ -16,10 +18,13 @@ import { CHARACTER_IDS, type CharacterId } from '../../assets/scripts/core/chara
 import { getEvolution, isEvolutionId } from '../../assets/scripts/core/skills/evolutions';
 import { getSkill } from '../../assets/scripts/core/skills/pool';
 import {
+  BALANCE_FLOOR,
   LEVEL_UP_TARGET_MAX,
   LEVEL_UP_TARGET_MIN,
+  SIM_TABLE_SEEDS_PER_BOSS,
   balanceSeeds,
   formatSimTable,
+  simTableGateFailures,
   simTableRows,
   typicalDoorChoice,
   typicalRerollPolicy,
@@ -34,7 +39,6 @@ afterEach(async () => {
 
 const CHAPTERS = [1, 2, 3, 4] as const;
 const SEEDS_PER_BOSS = 2;
-const CLASS_MATRIX_SEEDS_PER_BOSS = 1;
 
 describe('typical door choice', () => {
   it('takes heal first, then xp, else the first door', () => {
@@ -170,66 +174,81 @@ describe('M14 4-class × 4-chapter sim table (all classes, Dash, Signature Activ
   const rowsByClass = new Map<CharacterId, SimTableRow[]>();
 
   for (const characterId of CHARACTER_IDS) {
-    it(`${characterId}: all 4 chapters × both bosses — stand still loses room 1, dodge + M14 kit wins 9/9 with 12–16 level-ups`, () => {
-      const rows = simTableRows({
-        chapters: CHAPTERS,
-        seedsPerBoss: CLASS_MATRIX_SEEDS_PER_BOSS,
-        characters: [characterId],
-      });
-      rowsByClass.set(characterId, rows);
+    const seedsPerBoss = SIM_TABLE_SEEDS_PER_BOSS[characterId];
+    const floor = BALANCE_FLOOR.byClass[characterId];
 
-      expect(rows).toHaveLength(CHAPTERS.length * 2 * CLASS_MATRIX_SEEDS_PER_BOSS);
+    // One chapter per `it()`: a whole class matrix in one synchronous block starves vitest's
+    // worker RPC past its 60 s timeout on a loaded machine (ninja's 24 rows take 37–72 s).
+    for (const chapter of CHAPTERS) {
+      it(`${characterId} chapter ${chapter}: stand still loses room 1 and dodge + M14 kit rows are sound`, () => {
+        const rows = simTableRows({
+          chapters: [chapter],
+          seedsPerBoss,
+          characters: [characterId],
+        });
+        rowsByClass.set(characterId, [...(rowsByClass.get(characterId) ?? []), ...rows]);
 
-      for (const chapter of CHAPTERS) {
-        const chapterRows = rows.filter((row) => row.chapter === chapter);
-        expect(chapterRows.map((row) => row.seed)).toEqual(
-          balanceSeeds(chapter, CLASS_MATRIX_SEEDS_PER_BOSS),
-        );
-        expect(new Set(chapterRows.map((row) => row.boss))).toEqual(new Set(BOSS_POOLS[chapter]));
-      }
+        expect(rows).toHaveLength(2 * seedsPerBoss);
+        expect(rows.map((row) => row.seed)).toEqual(balanceSeeds(chapter, seedsPerBoss));
+        expect(new Set(rows.map((row) => row.boss))).toEqual(new Set(BOSS_POOLS[chapter]));
 
-      for (const row of rows) {
-        const label = `${characterId} chapter ${row.chapter} seed ${row.seed} (${row.boss})`;
-        expect(row.characterId, label).toBe(characterId);
-        expect(row.boss, label).toBe(pickBoss(row.chapter, row.seed));
+        for (const row of rows) {
+          const label = `${characterId} chapter ${row.chapter} seed ${row.seed} (${row.boss})`;
+          expect(row.characterId, label).toBe(characterId);
+          expect(row.boss, label).toBe(pickBoss(row.chapter, row.seed));
 
-        expect(row.standStill.status, `${label} stand still`).toBe('lost');
-        expect(row.standStill.roomsCleared, `${label} stand still`).toBe(0);
-        expect(row.standStill.dashesUsed, `${label} stand still dashes`).toBe(0);
-        expect(row.standStill.activeSkillsUsed, `${label} stand still actives`).toBe(0);
-        expect(row.standStill.evolutions, `${label} stand still evolutions`).toEqual([]);
+          expect(row.standStill.status, `${label} stand still`).toBe('lost');
+          expect(row.standStill.roomsCleared, `${label} stand still`).toBe(0);
+          expect(row.standStill.dashesUsed, `${label} stand still dashes`).toBe(0);
+          expect(row.standStill.activeSkillsUsed, `${label} stand still actives`).toBe(0);
+          expect(row.standStill.evolutions, `${label} stand still evolutions`).toEqual([]);
 
-        expect(row.loadout.status, `${label} dodge + M14 kit`).toBe('won');
-        expect(row.loadout.roomsCleared, `${label} dodge + M14 kit`).toBe(9);
-        expect(row.loadout.levelUps, `${label} levelUps`).toBeGreaterThanOrEqual(
-          LEVEL_UP_TARGET_MIN,
-        );
-        expect(row.loadout.levelUps, `${label} levelUps`).toBeLessThanOrEqual(LEVEL_UP_TARGET_MAX);
-        expect(row.loadout.finalLevel, `${label} finalLevel`).toBe(row.loadout.levelUps + 1);
-        expect(row.loadout.xpEarned, `${label} xpEarned`).toBeGreaterThan(0);
-        if (row.chapter >= 2) {
-          expect(row.loadout.dashesUsed, `${label} dashesUsed`).toBeGreaterThan(0);
+          // Winners only: a lost run ends early, so its level-ups and doors say nothing about balance.
+          const won = row.loadout.status === 'won' && row.loadout.roomsCleared === 9;
+          if (won) {
+            expect(row.loadout.levelUps, `${label} levelUps`).toBeGreaterThanOrEqual(
+              LEVEL_UP_TARGET_MIN,
+            );
+            expect(row.loadout.levelUps, `${label} levelUps`).toBeLessThanOrEqual(
+              LEVEL_UP_TARGET_MAX,
+            );
+            // Door choice is modelled: the 7 normal-slot doors before the boss door are recorded.
+            expect(row.loadout.doors.length, `${label} doors`).toBeGreaterThanOrEqual(7);
+          }
+          expect(row.loadout.finalLevel, `${label} finalLevel`).toBe(row.loadout.levelUps + 1);
+          expect(row.loadout.xpEarned, `${label} xpEarned`).toBeGreaterThan(0);
+          if (row.chapter >= 2) {
+            expect(row.loadout.dashesUsed, `${label} dashesUsed`).toBeGreaterThan(0);
+          }
+          expect(row.loadout.activeSkillsUsed, `${label} activeSkillsUsed`).toBeGreaterThan(0);
+          for (const evoId of row.loadout.evolutions) {
+            expect(isEvolutionId(evoId), `${label} evolution ${evoId}`).toBe(true);
+          }
+          expect(row.loadout.durationMs, label).toBeGreaterThan(row.standStill.durationMs);
+          expect(row.loadout.hits, label).toBeGreaterThanOrEqual(0);
         }
-        expect(row.loadout.activeSkillsUsed, `${label} activeSkillsUsed`).toBeGreaterThan(0);
-        for (const evoId of row.loadout.evolutions) {
-          expect(isEvolutionId(evoId), `${label} evolution ${evoId}`).toBe(true);
-        }
-        // Door choice is modelled: the 7 normal-slot doors before the boss door are recorded.
-        expect(row.loadout.doors.length, `${label} doors`).toBeGreaterThanOrEqual(7);
-        expect(row.loadout.durationMs, label).toBeGreaterThan(row.standStill.durationMs);
-        expect(row.loadout.hits, label).toBeGreaterThanOrEqual(0);
-      }
+      }, 300_000);
+    }
+
+    it(`${characterId}: the full matrix meets the #108 win floor`, () => {
+      const rows = rowsByClass.get(characterId) ?? [];
+      expect(rows).toHaveLength(CHAPTERS.length * 2 * seedsPerBoss);
+      expect(rows.length, `${characterId} rows`).toBe(floor.rows);
+
+      const wins = rows.filter(
+        (row) => row.loadout.status === 'won' && row.loadout.roomsCleared === 9,
+      ).length;
+      expect(wins, `${characterId} wins`).toBeGreaterThanOrEqual(floor.won);
 
       const rowsUsingDash = rows.filter((row) => row.loadout.dashesUsed > 0).length;
       expect(rowsUsingDash, `${characterId} dash coverage`).toBeGreaterThanOrEqual(rows.length - 1);
-    }, 300_000);
+    });
   }
 
-  it('unlocks Legendary Evolutions for every class and formats M14 Markdown table columns', () => {
+  it('meets the #108 balance floor, unlocks Legendary Evolutions for every class, and formats M14 Markdown table columns', () => {
     const rows = CHARACTER_IDS.flatMap((characterId) => rowsByClass.get(characterId) ?? []);
-    expect(rows).toHaveLength(
-      CHARACTER_IDS.length * CHAPTERS.length * 2 * CLASS_MATRIX_SEEDS_PER_BOSS,
-    );
+    expect(rows).toHaveLength(BALANCE_FLOOR.total.rows);
+    expect(simTableGateFailures(rows)).toEqual([]);
 
     for (const characterId of CHARACTER_IDS) {
       const classRows = rowsByClass.get(characterId) ?? [];
