@@ -15,7 +15,7 @@
  * `x/10`, with no code change.
  *
  * The run loop lives in `update()` and steps player → enemy → bullet → collision in the same
- * order as `core/sim/run-simulation.ts`, so engine behaviour matches what the sim balanced.
+ * order as `sim/run-simulation.ts`, so engine behaviour matches what the sim balanced.
  *
  * The real GDD §5 boss (`core/boss/boss-defs.ts`): 3 phases, readable patterns.
  * Clearing the boss room ⇒ CHAPTER CLEAR ⇒ result (win) ⇒ chapter select.

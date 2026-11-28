@@ -7,7 +7,7 @@
  * - health: `HealthState` (core decides i-frames and the heart cap).
  *
  * It does not run from `update()`: bootstrap calls `step()` so the frame order is
- * deterministic (player → enemy → bullets → collisions), the same as `core/sim/run-simulation.ts`.
+ * deterministic (player → enemy → bullets → collisions), the same as `sim/run-simulation.ts`.
  */
 import {
   _decorator,

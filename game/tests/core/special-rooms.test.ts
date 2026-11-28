@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { TUNING } from '../../assets/scripts/core/enemies/tuning';
-import { simulateRun } from '../../assets/scripts/core/sim/run-simulation';
+import { simulateRun } from '../../sim/run-simulation';
 import { createDefaultSave } from '../../assets/scripts/core/save/save-data';
 import {
   buyFromShop,

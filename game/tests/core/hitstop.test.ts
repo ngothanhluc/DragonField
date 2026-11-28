@@ -4,7 +4,7 @@ import { isTelegraphElapsed } from '../../assets/scripts/core/combat/telegraph';
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
 import { HealthState } from '../../assets/scripts/core/combat/health';
 
-/** Simulation loop at 16 ms/frame, same as `core/sim/run-simulation.ts`. */
+/** Simulation loop at 16 ms/frame, same as `sim/run-simulation.ts`. */
 const FRAME_MS = 16;
 
 describe('HitstopClock — freezes simulation time', () => {

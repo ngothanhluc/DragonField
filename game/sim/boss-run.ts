@@ -25,7 +25,7 @@
  *   (the Cocos adapter is what plays animations and FX).
  * - `godMode` is a test hook: the player takes no damage.
  */
-import { BOSSES, phaseFor, type BossId, type BossPhase } from '../boss/boss-defs';
+import { BOSSES, phaseFor, type BossId, type BossPhase } from '../assets/scripts/core/boss/boss-defs';
 import {
   bulletVelocity,
   initialBossState,
@@ -33,33 +33,33 @@ import {
   stepBoss,
   type BossState,
   type BulletVerb,
-} from '../boss/patterns';
-import { summonedEnemies } from '../boss/summon';
+} from '../assets/scripts/core/boss/patterns';
+import { summonedEnemies } from '../assets/scripts/core/boss/summon';
 import {
   CHARACTERS,
   DEFAULT_CHARACTER_ID,
   type CharacterId,
-} from '../characters/roster';
-import { AutoFire } from '../combat/auto-fire';
-import { BulletPool, hitsCircle, type Bullet } from '../combat/bullets';
-import { PlayerHitHitstop } from '../combat/hit-hitstop';
-import { HealthState } from '../combat/health';
-import { accumulateDamage } from '../combat/integer-damage';
-import { firePlayerVolley } from '../combat/player-fire';
-import { ShieldCharger } from '../combat/shield';
+} from '../assets/scripts/core/characters/roster';
+import { AutoFire } from '../assets/scripts/core/combat/auto-fire';
+import { BulletPool, hitsCircle, type Bullet } from '../assets/scripts/core/combat/bullets';
+import { PlayerHitHitstop } from '../assets/scripts/core/combat/hit-hitstop';
+import { HealthState } from '../assets/scripts/core/combat/health';
+import { accumulateDamage } from '../assets/scripts/core/combat/integer-damage';
+import { firePlayerVolley } from '../assets/scripts/core/combat/player-fire';
+import { ShieldCharger } from '../assets/scripts/core/combat/shield';
 import {
   HOMING_TURN_RATE_RADIANS_PER_SECOND,
   damageAfterExecute,
   lifestealHeal,
   ricochetTarget,
   steerVelocity,
-} from '../combat/shot-effects';
-import { StatusEffects } from '../combat/status-effects';
-import type { Targetable } from '../combat/targeting';
-import { DEFAULT_COMBAT } from '../config';
-import { maxHealthFor } from '../enemies/behaviours';
-import { DASH_TUNING, FEEL_TUNING } from '../enemies/tuning';
-import { ActionBuffer } from '../input/action-buffer';
+} from '../assets/scripts/core/combat/shot-effects';
+import { StatusEffects } from '../assets/scripts/core/combat/status-effects';
+import type { Targetable } from '../assets/scripts/core/combat/targeting';
+import { DEFAULT_COMBAT } from '../assets/scripts/core/config';
+import { maxHealthFor } from '../assets/scripts/core/enemies/behaviours';
+import { DASH_TUNING, FEEL_TUNING } from '../assets/scripts/core/enemies/tuning';
+import { ActionBuffer } from '../assets/scripts/core/input/action-buffer';
 import {
   activeSkillConfigFor,
   computeArcaneNovaSpec,
@@ -74,7 +74,7 @@ import {
   tryActivateSkill,
   type ActiveSkillState,
   type SignatureSkillId,
-} from '../input/active-skill';
+} from '../assets/scripts/core/input/active-skill';
 import {
   canStartDash,
   createDashState,
@@ -84,13 +84,13 @@ import {
   stepDash,
   tryStartDash,
   type DashState,
-} from '../input/dash';
-import { ROOM_COLS, ROOM_ROWS, type EnemyRole } from '../level/level-data';
-import { distance, type Vec2 } from '../math/vec2';
-import { applyCharacterBaseStats, applyCharacterPassive } from '../meta/run-stats';
-import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
-import { SeededRng } from '../rng';
-import { computeDerivedStats, type DerivedStats } from '../skills/derived-stats';
+} from '../assets/scripts/core/input/dash';
+import { ROOM_COLS, ROOM_ROWS, type EnemyRole } from '../assets/scripts/core/level/level-data';
+import { distance, type Vec2 } from '../assets/scripts/core/math/vec2';
+import { applyCharacterBaseStats, applyCharacterPassive } from '../assets/scripts/core/meta/run-stats';
+import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../assets/scripts/core/movement/move-intent';
+import { SeededRng } from '../assets/scripts/core/rng';
+import { computeDerivedStats, type DerivedStats } from '../assets/scripts/core/skills/derived-stats';
 
 /** Simulation step, ms. Matches `SIM_STEP_MS` of the run simulation so measurements compare. */
 export const BOSS_RUN_STEP_MS = 16;

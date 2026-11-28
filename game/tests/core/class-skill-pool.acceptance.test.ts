@@ -28,8 +28,8 @@ import {
   rerollChoices,
   rollChoices,
 } from '../../assets/scripts/core/skills/roll';
-import { simulateRun } from '../../assets/scripts/core/sim/run-simulation';
-import type { InputPolicy } from '../../assets/scripts/core/sim/run-simulation';
+import { simulateRun } from '../../sim/run-simulation';
+import type { InputPolicy } from '../../sim/run-simulation';
 import { loadChapterOne } from '../helpers/tmx-levels';
 
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '../../assets');

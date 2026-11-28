@@ -9,7 +9,7 @@ import {
   simulateBossRun,
   type BossRunEvent,
   type BossRunResult,
-} from '../../assets/scripts/core/sim/boss-run';
+} from '../../sim/boss-run';
 
 type SummonEvent = Extract<BossRunEvent, { kind: 'boss-summon' }>;
 

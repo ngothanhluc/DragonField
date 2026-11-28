@@ -17,7 +17,12 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['assets/scripts/**/*.ts', 'scripts/**/*.ts', 'tests/**/*.ts'],
+    files: [
+      'assets/scripts/**/*.ts',
+      'sim/**/*.ts',
+      'scripts/**/*.ts',
+      'tests/**/*.ts',
+    ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
@@ -26,8 +31,12 @@ export default tseslint.config(
     },
   },
   {
-    // Architecture boundary: core/ must be testable without the engine.
-    files: ['assets/scripts/core/**/*.ts'],
+    // Architecture boundary: pure TS must be testable without the engine.
+    files: [
+      'assets/scripts/core/**/*.ts',
+      'sim/**/*.ts',
+      'scripts/**/*.ts',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -36,7 +45,7 @@ export default tseslint.config(
             {
               group: ['cc', 'cc/*'],
               message:
-                'core/ must be plain TS: do not import cc. Move engine-dependent code into assets/scripts/game/.',
+                'core/, sim/ and scripts/ must be plain TS: do not import cc. Move engine-dependent code into assets/scripts/game/.',
             },
           ],
         },

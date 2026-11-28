@@ -5,7 +5,7 @@
  * (doors, spawns and the player start keep their space).
  *
  * Contract this file relies on (agreed in the brief, do not rename):
- * - `core/level/autotile.ts` exports `pickBlobTile(mask, x, y)` (0 off-mask, else 1..13 in the
+ * - `scripts/lib/autotile.ts` exports `pickBlobTile(mask, x, y)` (0 off-mask, else 1..13 in the
  *   13-piece blob layout of `TilesetField`: 1 2 3 / 6 7 8 / 11 12 13 outer, 4 5 / 9 10 inner
  *   corners), `normalizePatchMask(mask)` and `GROUND_TERRAINS[chapter] = { tileset, tiles }`
  *   (`tiles[blob - 1]` = 1-based local tile id inside `tileset`, a `.tsx` file name).
@@ -51,14 +51,14 @@ let autotile: AutotileModule | null = null;
 
 beforeAll(async () => {
   try {
-    autotile = (await import('../../assets/scripts/core/level/autotile')) as unknown as AutotileModule;
+    autotile = (await import('../../scripts/lib/autotile')) as unknown as AutotileModule;
   } catch {
     autotile = null;
   }
 });
 
 function lib(): AutotileModule {
-  expect(autotile, 'core/level/autotile.ts must exist and export the edge picker').not.toBeNull();
+  expect(autotile, 'scripts/lib/autotile.ts must exist and export the edge picker').not.toBeNull();
   if (autotile === null) throw new Error('unreachable');
   return autotile;
 }

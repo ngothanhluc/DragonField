@@ -8,13 +8,13 @@
  * down), so `up` moves toward `-y`? No — see `move-intent.ts`: `up` = `+y`, i.e. tile-down. The
  * game adapter flips the sign once (`player-controller`), the sim does not, so a policy must map
  * a tile-space direction `(dx, dy)` to keys as `up: dy > 0, down: dy < 0` (the same rule as
- * `core/sim/boss-run.ts:moveInputToward`). Evaluating a path in the *opposite* direction than the
+ * `sim/boss-run.ts:moveInputToward`). Evaluating a path in the *opposite* direction than the
  * keys produce makes the player stand still against a wall, so this file keeps directions in tile
  * space only and derives the keys with `inputFor`.
  */
 import { DEFAULT_COMBAT } from '../../assets/scripts/core/config';
 import { ROOM_COLS, ROOM_ROWS } from '../../assets/scripts/core/level/level-data';
-import type { InputPolicy, PolicyWorld } from '../../assets/scripts/core/sim/run-simulation';
+import type { InputPolicy, PolicyWorld } from '../../sim/run-simulation';
 
 const standStill: InputPolicy = () => ({ up: false, down: false, left: false, right: false });
 

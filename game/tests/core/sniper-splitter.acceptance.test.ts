@@ -8,7 +8,7 @@ import { attackReleased, decideAction, type EnemyState } from '../../assets/scri
 import { splitOnDeath } from '../../assets/scripts/core/enemies/splitter';
 import { ENEMY_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import { ENEMY_ROLES, parseLevelData, type EnemyRole, type LevelData, type Obstacle } from '../../assets/scripts/core/level/level-data';
-import { simulateRun } from '../../assets/scripts/core/sim/run-simulation';
+import { simulateRun } from '../../sim/run-simulation';
 
 type RoleTuning = Record<string, number>;
 const roles = ENEMY_TUNING.roles as unknown as Record<string, RoleTuning | undefined>;

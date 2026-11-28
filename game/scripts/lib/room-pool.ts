@@ -7,7 +7,7 @@
  *
  * Room anatomy (2×2 screens of 32×18 tiles), the way the Ninja Adventure demo scenes are built:
  * - **Floor**: one uniform grass/sand gid (`FLOOR_GID`), the base everything else sits on.
- * - **Ground patches**: 13-piece blob autotile of a second terrain (`core/level/autotile.ts`) over
+ * - **Ground patches**: 13-piece blob autotile of a second terrain (`scripts/lib/autotile.ts`) over
  *   a value-noise mask — irregular dirt/grass/sand patches with proper corners, never hard squares.
  * - **Path**: stepping stones from the entrance door to the exit door (and a short spur toward the
  *   set piece), carved first so obstacles never sit on it.
@@ -32,7 +32,7 @@ import {
   normalizePatchMask,
   pickBlobTile,
   type PatchMask,
-} from '../../assets/scripts/core/level/autotile';
+} from './autotile';
 import type {
   EnemyRole,
   ObstacleKind,

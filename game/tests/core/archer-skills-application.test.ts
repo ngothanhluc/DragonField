@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { BulletPool } from "../../assets/scripts/core/combat/bullets";
-import { simulateRun, type InputPolicy } from "../../assets/scripts/core/sim/run-simulation";
+import { simulateRun, type InputPolicy } from "../../sim/run-simulation";
 import { loadChapterOne } from "../helpers/tmx-levels";
 
 const chapterOne = loadChapterOne();

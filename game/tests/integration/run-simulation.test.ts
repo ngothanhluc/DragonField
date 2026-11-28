@@ -32,14 +32,14 @@ import {
 import { createDefaultSave } from '../../assets/scripts/core/save/save-data';
 import { MemorySaveStorage, SaveRepository } from '../../assets/scripts/core/save/storage';
 import { isEvolutionId } from '../../assets/scripts/core/skills/evolutions';
-import { simulateBossRun } from '../../assets/scripts/core/sim/boss-run';
+import { simulateBossRun } from '../../sim/boss-run';
 import {
   SIM_DEFAULT_MAX_DURATION_MS,
   simulateRun,
   smartActiveSkillPolicy,
   smartDashPolicy,
   type InputPolicy,
-} from '../../assets/scripts/core/sim/run-simulation';
+} from '../../sim/run-simulation';
 import { xpDoorClearBonus, xpForKill, xpForNextLevel } from '../../assets/scripts/core/xp/xp-curve';
 import { rerollCost } from '../../assets/scripts/core/xp/reroll';
 import { levelUpResumeIframeMs } from '../../assets/scripts/core/xp/level-up-wave';

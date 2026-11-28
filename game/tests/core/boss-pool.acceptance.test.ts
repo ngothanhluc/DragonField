@@ -16,7 +16,7 @@ import {
 import { BOSS_POOLS, bossMusicPath, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
 import { BOSS_TUNING } from '../../assets/scripts/core/enemies/tuning';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
-import { holdPosition, simulateBossRun } from '../../assets/scripts/core/sim/boss-run';
+import { holdPosition, simulateBossRun } from '../../sim/boss-run';
 
 const RESOURCES = join(dirname(fileURLToPath(import.meta.url)), '../../assets/resources');
 const byId = BOSSES as Readonly<Record<string, BossDef | undefined>>;

@@ -8,7 +8,7 @@
  *    `XpTracker` + dedicated `createSkillRollRng` sub-seed + `typicalSkillChoice`), landing in
  *    the 12–16 level-ups/run target band across Ch1–Ch4 and winning 9/9.
  *
- * Nothing under `assets/` imports this file: it is the test/CLI seam over `core/sim`.
+ * Nothing under `assets/` imports this file: it is the test/CLI seam over `sim/`.
  */
 import { join } from 'node:path';
 import { BOSS_POOLS, pickBoss } from '../../assets/scripts/core/boss/boss-pool';
@@ -41,7 +41,7 @@ import {
   type SimulationStatus,
   type SkillPickPolicy,
   type SkillRerollPolicy,
-} from '../../assets/scripts/core/sim/run-simulation';
+} from '../../sim/run-simulation';
 import { makeDodgePolicy } from './dodge-policy';
 import { LEVELS_ROOT, loadTmxLevels } from './tmx-levels';
 

@@ -26,7 +26,7 @@ import {
 import { childrenNamed, elementText, firstChild, parseXml } from '../../assets/scripts/core/level/xml';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
 import { circleOverlapsObstacle, moveWithCollision } from '../../assets/scripts/core/movement/collision';
-import { simulateRun, type InputPolicy } from '../../assets/scripts/core/sim/run-simulation';
+import { simulateRun, type InputPolicy } from '../../sim/run-simulation';
 import { CH2_MIN_BRIDGES } from '../../scripts/lib/ch2-river';
 import { LEVELS_ROOT, loadTmxLevels } from '../helpers/tmx-levels';
 

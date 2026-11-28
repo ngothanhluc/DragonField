@@ -3,7 +3,7 @@
  *
  * Split from the adapter because this is where game and simulation drift most easily:
  * projectile count, spread angle, crit, execute, lifesteal, ricochet, explosion. Both `game/player-controller.ts`
- * and `core/sim/*` call exactly these functions; they are pure arithmetic + `SeededRng`.
+ * and `sim/*` (headless balance sim) call exactly these functions; they are pure arithmetic + `SeededRng`.
  *
  * Damage convention: a bullet's damage already includes crit (rolled at fire time). Execute is a
  * factor **applied on hit** because it depends on the target's health at that moment.

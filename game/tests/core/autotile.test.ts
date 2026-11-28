@@ -12,7 +12,7 @@ import {
   normalizePatchMask,
   pickBlobTile,
   type PatchMask,
-} from '../../assets/scripts/core/level/autotile';
+} from '../../scripts/lib/autotile';
 import { readPng } from '../../scripts/lib/png';
 
 function mask(rows: readonly string[]): PatchMask {
