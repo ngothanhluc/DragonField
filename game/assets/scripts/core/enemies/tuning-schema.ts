@@ -15,54 +15,66 @@
 import { ENEMY_ROLES, type EnemyRole } from '../level/level-data';
 import { CHAPTERS_PER_RUN } from '../run/run-state';
 import {
+  blockField,
+  booleanField,
   describe,
   isRecord,
   joinPath,
   numberField,
+  numberListField,
+  numberTableField,
   parseBlock,
+  parseKeyedRecord,
+  ratioField,
+  readBoolean,
   readNumber,
   readObject,
+  readRatio,
+  signedIntegerField,
   type InferBlock,
+  type ProblemSink,
 } from './tuning-spec';
 
 /** Player combat numbers (GDD §3). */
-export interface CombatTuning {
+export const COMBAT_SPEC = {
   /** Shots per second in the base state. */
-  readonly fireRatePerSecond: number;
+  fireRatePerSecond: numberField({ positive: true }),
   /** Damage per base projectile. */
-  readonly damage: number;
+  damage: numberField(),
   /** Projectiles per shot in the base state. */
-  readonly projectiles: number;
+  projectiles: numberField({ integer: true, positive: true }),
   /** Projectile speed, tiles/second. */
-  readonly projectileSpeedTilesPerSecond: number;
+  projectileSpeedTilesPerSecond: numberField({ positive: true }),
   /** Base movement speed, tiles/second. */
-  readonly moveSpeedTilesPerSecond: number;
-  /** Out-of-combat room-clear movement speed multiplier (M17: 1.45 = +45%). */
-  readonly roomClearSpeedMultiplier: number;
-  /** Base player maximum HP (M17 RPG 100 HP scale, ADR-025). */
-  readonly playerBaseMaxHp: number;
+  moveSpeedTilesPerSecond: numberField({ positive: true }),
+  /** Out-of-combat room-clear movement multiplier (1.45 = +45%). */
+  roomClearSpeedMultiplier: numberField({ positive: true, min: 1 }),
+  /** Base player maximum HP. */
+  playerBaseMaxHp: numberField({ integer: true, positive: true }),
   /** Invulnerability after taking a hit, ms. */
-  readonly invulnerabilityMs: number;
+  invulnerabilityMs: numberField(),
   /** Base damage when an enemy touches the player. */
-  readonly contactDamage: number;
+  contactDamage: numberField(),
   /** Auto-aim range, tiles. */
-  readonly targetingRangeTiles: number;
+  targetingRangeTiles: numberField({ positive: true }),
   /** Player knockback distance when hit, tiles. */
-  readonly playerKnockbackDistanceTiles: number;
+  playerKnockbackDistanceTiles: numberField({ positive: true }),
   /** Time to travel the full player knockback distance, ms. */
-  readonly playerKnockbackDurationMs: number;
+  playerKnockbackDurationMs: numberField({ positive: true }),
   /** Enemy knockback distance when hit by a projectile, tiles. */
-  readonly enemyKnockbackDistanceTiles: number;
+  enemyKnockbackDistanceTiles: numberField(),
   /** Time to travel the full enemy knockback distance, ms. */
-  readonly enemyKnockbackDurationMs: number;
+  enemyKnockbackDurationMs: numberField(),
   /**
-   * Hitstop when a player projectile hits an enemy, ms (ADR-008: 70). The whole simulation
-   * stands still for this long — see `core/combat/hitstop.ts`.
+   * Hitstop when a player projectile hits an enemy, ms. The whole simulation stands still
+   * for this long — see `core/combat/hitstop.ts`.
    */
-  readonly enemyHitstopMs: number;
-  /** Time an enemy stands still after being hit by a projectile, ms (ADR-008: 150). */
-  readonly enemyStaggerMs: number;
-}
+  enemyHitstopMs: numberField(),
+  /** Time an enemy stands still after being hit by a projectile, ms. */
+  enemyStaggerMs: numberField(),
+} as const;
+
+export type CombatTuning = InferBlock<typeof COMBAT_SPEC>;
 
 /**
  * Elite chaser extra attack: telegraph, then a short pounce.
@@ -302,84 +314,96 @@ export interface WavesTuning {
   readonly chapterTotals: readonly ChapterWaveTotal[];
 }
 
-/** Meteor (`mage-meteor`): periodic heavy AoE on the densest cluster (M20, #86). */
-export interface MageMeteorTuning {
-  /** Interval at 1 stack, ms (GDD: 4.5 s). */
-  readonly intervalMs: number;
+/** Meteor (`mage-meteor`): periodic heavy AoE on the densest cluster. */
+export const MAGE_METEOR_SPEC = {
+  /** Interval at 1 stack, ms. */
+  intervalMs: numberField({ positive: true }),
   /** Shorter interval per extra stack, ms (subtracted from `intervalMs`). */
-  readonly intervalStepMs: number;
+  intervalStepMs: numberField(),
   /** Meteor AoE radius, tiles. */
-  readonly radiusTiles: number;
+  radiusTiles: numberField({ positive: true }),
   /** AoE damage as a multiple of the player's per-shot damage. */
-  readonly damageRatio: number;
+  damageRatio: numberField({ positive: true }),
   /** Burn DPS as a multiple of the player's per-shot damage. */
-  readonly burnDpsRatio: number;
+  burnDpsRatio: numberField(),
   /** Burn duration, ms. */
-  readonly burnDurationMs: number;
-}
+  burnDurationMs: numberField({ integer: true }),
+} as const;
 
-/** Frost Orbs (`mage-frost-orbs`): orbiting contact spheres (M20, #86). */
-export interface MageFrostOrbsTuning {
-  /** Orbs at 1 stack (GDD: 2). */
-  readonly baseCount: number;
-  /** Extra orbs per additional stack (GDD: +1/stack). */
-  readonly countPerStack: number;
+export type MageMeteorTuning = InferBlock<typeof MAGE_METEOR_SPEC>;
+
+/** Frost Orbs (`mage-frost-orbs`): orbiting contact spheres. */
+export const MAGE_FROST_ORBS_SPEC = {
+  /** Orbs at 1 stack. */
+  baseCount: numberField({ integer: true }),
+  /** Extra orbs per additional stack. */
+  countPerStack: numberField({ integer: true }),
   /** Orbit radius around the Mage, tiles. */
-  readonly radiusTiles: number;
+  radiusTiles: numberField({ positive: true }),
   /** Orbit angular speed at base, radians/second. */
-  readonly orbitRadiansPerSecond: number;
+  orbitRadiansPerSecond: numberField({ positive: true }),
   /** Orbit speed multiplier while the Evolution is owned. */
-  readonly evolvedOrbitMultiplier: number;
+  evolvedOrbitMultiplier: numberField({ positive: true }),
   /** Contact radius of one orb, tiles. */
-  readonly hitRadiusTiles: number;
+  hitRadiusTiles: numberField({ positive: true }),
   /** Contact DPS as a multiple of the player's per-shot damage. */
-  readonly damagePerSecondRatio: number;
+  damagePerSecondRatio: numberField({ positive: true }),
   /** Heavy slow speed factor `0..1` on contact. */
-  readonly slowFactor: number;
+  slowFactor: ratioField(),
   /** Slow duration, ms. */
-  readonly slowDurationMs: number;
-}
+  slowDurationMs: numberField({ integer: true }),
+} as const;
 
-/** Storm Strike (`mage-storm-strike`): on-hit lightning proc (M20, #86). */
-export interface MageStormStrikeTuning {
-  /** Proc chance at 1 stack (GDD: 0.2). */
-  readonly procChance: number;
-  /** Extra proc chance per additional stack (GDD: +0.1/stack). */
-  readonly procChancePerStack: number;
+export type MageFrostOrbsTuning = InferBlock<typeof MAGE_FROST_ORBS_SPEC>;
+
+/** Storm Strike (`mage-storm-strike`): on-hit lightning proc. */
+export const MAGE_STORM_STRIKE_SPEC = {
+  /** Proc chance at 1 stack. */
+  procChance: ratioField(),
+  /** Extra proc chance per additional stack. */
+  procChancePerStack: ratioField(),
   /** Bolt damage as a multiple of the player's per-shot damage. */
-  readonly damageRatio: number;
-}
+  damageRatio: numberField({ positive: true }),
+} as const;
 
-/** Arcane Pulse (`mage-arcane-pulse`): every-Nth-shot ring (M20, #86). */
-export interface MageArcanePulseTuning {
-  /** Ring fires on every Nth auto-fire shot (GDD: 4). */
-  readonly shotEvery: number;
-  /** Ring radius, tiles (GDD: 1.8). */
-  readonly radiusTiles: number;
+export type MageStormStrikeTuning = InferBlock<typeof MAGE_STORM_STRIKE_SPEC>;
+
+/** Arcane Pulse (`mage-arcane-pulse`): every-Nth-shot ring. */
+export const MAGE_ARCANE_PULSE_SPEC = {
+  /** Ring fires on every Nth auto-fire shot. */
+  shotEvery: numberField({ integer: true, positive: true }),
+  /** Ring radius, tiles. */
+  radiusTiles: numberField({ positive: true }),
   /** Ring damage at 1 stack, as a multiple of the player's per-shot damage. */
-  readonly damageRatio: number;
+  damageRatio: numberField(),
   /** Extra damage ratio per additional stack. */
-  readonly damageRatioPerStack: number;
-}
+  damageRatioPerStack: numberField(),
+} as const;
 
-/** Elemental Cataclysm (`mage-elemental-cataclysm`): Evolution extras (M20, #86). */
-export interface MageEvolutionTuning {
+export type MageArcanePulseTuning = InferBlock<typeof MAGE_ARCANE_PULSE_SPEC>;
+
+/** Elemental Cataclysm (`mage-elemental-cataclysm`): Evolution extras. */
+export const MAGE_EVOLUTION_SPEC = {
   /** Ice-shard launch interval, ms. */
-  readonly shardIntervalMs: number;
+  shardIntervalMs: numberField({ integer: true, positive: true }),
   /** Shard damage as a multiple of the player's per-shot damage. */
-  readonly shardDamageRatio: number;
+  shardDamageRatio: numberField({ positive: true }),
   /** Orb damage multiplier against ignited (burning) foes. */
-  readonly shatterBurnMultiplier: number;
-}
+  shatterBurnMultiplier: numberField({ positive: true }),
+} as const;
 
-/** One class's exclusive-skill tuning block (M20, ADR-027). */
-export interface MageClassSkillsTuning {
-  readonly meteor: MageMeteorTuning;
-  readonly frostOrbs: MageFrostOrbsTuning;
-  readonly stormStrike: MageStormStrikeTuning;
-  readonly arcanePulse: MageArcanePulseTuning;
-  readonly evolution: MageEvolutionTuning;
-}
+export type MageEvolutionTuning = InferBlock<typeof MAGE_EVOLUTION_SPEC>;
+
+/** One class's exclusive-skill tuning block. */
+export const MAGE_SPEC = {
+  meteor: blockField(MAGE_METEOR_SPEC),
+  frostOrbs: blockField(MAGE_FROST_ORBS_SPEC),
+  stormStrike: blockField(MAGE_STORM_STRIKE_SPEC),
+  arcanePulse: blockField(MAGE_ARCANE_PULSE_SPEC),
+  evolution: blockField(MAGE_EVOLUTION_SPEC),
+} as const;
+
+export type MageClassSkillsTuning = InferBlock<typeof MAGE_SPEC>;
 
 export interface TuningConfig {
   /** Bump when a field changes meaning, so old saves/replays can tell. */
@@ -435,145 +459,187 @@ export const TUNING_CHARACTER_IDS = ['ninja', 'archer', 'mage', 'cultivator'] as
 
 export type TuningCharacterId = (typeof TUNING_CHARACTER_IDS)[number];
 
-/** Layer 1 per-class base stat deltas & multipliers relative to `combat` baseline (M14/M17). */
-export interface CharacterBaseStatsTuning {
-  /** Signed integer HP delta added to `combat.playerBaseMaxHp` (e.g. 0, -15, -15, +20). */
-  readonly maxHpDelta: number;
-  readonly damageMult: number;
-  readonly fireRateMult: number;
-  readonly moveSpeedMult: number;
-  readonly projectileSpeedMult: number;
-  readonly targetingRangeMult: number;
-}
+/** Layer 1 per-class base stat deltas & multipliers relative to the `combat` baseline. */
+export const CHARACTER_BASE_STATS_SPEC = {
+  /** Signed integer HP delta added to `combat.playerBaseMaxHp`. */
+  maxHpDelta: signedIntegerField({ min: -80, max: 200 }),
+  damageMult: numberField({ positive: true }),
+  fireRateMult: numberField({ positive: true }),
+  moveSpeedMult: numberField({ positive: true }),
+  projectileSpeedMult: numberField({ positive: true }),
+  targetingRangeMult: numberField({ positive: true }),
+} as const;
 
-/** Layer 2 per-class starting passive parameters (M14). */
-export interface CharacterPassiveTuning {
-  /** Additive move-speed bonus ratio (e.g. `0.1` = +10% move speed). */
-  readonly moveSpeedBonus: number;
-  /** Multiplicative Dash cooldown factor (e.g. `0.85` = -15% Dash cooldown). */
-  readonly dashCooldownMult: number;
-  /** Additive base pierce count (e.g. `1` for Archer's Keen Sight). */
-  readonly pierceAdd: number;
-  /** Additive crit chance in `0..1` (e.g. `0.12` for Archer's Keen Sight). */
-  readonly critChanceAdd: number;
+export type CharacterBaseStatsTuning = InferBlock<
+  typeof CHARACTER_BASE_STATS_SPEC
+>;
+
+/** Layer 2 per-class starting passive parameters. */
+export const CHARACTER_PASSIVE_SPEC = {
+  /** Additive move-speed bonus ratio (`0.1` = +10% move speed). */
+  moveSpeedBonus: numberField(),
+  /** Multiplicative Dash cooldown factor (`0.85` = -15% cooldown). */
+  dashCooldownMult: numberField({ positive: true }),
+  /** Additive base pierce count. */
+  pierceAdd: numberField({ integer: true }),
+  /** Additive crit chance in `0..1`. */
+  critChanceAdd: ratioField(),
   /** Minimum crit multiplier applied when crit chance > 0 (`>= 1`). */
-  readonly critMultiplier: number;
-  /** Multiplicative Signature Active cooldown factor (e.g. `0.8` = -20% for Mage). */
-  readonly activeCooldownMult: number;
-  /** Additive Signature Active power bonus (e.g. `0.25` = +25% for Mage). */
-  readonly activePowerBonus: number;
-  /** Additive AoE power bonus (e.g. `0.25` = +25% for Mage). */
-  readonly aoePowerBonus: number;
-  /** Multiplicative base damage bonus ratio (e.g. `0.15` = +15% for Cultivator's Sword Heart). */
-  readonly damageBonus: number;
-  /** Execute threshold in `0..1` (`0` = disabled; e.g. `0.3` = enemies below 30% HP). */
-  readonly executeThreshold: number;
-  /** Additive execute damage bonus ratio (e.g. `0.1` = +10% for Cultivator). */
-  readonly executeBonus: number;
-}
+  critMultiplier: numberField({ positive: true, min: 1 }),
+  /** Multiplicative Signature Active cooldown factor (`0.8` = -20%). */
+  activeCooldownMult: numberField({ positive: true }),
+  /** Additive Signature Active power bonus (`0.25` = +25%). */
+  activePowerBonus: numberField(),
+  /** Additive AoE power bonus (`0.25` = +25%). */
+  aoePowerBonus: numberField(),
+  /** Multiplicative base damage bonus ratio (`0.15` = +15%). */
+  damageBonus: numberField(),
+  /** Execute threshold in `0..1` (`0` = disabled; `0.3` = enemies below 30% HP). */
+  executeThreshold: ratioField(),
+  /** Additive execute damage bonus ratio (`0.1` = +10%). */
+  executeBonus: numberField(),
+} as const;
 
-/** Layer 3 per-class Signature Active parameters (M14). */
-export interface CharacterSignatureTuning {
-  readonly cooldownMs: number;
-  readonly hitCooldownReductionMs: number;
-  readonly killCooldownReductionMs: number;
-  readonly projectileCount: number;
-  readonly maxProjectileCount: number;
-  readonly fanArcDegrees: number;
-  readonly speedTilesPerSecond: number;
-  readonly radiusTiles: number;
-  readonly ttlMs: number;
-  readonly damageMultiplier: number;
-  readonly pierceCount: number;
-  readonly homing: boolean;
+export type CharacterPassiveTuning = InferBlock<
+  typeof CHARACTER_PASSIVE_SPEC
+>;
+
+/** Layer 3 per-class Signature Active parameters. */
+export const CHARACTER_SIGNATURE_SPEC = {
+  cooldownMs: numberField({ integer: true, positive: true }),
+  hitCooldownReductionMs: numberField({ integer: true }),
+  killCooldownReductionMs: numberField({ integer: true }),
+  projectileCount: numberField({ integer: true, positive: true }),
+  maxProjectileCount: numberField({ integer: true, positive: true }),
+  fanArcDegrees: numberField({ max: 360 }),
+  speedTilesPerSecond: numberField({ positive: true }),
+  radiusTiles: numberField({ positive: true }),
+  ttlMs: numberField({ integer: true, positive: true }),
+  damageMultiplier: numberField({ positive: true }),
+  pierceCount: numberField({ integer: true }),
+  homing: booleanField(),
   /** Radial AoE nova radius in tiles (`0` when the signature has no radial nova). */
-  readonly novaRadiusTiles: number;
+  novaRadiusTiles: numberField(),
   /** Radial AoE nova damage multiplier (`0` when the signature has no radial nova). */
-  readonly novaDamageMultiplier: number;
+  novaDamageMultiplier: numberField(),
   /** Radial AoE slow/freeze speed factor in `0..1` (`1` = no slow). */
-  readonly novaSlowFactor: number;
+  novaSlowFactor: ratioField(),
   /** Radial AoE slow/freeze duration in ms (`0` = no slow). */
-  readonly novaSlowDurationMs: number;
-  /** Duration in ms to hide worn back attachment during the signature (`0` = do not hide). */
-  readonly hideAttachmentMs: number;
+  novaSlowDurationMs: numberField({ integer: true }),
+  /** Duration in ms to hide the worn back attachment during the signature (`0` = do not hide). */
+  hideAttachmentMs: numberField({ integer: true }),
+} as const;
+
+export type CharacterSignatureTuning = InferBlock<
+  typeof CHARACTER_SIGNATURE_SPEC
+>;
+
+/** The barrage can never be wider than its capped projectile count. */
+function checkSignatureProjectiles(
+  signature: CharacterSignatureTuning,
+  path: string,
+  problems: ProblemSink,
+): void {
+  if (signature.maxProjectileCount < signature.projectileCount) {
+    problems.add(
+      `${path}.maxProjectileCount`,
+      `must be >= projectileCount (${signature.projectileCount}), got ${signature.maxProjectileCount}`,
+    );
+  }
 }
 
-/** Complete M14 tuning block for one playable character class. */
-export interface CharacterTuning {
+/** Complete tuning block for one playable character class. */
+export const CHARACTER_SPEC = {
   /** Chapter clear milestone for free unlock (`0` = unlocked from start, `1..3` = clear Ch1..Ch3). */
-  readonly unlockChapter: number;
+  unlockChapter: signedIntegerField({ min: 0, max: CHAPTERS_PER_RUN - 1 }),
   /** Meta gold cost for early unlock (`0` for default unlocked classes). */
-  readonly unlockGoldCost: number;
-  readonly baseStats: CharacterBaseStatsTuning;
-  readonly passive: CharacterPassiveTuning;
-  readonly signature: CharacterSignatureTuning;
-}
+  unlockGoldCost: numberField({ integer: true }),
+  baseStats: blockField(CHARACTER_BASE_STATS_SPEC),
+  passive: blockField(CHARACTER_PASSIVE_SPEC),
+  signature: blockField(CHARACTER_SIGNATURE_SPEC, checkSignatureProjectiles),
+} as const;
 
-/** All 4 playable character tuning blocks keyed by character id (M14). */
+export type CharacterTuning = InferBlock<typeof CHARACTER_SPEC>;
+
+/** All 4 playable character tuning blocks keyed by character id. */
 export type CharactersTuning = Readonly<Record<TuningCharacterId, CharacterTuning>>;
 
-/** Mưa Tên (`archer-arrow-rain`): every-Nth-shot volley, #85. */
-export interface ArrowRainTuning {
+/** Mưa Tên (`archer-arrow-rain`): every-Nth-shot volley. */
+export const ARROW_RAIN_SPEC = {
   /** Auto-fire shots between two volleys (1-based counter; 5 = shots 5, 10, …). */
-  readonly everyShots: number;
+  everyShots: numberField({ integer: true, positive: true }),
   /** Volley AoE radius, tiles. */
-  readonly radiusTiles: number;
+  radiusTiles: numberField({ positive: true }),
   /** Damage multiplier of the shot damage, one entry per stack (index 0 = 1 stack). */
-  readonly damageRatioByStack: readonly number[];
-}
+  damageRatioByStack: numberListField(),
+} as const;
 
-/** Tên Tách Chùm (`archer-split-arrow`): first-hit split, #85. */
-export interface SplitArrowTuning {
+export type ArrowRainTuning = InferBlock<typeof ARROW_RAIN_SPEC>;
+
+/** Tên Tách Chùm (`archer-split-arrow`): first-hit split. */
+export const SPLIT_ARROW_SPEC = {
   /** Projectiles spawned per split. */
-  readonly arrows: number;
+  arrows: numberField({ integer: true, positive: true }),
   /** Half-angle of each split projectile off the flight direction, degrees. */
-  readonly angleDegrees: number;
+  angleDegrees: numberField({ positive: true }),
   /** Damage multiplier of the hit damage, one entry per stack. */
-  readonly damageRatioByStack: readonly number[];
-}
+  damageRatioByStack: numberListField(),
+} as const;
 
-/** Ấn Ký Săn Mồi (`archer-hunters-mark`): mark, then detonate on crit, #85. */
-export interface HuntersMarkTuning {
+export type SplitArrowTuning = InferBlock<typeof SPLIT_ARROW_SPEC>;
+
+/** Ấn Ký Săn Mồi (`archer-hunters-mark`): mark, then detonate on crit. */
+export const HUNTERS_MARK_SPEC = {
   /** How long a mark stays armed, ms. */
-  readonly durationMs: number;
+  durationMs: numberField({ positive: true }),
   /** Detonation AoE radius, tiles. */
-  readonly radiusTiles: number;
+  radiusTiles: numberField({ positive: true }),
   /** Detonation damage multiplier of the hit damage, one entry per stack. */
-  readonly damageRatioByStack: readonly number[];
-}
+  damageRatioByStack: numberListField(),
+} as const;
 
-/** Phong Tiễn (`archer-wind-arrow`): hit-momentum buff, #85. */
-export interface WindArrowTuning {
+export type HuntersMarkTuning = InferBlock<typeof HUNTERS_MARK_SPEC>;
+
+/** Phong Tiễn (`archer-wind-arrow`): hit-momentum buff. */
+export const WIND_ARROW_SPEC = {
   /** Momentum cap (each hit adds 1). */
-  readonly momentumCap: number;
+  momentumCap: numberField({ integer: true, positive: true }),
   /** Gap between hits that resets momentum, ms. */
-  readonly resetMs: number;
+  resetMs: numberField({ positive: true }),
   /** Buff lifetime, ms. */
-  readonly buffDurationMs: number;
+  buffDurationMs: numberField({ positive: true }),
   /** Additive fire-rate bonus per momentum point per skill stack (0.01 = +1%). */
-  readonly fireRatePerMomentum: number;
+  fireRatePerMomentum: numberField(),
   /** Additive projectile-speed bonus per momentum point per skill stack (0.02 = +2%). */
-  readonly projectileSpeedPerMomentum: number;
-}
+  projectileSpeedPerMomentum: numberField(),
+} as const;
 
-/** Thiên Tiễn Lôi Đình (`archer-sky-tempest`): radial piercing volley on each rain, #85. */
-export interface SkyTempestTuning {
+export type WindArrowTuning = InferBlock<typeof WIND_ARROW_SPEC>;
+
+/** Thiên Tiễn Lôi Đình (`archer-sky-tempest`): radial piercing volley on each rain. */
+export const SKY_TEMPEST_SPEC = {
   /** Projectiles per radial volley. */
-  readonly arrows: number;
+  arrows: numberField({ integer: true, positive: true }),
   /** Enemies every volley projectile passes through. */
-  readonly pierce: number;
+  pierce: numberField({ integer: true }),
   /** Damage multiplier of the shot damage. */
-  readonly damageRatio: number;
-}
+  damageRatio: numberField({ positive: true }),
+} as const;
 
-/** Archer class-skill numbers (M20, #85). */
-export interface ArcherClassSkillTuning {
-  readonly arrowRain: ArrowRainTuning;
-  readonly splitArrow: SplitArrowTuning;
-  readonly huntersMark: HuntersMarkTuning;
-  readonly windArrow: WindArrowTuning;
-  readonly skyTempest: SkyTempestTuning;
-}
+export type SkyTempestTuning = InferBlock<typeof SKY_TEMPEST_SPEC>;
+
+/** Archer class-skill numbers. */
+export const ARCHER_CLASS_SKILLS_SPEC = {
+  arrowRain: blockField(ARROW_RAIN_SPEC),
+  splitArrow: blockField(SPLIT_ARROW_SPEC),
+  huntersMark: blockField(HUNTERS_MARK_SPEC),
+  windArrow: blockField(WIND_ARROW_SPEC),
+  skyTempest: blockField(SKY_TEMPEST_SPEC),
+} as const;
+
+export type ArcherClassSkillTuning = InferBlock<
+  typeof ARCHER_CLASS_SKILLS_SPEC
+>;
 
 /** Player dash timing, speed and i-frames (ADR-022). */
 export const DASH_SPEC = {
@@ -591,163 +657,210 @@ export const DASH_SPEC = {
 
 export type DashTuning = InferBlock<typeof DASH_SPEC>;
 
-/** Signature Active Skill tuning (M13, ADR-022). */
-export interface ActiveSkillTuning {
+/** Signature Active Skill tuning. */
+export const ACTIVE_SKILL_SPEC = {
   /** Game-time action buffer window, ms. */
-  readonly bufferMs: number;
-}
+  bufferMs: numberField({ integer: true }),
+} as const;
 
-/** Ninja exclusive skill *Phân Thân Ám Ảnh* (shadow clone) tuning (M20, ADR-027). */
-export interface NinjaShadowCloneTuning {
+export type ActiveSkillTuning = InferBlock<typeof ACTIVE_SKILL_SPEC>;
+
+/** Ninja exclusive skill *Phân Thân Ám Ảnh* (shadow clone) tuning. */
+export const NINJA_SHADOW_CLONE_SPEC = {
   /** Clone shuriken damage as a fraction of the player's shot damage, indexed per stack. */
-  readonly damageRatioByStack: readonly number[];
-  /** Clone lifetime, ms (GDD: 2500). */
-  readonly durationMs: number;
+  damageRatioByStack: numberTableField({
+    length: 3,
+    positive: true,
+  }),
+  /** Clone lifetime, ms. */
+  durationMs: numberField({ positive: true }),
   /** Time between two clone shurikens, ms. */
-  readonly fireIntervalMs: number;
+  fireIntervalMs: numberField({ integer: true, positive: true }),
   /** Clone auto-aim range, tiles. */
-  readonly rangeTiles: number;
-  readonly projectileSpeedTilesPerSecond: number;
-  readonly projectileTtlMs: number;
-}
+  rangeTiles: numberField({ positive: true }),
+  projectileSpeedTilesPerSecond: numberField({ positive: true }),
+  projectileTtlMs: numberField({ integer: true, positive: true }),
+} as const;
 
-/** Ninja exclusive skill *Phi Tiêu Độc Vụ* (venom shuriken) tuning (M20, ADR-027). */
-export interface NinjaVenomShurikenTuning {
-  /** Throw the giant venom shuriken every N auto-fire shots (GDD: 3). */
-  readonly everyNShots: number;
+export type NinjaShadowCloneTuning = InferBlock<
+  typeof NINJA_SHADOW_CLONE_SPEC
+>;
+
+/** Ninja exclusive skill *Phi Tiêu Độc Vụ* (venom shuriken) tuning. */
+export const NINJA_VENOM_SHURIKEN_SPEC = {
+  /** Throw the giant venom shuriken every N auto-fire shots. */
+  everyNShots: numberField({ integer: true, positive: true }),
   /** Cloud damage per tick (not per second), indexed per stack. */
-  readonly damageByStack: readonly number[];
+  damageByStack: numberTableField({ length: 3, positive: true }),
   /** Cloud radius, tiles, indexed per stack. */
-  readonly radiusTilesByStack: readonly number[];
+  radiusTilesByStack: numberTableField({ length: 3, positive: true }),
   /** Cloud lifetime, ms, indexed per stack. */
-  readonly durationMsByStack: readonly number[];
+  durationMsByStack: numberTableField({ length: 3, positive: true }),
   /** Time between two cloud damage ticks, ms. */
-  readonly damageTickMs: number;
-  readonly projectileSpeedTilesPerSecond: number;
-  readonly projectileTtlMs: number;
-}
+  damageTickMs: numberField({ integer: true, positive: true }),
+  projectileSpeedTilesPerSecond: numberField({ positive: true }),
+  projectileTtlMs: numberField({ integer: true, positive: true }),
+} as const;
 
-/** Ninja exclusive skill *Liên Hoàn Kunai* (kunai burst) tuning (M20, ADR-027). */
-export interface NinjaKunaiBurstTuning {
-  /** Kunai per kill at stack 1 (GDD: 4). */
-  readonly baseKunai: number;
-  /** Extra kunai per additional stack (GDD: +2). */
-  readonly kunaiPerStack: number;
+export type NinjaVenomShurikenTuning = InferBlock<
+  typeof NINJA_VENOM_SHURIKEN_SPEC
+>;
+
+/** Ninja exclusive skill *Liên Hoàn Kunai* (kunai burst) tuning. */
+export const NINJA_KUNAI_BURST_SPEC = {
+  /** Kunai per kill at stack 1. */
+  baseKunai: numberField({ integer: true, positive: true }),
+  /** Extra kunai per additional stack. */
+  kunaiPerStack: numberField({ integer: true }),
   /** Damage per kunai. */
-  readonly damage: number;
-  readonly speedTilesPerSecond: number;
-  readonly ttlMs: number;
-  readonly radiusTiles: number;
-}
+  damage: numberField({ positive: true }),
+  speedTilesPerSecond: numberField({ positive: true }),
+  ttlMs: numberField({ integer: true, positive: true }),
+  radiusTiles: numberField({ positive: true }),
+} as const;
 
-/** Ninja exclusive skill *Bom Khói Ẩn Thân* (smoke bomb) tuning (M20, ADR-027). */
-export interface NinjaSmokeBombTuning {
-  /** Enemy speed reduction fraction inside the smoke, indexed per stack (GDD stack 1: 0.45). */
-  readonly slowByStack: readonly number[];
-  /** Player fire-rate bonus fraction inside the smoke, indexed per stack (GDD stack 1: 0.30). */
-  readonly fireRateBonusByStack: readonly number[];
-  /** Smoke radius, tiles, indexed per stack (GDD stack 1: 2.8). */
-  readonly radiusTilesByStack: readonly number[];
-  /** Smoke lifetime, ms, indexed per stack (GDD stack 1: 3000). */
-  readonly durationMsByStack: readonly number[];
-}
+export type NinjaKunaiBurstTuning = InferBlock<typeof NINJA_KUNAI_BURST_SPEC>;
+
+/** Ninja exclusive skill *Bom Khói Ẩn Thân* (smoke bomb) tuning. */
+export const NINJA_SMOKE_BOMB_SPEC = {
+  /** Enemy speed reduction fraction inside the smoke, indexed per stack. */
+  slowByStack: numberTableField({ length: 2, positive: true }),
+  /** Player fire-rate bonus fraction inside the smoke, indexed per stack. */
+  fireRateBonusByStack: numberTableField({ length: 2 }),
+  /** Smoke radius, tiles, indexed per stack. */
+  radiusTilesByStack: numberTableField({ length: 2, positive: true }),
+  /** Smoke lifetime, ms, indexed per stack. */
+  durationMsByStack: numberTableField({ length: 2, positive: true }),
+} as const;
+
+export type NinjaSmokeBombTuning = InferBlock<typeof NINJA_SMOKE_BOMB_SPEC>;
 
 /** Complete Ninja class-exclusive skill tuning block. */
-export interface NinjaClassSkillsTuning {
-  readonly shadowClone: NinjaShadowCloneTuning;
-  readonly venomShuriken: NinjaVenomShurikenTuning;
-  readonly kunaiBurst: NinjaKunaiBurstTuning;
-  readonly smokeBomb: NinjaSmokeBombTuning;
-}
+export const NINJA_CLASS_SKILLS_SPEC = {
+  shadowClone: blockField(NINJA_SHADOW_CLONE_SPEC),
+  venomShuriken: blockField(NINJA_VENOM_SHURIKEN_SPEC),
+  kunaiBurst: blockField(NINJA_KUNAI_BURST_SPEC),
+  smokeBomb: blockField(NINJA_SMOKE_BOMB_SPEC),
+} as const;
 
-/** Cultivator exclusive skill *Ngự Kiếm Hộ Thể* (orbit swords) tuning (M20, ADR-027). */
-export interface CultivatorOrbitSwordsTuning {
-  /** Sword count per stack (GDD: 2, +1/stack). */
-  readonly swordsByStack: readonly number[];
+export type NinjaClassSkillsTuning = InferBlock<
+  typeof NINJA_CLASS_SKILLS_SPEC
+>;
+
+/** Cultivator exclusive skill *Ngự Kiếm Hộ Thể* (orbit swords) tuning. */
+export const CULTIVATOR_ORBIT_SWORDS_SPEC = {
+  /** Sword count per stack. */
+  swordsByStack: numberTableField({ length: 3, integer: true, positive: true }),
   /** Time between two slash cadences, ms. */
-  readonly slashIntervalMs: number;
+  slashIntervalMs: numberField({ integer: true, positive: true }),
   /** Slash damage as a fraction of the player's shot damage, indexed per stack. */
-  readonly damageRatioByStack: readonly number[];
+  damageRatioByStack: numberTableField({ length: 3, positive: true }),
   /** How far a sword darts from the player, tiles, indexed per stack. */
-  readonly reachTilesByStack: readonly number[];
-  readonly dartSpeedTilesPerSecond: number;
+  reachTilesByStack: numberTableField({ length: 3, positive: true }),
+  dartSpeedTilesPerSecond: numberField({ positive: true }),
   /** Out-and-back travel time of one dart, ms. */
-  readonly dartTravelMs: number;
+  dartTravelMs: numberField({ integer: true, positive: true }),
   /** Orbit radius around the player, tiles (view + mini-wave origin). */
-  readonly orbitRadiusTiles: number;
+  orbitRadiusTiles: numberField({ positive: true }),
   /** Orbit angular speed, radians/second (view + mini-wave origin). */
-  readonly orbitSpinRadiansPerSecond: number;
-}
+  orbitSpinRadiansPerSecond: numberField({ positive: true }),
+} as const;
 
-/** Cultivator exclusive skill *Kiếm Trận* (sword array) tuning (M20, ADR-027). */
-export interface CultivatorSwordArrayTuning {
-  /** Array radius, tiles, indexed per stack (GDD stack 1: 3.2). */
-  readonly radiusTilesByStack: readonly number[];
-  /** Array lifetime, ms, indexed per stack (GDD stack 1: 3000). */
-  readonly durationMsByStack: readonly number[];
+export type CultivatorOrbitSwordsTuning = InferBlock<
+  typeof CULTIVATOR_ORBIT_SWORDS_SPEC
+>;
+
+/** Cultivator exclusive skill *Kiếm Trận* (sword array) tuning. */
+export const CULTIVATOR_SWORD_ARRAY_SPEC = {
+  /** Array radius, tiles, indexed per stack. */
+  radiusTilesByStack: numberTableField({ length: 2, positive: true }),
+  /** Array lifetime, ms, indexed per stack. */
+  durationMsByStack: numberTableField({ length: 2, positive: true }),
   /** Damage per slice tick as a fraction of the player's shot damage, indexed per stack. */
-  readonly damageRatioByStack: readonly number[];
+  damageRatioByStack: numberTableField({ length: 2, positive: true }),
   /** Time between two slice ticks, ms. */
-  readonly tickMs: number;
-}
+  tickMs: numberField({ integer: true, positive: true }),
+} as const;
 
-/** Cultivator exclusive skill *Kiếm Khí Bán Nguyệt* (sword qi) tuning (M20, ADR-027). */
-export interface CultivatorSwordQiTuning {
-  /** Unleash a crescent every N auto-fire shots (GDD: 3). */
-  readonly everyNShots: number;
+export type CultivatorSwordArrayTuning = InferBlock<
+  typeof CULTIVATOR_SWORD_ARRAY_SPEC
+>;
+
+/** Cultivator exclusive skill *Kiếm Khí Bán Nguyệt* (sword qi) tuning. */
+export const CULTIVATOR_SWORD_QI_SPEC = {
+  /** Unleash a crescent every N auto-fire shots. */
+  everyNShots: numberField({ integer: true, positive: true }),
   /** Wave damage as a fraction of the player's shot damage, indexed per stack. */
-  readonly damageRatioByStack: readonly number[];
+  damageRatioByStack: numberTableField({ length: 3, positive: true }),
   /** Crescent half-width, tiles, indexed per stack. */
-  readonly halfWidthTilesByStack: readonly number[];
+  halfWidthTilesByStack: numberTableField({ length: 3, positive: true }),
   /** Wave travel lifetime, ms, indexed per stack. */
-  readonly durationMsByStack: readonly number[];
-  readonly speedTilesPerSecond: number;
-}
+  durationMsByStack: numberTableField({ length: 3, positive: true }),
+  speedTilesPerSecond: numberField({ positive: true }),
+} as const;
 
-/** Cultivator exclusive skill *Hộ Tâm Linh Khí* (qi barrier) tuning (M20, ADR-027). */
-export interface CultivatorQiBarrierTuning {
+export type CultivatorSwordQiTuning = InferBlock<
+  typeof CULTIVATOR_SWORD_QI_SPEC
+>;
+
+/** Cultivator exclusive skill *Hộ Tâm Linh Khí* (qi barrier) tuning. */
+export const CULTIVATOR_QI_BARRIER_SPEC = {
   /** Gauge charge per damaging hit in `0..1`, indexed per stack. */
-  readonly chargeByStack: readonly number[];
+  chargeByStack: numberTableField({ length: 3, positive: true, max: 1 }),
   /** Radial sword-qi waves released when the shield is raised, indexed per stack. */
-  readonly wavesByStack: readonly number[];
+  wavesByStack: numberTableField({ length: 3, integer: true, positive: true }),
   /** Wave damage as a fraction of the player's shot damage, indexed per stack. */
-  readonly waveDamageRatioByStack: readonly number[];
+  waveDamageRatioByStack: numberTableField({ length: 3, positive: true }),
   /** Wave half-width, tiles, indexed per stack. */
-  readonly waveHalfWidthTilesByStack: readonly number[];
+  waveHalfWidthTilesByStack: numberTableField({ length: 3, positive: true }),
   /** Wave travel lifetime, ms, indexed per stack. */
-  readonly waveDurationMsByStack: readonly number[];
-  readonly waveSpeedTilesPerSecond: number;
-}
+  waveDurationMsByStack: numberTableField({ length: 3, positive: true }),
+  waveSpeedTilesPerSecond: numberField({ positive: true }),
+} as const;
 
-/** Cultivator Class Evolution *Vạn Kiếm Quy Tông* tuning (M20, ADR-027). */
-export interface CultivatorMyriadSwordsTuning {
-  /** Period between automatic Sword Arrays, ms (GDD test: <= 15000). */
-  readonly arrayIntervalMs: number;
+export type CultivatorQiBarrierTuning = InferBlock<
+  typeof CULTIVATOR_QI_BARRIER_SPEC
+>;
+
+/** Cultivator Class Evolution *Vạn Kiếm Quy Tông* tuning. */
+export const CULTIVATOR_MYRIAD_SWORDS_SPEC = {
+  /** Period between automatic Sword Arrays, ms. */
+  arrayIntervalMs: numberField({ integer: true, positive: true }),
   /** Mini wave damage as a fraction of the player's shot damage. */
-  readonly miniWaveDamageRatio: number;
+  miniWaveDamageRatio: numberField({ positive: true }),
   /** Mini wave half-width, tiles. */
-  readonly miniWaveRadiusTiles: number;
+  miniWaveRadiusTiles: numberField({ positive: true }),
   /** Mini wave travel lifetime, ms. */
-  readonly miniWaveDurationMs: number;
-  readonly miniWaveSpeedTilesPerSecond: number;
-}
+  miniWaveDurationMs: numberField({ integer: true, positive: true }),
+  miniWaveSpeedTilesPerSecond: numberField({ positive: true }),
+} as const;
+
+export type CultivatorMyriadSwordsTuning = InferBlock<
+  typeof CULTIVATOR_MYRIAD_SWORDS_SPEC
+>;
 
 /** Complete Cultivator class-exclusive skill tuning block. */
-export interface CultivatorClassSkillsTuning {
-  readonly orbitSwords: CultivatorOrbitSwordsTuning;
-  readonly swordArray: CultivatorSwordArrayTuning;
-  readonly swordQi: CultivatorSwordQiTuning;
-  readonly qiBarrier: CultivatorQiBarrierTuning;
-  readonly myriadSwords: CultivatorMyriadSwordsTuning;
-}
+export const CULTIVATOR_CLASS_SKILLS_SPEC = {
+  orbitSwords: blockField(CULTIVATOR_ORBIT_SWORDS_SPEC),
+  swordArray: blockField(CULTIVATOR_SWORD_ARRAY_SPEC),
+  swordQi: blockField(CULTIVATOR_SWORD_QI_SPEC),
+  qiBarrier: blockField(CULTIVATOR_QI_BARRIER_SPEC),
+  myriadSwords: blockField(CULTIVATOR_MYRIAD_SWORDS_SPEC),
+} as const;
 
-/** Class-exclusive skill tuning (M20, ADR-027), one block per class. */
-export interface ClassSkillsTuning {
-  readonly ninja: NinjaClassSkillsTuning;
-  readonly archer: ArcherClassSkillTuning;
-  readonly mage: MageClassSkillsTuning;
-  readonly cultivator: CultivatorClassSkillsTuning;
-}
+export type CultivatorClassSkillsTuning = InferBlock<
+  typeof CULTIVATOR_CLASS_SKILLS_SPEC
+>;
+
+/** Class-exclusive skill tuning, one block per class. */
+export const CLASS_SKILLS_SPEC = {
+  ninja: blockField(NINJA_CLASS_SKILLS_SPEC),
+  archer: blockField(ARCHER_CLASS_SKILLS_SPEC),
+  mage: blockField(MAGE_SPEC),
+  cultivator: blockField(CULTIVATOR_CLASS_SKILLS_SPEC),
+} as const;
+
+export type ClassSkillsTuning = InferBlock<typeof CLASS_SKILLS_SPEC>;
 
 /** XP level-up threshold curve: `round((baseThreshold + linearStep·i + quadraticStep·i²) · chapterMultiplier)`. */
 export interface XpCurveTuning {
@@ -1069,25 +1182,6 @@ export interface ChapterScalingTuning {
 /** Data source, used in error messages so whoever fixes it knows which file to open. */
 export const TUNING_SOURCE_PATH = 'config/tuning.json';
 
-const COMBAT_FIELDS = [
-  'fireRatePerSecond',
-  'damage',
-  'projectiles',
-  'projectileSpeedTilesPerSecond',
-  'moveSpeedTilesPerSecond',
-  'roomClearSpeedMultiplier',
-  'playerBaseMaxHp',
-  'invulnerabilityMs',
-  'contactDamage',
-  'targetingRangeTiles',
-  'playerKnockbackDistanceTiles',
-  'playerKnockbackDurationMs',
-  'enemyKnockbackDistanceTiles',
-  'enemyKnockbackDurationMs',
-  'enemyHitstopMs',
-  'enemyStaggerMs',
-] as const;
-
 const ENEMY_GROUP_FIELDS = [
   'roles',
   'eliteHealthMultiplier',
@@ -1144,154 +1238,6 @@ const ENEMY_AI_FIELDS = [
   'gunnerLateMinChapter',
   'gunnerLateVolleyShots',
   'gunnerSpreadRadians',
-] as const;
-
-const ACTIVE_SKILL_FIELDS = ['bufferMs'] as const;
-
-const CLASS_SKILLS_FIELDS = ['ninja', 'archer', 'mage', 'cultivator'] as const;
-
-const NINJA_CLASS_SKILLS_FIELDS = [
-  'shadowClone',
-  'venomShuriken',
-  'kunaiBurst',
-  'smokeBomb',
-] as const;
-
-const NINJA_SHADOW_CLONE_FIELDS = [
-  'damageRatioByStack',
-  'durationMs',
-  'fireIntervalMs',
-  'rangeTiles',
-  'projectileSpeedTilesPerSecond',
-  'projectileTtlMs',
-] as const;
-
-const NINJA_VENOM_SHURIKEN_FIELDS = [
-  'everyNShots',
-  'damageByStack',
-  'radiusTilesByStack',
-  'durationMsByStack',
-  'damageTickMs',
-  'projectileSpeedTilesPerSecond',
-  'projectileTtlMs',
-] as const;
-
-const NINJA_KUNAI_BURST_FIELDS = [
-  'baseKunai',
-  'kunaiPerStack',
-  'damage',
-  'speedTilesPerSecond',
-  'ttlMs',
-  'radiusTiles',
-] as const;
-
-const NINJA_SMOKE_BOMB_FIELDS = [
-  'slowByStack',
-  'fireRateBonusByStack',
-  'radiusTilesByStack',
-  'durationMsByStack',
-] as const;
-
-const CULTIVATOR_CLASS_SKILLS_FIELDS = [
-  'orbitSwords',
-  'swordArray',
-  'swordQi',
-  'qiBarrier',
-  'myriadSwords',
-] as const;
-
-const CULTIVATOR_ORBIT_SWORDS_FIELDS = [
-  'swordsByStack',
-  'slashIntervalMs',
-  'damageRatioByStack',
-  'reachTilesByStack',
-  'dartSpeedTilesPerSecond',
-  'dartTravelMs',
-  'orbitRadiusTiles',
-  'orbitSpinRadiansPerSecond',
-] as const;
-
-const CULTIVATOR_SWORD_ARRAY_FIELDS = [
-  'radiusTilesByStack',
-  'durationMsByStack',
-  'damageRatioByStack',
-  'tickMs',
-] as const;
-
-const CULTIVATOR_SWORD_QI_FIELDS = [
-  'everyNShots',
-  'damageRatioByStack',
-  'halfWidthTilesByStack',
-  'durationMsByStack',
-  'speedTilesPerSecond',
-] as const;
-
-const CULTIVATOR_QI_BARRIER_FIELDS = [
-  'chargeByStack',
-  'wavesByStack',
-  'waveDamageRatioByStack',
-  'waveHalfWidthTilesByStack',
-  'waveDurationMsByStack',
-  'waveSpeedTilesPerSecond',
-] as const;
-
-const CULTIVATOR_MYRIAD_SWORDS_FIELDS = [
-  'arrayIntervalMs',
-  'miniWaveDamageRatio',
-  'miniWaveRadiusTiles',
-  'miniWaveDurationMs',
-  'miniWaveSpeedTilesPerSecond',
-] as const;
-
-const CHARACTER_FIELDS = [
-  'unlockChapter',
-  'unlockGoldCost',
-  'baseStats',
-  'passive',
-  'signature',
-] as const;
-
-const CHARACTER_BASE_STATS_FIELDS = [
-  'maxHpDelta',
-  'damageMult',
-  'fireRateMult',
-  'moveSpeedMult',
-  'projectileSpeedMult',
-  'targetingRangeMult',
-] as const;
-
-const CHARACTER_PASSIVE_FIELDS = [
-  'moveSpeedBonus',
-  'dashCooldownMult',
-  'pierceAdd',
-  'critChanceAdd',
-  'critMultiplier',
-  'activeCooldownMult',
-  'activePowerBonus',
-  'aoePowerBonus',
-  'damageBonus',
-  'executeThreshold',
-  'executeBonus',
-] as const;
-
-const CHARACTER_SIGNATURE_FIELDS = [
-  'cooldownMs',
-  'hitCooldownReductionMs',
-  'killCooldownReductionMs',
-  'projectileCount',
-  'maxProjectileCount',
-  'fanArcDegrees',
-  'speedTilesPerSecond',
-  'radiusTiles',
-  'ttlMs',
-  'damageMultiplier',
-  'pierceCount',
-  'homing',
-  'novaRadiusTiles',
-  'novaDamageMultiplier',
-  'novaSlowFactor',
-  'novaSlowDurationMs',
-  'hideAttachmentMs',
 ] as const;
 
 const ROLE_FIELDS = [
@@ -1403,30 +1349,6 @@ const LEVEL_UP_WAVE_FIELDS = [
 
 const SHOP_PRICE_FIELDS = ['common', 'rare', 'epic'] as const;
 
-const ARCHER_CLASS_SKILL_FIELDS = [
-  'arrowRain',
-  'splitArrow',
-  'huntersMark',
-  'windArrow',
-  'skyTempest',
-] as const;
-
-const ARROW_RAIN_FIELDS = ['everyShots', 'radiusTiles', 'damageRatioByStack'] as const;
-
-const SPLIT_ARROW_FIELDS = ['arrows', 'angleDegrees', 'damageRatioByStack'] as const;
-
-const HUNTERS_MARK_FIELDS = ['durationMs', 'radiusTiles', 'damageRatioByStack'] as const;
-
-const WIND_ARROW_FIELDS = [
-  'momentumCap',
-  'resetMs',
-  'buffDurationMs',
-  'fireRatePerMomentum',
-  'projectileSpeedPerMomentum',
-] as const;
-
-const SKY_TEMPEST_FIELDS = ['arrows', 'pierce', 'damageRatio'] as const;
-
 const SHAKE_FIELDS = [
   'maxOffsetTiles',
   'decayPerSecond',
@@ -1469,48 +1391,6 @@ const VFX_FIELDS = [
   'auraOffsetTiles',
 ] as const;
 
-const MAGE_FIELDS = ['meteor', 'frostOrbs', 'stormStrike', 'arcanePulse', 'evolution'] as const;
-
-const MAGE_METEOR_FIELDS = [
-  'intervalMs',
-  'intervalStepMs',
-  'radiusTiles',
-  'damageRatio',
-  'burnDpsRatio',
-  'burnDurationMs',
-] as const;
-
-const MAGE_FROST_ORBS_FIELDS = [
-  'baseCount',
-  'countPerStack',
-  'radiusTiles',
-  'orbitRadiansPerSecond',
-  'evolvedOrbitMultiplier',
-  'hitRadiusTiles',
-  'damagePerSecondRatio',
-  'slowFactor',
-  'slowDurationMs',
-] as const;
-
-const MAGE_STORM_STRIKE_FIELDS = [
-  'procChance',
-  'procChancePerStack',
-  'damageRatio',
-] as const;
-
-const MAGE_ARCANE_PULSE_FIELDS = [
-  'shotEvery',
-  'radiusTiles',
-  'damageRatio',
-  'damageRatioPerStack',
-] as const;
-
-const MAGE_EVOLUTION_FIELDS = [
-  'shardIntervalMs',
-  'shardDamageRatio',
-  'shatterBurnMultiplier',
-] as const;
-
 /** Collect every problem then throw a single `Error` (same shape as `level-data.ts`). */
 class ProblemList {
   private readonly items: string[] = [];
@@ -1527,91 +1407,6 @@ class ProblemList {
       `${TUNING_SOURCE_PATH} is invalid (${this.items.length} problem(s))\n${details}`,
     );
   }
-}
-
-/**
- * Read an array of non-negative finite numbers with an exact length (per-stack tables).
- * Returns `[]` on a shape error so callers keep a safe fallback.
- */
-function readNumberArray(
-  source: Record<string, unknown>,
-  field: string,
-  path: string,
-  problems: ProblemList,
-  options: {
-    readonly length?: number;
-    readonly positive?: boolean;
-    readonly integer?: boolean;
-    readonly max?: number;
-  } = {},
-): readonly number[] {
-  const fieldPath = joinPath(path, field);
-  const value = source[field];
-  if (!Array.isArray(value)) {
-    problems.add(fieldPath, `must be an array of numbers, got ${describe(value)}`);
-    return [];
-  }
-  if (options.length !== undefined && value.length !== options.length) {
-    problems.add(
-      fieldPath,
-      `must have exactly ${options.length} elements (one per stack), got ${value.length}`,
-    );
-    return [];
-  }
-  const result: number[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const entry: unknown = value[index];
-    if (typeof entry !== 'number' || !Number.isFinite(entry)) {
-      problems.add(`${fieldPath}[${index}]`, `must be a finite number, got ${describe(entry)}`);
-      continue;
-    }
-    if (entry < 0) {
-      problems.add(`${fieldPath}[${index}]`, `must not be negative, got ${entry}`);
-      continue;
-    }
-    if (options.positive === true && entry === 0) {
-      problems.add(`${fieldPath}[${index}]`, `must be > 0, got ${entry}`);
-      continue;
-    }
-    if (options.integer === true && !Number.isInteger(entry)) {
-      problems.add(`${fieldPath}[${index}]`, `must be an integer, got ${entry}`);
-      continue;
-    }
-    if (options.max !== undefined && entry > options.max) {
-      problems.add(`${fieldPath}[${index}]`, `must be <= ${options.max}, got ${entry}`);
-      continue;
-    }
-    result.push(entry);
-  }
-  return result;
-}
-
-/** Read a signed integer within `[min, max]` (used for signed deltas like `maxHeartsDelta`). */
-function readSignedInteger(
-  source: Record<string, unknown>,
-  field: string,
-  path: string,
-  problems: ProblemList,
-  min: number,
-  max: number,
-  fallback = 0,
-): number {
-  const value = source[field];
-  const fieldPath = joinPath(path, field);
-
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    problems.add(fieldPath, `must be a finite number, got ${describe(value)}`);
-    return fallback;
-  }
-  if (!Number.isInteger(value)) {
-    problems.add(fieldPath, `must be an integer, got ${value}`);
-    return fallback;
-  }
-  if (value < min || value > max) {
-    problems.add(fieldPath, `must be within ${min}..${max}, got ${value}`);
-    return fallback;
-  }
-  return value;
 }
 
 /** Read a field only when the JSON declares it (per-role extras, #42). */
@@ -1658,61 +1453,11 @@ function readMultiplierArray(
   return result;
 }
 
-/**
- * Read a non-empty array of finite, positive numbers (per-stack multipliers). The array's
- * length is the skill's stack count; the hooks clamp a stack past the end to the last entry.
- */
-function readNumberList(
-  source: Record<string, unknown>,
-  field: string,
-  path: string,
-  problems: ProblemList,
-): readonly number[] {
-  const fieldPath = joinPath(path, field);
-  const value = source[field];
-  if (!Array.isArray(value) || value.length === 0) {
-    problems.add(fieldPath, `must be a non-empty array of numbers, got ${describe(value)}`);
-    return [];
-  }
-
-  const result: number[] = [];
-  value.forEach((entry, index) => {
-    if (typeof entry !== 'number' || !Number.isFinite(entry) || entry <= 0) {
-      problems.add(`${fieldPath}[${index}]`, `must be a finite number > 0, got ${describe(entry)}`);
-      result.push(0);
-      return;
-    }
-    result.push(entry);
-  });
-  return result;
-}
-
 /** Default when the config is missing: no scaling (every chapter behaves like chapter 1). */
 const CHAPTERS_PER_RUN_MULTIPLIERS: readonly number[] = Array.from(
   { length: CHAPTERS_PER_RUN },
   () => 1,
 );
-
-function zeroCombat(): CombatTuning {
-  return {
-    fireRatePerSecond: 0,
-    damage: 0,
-    projectiles: 1,
-    projectileSpeedTilesPerSecond: 0,
-    moveSpeedTilesPerSecond: 0,
-    roomClearSpeedMultiplier: 1,
-    playerBaseMaxHp: 100,
-    invulnerabilityMs: 0,
-    contactDamage: 0,
-    targetingRangeTiles: 0,
-    playerKnockbackDistanceTiles: 0,
-    playerKnockbackDurationMs: 0,
-    enemyKnockbackDistanceTiles: 0,
-    enemyKnockbackDurationMs: 0,
-    enemyHitstopMs: 0,
-    enemyStaggerMs: 0,
-  };
-}
 
 function zeroElite(): EliteTuning {
   return {
@@ -1814,72 +1559,6 @@ function parseChapters(
       'chapters',
       problems,
     ),
-  };
-}
-
-function parseCombat(
-  raw: Record<string, unknown>,
-  problems: ProblemList,
-): CombatTuning {
-  const source = readObject(raw, 'combat', '', problems, COMBAT_FIELDS);
-  if (source === undefined) return zeroCombat();
-
-  const path = 'combat';
-  return {
-    fireRatePerSecond:
-      readNumber(source, 'fireRatePerSecond', path, problems, {
-        positive: true,
-      }) ?? 0,
-    damage: readNumber(source, 'damage', path, problems) ?? 0,
-    projectiles:
-      readNumber(source, 'projectiles', path, problems, {
-        integer: true,
-        positive: true,
-      }) ?? 1,
-    projectileSpeedTilesPerSecond:
-      readNumber(source, 'projectileSpeedTilesPerSecond', path, problems, {
-        positive: true,
-      }) ?? 0,
-    moveSpeedTilesPerSecond:
-      readNumber(source, 'moveSpeedTilesPerSecond', path, problems, {
-        positive: true,
-      }) ?? 0,
-    roomClearSpeedMultiplier: (() => {
-      const value =
-        readNumber(source, 'roomClearSpeedMultiplier', path, problems, {
-          positive: true,
-        }) ?? 1;
-      if (value < 1) {
-        problems.add(`${path}.roomClearSpeedMultiplier`, `must be >= 1, got ${value}`);
-      }
-      return value;
-    })(),
-    playerBaseMaxHp:
-      readNumber(source, 'playerBaseMaxHp', path, problems, {
-        integer: true,
-        positive: true,
-      }) ?? 1,
-    invulnerabilityMs:
-      readNumber(source, 'invulnerabilityMs', path, problems) ?? 0,
-    contactDamage: readNumber(source, 'contactDamage', path, problems) ?? 0,
-    targetingRangeTiles:
-      readNumber(source, 'targetingRangeTiles', path, problems, {
-        positive: true,
-      }) ?? 0,
-    playerKnockbackDistanceTiles:
-      readNumber(source, 'playerKnockbackDistanceTiles', path, problems, {
-        positive: true,
-      }) ?? 0,
-    playerKnockbackDurationMs:
-      readNumber(source, 'playerKnockbackDurationMs', path, problems, {
-        positive: true,
-      }) ?? 0,
-    enemyKnockbackDistanceTiles:
-      readNumber(source, 'enemyKnockbackDistanceTiles', path, problems) ?? 0,
-    enemyKnockbackDurationMs:
-      readNumber(source, 'enemyKnockbackDurationMs', path, problems) ?? 0,
-    enemyHitstopMs: readNumber(source, 'enemyHitstopMs', path, problems) ?? 0,
-    enemyStaggerMs: readNumber(source, 'enemyStaggerMs', path, problems) ?? 0,
   };
 }
 
@@ -2373,22 +2052,6 @@ function readTrauma(
   return readRatio(source, field, path, problems);
 }
 
-/** A 0..1 opacity/ratio: a value above 1 is reported and clamped (never silently > 1). */
-function readRatio(
-  source: Record<string, unknown>,
-  field: string,
-  path: string,
-  problems: ProblemList,
-): number {
-  const value = readNumber(source, field, path, problems);
-  if (value === undefined) return 0;
-  if (value > 1) {
-    problems.add(joinPath(path, field), `must be within 0..1, got ${value}`);
-    return 1;
-  }
-  return value;
-}
-
 function zeroCamera(): CameraTuning {
   return {
     deadzoneHalfTiles: { x: 0, y: 0 },
@@ -2546,20 +2209,6 @@ function parseFeel(raw: Record<string, unknown>, problems: ProblemList): FeelTun
   };
 
   return { shake, squash, damageNumbers, coin, muzzle, vfx };
-}
-
-/** Read a boolean field; missing/wrong type is reported with the expected type. */
-function readBoolean(
-  source: Record<string, unknown>,
-  field: string,
-  path: string,
-  problems: ProblemList,
-  fallback: boolean,
-): boolean {
-  const value = source[field];
-  if (typeof value === 'boolean') return value;
-  problems.add(joinPath(path, field), `must be a boolean, got ${describe(value)}`);
-  return fallback;
 }
 
 function zeroDoors(): DoorsTuning {
@@ -2918,898 +2567,6 @@ function parseXp(raw: Record<string, unknown>, problems: ProblemList): XpTuning 
   return { curve, roles, eliteMultiplier, orbs, reroll, levelUpWave };
 }
 
-function zeroActiveSkill(): ActiveSkillTuning {
-  return { bufferMs: 150 };
-}
-
-function parseActiveSkill(raw: Record<string, unknown>, problems: ProblemList): ActiveSkillTuning {
-  const source = readObject(raw, 'activeSkill', '', problems, ACTIVE_SKILL_FIELDS);
-  if (source === undefined) return zeroActiveSkill();
-
-  const path = 'activeSkill';
-  return {
-    bufferMs: readNumber(source, 'bufferMs', path, problems, { integer: true }) ?? 0,
-  };
-}
-
-function zeroNinjaShadowClone(): NinjaShadowCloneTuning {
-  return {
-    damageRatioByStack: [],
-    durationMs: 0,
-    fireIntervalMs: 1,
-    rangeTiles: 0,
-    projectileSpeedTilesPerSecond: 0,
-    projectileTtlMs: 0,
-  };
-}
-
-function zeroNinjaVenomShuriken(): NinjaVenomShurikenTuning {
-  return {
-    everyNShots: 1,
-    damageByStack: [],
-    radiusTilesByStack: [],
-    durationMsByStack: [],
-    damageTickMs: 1,
-    projectileSpeedTilesPerSecond: 0,
-    projectileTtlMs: 0,
-  };
-}
-
-function zeroNinjaKunaiBurst(): NinjaKunaiBurstTuning {
-  return {
-    baseKunai: 0,
-    kunaiPerStack: 0,
-    damage: 0,
-    speedTilesPerSecond: 0,
-    ttlMs: 0,
-    radiusTiles: 0,
-  };
-}
-
-function zeroNinjaSmokeBomb(): NinjaSmokeBombTuning {
-  return {
-    slowByStack: [],
-    fireRateBonusByStack: [],
-    radiusTilesByStack: [],
-    durationMsByStack: [],
-  };
-}
-
-function defaultArcherClassSkills(): ArcherClassSkillTuning {
-  return {
-    arrowRain: { everyShots: 5, radiusTiles: 2.2, damageRatioByStack: [0.8, 1.2, 1.6] },
-    splitArrow: { arrows: 2, angleDegrees: 18, damageRatioByStack: [0.5, 0.7, 0.9] },
-    huntersMark: { durationMs: 4000, radiusTiles: 1.6, damageRatioByStack: [1.5, 2.25] },
-    windArrow: {
-      momentumCap: 10,
-      resetMs: 1500,
-      buffDurationMs: 1500,
-      fireRatePerMomentum: 0.01,
-      projectileSpeedPerMomentum: 0.02,
-    },
-    skyTempest: { arrows: 6, pierce: 2, damageRatio: 0.5 },
-  };
-}
-
-function zeroCultivatorOrbitSwords(): CultivatorOrbitSwordsTuning {
-  return {
-    swordsByStack: [],
-    slashIntervalMs: 0,
-    damageRatioByStack: [],
-    reachTilesByStack: [],
-    dartSpeedTilesPerSecond: 0,
-    dartTravelMs: 0,
-    orbitRadiusTiles: 0,
-    orbitSpinRadiansPerSecond: 0,
-  };
-}
-
-function zeroCultivatorSwordArray(): CultivatorSwordArrayTuning {
-  return {
-    radiusTilesByStack: [],
-    durationMsByStack: [],
-    damageRatioByStack: [],
-    tickMs: 0,
-  };
-}
-
-function zeroCultivatorSwordQi(): CultivatorSwordQiTuning {
-  return {
-    everyNShots: 1,
-    damageRatioByStack: [],
-    halfWidthTilesByStack: [],
-    durationMsByStack: [],
-    speedTilesPerSecond: 0,
-  };
-}
-
-function zeroCultivatorQiBarrier(): CultivatorQiBarrierTuning {
-  return {
-    chargeByStack: [],
-    wavesByStack: [],
-    waveDamageRatioByStack: [],
-    waveHalfWidthTilesByStack: [],
-    waveDurationMsByStack: [],
-    waveSpeedTilesPerSecond: 0,
-  };
-}
-
-function zeroCultivatorMyriadSwords(): CultivatorMyriadSwordsTuning {
-  return {
-    arrayIntervalMs: 0,
-    miniWaveDamageRatio: 0,
-    miniWaveRadiusTiles: 0,
-    miniWaveDurationMs: 0,
-    miniWaveSpeedTilesPerSecond: 0,
-  };
-}
-
-function zeroClassSkills(): ClassSkillsTuning {
-  return {
-    ninja: {
-      shadowClone: zeroNinjaShadowClone(),
-      venomShuriken: zeroNinjaVenomShuriken(),
-      kunaiBurst: zeroNinjaKunaiBurst(),
-      smokeBomb: zeroNinjaSmokeBomb(),
-    },
-    archer: defaultArcherClassSkills(),
-    mage: zeroMageClassSkills(),
-    cultivator: {
-      orbitSwords: zeroCultivatorOrbitSwords(),
-      swordArray: zeroCultivatorSwordArray(),
-      swordQi: zeroCultivatorSwordQi(),
-      qiBarrier: zeroCultivatorQiBarrier(),
-      myriadSwords: zeroCultivatorMyriadSwords(),
-    },
-  };
-}
-
-function parseNinjaClassSkills(
-  raw: Record<string, unknown>,
-  problems: ProblemList,
-): NinjaClassSkillsTuning {
-  const rootPath = 'classSkills';
-  const source = readObject(raw, 'ninja', rootPath, problems, NINJA_CLASS_SKILLS_FIELDS);
-  if (source === undefined) return zeroClassSkills().ninja;
-
-  const path = `${rootPath}.ninja`;
-
-  const cloneSource = readObject(source, 'shadowClone', path, problems, NINJA_SHADOW_CLONE_FIELDS);
-  const clonePath = `${path}.shadowClone`;
-  const shadowClone: NinjaShadowCloneTuning =
-    cloneSource === undefined
-      ? zeroNinjaShadowClone()
-      : {
-          damageRatioByStack: readNumberArray(cloneSource, 'damageRatioByStack', clonePath, problems, {
-            length: 3,
-            positive: true,
-          }),
-          durationMs:
-            readNumber(cloneSource, 'durationMs', clonePath, problems, { positive: true }) ?? 0,
-          fireIntervalMs:
-            readNumber(cloneSource, 'fireIntervalMs', clonePath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 1,
-          rangeTiles:
-            readNumber(cloneSource, 'rangeTiles', clonePath, problems, { positive: true }) ?? 0,
-          projectileSpeedTilesPerSecond:
-            readNumber(cloneSource, 'projectileSpeedTilesPerSecond', clonePath, problems, {
-              positive: true,
-            }) ?? 0,
-          projectileTtlMs:
-            readNumber(cloneSource, 'projectileTtlMs', clonePath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-        };
-
-  const venomSource = readObject(source, 'venomShuriken', path, problems, NINJA_VENOM_SHURIKEN_FIELDS);
-  const venomPath = `${path}.venomShuriken`;
-  const venomShuriken: NinjaVenomShurikenTuning =
-    venomSource === undefined
-      ? zeroNinjaVenomShuriken()
-      : {
-          everyNShots:
-            readNumber(venomSource, 'everyNShots', venomPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 1,
-          damageByStack: readNumberArray(venomSource, 'damageByStack', venomPath, problems, {
-            length: 3,
-            positive: true,
-          }),
-          radiusTilesByStack: readNumberArray(
-            venomSource,
-            'radiusTilesByStack',
-            venomPath,
-            problems,
-            { length: 3, positive: true },
-          ),
-          durationMsByStack: readNumberArray(
-            venomSource,
-            'durationMsByStack',
-            venomPath,
-            problems,
-            { length: 3, positive: true },
-          ),
-          damageTickMs:
-            readNumber(venomSource, 'damageTickMs', venomPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 1,
-          projectileSpeedTilesPerSecond:
-            readNumber(venomSource, 'projectileSpeedTilesPerSecond', venomPath, problems, {
-              positive: true,
-            }) ?? 0,
-          projectileTtlMs:
-            readNumber(venomSource, 'projectileTtlMs', venomPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-        };
-
-  const kunaiSource = readObject(source, 'kunaiBurst', path, problems, NINJA_KUNAI_BURST_FIELDS);
-  const kunaiPath = `${path}.kunaiBurst`;
-  const kunaiBurst: NinjaKunaiBurstTuning =
-    kunaiSource === undefined
-      ? zeroNinjaKunaiBurst()
-      : {
-          baseKunai:
-            readNumber(kunaiSource, 'baseKunai', kunaiPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-          kunaiPerStack:
-            readNumber(kunaiSource, 'kunaiPerStack', kunaiPath, problems, { integer: true }) ?? 0,
-          damage:
-            readNumber(kunaiSource, 'damage', kunaiPath, problems, { positive: true }) ?? 0,
-          speedTilesPerSecond:
-            readNumber(kunaiSource, 'speedTilesPerSecond', kunaiPath, problems, {
-              positive: true,
-            }) ?? 0,
-          ttlMs:
-            readNumber(kunaiSource, 'ttlMs', kunaiPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-          radiusTiles:
-            readNumber(kunaiSource, 'radiusTiles', kunaiPath, problems, { positive: true }) ?? 0,
-        };
-
-  const smokeSource = readObject(source, 'smokeBomb', path, problems, NINJA_SMOKE_BOMB_FIELDS);
-  const smokePath = `${path}.smokeBomb`;
-  const smokeBomb: NinjaSmokeBombTuning =
-    smokeSource === undefined
-      ? zeroNinjaSmokeBomb()
-      : {
-          slowByStack: readNumberArray(smokeSource, 'slowByStack', smokePath, problems, {
-            length: 2,
-            positive: true,
-          }),
-          fireRateBonusByStack: readNumberArray(
-            smokeSource,
-            'fireRateBonusByStack',
-            smokePath,
-            problems,
-            { length: 2 },
-          ),
-          radiusTilesByStack: readNumberArray(
-            smokeSource,
-            'radiusTilesByStack',
-            smokePath,
-            problems,
-            { length: 2, positive: true },
-          ),
-          durationMsByStack: readNumberArray(
-            smokeSource,
-            'durationMsByStack',
-            smokePath,
-            problems,
-            { length: 2, positive: true },
-          ),
-        };
-
-  return { shadowClone, venomShuriken, kunaiBurst, smokeBomb };
-}
-
-function parseCultivatorClassSkills(
-  raw: Record<string, unknown>,
-  problems: ProblemList,
-): CultivatorClassSkillsTuning {
-  const rootPath = 'classSkills';
-  const source = readObject(raw, 'cultivator', rootPath, problems, CULTIVATOR_CLASS_SKILLS_FIELDS);
-  if (source === undefined) return zeroClassSkills().cultivator;
-
-  const path = `${rootPath}.cultivator`;
-
-  const orbitSource = readObject(
-    source,
-    'orbitSwords',
-    path,
-    problems,
-    CULTIVATOR_ORBIT_SWORDS_FIELDS,
-  );
-  const orbitPath = `${path}.orbitSwords`;
-  const orbitSwords: CultivatorOrbitSwordsTuning =
-    orbitSource === undefined
-      ? zeroCultivatorOrbitSwords()
-      : {
-          swordsByStack: readNumberArray(orbitSource, 'swordsByStack', orbitPath, problems, {
-            length: 3,
-            integer: true,
-            positive: true,
-          }),
-          slashIntervalMs:
-            readNumber(orbitSource, 'slashIntervalMs', orbitPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-          damageRatioByStack: readNumberArray(
-            orbitSource,
-            'damageRatioByStack',
-            orbitPath,
-            problems,
-            { length: 3, positive: true },
-          ),
-          reachTilesByStack: readNumberArray(
-            orbitSource,
-            'reachTilesByStack',
-            orbitPath,
-            problems,
-            { length: 3, positive: true },
-          ),
-          dartSpeedTilesPerSecond:
-            readNumber(orbitSource, 'dartSpeedTilesPerSecond', orbitPath, problems, {
-              positive: true,
-            }) ?? 0,
-          dartTravelMs:
-            readNumber(orbitSource, 'dartTravelMs', orbitPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-          orbitRadiusTiles:
-            readNumber(orbitSource, 'orbitRadiusTiles', orbitPath, problems, {
-              positive: true,
-            }) ?? 0,
-          orbitSpinRadiansPerSecond:
-            readNumber(orbitSource, 'orbitSpinRadiansPerSecond', orbitPath, problems, {
-              positive: true,
-            }) ?? 0,
-        };
-
-  const arraySource = readObject(
-    source,
-    'swordArray',
-    path,
-    problems,
-    CULTIVATOR_SWORD_ARRAY_FIELDS,
-  );
-  const arrayPath = `${path}.swordArray`;
-  const swordArray: CultivatorSwordArrayTuning =
-    arraySource === undefined
-      ? zeroCultivatorSwordArray()
-      : {
-          radiusTilesByStack: readNumberArray(
-            arraySource,
-            'radiusTilesByStack',
-            arrayPath,
-            problems,
-            { length: 2, positive: true },
-          ),
-          durationMsByStack: readNumberArray(
-            arraySource,
-            'durationMsByStack',
-            arrayPath,
-            problems,
-            { length: 2, positive: true },
-          ),
-          damageRatioByStack: readNumberArray(
-            arraySource,
-            'damageRatioByStack',
-            arrayPath,
-            problems,
-            { length: 2, positive: true },
-          ),
-          tickMs:
-            readNumber(arraySource, 'tickMs', arrayPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-        };
-
-  const qiSource = readObject(source, 'swordQi', path, problems, CULTIVATOR_SWORD_QI_FIELDS);
-  const qiPath = `${path}.swordQi`;
-  const swordQi: CultivatorSwordQiTuning =
-    qiSource === undefined
-      ? zeroCultivatorSwordQi()
-      : {
-          everyNShots:
-            readNumber(qiSource, 'everyNShots', qiPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 1,
-          damageRatioByStack: readNumberArray(qiSource, 'damageRatioByStack', qiPath, problems, {
-            length: 3,
-            positive: true,
-          }),
-          halfWidthTilesByStack: readNumberArray(
-            qiSource,
-            'halfWidthTilesByStack',
-            qiPath,
-            problems,
-            { length: 3, positive: true },
-          ),
-          durationMsByStack: readNumberArray(qiSource, 'durationMsByStack', qiPath, problems, {
-            length: 3,
-            positive: true,
-          }),
-          speedTilesPerSecond:
-            readNumber(qiSource, 'speedTilesPerSecond', qiPath, problems, { positive: true }) ?? 0,
-        };
-
-  const barrierSource = readObject(
-    source,
-    'qiBarrier',
-    path,
-    problems,
-    CULTIVATOR_QI_BARRIER_FIELDS,
-  );
-  const barrierPath = `${path}.qiBarrier`;
-  const qiBarrier: CultivatorQiBarrierTuning =
-    barrierSource === undefined
-      ? zeroCultivatorQiBarrier()
-      : {
-          chargeByStack: readNumberArray(barrierSource, 'chargeByStack', barrierPath, problems, {
-            length: 3,
-            positive: true,
-            max: 1,
-          }),
-          wavesByStack: readNumberArray(barrierSource, 'wavesByStack', barrierPath, problems, {
-            length: 3,
-            integer: true,
-            positive: true,
-          }),
-          waveDamageRatioByStack: readNumberArray(
-            barrierSource,
-            'waveDamageRatioByStack',
-            barrierPath,
-            problems,
-            { length: 3, positive: true },
-          ),
-          waveHalfWidthTilesByStack: readNumberArray(
-            barrierSource,
-            'waveHalfWidthTilesByStack',
-            barrierPath,
-            problems,
-            { length: 3, positive: true },
-          ),
-          waveDurationMsByStack: readNumberArray(
-            barrierSource,
-            'waveDurationMsByStack',
-            barrierPath,
-            problems,
-            { length: 3, positive: true },
-          ),
-          waveSpeedTilesPerSecond:
-            readNumber(barrierSource, 'waveSpeedTilesPerSecond', barrierPath, problems, {
-              positive: true,
-            }) ?? 0,
-        };
-
-  const myriadSource = readObject(
-    source,
-    'myriadSwords',
-    path,
-    problems,
-    CULTIVATOR_MYRIAD_SWORDS_FIELDS,
-  );
-  const myriadPath = `${path}.myriadSwords`;
-  const myriadSwords: CultivatorMyriadSwordsTuning =
-    myriadSource === undefined
-      ? zeroCultivatorMyriadSwords()
-      : {
-          arrayIntervalMs:
-            readNumber(myriadSource, 'arrayIntervalMs', myriadPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-          miniWaveDamageRatio:
-            readNumber(myriadSource, 'miniWaveDamageRatio', myriadPath, problems, {
-              positive: true,
-            }) ?? 0,
-          miniWaveRadiusTiles:
-            readNumber(myriadSource, 'miniWaveRadiusTiles', myriadPath, problems, {
-              positive: true,
-            }) ?? 0,
-          miniWaveDurationMs:
-            readNumber(myriadSource, 'miniWaveDurationMs', myriadPath, problems, {
-              integer: true,
-              positive: true,
-            }) ?? 0,
-          miniWaveSpeedTilesPerSecond:
-            readNumber(myriadSource, 'miniWaveSpeedTilesPerSecond', myriadPath, problems, {
-              positive: true,
-            }) ?? 0,
-        };
-
-  return { orbitSwords, swordArray, swordQi, qiBarrier, myriadSwords };
-}
-
-function parseClassSkills(
-  raw: Record<string, unknown>,
-  problems: ProblemList,
-): ClassSkillsTuning {
-  const source = readObject(raw, 'classSkills', '', problems, CLASS_SKILLS_FIELDS);
-  if (source === undefined) return zeroClassSkills();
-  return {
-    ninja: parseNinjaClassSkills(source, problems),
-    archer: parseArcherClassSkills(source, problems),
-    mage: parseMageClassSkills(source, problems),
-    cultivator: parseCultivatorClassSkills(source, problems),
-  };
-}
-
-function zeroCharacter(): CharacterTuning {
-  return {
-    unlockChapter: 0,
-    unlockGoldCost: 0,
-    baseStats: {
-      maxHpDelta: 0,
-      damageMult: 1,
-      fireRateMult: 1,
-      moveSpeedMult: 1,
-      projectileSpeedMult: 1,
-      targetingRangeMult: 1,
-    },
-    passive: {
-      moveSpeedBonus: 0,
-      dashCooldownMult: 1,
-      pierceAdd: 0,
-      critChanceAdd: 0,
-      critMultiplier: 1,
-      activeCooldownMult: 1,
-      activePowerBonus: 0,
-      aoePowerBonus: 0,
-      damageBonus: 0,
-      executeThreshold: 0,
-      executeBonus: 0,
-    },
-    signature: {
-      cooldownMs: 10000,
-      hitCooldownReductionMs: 200,
-      killCooldownReductionMs: 650,
-      projectileCount: 1,
-      maxProjectileCount: 1,
-      fanArcDegrees: 0,
-      speedTilesPerSecond: 12,
-      radiusTiles: 0.18,
-      ttlMs: 1200,
-      damageMultiplier: 1,
-      pierceCount: 0,
-      homing: false,
-      novaRadiusTiles: 0,
-      novaDamageMultiplier: 0,
-      novaSlowFactor: 1,
-      novaSlowDurationMs: 0,
-      hideAttachmentMs: 0,
-    },
-  };
-}
-
-function zeroCharacters(): CharactersTuning {
-  const result = {} as Record<TuningCharacterId, CharacterTuning>;
-  for (const id of TUNING_CHARACTER_IDS) result[id] = zeroCharacter();
-  return result;
-}
-
-function parseCharacterEntry(
-  source: Record<string, unknown>,
-  id: TuningCharacterId,
-  problems: ProblemList,
-): CharacterTuning {
-  const entry = readObject(source, id, 'characters', problems, CHARACTER_FIELDS);
-  if (entry === undefined) return zeroCharacter();
-
-  const path = `characters.${id}`;
-  const unlockChapter = readSignedInteger(
-    entry,
-    'unlockChapter',
-    path,
-    problems,
-    0,
-    CHAPTERS_PER_RUN - 1,
-    0,
-  );
-  const unlockGoldCost =
-    readNumber(entry, 'unlockGoldCost', path, problems, { integer: true }) ?? 0;
-
-  const baseSource = readObject(entry, 'baseStats', path, problems, CHARACTER_BASE_STATS_FIELDS) ?? {};
-  const basePath = `${path}.baseStats`;
-  const baseStats: CharacterBaseStatsTuning = {
-    maxHpDelta: readSignedInteger(baseSource, 'maxHpDelta', basePath, problems, -80, 200, 0),
-    damageMult: readNumber(baseSource, 'damageMult', basePath, problems, { positive: true }) ?? 1,
-    fireRateMult:
-      readNumber(baseSource, 'fireRateMult', basePath, problems, { positive: true }) ?? 1,
-    moveSpeedMult:
-      readNumber(baseSource, 'moveSpeedMult', basePath, problems, { positive: true }) ?? 1,
-    projectileSpeedMult:
-      readNumber(baseSource, 'projectileSpeedMult', basePath, problems, { positive: true }) ?? 1,
-    targetingRangeMult:
-      readNumber(baseSource, 'targetingRangeMult', basePath, problems, { positive: true }) ?? 1,
-  };
-
-  const passiveSource = readObject(entry, 'passive', path, problems, CHARACTER_PASSIVE_FIELDS) ?? {};
-  const passivePath = `${path}.passive`;
-  const critMultiplier =
-    readNumber(passiveSource, 'critMultiplier', passivePath, problems, { positive: true }) ?? 1;
-  if (critMultiplier < 1) {
-    problems.add(`${passivePath}.critMultiplier`, `must be >= 1, got ${critMultiplier}`);
-  }
-  const passive: CharacterPassiveTuning = {
-    moveSpeedBonus: readNumber(passiveSource, 'moveSpeedBonus', passivePath, problems) ?? 0,
-    dashCooldownMult:
-      readNumber(passiveSource, 'dashCooldownMult', passivePath, problems, { positive: true }) ?? 1,
-    pierceAdd:
-      readNumber(passiveSource, 'pierceAdd', passivePath, problems, { integer: true }) ?? 0,
-    critChanceAdd: readRatio(passiveSource, 'critChanceAdd', passivePath, problems),
-    critMultiplier: Math.max(1, critMultiplier),
-    activeCooldownMult:
-      readNumber(passiveSource, 'activeCooldownMult', passivePath, problems, { positive: true }) ??
-      1,
-    activePowerBonus: readNumber(passiveSource, 'activePowerBonus', passivePath, problems) ?? 0,
-    aoePowerBonus: readNumber(passiveSource, 'aoePowerBonus', passivePath, problems) ?? 0,
-    damageBonus: readNumber(passiveSource, 'damageBonus', passivePath, problems) ?? 0,
-    executeThreshold: readRatio(passiveSource, 'executeThreshold', passivePath, problems),
-    executeBonus: readNumber(passiveSource, 'executeBonus', passivePath, problems) ?? 0,
-  };
-
-  const sigSource =
-    readObject(entry, 'signature', path, problems, CHARACTER_SIGNATURE_FIELDS) ?? {};
-  const sigPath = `${path}.signature`;
-  const projectileCount =
-    readNumber(sigSource, 'projectileCount', sigPath, problems, {
-      integer: true,
-      positive: true,
-    }) ?? 1;
-  const maxProjectileCount =
-    readNumber(sigSource, 'maxProjectileCount', sigPath, problems, {
-      integer: true,
-      positive: true,
-    }) ?? projectileCount;
-  if (maxProjectileCount < projectileCount) {
-    problems.add(
-      `${sigPath}.maxProjectileCount`,
-      `must be >= projectileCount (${projectileCount}), got ${maxProjectileCount}`,
-    );
-  }
-  const fanArcDegrees = readNumber(sigSource, 'fanArcDegrees', sigPath, problems) ?? 0;
-  if (fanArcDegrees > 360) {
-    problems.add(`${sigPath}.fanArcDegrees`, `must be within 0..360, got ${fanArcDegrees}`);
-  }
-  const signature: CharacterSignatureTuning = {
-    cooldownMs:
-      readNumber(sigSource, 'cooldownMs', sigPath, problems, { integer: true, positive: true }) ??
-      10000,
-    hitCooldownReductionMs:
-      readNumber(sigSource, 'hitCooldownReductionMs', sigPath, problems, { integer: true }) ?? 0,
-    killCooldownReductionMs:
-      readNumber(sigSource, 'killCooldownReductionMs', sigPath, problems, { integer: true }) ?? 0,
-    projectileCount,
-    maxProjectileCount,
-    fanArcDegrees,
-    speedTilesPerSecond:
-      readNumber(sigSource, 'speedTilesPerSecond', sigPath, problems, { positive: true }) ?? 12,
-    radiusTiles: readNumber(sigSource, 'radiusTiles', sigPath, problems, { positive: true }) ?? 0.18,
-    ttlMs: readNumber(sigSource, 'ttlMs', sigPath, problems, { integer: true, positive: true }) ?? 1000,
-    damageMultiplier:
-      readNumber(sigSource, 'damageMultiplier', sigPath, problems, { positive: true }) ?? 1,
-    pierceCount: readNumber(sigSource, 'pierceCount', sigPath, problems, { integer: true }) ?? 0,
-    homing: readBoolean(sigSource, 'homing', sigPath, problems, false),
-    novaRadiusTiles: readNumber(sigSource, 'novaRadiusTiles', sigPath, problems) ?? 0,
-    novaDamageMultiplier: readNumber(sigSource, 'novaDamageMultiplier', sigPath, problems) ?? 0,
-    novaSlowFactor: readRatio(sigSource, 'novaSlowFactor', sigPath, problems),
-    novaSlowDurationMs:
-      readNumber(sigSource, 'novaSlowDurationMs', sigPath, problems, { integer: true }) ?? 0,
-    hideAttachmentMs:
-      readNumber(sigSource, 'hideAttachmentMs', sigPath, problems, { integer: true }) ?? 0,
-  };
-
-  return {
-    unlockChapter,
-    unlockGoldCost,
-    baseStats,
-    passive,
-    signature,
-  };
-}
-
-function parseCharacters(raw: Record<string, unknown>, problems: ProblemList): CharactersTuning {
-  const source = readObject(raw, 'characters', '', problems, TUNING_CHARACTER_IDS);
-  if (source === undefined) return zeroCharacters();
-
-  const result = {} as Record<TuningCharacterId, CharacterTuning>;
-  for (const id of TUNING_CHARACTER_IDS) {
-    result[id] = parseCharacterEntry(source, id, problems);
-  }
-  return result;
-}
-
-function zeroMageClassSkills(): MageClassSkillsTuning {
-  return {
-    meteor: {
-      intervalMs: 4500,
-      intervalStepMs: 1000,
-      radiusTiles: 2,
-      damageRatio: 2.5,
-      burnDpsRatio: 0.6,
-      burnDurationMs: 2500,
-    },
-    frostOrbs: {
-      baseCount: 2,
-      countPerStack: 1,
-      radiusTiles: 1.6,
-      orbitRadiansPerSecond: 1.2,
-      evolvedOrbitMultiplier: 2,
-      hitRadiusTiles: 0.55,
-      damagePerSecondRatio: 0.8,
-      slowFactor: 0.35,
-      slowDurationMs: 800,
-    },
-    stormStrike: { procChance: 0.2, procChancePerStack: 0.1, damageRatio: 1.6 },
-    arcanePulse: {
-      shotEvery: 4,
-      radiusTiles: 1.8,
-      damageRatio: 0.8,
-      damageRatioPerStack: 0.4,
-    },
-    evolution: { shardIntervalMs: 900, shardDamageRatio: 0.8, shatterBurnMultiplier: 2 },
-  };
-}
-
-function parseMageMeteor(
-  source: Record<string, unknown>,
-  problems: ProblemList,
-): MageMeteorTuning {
-  const block = readObject(source, 'meteor', 'classSkills.mage', problems, MAGE_METEOR_FIELDS);
-  if (block === undefined) return zeroMageClassSkills().meteor;
-
-  const path = 'classSkills.mage.meteor';
-  return {
-    intervalMs:
-      readNumber(block, 'intervalMs', path, problems, { positive: true }) ?? 4500,
-    intervalStepMs: readNumber(block, 'intervalStepMs', path, problems) ?? 0,
-    radiusTiles:
-      readNumber(block, 'radiusTiles', path, problems, { positive: true }) ?? 1,
-    damageRatio:
-      readNumber(block, 'damageRatio', path, problems, { positive: true }) ?? 1,
-    burnDpsRatio: readNumber(block, 'burnDpsRatio', path, problems) ?? 0,
-    burnDurationMs: readNumber(block, 'burnDurationMs', path, problems, { integer: true }) ?? 0,
-  };
-}
-
-function parseMageFrostOrbs(
-  source: Record<string, unknown>,
-  problems: ProblemList,
-): MageFrostOrbsTuning {
-  const block = readObject(
-    source,
-    'frostOrbs',
-    'classSkills.mage',
-    problems,
-    MAGE_FROST_ORBS_FIELDS,
-  );
-  if (block === undefined) return zeroMageClassSkills().frostOrbs;
-
-  const path = 'classSkills.mage.frostOrbs';
-  return {
-    baseCount: readNumber(block, 'baseCount', path, problems, { integer: true }) ?? 0,
-    countPerStack:
-      readNumber(block, 'countPerStack', path, problems, { integer: true }) ?? 0,
-    radiusTiles:
-      readNumber(block, 'radiusTiles', path, problems, { positive: true }) ?? 1,
-    orbitRadiansPerSecond:
-      readNumber(block, 'orbitRadiansPerSecond', path, problems, { positive: true }) ?? 1,
-    evolvedOrbitMultiplier:
-      readNumber(block, 'evolvedOrbitMultiplier', path, problems, { positive: true }) ?? 1,
-    hitRadiusTiles:
-      readNumber(block, 'hitRadiusTiles', path, problems, { positive: true }) ?? 0.5,
-    damagePerSecondRatio:
-      readNumber(block, 'damagePerSecondRatio', path, problems, { positive: true }) ?? 1,
-    slowFactor: readRatio(block, 'slowFactor', path, problems),
-    slowDurationMs:
-      readNumber(block, 'slowDurationMs', path, problems, { integer: true }) ?? 0,
-  };
-}
-
-function parseMageStormStrike(
-  source: Record<string, unknown>,
-  problems: ProblemList,
-): MageStormStrikeTuning {
-  const block = readObject(
-    source,
-    'stormStrike',
-    'classSkills.mage',
-    problems,
-    MAGE_STORM_STRIKE_FIELDS,
-  );
-  if (block === undefined) return zeroMageClassSkills().stormStrike;
-
-  const path = 'classSkills.mage.stormStrike';
-  return {
-    procChance: readRatio(block, 'procChance', path, problems),
-    procChancePerStack: readRatio(block, 'procChancePerStack', path, problems),
-    damageRatio:
-      readNumber(block, 'damageRatio', path, problems, { positive: true }) ?? 1,
-  };
-}
-
-function parseMageArcanePulse(
-  source: Record<string, unknown>,
-  problems: ProblemList,
-): MageArcanePulseTuning {
-  const block = readObject(
-    source,
-    'arcanePulse',
-    'classSkills.mage',
-    problems,
-    MAGE_ARCANE_PULSE_FIELDS,
-  );
-  if (block === undefined) return zeroMageClassSkills().arcanePulse;
-
-  const path = 'classSkills.mage.arcanePulse';
-  return {
-    shotEvery:
-      readNumber(block, 'shotEvery', path, problems, { integer: true, positive: true }) ?? 1,
-    radiusTiles:
-      readNumber(block, 'radiusTiles', path, problems, { positive: true }) ?? 1,
-    damageRatio: readNumber(block, 'damageRatio', path, problems) ?? 0,
-    damageRatioPerStack:
-      readNumber(block, 'damageRatioPerStack', path, problems) ?? 0,
-  };
-}
-
-function parseMageEvolution(
-  source: Record<string, unknown>,
-  problems: ProblemList,
-): MageEvolutionTuning {
-  const block = readObject(
-    source,
-    'evolution',
-    'classSkills.mage',
-    problems,
-    MAGE_EVOLUTION_FIELDS,
-  );
-  if (block === undefined) return zeroMageClassSkills().evolution;
-
-  const path = 'classSkills.mage.evolution';
-  return {
-    shardIntervalMs:
-      readNumber(block, 'shardIntervalMs', path, problems, { integer: true, positive: true }) ??
-      1,
-    shardDamageRatio:
-      readNumber(block, 'shardDamageRatio', path, problems, { positive: true }) ?? 1,
-    shatterBurnMultiplier:
-      readNumber(block, 'shatterBurnMultiplier', path, problems, { positive: true }) ?? 1,
-  };
-}
-
-function parseMageClassSkills(
-  source: Record<string, unknown>,
-  problems: ProblemList,
-): MageClassSkillsTuning {
-  const block = readObject(source, 'mage', 'classSkills', problems, MAGE_FIELDS);
-  if (block === undefined) return zeroMageClassSkills();
-
-  return {
-    meteor: parseMageMeteor(block, problems),
-    frostOrbs: parseMageFrostOrbs(block, problems),
-    stormStrike: parseMageStormStrike(block, problems),
-    arcanePulse: parseMageArcanePulse(block, problems),
-    evolution: parseMageEvolution(block, problems),
-  };
-}
-
 function zeroCover(): CoverTuning {
   return { overlayAlpha: 1, actorInCoverAlpha: 1, fadeRate: 1 };
 }
@@ -3833,112 +2590,6 @@ function deepFreeze<T>(value: T): T {
   for (const child of Object.values(value as Record<string, unknown>))
     deepFreeze(child);
   return Object.freeze(value);
-}
-
-/** Parse the Archer class-skill numbers (M20, #85; other classes add their own block). */
-function parseArcherClassSkills(
-  classSkills: Record<string, unknown>,
-  problems: ProblemList,
-): ArcherClassSkillTuning {
-  const defaults = defaultArcherClassSkills();
-  const archerSource = readObject(
-    classSkills,
-    'archer',
-    'classSkills',
-    problems,
-    ARCHER_CLASS_SKILL_FIELDS,
-  );
-  if (archerSource === undefined) return defaults;
-
-  const path = 'classSkills.archer';
-  const rainSource =
-    readObject(archerSource, 'arrowRain', path, problems, ARROW_RAIN_FIELDS) ?? {};
-  const rainPath = `${path}.arrowRain`;
-  const splitSource =
-    readObject(archerSource, 'splitArrow', path, problems, SPLIT_ARROW_FIELDS) ?? {};
-  const splitPath = `${path}.splitArrow`;
-  const markSource =
-    readObject(archerSource, 'huntersMark', path, problems, HUNTERS_MARK_FIELDS) ?? {};
-  const markPath = `${path}.huntersMark`;
-  const windSource =
-    readObject(archerSource, 'windArrow', path, problems, WIND_ARROW_FIELDS) ?? {};
-  const windPath = `${path}.windArrow`;
-  const tempestSource =
-    readObject(archerSource, 'skyTempest', path, problems, SKY_TEMPEST_FIELDS) ?? {};
-  const tempestPath = `${path}.skyTempest`;
-
-  const rainRatios = readNumberList(rainSource, 'damageRatioByStack', rainPath, problems);
-  const splitRatios = readNumberList(splitSource, 'damageRatioByStack', splitPath, problems);
-  const markRatios = readNumberList(markSource, 'damageRatioByStack', markPath, problems);
-
-  return {
-    arrowRain: {
-      everyShots:
-          readNumber(rainSource, 'everyShots', rainPath, problems, {
-            integer: true,
-            positive: true,
-          }) ?? defaults.arrowRain.everyShots,
-        radiusTiles:
-          readNumber(rainSource, 'radiusTiles', rainPath, problems, { positive: true }) ??
-          defaults.arrowRain.radiusTiles,
-        damageRatioByStack:
-          rainRatios.length > 0 ? rainRatios : defaults.arrowRain.damageRatioByStack,
-      },
-      splitArrow: {
-        arrows:
-          readNumber(splitSource, 'arrows', splitPath, problems, {
-            integer: true,
-            positive: true,
-          }) ?? defaults.splitArrow.arrows,
-        angleDegrees:
-          readNumber(splitSource, 'angleDegrees', splitPath, problems, { positive: true }) ??
-          defaults.splitArrow.angleDegrees,
-        damageRatioByStack:
-          splitRatios.length > 0 ? splitRatios : defaults.splitArrow.damageRatioByStack,
-      },
-      huntersMark: {
-        durationMs:
-          readNumber(markSource, 'durationMs', markPath, problems, { positive: true }) ??
-          defaults.huntersMark.durationMs,
-        radiusTiles:
-          readNumber(markSource, 'radiusTiles', markPath, problems, { positive: true }) ??
-          defaults.huntersMark.radiusTiles,
-        damageRatioByStack:
-          markRatios.length > 0 ? markRatios : defaults.huntersMark.damageRatioByStack,
-      },
-      windArrow: {
-        momentumCap:
-          readNumber(windSource, 'momentumCap', windPath, problems, {
-            integer: true,
-            positive: true,
-          }) ?? defaults.windArrow.momentumCap,
-        resetMs:
-          readNumber(windSource, 'resetMs', windPath, problems, { positive: true }) ??
-          defaults.windArrow.resetMs,
-        buffDurationMs:
-          readNumber(windSource, 'buffDurationMs', windPath, problems, { positive: true }) ??
-          defaults.windArrow.buffDurationMs,
-        fireRatePerMomentum:
-          readNumber(windSource, 'fireRatePerMomentum', windPath, problems) ??
-          defaults.windArrow.fireRatePerMomentum,
-        projectileSpeedPerMomentum:
-          readNumber(windSource, 'projectileSpeedPerMomentum', windPath, problems) ??
-          defaults.windArrow.projectileSpeedPerMomentum,
-      },
-      skyTempest: {
-        arrows:
-          readNumber(tempestSource, 'arrows', tempestPath, problems, {
-            integer: true,
-            positive: true,
-          }) ?? defaults.skyTempest.arrows,
-        pierce:
-          readNumber(tempestSource, 'pierce', tempestPath, problems, { integer: true }) ??
-          defaults.skyTempest.pierce,
-        damageRatio:
-          readNumber(tempestSource, 'damageRatio', tempestPath, problems, { positive: true }) ??
-          defaults.skyTempest.damageRatio,
-    },
-  };
 }
 
 export function parseTuning(raw: unknown): TuningConfig {
@@ -3966,7 +2617,7 @@ export function parseTuning(raw: unknown): TuningConfig {
 
   const config: TuningConfig = {
     version,
-    combat: parseCombat(raw, problems),
+    combat: parseBlock(COMBAT_SPEC, raw, 'combat', '', problems),
     chapters: parseChapters(raw, problems),
     enemies: parseEnemies(raw, problems),
     navigation: parseNavigation(raw, problems),
@@ -3981,9 +2632,16 @@ export function parseTuning(raw: unknown): TuningConfig {
     boss: parseBoss(raw, problems),
     xp: parseXp(raw, problems),
     dash: parseBlock(DASH_SPEC, raw, 'dash', '', problems),
-    activeSkill: parseActiveSkill(raw, problems),
-    classSkills: parseClassSkills(raw, problems),
-    characters: parseCharacters(raw, problems),
+    activeSkill: parseBlock(ACTIVE_SKILL_SPEC, raw, 'activeSkill', '', problems),
+    classSkills: parseBlock(CLASS_SKILLS_SPEC, raw, 'classSkills', '', problems),
+    characters: parseKeyedRecord(
+      CHARACTER_SPEC,
+      TUNING_CHARACTER_IDS,
+      raw,
+      'characters',
+      '',
+      problems,
+    ),
     hub: parseHub(raw, problems),
   };
 
