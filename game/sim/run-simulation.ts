@@ -22,7 +22,7 @@
  *   chosen skill immediately, and triggers `computeLevelUpKnockback` + `levelUpResumeIframeMs`
  *   (leaving enemy bullets live).
  * - The boss room is **no** longer a placeholder tank: it runs `simulateBossRun`
- *   (`core/sim/boss-run.ts`), i.e. `stepBoss` + phases + summon + skills.
+ *   (`./boss-run`), i.e. `stepBoss` + phases + summon + skills.
  *
  * - Randomness only through `SeededRng` built from `seed`; no module-level state.
  * - Movement uses the same `moveWithCollision` rule as the game: obstacles are solid for the
@@ -30,28 +30,28 @@
  *   walls (`firstHit`).
  * - `godMode` is a test hook: skip damage to the player to measure room-clear time.
  */
-import { pickBoss } from '../boss/boss-pool';
+import { pickBoss } from '../assets/scripts/core/boss/boss-pool';
 import {
   CHARACTERS,
   DEFAULT_CHARACTER_ID,
   type CharacterId,
-} from '../characters/roster';
-import { AutoFire } from '../combat/auto-fire';
-import { BulletPool, firstHit, hitsCircle, type Bullet } from '../combat/bullets';
-import { PlayerHitHitstop } from '../combat/hit-hitstop';
-import { HealthState } from '../combat/health';
-import { stepKnockback, type KnockbackState } from '../combat/knockback';
-import { firePlayerVolley } from '../combat/player-fire';
+} from '../assets/scripts/core/characters/roster';
+import { AutoFire } from '../assets/scripts/core/combat/auto-fire';
+import { BulletPool, firstHit, hitsCircle, type Bullet } from '../assets/scripts/core/combat/bullets';
+import { PlayerHitHitstop } from '../assets/scripts/core/combat/hit-hitstop';
+import { HealthState } from '../assets/scripts/core/combat/health';
+import { stepKnockback, type KnockbackState } from '../assets/scripts/core/combat/knockback';
+import { firePlayerVolley } from '../assets/scripts/core/combat/player-fire';
 import {
   HOMING_TURN_RATE_RADIANS_PER_SECOND,
   damageAfterExecute,
   lifestealHeal,
   ricochetTarget,
   steerVelocity,
-} from '../combat/shot-effects';
-import { ShieldCharger } from '../combat/shield';
-import { StatusEffects } from '../combat/status-effects';
-import { DEFAULT_COMBAT } from '../config';
+} from '../assets/scripts/core/combat/shot-effects';
+import { ShieldCharger } from '../assets/scripts/core/combat/shield';
+import { StatusEffects } from '../assets/scripts/core/combat/status-effects';
+import { DEFAULT_COMBAT } from '../assets/scripts/core/config';
 import {
   CHASER_CONTACT_RANGE_TILES,
   ROOM_EDGE_MARGIN_TILES,
@@ -63,16 +63,16 @@ import {
   visualScaleFor,
   type EnemyAction,
   type EnemyState,
-} from '../enemies/behaviours';
+} from '../assets/scripts/core/enemies/behaviours';
 import {
   bomberBlastSpec,
   isInsideBomberBlast,
   scheduleFollowUpBlast,
   stepPendingBlasts,
   type PendingBomberBlast,
-} from '../enemies/bomber';
-import { EnemyBuffTracker, resolveBufferPulse } from '../enemies/buffer';
-import { nextActionStartedMs } from '../enemies/attack-cycle';
+} from '../assets/scripts/core/enemies/bomber';
+import { EnemyBuffTracker, resolveBufferPulse } from '../assets/scripts/core/enemies/buffer';
+import { nextActionStartedMs } from '../assets/scripts/core/enemies/attack-cycle';
 import {
   aimDirection,
   casterShotPlan,
@@ -81,8 +81,8 @@ import {
   sniperShotPlan,
   stepPendingGunnerVolleys,
   type PendingGunnerVolley,
-} from '../combat/enemy-fire';
-import { splitOnDeath } from '../enemies/splitter';
+} from '../assets/scripts/core/combat/enemy-fire';
+import { splitOnDeath } from '../assets/scripts/core/enemies/splitter';
 import {
   RoomNavigation,
   StuckGuard,
@@ -90,7 +90,7 @@ import {
   walkTowards,
   type FlowField,
   type SeparationBody,
-} from '../enemies/navigation';
+} from '../assets/scripts/core/enemies/navigation';
 import {
   ACTIVE_SKILL_TUNING,
   CLASS_SKILLS_TUNING,
@@ -101,8 +101,8 @@ import {
   NAVIGATION_TUNING,
   PICKUPS_TUNING,
   SPECIAL_ROOMS_TUNING,
-} from '../enemies/tuning';
-import { ActionBuffer } from '../input/action-buffer';
+} from '../assets/scripts/core/enemies/tuning';
+import { ActionBuffer } from '../assets/scripts/core/input/action-buffer';
 import {
   activeSkillConfigFor,
   computeArcaneNovaSpec,
@@ -117,7 +117,7 @@ import {
   tryActivateSkill,
   type ActiveSkillState,
   type SignatureSkillId,
-} from '../input/active-skill';
+} from '../assets/scripts/core/input/active-skill';
 import {
   canStartDash,
   createDashState,
@@ -127,55 +127,55 @@ import {
   stepDash,
   tryStartDash,
   type DashState,
-} from '../input/dash';
-import { WaveScheduler, enemyStateFromSpawn, usesWaveScheduler } from '../enemies/wave-scheduler';
-import { isWaveCleared, spawnWave } from '../enemies/waves';
-import type { ChapterData, EnemyRole, LevelData } from '../level/level-data';
-import { distance, type Vec2 } from '../math/vec2';
+} from '../assets/scripts/core/input/dash';
+import { WaveScheduler, enemyStateFromSpawn, usesWaveScheduler } from '../assets/scripts/core/enemies/wave-scheduler';
+import { isWaveCleared, spawnWave } from '../assets/scripts/core/enemies/waves';
+import type { ChapterData, EnemyRole, LevelData } from '../assets/scripts/core/level/level-data';
+import { distance, type Vec2 } from '../assets/scripts/core/math/vec2';
 import {
   applyCharacterBaseStats,
   applyCharacterPassive,
   metaBaseline,
-} from '../meta/run-stats';
-import type { UpgradeState } from '../meta/upgrades';
-import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../movement/move-intent';
-import { moveWithCollision } from '../movement/collision';
-import { SeededRng } from '../rng';
-import { drawRunRooms } from '../run/room-draw';
+} from '../assets/scripts/core/meta/run-stats';
+import type { UpgradeState } from '../assets/scripts/core/meta/upgrades';
+import { normalizeMoveInput, velocityFromInput, type MoveInput } from '../assets/scripts/core/movement/move-intent';
+import { moveWithCollision } from '../assets/scripts/core/movement/collision';
+import { SeededRng } from '../assets/scripts/core/rng';
+import { drawRunRooms } from '../assets/scripts/core/run/room-draw';
 import {
   COMBAT_REWARDS,
   DOOR_REWARDS,
   clearRewardFor,
   doorOffers,
   type DoorReward,
-} from '../run/doors';
-import { goldForKill, goldForRoomClear } from '../run/rewards';
+} from '../assets/scripts/core/run/doors';
+import { goldForKill, goldForRoomClear } from '../assets/scripts/core/run/rewards';
 import {
   chestReward,
   healByFraction,
   isSpecialDoor,
   type SpecialKind,
-} from '../run/special-rooms';
-import { computeDerivedStats } from '../skills/derived-stats';
-import { dispatchClassSkillEvent, hasAnyClassSkill } from '../skills/class-skills';
+} from '../assets/scripts/core/run/special-rooms';
+import { computeDerivedStats } from '../assets/scripts/core/skills/derived-stats';
+import { dispatchClassSkillEvent, hasAnyClassSkill } from '../assets/scripts/core/skills/class-skills';
 import type {
   ClassSkillEffect,
   ClassSkillMemory,
   ClassSkillStackSource,
   ClassSkillTarget,
-} from '../skills/class-skill-hooks';
+} from '../assets/scripts/core/skills/class-skill-hooks';
 import {
   NinjaSkillRuntime,
-} from '../skills/ninja-runtime';
-import { CultivatorSkillRuntime } from '../skills/cultivator-runtime';
-import type { SkillDef } from '../skills/pool';
-import { createSkillRollRng, rerollChoices, rollChoices } from '../skills/roll';
-import { screenViewAround } from '../view/view-rect';
-import { computeLevelUpKnockback, levelUpResumeIframeMs } from '../xp/level-up-wave';
-import { canReroll, deductRerollCost, rerollCost } from '../xp/reroll';
-import { XpTracker, xpDoorClearBonus, xpForKill } from '../xp/xp-curve';
-import { XpOrbPool } from '../xp/xp-orbs';
-import { WorldPickupPool, shouldDropHealthPotion } from '../xp/pickups';
+} from '../assets/scripts/core/skills/ninja-runtime';
+import { CultivatorSkillRuntime } from '../assets/scripts/core/skills/cultivator-runtime';
+import type { SkillDef } from '../assets/scripts/core/skills/pool';
+import { createSkillRollRng, rerollChoices, rollChoices } from '../assets/scripts/core/skills/roll';
+import { screenViewAround } from '../assets/scripts/core/view/view-rect';
+import { computeLevelUpKnockback, levelUpResumeIframeMs } from '../assets/scripts/core/xp/level-up-wave';
+import { canReroll, deductRerollCost, rerollCost } from '../assets/scripts/core/xp/reroll';
+import { XpTracker, xpDoorClearBonus, xpForKill } from '../assets/scripts/core/xp/xp-curve';
+import { XpOrbPool } from '../assets/scripts/core/xp/xp-orbs';
+import { WorldPickupPool, shouldDropHealthPotion } from '../assets/scripts/core/xp/pickups';
 import {
   BOSS_TARGET_ID,
   simulateBossRun,
@@ -183,7 +183,7 @@ import {
   type BossDashPolicy,
   type BossRunPolicy,
 } from './boss-run';
-import type { ViewRect } from '../camera/follow-camera';
+import type { ViewRect } from '../assets/scripts/core/camera/follow-camera';
 
 export const SIM_STEP_MS = 16;
 

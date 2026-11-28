@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BOSS_IDS, type BossId, type BossPhase } from '../../assets/scripts/core/boss/boss-defs';
-import { holdPosition, simulateBossRun } from '../../assets/scripts/core/sim/boss-run';
+import { holdPosition, simulateBossRun } from '../../sim/boss-run';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
 
 /**

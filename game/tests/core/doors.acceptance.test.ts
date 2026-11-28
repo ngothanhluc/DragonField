@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { TUNING } from '../../assets/scripts/core/enemies/tuning';
 import { chapterFromLevels } from '../../assets/scripts/core/level/chapter';
 import { COMBAT_REWARDS, clearRewardFor, doorOffers, type DoorReward } from '../../assets/scripts/core/run/doors';
-import { simulateRun } from '../../assets/scripts/core/sim/run-simulation';
+import { simulateRun } from '../../sim/run-simulation';
 import { loadTmxLevels } from '../helpers/tmx-levels';
 
 const XP_GOLD: readonly DoorReward[] = ['xp', 'gold'];

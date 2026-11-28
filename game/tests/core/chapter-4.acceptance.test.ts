@@ -15,7 +15,7 @@ import {
   migrate,
   unlockNextChapter,
 } from '../../assets/scripts/core/save/save-data';
-import { simulateRun } from '../../assets/scripts/core/sim/run-simulation';
+import { simulateRun } from '../../sim/run-simulation';
 import { LEVELS_ROOT, loadTmxLevels } from '../helpers/tmx-levels';
 
 function chapterFour() {

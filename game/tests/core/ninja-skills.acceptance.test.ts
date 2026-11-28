@@ -34,7 +34,7 @@ import {
   smartActiveSkillPolicy,
   smartDashPolicy,
   type SimulationResult,
-} from "../../assets/scripts/core/sim/run-simulation";
+} from "../../sim/run-simulation";
 import { makeDodgePolicy } from "../helpers/dodge-policy";
 import { loadChapterOne } from "../helpers/tmx-levels";
 

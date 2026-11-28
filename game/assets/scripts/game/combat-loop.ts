@@ -4,7 +4,7 @@
  * Split from `bootstrap.ts` when M3 added caster bullets, brute charges, stagger and
  * hitstop: bootstrap owns run flow (chapter → room → wave → clear/loss), while this file
  * owns **one combat frame**. The frame order is unchanged and matches
- * `core/sim/run-simulation.ts`: player → enemy → bullets → collisions → contact damage.
+ * `sim/run-simulation.ts`: player → enemy → bullets → collisions → contact damage.
  *
  * Three things belong to core; this file only applies them:
  *

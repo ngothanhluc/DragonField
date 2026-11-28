@@ -7,7 +7,7 @@
  * the Qi gauge + shield — and steps it deterministically.
  *
  * Why one module: both consumers must behave identically.
- * - `core/sim/run-simulation.ts` (headless balance sim, tests, `sim:table`)
+ * - `sim/run-simulation.ts` (headless balance sim, tests, `sim:table`)
  * - `game/combat-loop.ts` (the real Cocos run)
  *
  * The module never damages anything itself: `step()` returns `CultivatorHit[]` and the caller

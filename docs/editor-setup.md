@@ -160,12 +160,12 @@ things below are only right or wrong when you open the editor, so the first Play
 Known intentional limitations (not bugs):
 
 - **Boss not connected yet.** At room `9/9` the game logs `TODO(boss)` and stops —
-  `core/sim/boss-run.ts` is the sample for wiring up `stepBoss`.
+  `sim/boss-run.ts` is the sample for wiring up `stepBoss`.
 - **Caster does not fire bullets** (telegraph + color change only). See `TODO(enemy-bullets)` in
   `bootstrap.ts`.
 - **Death is disappearing**, no explosion FX yet (art is staged at `resources/art/fx/explosion`).
 - **Obstacles block bullets but not the player** — exactly as in
-  `core/sim/run-simulation.ts` ("obstacles only block bullets"): the player can walk through a
+  `sim/run-simulation.ts` ("obstacles only block bullets"): the player can walk through a
   pillar, so you can stand inside one and every bullet you fire dies on the spot. If playtests
   find this annoying, add `obstacleAt()` to the movement step of `PlayerController`
   (slide along each axis so you do not get stuck on corners).

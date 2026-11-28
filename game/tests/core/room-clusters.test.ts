@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GROUND_TERRAINS, floorBlockTiles } from '../../assets/scripts/core/level/autotile';
+import { GROUND_TERRAINS, floorBlockTiles } from '../../scripts/lib/autotile';
 import { parseTmxLevel } from '../../assets/scripts/core/level/tmx';
 import { childrenNamed, elementText, firstChild, parseXml } from '../../assets/scripts/core/level/xml';
 import { LEVELS_ROOT } from '../helpers/tmx-levels';

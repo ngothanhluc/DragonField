@@ -29,7 +29,7 @@ import {
   normalizePatchMask,
   pickBlobTile,
   type PatchMask,
-} from '../assets/scripts/core/level/autotile';
+} from './lib/autotile';
 import type { ObstacleKind } from '../assets/scripts/core/level/level-data';
 import { splitTmxLayers } from '../assets/scripts/core/level/tmx-chunks';
 import type { Vec2 } from '../assets/scripts/core/math/vec2';

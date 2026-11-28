@@ -20,7 +20,7 @@ import { validateManifest } from '../../assets/scripts/core/art/manifest';
 import { SFX_BANK } from '../../assets/scripts/core/audio/sfx-bank';
 import type { Vec2 } from '../../assets/scripts/core/math/vec2';
 import type { SeededRng } from '../../assets/scripts/core/rng';
-import { simulateRun, type InputPolicy } from '../../assets/scripts/core/sim/run-simulation';
+import { simulateRun, type InputPolicy } from '../../sim/run-simulation';
 import { dispatchClassSkillEvent } from '../../assets/scripts/core/skills/class-skills';
 import type {
   ClassSkillEffect,

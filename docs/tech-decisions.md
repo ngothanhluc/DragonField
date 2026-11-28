@@ -157,7 +157,7 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 
 ## ADR-013 — Tuning numbers live in `game/config/tuning.json`, and simulation is the balance gate
 
-**Decision.** Every tuning number (combat, enemy, spawn) lives in `game/config/tuning.json` — **outside `assets/`**, so Cocos does not treat it as asset DB content. `scripts/gen-tuning.ts` reads the JSON, validates it with `core/enemies/tuning-schema.ts`, then generates `assets/scripts/core/enemies/tuning.generated.ts` (a plain TS module, `as const`). Game code reads through `core/enemies/tuning.ts` and `core/config.ts` and keeps no constants of its own. `core/sim/run-simulation.ts` is the measurement tool: it runs a whole chapter on pure core, no engine needed.
+**Decision.** Every tuning number (combat, enemy, spawn) lives in `game/config/tuning.json` — **outside `assets/`**, so Cocos does not treat it as asset DB content. `scripts/gen-tuning.ts` reads the JSON, validates it with `core/enemies/tuning-schema.ts`, then generates `assets/scripts/core/enemies/tuning.generated.ts` (a plain TS module, `as const`). Game code reads through `core/enemies/tuning.ts` and `core/config.ts` and keeps no constants of its own. `sim/run-simulation.ts` is the measurement tool: it runs a whole chapter on pure core, no engine needed.
 
 **Rationale.** A simulation check found the player **could stand still and still win chapter 1 without losing health** — a bug unit tests cannot see, and one that would only surface after the scene was built. Separating numbers from code allows retuning via JSON and re-measuring in seconds. JSON is not imported directly because everything under `assets/` is asset DB content, and there is no CLI way to verify that a JSON import survives the editor's script bundling step; a TS module definitely does.
 
@@ -255,7 +255,7 @@ Full tables: `docs/gdd.md` §3–§5. All numbers live in `src/core/config`, wit
 
 **Rationale.** Active defensive/offensive windows deepen bullet-hell expression and give M14's four classes unmistakable identity (e.g. Cultivator's *Ten Thousand Swords*), while keeping every level-up card impactful in combat. Economy/magnet upgrades move cleanly to Meta Shop (M15).
 
-**Consequences.** `core/skills/` expands with Evolution definitions and pairing metadata; `core/sim/run-simulation.ts` models Dash, Active Skill, and the rebuilt pool; all existing `Greed`/`Luck` references move out of the combat skill pool.
+**Consequences.** `core/skills/` expands with Evolution definitions and pairing metadata; `sim/run-simulation.ts` models Dash, Active Skill, and the rebuilt pool; all existing `Greed`/`Luck` references move out of the combat skill pool.
 
 **Amendment (#108, 2026-11-28).** The Signature Active no longer accelerates its cooldown on hits or kills: each class ships a fixed **14.25–16.5 s** base cooldown (`characters.*.signature.hitCooldownReductionMs` / `killCooldownReductionMs` = 0), and the projectiles do **20% less** damage. Hitstop for a Signature cast is requested **once per cast** (`core/combat/hit-hitstop.ts`) instead of on every projectile hit.
 

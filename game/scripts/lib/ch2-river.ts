@@ -14,7 +14,7 @@
  * - Maximal-rectangle decomposition turns deep-water + waterfall cells (minus bridges) into a compact set
  *   of `kind: "pit"` obstacles (blocks walkers, bullets pass over) and interior open-water `WaterArea`s.
  */
-import { normalizePatchMask, pickBlobTile, type PatchMask } from '../../assets/scripts/core/level/autotile';
+import { normalizePatchMask, pickBlobTile, type PatchMask } from './autotile';
 import { planRiverRipples, type WaterArea } from '../../assets/scripts/core/level/water-layout';
 
 export interface Vec2 {

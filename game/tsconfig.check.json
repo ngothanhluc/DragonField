@@ -22,6 +22,7 @@
     "assets/scripts/**/*.ts",
     "assets/data/*.json",
     "config/*.json",
+    "sim/**/*.ts",
     "scripts/**/*.ts",
     "tests/**/*.ts",
     "types/**/*.d.ts"
