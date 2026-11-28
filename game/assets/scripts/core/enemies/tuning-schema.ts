@@ -534,13 +534,20 @@ export type CharacterSignatureTuning = InferBlock<
   typeof CHARACTER_SIGNATURE_SPEC
 >;
 
-/** The barrage can never be wider than its capped projectile count. */
+/**
+ * The barrage can never be wider than its capped projectile count. A `maxProjectileCount` of 0
+ * is the fallback for an already-reported invalid value, so the rule stays quiet then instead
+ * of adding a second problem for the same field.
+ */
 function checkSignatureProjectiles(
   signature: CharacterSignatureTuning,
   path: string,
   problems: ProblemSink,
 ): void {
-  if (signature.maxProjectileCount < signature.projectileCount) {
+  if (
+    signature.maxProjectileCount > 0 &&
+    signature.maxProjectileCount < signature.projectileCount
+  ) {
     problems.add(
       `${path}.maxProjectileCount`,
       `must be >= projectileCount (${signature.projectileCount}), got ${signature.maxProjectileCount}`,
