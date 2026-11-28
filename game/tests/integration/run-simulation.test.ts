@@ -878,9 +878,9 @@ describe('simulateRun — M13 active kit, Evolutions, and Tier-2 AI (ADR-022)', 
     );
     expect(activeEvents[0]?.skillId).toBe('shadow-barrage');
     expect(activeEvents[0]?.projectiles).toBe(ACTIVE_SKILL_TUNING.barrageProjectiles);
-    // Hit + kill CDR brings the second cast well below the 10 s base cooldown.
+    // #108: no hit/kill recharge, so the second cast waits for the full base cooldown.
     const castGapMs = (activeEvents[1]?.nowMs ?? 0) - (activeEvents[0]?.nowMs ?? 0);
-    expect(castGapMs).toBeLessThan(ACTIVE_SKILL_TUNING.cooldownMs);
+    expect(castGapMs).toBeGreaterThanOrEqual(ACTIVE_SKILL_TUNING.cooldownMs);
 
     const surgedCast = surgedActive.events.find((event) => event.kind === 'active-skill');
     expect(
@@ -1257,19 +1257,22 @@ describe('simulateRun — M14 4 playable classes (GDD §15.4)', () => {
       chapter: 1,
       room: 1,
       isBossRoom: false,
-      size: { cols: 32, rows: 18 },
+      // Wide room: the tank is 100+ tiles away, so it cannot reach auto-aim range inside the
+      // 2-cast window below. The room stays uncleared and the cooldown comparison is pure.
+      size: { cols: 128, rows: 18 },
       tileSizePx: 16,
       playerStart: { x: 4, y: 9 },
       waves: [
         {
-          // Tank at 24 tiles stays beyond both auto-aim (8 / 9.2 tiles) and Shadow Barrage homing reach for >11 s.
-          enemies: [{ role: 'tank', at: { x: 28, y: 9 }, elite: true }],
+          enemies: [{ role: 'tank', at: { x: 120, y: 9 }, elite: true }],
         },
       ],
       obstacles: [],
       doors: [],
     });
     const spamActiveLeft = () => ({ x: -1, y: 0 });
+    // #108 doubled the cooldowns, so the 2-cast window has to be longer than two of them.
+    const twoCastsMs = CHARACTERS_TUNING.cultivator.signature.cooldownMs * 2;
     const ninjaCd = simulateRun({
       seed: 2,
       characterId: 'ninja',
@@ -1277,7 +1280,7 @@ describe('simulateRun — M14 4 playable classes (GDD §15.4)', () => {
       policy: standStill,
       chooseActive: spamActiveLeft,
       godMode: true,
-      maxDurationMs: 11_000,
+      maxDurationMs: twoCastsMs,
     });
     const mageCd = simulateRun({
       seed: 2,
@@ -1286,7 +1289,7 @@ describe('simulateRun — M14 4 playable classes (GDD §15.4)', () => {
       policy: standStill,
       chooseActive: spamActiveLeft,
       godMode: true,
-      maxDurationMs: 11_000,
+      maxDurationMs: twoCastsMs,
     });
     const ninjaCasts = ninjaCd.events.flatMap((e) => (e.kind === 'active-skill' ? [e.nowMs] : []));
     const mageCasts = mageCd.events.flatMap((e) => (e.kind === 'active-skill' ? [e.nowMs] : []));
