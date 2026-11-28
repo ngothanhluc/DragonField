@@ -284,7 +284,7 @@ Not used (still in the pack if you need a swap): `BookFire`, `BookLight`, `BookR
 
 A 24×24 icon = 1,5 tile of 16 px ⇒ when shown in a skill card it must be scaled by an integer multiple (×2 = 48 unit) so it does not blur.
 
-Both variants of every icon are staged: `ui/skill-icons/` holds the 20 normal PNGs plus the 20 `<Icon>Disabled.png` (40 files, each 24×24). The Disabled halves were copied later with `bun run scripts/stage-m6-assets.ts --skill-icons-disabled` (the normal PNGs and their meta UUIDs were left untouched). The game reads the mapping from `game/assets/scripts/core/skills/icons.ts` — that table is the single source for the HUD, the pick cards and, later, the shop/door screens.
+Both variants of every icon are staged: `ui/skill-icons/` holds the 20 normal PNGs plus the 20 `<Icon>Disabled.png` (40 files, each 24×24). The Disabled halves were copied later with a one-off staging script (removed in #114; see git history), leaving the normal PNGs and their meta UUIDs untouched. The game reads the mapping from `game/assets/scripts/core/skills/icons.ts` — that table is the single source for the HUD, the pick cards and, later, the shop/door screens.
 
 ---
 
