@@ -430,7 +430,7 @@ export const TUNING_DATA = {
   },
   activeSkill: {
     bufferMs: 150,
-    cooldownMs: 20000,
+    cooldownMs: 15000,
     hitCooldownReductionMs: 0,
     killCooldownReductionMs: 0,
     barrageProjectiles: 10,
@@ -695,7 +695,7 @@ export const TUNING_DATA = {
         executeBonus: 0,
       },
       signature: {
-        cooldownMs: 20000,
+        cooldownMs: 15000,
         hitCooldownReductionMs: 0,
         killCooldownReductionMs: 0,
         projectileCount: 10,
@@ -739,7 +739,7 @@ export const TUNING_DATA = {
         executeBonus: 0,
       },
       signature: {
-        cooldownMs: 19000,
+        cooldownMs: 14250,
         hitCooldownReductionMs: 0,
         killCooldownReductionMs: 0,
         projectileCount: 7,
@@ -783,7 +783,7 @@ export const TUNING_DATA = {
         executeBonus: 0,
       },
       signature: {
-        cooldownMs: 21000,
+        cooldownMs: 15750,
         hitCooldownReductionMs: 0,
         killCooldownReductionMs: 0,
         projectileCount: 8,
@@ -827,7 +827,7 @@ export const TUNING_DATA = {
         executeBonus: 0.1,
       },
       signature: {
-        cooldownMs: 22000,
+        cooldownMs: 16500,
         hitCooldownReductionMs: 0,
         killCooldownReductionMs: 0,
         projectileCount: 14,
