@@ -31,7 +31,7 @@ T4 (HUD high-contrast overhaul) ─────────────┴──
 **Goal (ADR-019).** Remove `raylight`, `fog`, `vignette`, and `heat-haze` completely; replace with crisp 1:1 pixel-scale particles matching the Ninja Adventure demo GIFs.
 
 **Scope & files.**
-- Stage particles in `game/scripts/stage-atmosphere.ts` + `game/assets/resources/data/animations.json`:
+- Stage particles (one-off staging script, removed in #114; see git history) + `game/assets/resources/data/animations.json`:
   - `art-source/ninja-adventure/FX/Particle/Leaf.png` (6 frames, green)
   - `art-source/ninja-adventure/FX/Particle/LeafPink.png` (6 frames, cherry blossom)
   - `art-source/ninja-adventure/FX/Particle/Rain.png` (diagonal rain streaks)

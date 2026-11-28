@@ -60,6 +60,7 @@ cd game
 bun run prep:refs --out ../art-source/gemini/refs --min 768 <reference files...>
 bun run remove:watermark -- ../art-source/gemini/<file>.png --output ../art-source/gemini/<file>.clean.png
 bun run stage:gen  # apply the spec in art-source/gemini/spec.json
+bun run gen:elites  # elite recolours; needs art-source/ninja-adventure/Palette.png
 bun run build:room <layout.json> <out.tmx>  # text layout → validated .tmx + .tmx.meta
 ```
 
@@ -162,6 +163,6 @@ art-source/            # full pack, NOT committed (gitignored)
 | One `SpriteAnimator` per FX slot (component + frame-load promise on every frame change) drags `stress()` down to ~40 fps | the FX pool slices frames at init + uses **one** shared clock (`fx/effect-pool.ts`); use `SpriteAnimator` only for actors |
 | `Sprite.Type.SLICED` without insets on the `SpriteFrame` still stretches all 4 corners | set `insetLeft/Right/Top/Bottom` when slicing (see `sliceSliced` in `screens/menu.ts`) |
 | The pixel font loads async; a label created before the font arrives keeps system-font metrics and may clip text | `applyPixelFont` sets `useSystemFont=false` + `font` + `updateRenderData(true)` when the promise resolves; all UI labels go through `createLabel` |
-| The pack's `NormalFont.ttf` has a space advance of 227/2048 em (~0.11 em) → Cocos renders "Clearthechapter", spaces nearly vanish | patch the `hmtx` space glyph to 682/2048 em with `bun run fix:font` (`scripts/lib/font-spacing.ts`; `stage:art` calls it automatically after copying fonts) |
+| The pack's `NormalFont.ttf` has a space advance of 227/2048 em (~0.11 em) → Cocos renders "Clearthechapter", spaces nearly vanish | patch the `hmtx` space glyph to 682/2048 em with `bun run fix:font` (`scripts/lib/font-spacing.ts`) |
 | `Graphics.fill()` fills **every** sub-path still in the buffer with the current colour → adding a second, differently-coloured `rect()` and filling again repaints the first one too (a "gradient" of rings comes out one flat colour) | one `Graphics` node per colour (`fillRects` in `game/atmosphere-view.ts`: 12 vignette rings = 12 nodes, drawn once) |
-| `tests/core/art-manifest.test.ts` requires every non-`fx` actor to use `layout: "grid"`, and a grid sheet with `directions: []` is a **vertical** single column (row = frame) | pack animal/flag/flower sheets are horizontal strips: the staging script re-packs them into a single column (`stackFrames` in `scripts/stage-atmosphere.ts`), never into a horizontal `strip` for `animal.*`/`decor.*` |
+| `tests/core/art-manifest.test.ts` requires every non-`fx` actor to use `layout: "grid"`, and a grid sheet with `directions: []` is a **vertical** single column (row = frame) | pack animal/flag/flower sheets are horizontal strips: re-pack them into a single vertical column (one frame per row), never into a horizontal `strip` for `animal.*`/`decor.*` |
