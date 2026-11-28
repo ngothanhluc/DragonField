@@ -424,12 +424,7 @@
     "invulnerabilityMs": 220
   },
   "activeSkill": {
-    "bufferMs": 150,
-    "cooldownMs": 15000,
-    "hitCooldownReductionMs": 0,
-    "killCooldownReductionMs": 0,
-    "barrageProjectiles": 10,
-    "barrageDamageMultiplier": 1.2
+    "bufferMs": 150
   },
   "classSkills": {
     "ninja": {

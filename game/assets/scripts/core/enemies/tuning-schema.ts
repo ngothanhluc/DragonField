@@ -583,16 +583,6 @@ export interface DashTuning {
 export interface ActiveSkillTuning {
   /** Game-time action buffer window, ms. */
   readonly bufferMs: number;
-  /** Base time cooldown, ms. */
-  readonly cooldownMs: number;
-  /** Cooldown reduction on each player projectile hit, ms. */
-  readonly hitCooldownReductionMs: number;
-  /** Cooldown reduction on each enemy kill, ms. */
-  readonly killCooldownReductionMs: number;
-  /** Projectiles emitted by Ninja's Shadow Barrage signature active. */
-  readonly barrageProjectiles: number;
-  /** Damage multiplier per Shadow Barrage projectile relative to player base damage. */
-  readonly barrageDamageMultiplier: number;
 }
 
 /** Ninja exclusive skill *Phân Thân Ám Ảnh* (shadow clone) tuning (M20, ADR-027). */
@@ -1152,14 +1142,7 @@ const DASH_FIELDS = [
   'invulnerabilityMs',
 ] as const;
 
-const ACTIVE_SKILL_FIELDS = [
-  'bufferMs',
-  'cooldownMs',
-  'hitCooldownReductionMs',
-  'killCooldownReductionMs',
-  'barrageProjectiles',
-  'barrageDamageMultiplier',
-] as const;
+const ACTIVE_SKILL_FIELDS = ['bufferMs'] as const;
 
 const CLASS_SKILLS_FIELDS = ['ninja', 'archer', 'mage', 'cultivator'] as const;
 
@@ -3036,14 +3019,7 @@ function parseDash(raw: Record<string, unknown>, problems: ProblemList): DashTun
 }
 
 function zeroActiveSkill(): ActiveSkillTuning {
-  return {
-    bufferMs: 150,
-    cooldownMs: 10000,
-    hitCooldownReductionMs: 200,
-    killCooldownReductionMs: 650,
-    barrageProjectiles: 10,
-    barrageDamageMultiplier: 1.5,
-  };
+  return { bufferMs: 150 };
 }
 
 function parseActiveSkill(raw: Record<string, unknown>, problems: ProblemList): ActiveSkillTuning {
@@ -3053,19 +3029,6 @@ function parseActiveSkill(raw: Record<string, unknown>, problems: ProblemList): 
   const path = 'activeSkill';
   return {
     bufferMs: readNumber(source, 'bufferMs', path, problems, { integer: true }) ?? 0,
-    cooldownMs:
-      readNumber(source, 'cooldownMs', path, problems, { integer: true, positive: true }) ?? 1,
-    hitCooldownReductionMs:
-      readNumber(source, 'hitCooldownReductionMs', path, problems, { integer: true }) ?? 0,
-    killCooldownReductionMs:
-      readNumber(source, 'killCooldownReductionMs', path, problems, { integer: true }) ?? 0,
-    barrageProjectiles:
-      readNumber(source, 'barrageProjectiles', path, problems, {
-        integer: true,
-        positive: true,
-      }) ?? 1,
-    barrageDamageMultiplier:
-      readNumber(source, 'barrageDamageMultiplier', path, problems, { positive: true }) ?? 1,
   };
 }
 

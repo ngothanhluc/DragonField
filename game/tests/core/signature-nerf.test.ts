@@ -109,11 +109,9 @@ describe("#108 Signature Active nerf (characters.*.signature)", () => {
     expect(CHARACTERS_TUNING.mage.passive.activeCooldownMult).toBe(0.8);
   });
 
-  it("syncs the top-level activeSkill block", () => {
-    expect(ACTIVE_SKILL_TUNING.cooldownMs).toBe(15000);
-    expect(ACTIVE_SKILL_TUNING.hitCooldownReductionMs).toBe(0);
-    expect(ACTIVE_SKILL_TUNING.killCooldownReductionMs).toBe(0);
-    expect(ACTIVE_SKILL_TUNING.barrageDamageMultiplier).toBeCloseTo(1.2, 9);
+  it("keeps only the action buffer in the top-level activeSkill block", () => {
+    // Cooldown, recharge and damage live in characters.*.signature; the old duplicates were dropped.
+    expect(ACTIVE_SKILL_TUNING).toEqual({ bufferMs: 150 });
   });
 });
 
