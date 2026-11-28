@@ -283,7 +283,7 @@ Agreed in the 2026-11-26 grill session. Each milestone ships and locks simulatio
 
 ### 15.3 Build & combat depth (M13)
 
-- **Active controls (ADR-022, amends §3 / ADR-008):** add **Dash (`Space`)** with cooldown, short i-frame, and 150 ms action buffer, plus **1 Signature Active Skill (`E` / Right-Click)** recharging on a **base time cooldown of 19–22 s per class with no hit/kill reduction** (amended by #108; originally ~10 s accelerated by hits/kills) (150 ms action buffer). Basic shots stay **100% auto-fire**.
+- **Active controls (ADR-022, amends §3 / ADR-008):** add **Dash (`Space`)** with cooldown, short i-frame, and 150 ms action buffer, plus **1 Signature Active Skill (`E` / Right-Click)** recharging on a **base time cooldown of 14.25–16.5 s per class with no hit/kill reduction** (amended by #108; originally ~10 s accelerated by hits/kills) (150 ms action buffer). Basic shots stay **100% auto-fire**.
 - **Pure-combat skill pool rebuild (replaces §6):** remove `Greed`, `Luck`, and all XP/Gold cards. Rebuild into **~24–28 pure-combat skills** across 4 pillars (Weapon/Offense, Elemental/Status, Defense/Survival, Mobility/Dash & Active) + **6–8 Legendary Evolutions** unlocked into the roll pool when prerequisite pairs are owned.
 - **Enemy AI & threat escalation — Tier 2:** upgrade enemy AI (predictive lead shots / bursts, flanking chasers), add 1–2 new enemy roles (e.g. Bomber / Summoner-Buffer), and update boss patterns with Dash-pressuring attacks so combat stays tense once players have Dash, Active Skills, and Evolutions.
 
