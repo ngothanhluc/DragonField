@@ -53,6 +53,7 @@ import {
 import { segmentHitsCircle } from '../core/combat/hitbox';
 import { accumulateDamage } from '../core/combat/integer-damage';
 import { HitstopClock } from '../core/combat/hitstop';
+import { PlayerHitHitstop, isRealCrit } from '../core/combat/hit-hitstop';
 import type { KnockbackState } from '../core/combat/knockback';
 import {
   HOMING_TURN_RATE_RADIANS_PER_SECOND,
@@ -204,6 +205,12 @@ interface ClassRuntimeContext {
   readonly shotDamage: number;
   readonly critMultiplier: number;
   readonly aimDirection?: Vec2;
+}
+
+/** Where a Signature Active projectile came from: skill + one cast id (#108). */
+interface SignatureBulletOrigin {
+  readonly skillId: SignatureSkillId;
+  readonly castId: number;
 }
 
 /** Class-generic runtime surface: Ninja (#84) and Cultivator (#87) both implement it. */
@@ -402,7 +409,13 @@ export class CombatLoop {
   private activeSkillState: ActiveSkillState;
   private dashesUsed = 0;
   private activeSkillsUsed = 0;
-  private readonly signatureBullets = new Map<number, SignatureSkillId>();
+  private readonly signatureBullets = new Map<number, SignatureBulletOrigin>();
+  /** Monotonic id per `castSignature` call so a volley stops the game once, not per blade (#108). */
+  private signatureCastCount = 0;
+  private readonly playerHitHitstop = new PlayerHitHitstop({
+    normalMs: DEFAULT_COMBAT.enemyHitstopMs,
+    critMs: FEEL_TUNING.vfx.critHitstopMs,
+  });
   private activeAttachmentHideToken: string | null = null;
   private activeAttachmentHideRemainingMs = 0;
   private readonly enemyBuffs = new EnemyBuffTracker();
@@ -632,12 +645,12 @@ export class CombatLoop {
 
   /** True when `bulletId` was fired by Ninja's Signature Active (*Shadow Barrage*). */
   isShadowBullet(bulletId: number): boolean {
-    return this.signatureBullets.get(bulletId) === 'shadow-barrage';
+    return this.signatureBullets.get(bulletId)?.skillId === 'shadow-barrage';
   }
 
   /** Signature Active skill that spawned `bulletId`, or `null` for auto-fire / enemy bullets. */
   signatureSkillForBullet(bulletId: number): SignatureSkillId | null {
-    return this.signatureBullets.get(bulletId) ?? null;
+    return this.signatureBullets.get(bulletId)?.skillId ?? null;
   }
 
   /** Switch the active class Signature Skill mid-run (used by `?debug=1` `__yokai.selectCharacter`). */
@@ -765,6 +778,7 @@ export class CombatLoop {
     this.pendingBlasts = [];
     this.pendingGunnerVolleys = [];
     this.signatureBullets.clear();
+    this.playerHitHitstop.reset();
     this.classDamageCarry.clear();
   }
 
@@ -893,6 +907,7 @@ export class CombatLoop {
   clearBullets(): void {
     this.player.bullets.clear();
     this.signatureBullets.clear();
+    this.playerHitHitstop.reset();
     this.fx?.setFrostOrbs(null, 0);
     this.bulletView?.sync();
   }
@@ -1868,6 +1883,11 @@ export class CombatLoop {
 
       let consumed = false;
 
+      // `#108`: a Signature volley rolls no crit, so its own damage is its base; an auto-fire
+      // bullet compares against the player's shot damage (crit was multiplied in at fire time).
+      const signature = this.signatureBullets.get(bullet.id);
+      const baseDamage = signature === undefined ? stats.damage : bullet.damage;
+
       // Boss first (the main target in a boss room), then the mobs.
       const boss = this.boss;
       if (
@@ -1884,7 +1904,7 @@ export class CombatLoop {
           boss.health / boss.maxHealth,
         );
         const damage = damageWithStatusBonus(stats, executed, afflicted);
-        const crit = bullet.damage > stats.damage * 1.01;
+        const crit = isRealCrit(bullet.damage, baseDamage);
         boss.takeDamage(damage, this.nowMs);
         this.reportDamage(damage, boss.position, crit);
         if (this.hasClassSkills()) {
@@ -1921,7 +1941,7 @@ export class CombatLoop {
         });
         this.applyShockArcs(BOSS_TARGET_ID, boss.position, bullet.damage, stats);
         this.explode(bullet, boss.position, null);
-        this.hitstop.request(crit ? FEEL_TUNING.vfx.critHitstopMs : undefined);
+        this.requestPlayerHitHitstop(bullet.damage, baseDamage, signature?.castId ?? null);
         consumed = this.resolveBullet(bullet);
         if (consumed) {
           spent.add(bullet.id);
@@ -1939,7 +1959,7 @@ export class CombatLoop {
         const afflicted = victim.hasAnyStatus(this.nowMs);
         const executed = damageAfterExecute(stats, bullet.damage, victim.health / victim.maxHealth);
         const damage = damageWithStatusBonus(stats, executed, afflicted);
-        const crit = bullet.damage > stats.damage * 1.01;
+        const crit = isRealCrit(bullet.damage, baseDamage);
         victim.takeDamage(damage, bullet.position, this.nowMs);
         this.reportDamage(damage, victim.position, crit);
         if (this.hasClassSkills()) {
@@ -1975,7 +1995,7 @@ export class CombatLoop {
         });
         this.applyShockArcs(victim.id, victim.position, bullet.damage, stats);
         this.explode(bullet, victim.position, victim);
-        this.hitstop.request(crit ? FEEL_TUNING.vfx.critHitstopMs : undefined);
+        this.requestPlayerHitHitstop(bullet.damage, baseDamage, signature?.castId ?? null);
         consumed = this.resolveBullet(bullet);
         if (consumed) break;
       }
@@ -1992,6 +2012,22 @@ export class CombatLoop {
       this.applyClassSkillEffects(classSkillEffects);
       classSkillEffects.length = 0;
     }
+  }
+
+  /**
+   * Request the hitstop beat for a player bullet hit (#108).
+   *
+   * Normal shots freeze on every hit (70 ms, 110 ms on a real crit). A Signature volley freezes
+   * once per cast — the first blade that lands — instead of once per blade, which used to stack
+   * a chain of crit-length freezes and stutter the game.
+   */
+  private requestPlayerHitHitstop(
+    damage: number,
+    baseDamage: number,
+    signatureCastId: number | null,
+  ): void {
+    const ms = this.playerHitHitstop.hitstopFor({ damage, baseDamage, signatureCastId });
+    if (ms > 0) this.hitstop.request(ms);
   }
 
   /** AoE explosion around the hit point: extra damage to every other target in range. */
@@ -2535,6 +2571,8 @@ export class CombatLoop {
       }
     }
 
+    this.signatureCastCount += 1;
+    const castId = this.signatureCastCount;
     for (const blade of volley) {
       const spawned = this.player.bullets.spawn({
         position: blade.position,
@@ -2546,7 +2584,7 @@ export class CombatLoop {
         pierceRemaining: blade.pierceRemaining,
         homing: blade.homing,
       });
-      this.signatureBullets.set(spawned.id, skillId);
+      this.signatureBullets.set(spawned.id, { skillId, castId });
     }
   }
 
@@ -2956,6 +2994,7 @@ export class CombatLoop {
     this.bossRewarded = false;
     this.player.bullets.clear();
     this.signatureBullets.clear();
+    this.playerHitHitstop.reset();
     this.clearSkillAttachmentHide();
     this.actionBuffer.clear();
     this.enemyBuffs.clear();

@@ -38,6 +38,7 @@ import {
 } from '../characters/roster';
 import { AutoFire } from '../combat/auto-fire';
 import { BulletPool, firstHit, hitsCircle, type Bullet } from '../combat/bullets';
+import { PlayerHitHitstop } from '../combat/hit-hitstop';
 import { HealthState } from '../combat/health';
 import { stepKnockback, type KnockbackState } from '../combat/knockback';
 import { firePlayerVolley } from '../combat/player-fire';
@@ -96,6 +97,7 @@ import {
   DASH_TUNING,
   DOORS_TUNING,
   ENEMY_TUNING,
+  FEEL_TUNING,
   NAVIGATION_TUNING,
   PICKUPS_TUNING,
   SPECIAL_ROOMS_TUNING,
@@ -563,6 +565,22 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
   const spent = new Set<number>();
   /** Ids of Signature Active projectiles so Shadow Barrage does not self-refund its own cooldown. */
   const activeBulletIds = new Set<number>();
+  /** Cast id + base damage of each Signature projectile, so a volley stops once (#108). */
+  const activeBulletSignature = new Map<number, { castId: number; baseDamage: number }>();
+  const hitstopGate = new PlayerHitHitstop({
+    normalMs: DEFAULT_COMBAT.enemyHitstopMs,
+    critMs: FEEL_TUNING.vfx.critHitstopMs,
+  });
+  let signatureCastCount = 0;
+  /** Hitstop a player hit asks for: one beat per Signature cast, every hit for auto-fire (#108). */
+  const punchHitstop = (bullet: Bullet, shotDamage: number): number => {
+    const signature = activeBulletSignature.get(bullet.id);
+    return hitstopGate.hitstopFor({
+      damage: bullet.damage,
+      baseDamage: signature?.baseDamage ?? shotDamage,
+      signatureCastId: signature?.castId ?? null,
+    });
+  };
   let hitstopMs = 0;
   /** End timestamp of the 0.6 s post-level-up resume i-frame window (M12, ADR-021). */
   let levelUpInvulnerableUntilMs = Number.NEGATIVE_INFINITY;
@@ -622,6 +640,8 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     statuses.clear();
     burns.clear();
     activeBulletIds.clear();
+    activeBulletSignature.clear();
+    hitstopGate.reset();
     ninjaRuntime?.reset();
     cultivatorRuntime?.reset();
     dashState = createDashState();
@@ -1537,6 +1557,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         actionBuffer.consume('active');
         activeState = triggered.state;
         activeSkillsUsed += 1;
+        signatureCastCount += 1;
         if (hasAnyClassSkill(characterId, classSkillSource)) {
           const effects = dispatchClassSkillEvent('onActive', characterId, classSkillSource, {
             position: player,
@@ -1594,6 +1615,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
               homing: bolt.homing,
             });
             activeBulletIds.add(spawned.id);
+            activeBulletSignature.set(spawned.id, {
+              castId: signatureCastCount,
+              baseDamage: spawned.damage,
+            });
           }
           events.push({
             kind: 'active-skill',
@@ -1619,6 +1644,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
               homing: arrow.homing,
             });
             activeBulletIds.add(spawned.id);
+            activeBulletSignature.set(spawned.id, {
+              castId: signatureCastCount,
+              baseDamage: spawned.damage,
+            });
           }
           events.push({
             kind: 'active-skill',
@@ -1648,6 +1677,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
               homing: sword.homing,
             });
             activeBulletIds.add(spawned.id);
+            activeBulletSignature.set(spawned.id, {
+              castId: signatureCastCount,
+              baseDamage: spawned.damage,
+            });
           }
           events.push({
             kind: 'active-skill',
@@ -1678,6 +1711,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
               homing: blade.homing,
             });
             activeBulletIds.add(spawned.id);
+            activeBulletSignature.set(spawned.id, {
+              castId: signatureCastCount,
+              baseDamage: spawned.damage,
+            });
           }
           events.push({
             kind: 'active-skill',
@@ -1993,7 +2030,7 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
         if (!activeBulletIds.has(bullet.id)) {
           activeState = onActiveHit(activeState, activeConfig, 1);
         }
-        hitstopMs = Math.max(hitstopMs, DEFAULT_COMBAT.enemyHitstopMs);
+        hitstopMs = Math.max(hitstopMs, punchHitstop(bullet, stats.damage));
 
         // Chain Lightning: arc shock damage to up to `arcs` nearest living enemies within range.
         if (stats.shockOnHit !== undefined && stats.shockOnHit.arcs > 0 && stats.shockOnHit.damageRatio > 0) {
@@ -2057,7 +2094,10 @@ export function simulateRun(options: SimulationOptions): SimulationResult {
     }
     if (spent.size > 0) {
       bullets.consumeWhere((bullet) => spent.has(bullet.id));
-      for (const id of spent) activeBulletIds.delete(id);
+      for (const id of spent) {
+        activeBulletIds.delete(id);
+        activeBulletSignature.delete(id);
+      }
     }
 
     if (classHitEffects.length > 0) applyClassSkillEffects(classHitEffects);
