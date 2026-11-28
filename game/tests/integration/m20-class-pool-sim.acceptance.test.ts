@@ -53,48 +53,56 @@ describe('#89 sim table models the class-exclusive pools (4 classes × 4 chapter
     const floor = BALANCE_FLOOR.byClass[characterId];
     const seedsPerBoss = SIM_TABLE_SEEDS_PER_BOSS[characterId];
 
-    it(`${characterId}: every row earns its own class skills, never another class's, and meets the #108 win floor`, () => {
-      const rows = simTableRows({
-        chapters: CHAPTERS,
-        seedsPerBoss,
-        characters: [characterId],
-      });
-      rowsByClass.set(characterId, rows);
-      expect(rows).toHaveLength(CHAPTERS.length * 2 * seedsPerBoss);
+    // One chapter per `it()`: a whole class matrix in one synchronous block starves vitest's
+    // worker RPC past its 60 s timeout on a loaded machine (ninja's 24 rows take 37–72 s).
+    for (const chapter of CHAPTERS) {
+      it(`${characterId} chapter ${chapter}: every row earns its own class skills, never another class's`, () => {
+        const rows = simTableRows({
+          chapters: [chapter],
+          seedsPerBoss,
+          characters: [characterId],
+        });
+        rowsByClass.set(characterId, [...(rowsByClass.get(characterId) ?? []), ...rows]);
+        expect(rows).toHaveLength(2 * seedsPerBoss);
+
+        for (const row of rows) {
+          const label = `${characterId} chapter ${row.chapter} seed ${row.seed} (${row.boss})`;
+
+          // Stand still picks nothing.
+          expect(classSkillsOf(row.standStill), `${label} stand still class skills`).toEqual([]);
+
+          const classSkills = classSkillsOf(row.loadout);
+          expect(Array.isArray(classSkills), `${label} loadout.classSkills is a list`).toBe(true);
+          // Zero cross-class leaks.
+          for (const id of classSkills) {
+            expect(ownIds.has(id), `${label} leaked ${id}`).toBe(true);
+          }
+          // An owned Class Evolution shows in the evolutions column too.
+          if (classSkills.includes(evolutionId)) {
+            expect(row.loadout.evolutions, `${label} evolutions`).toContain(evolutionId);
+          }
+
+          // The pre-M20 stand-still contract still holds with class pools in play.
+          expect(row.standStill.status, `${label} stand still`).toBe('lost');
+          expect(row.standStill.roomsCleared, `${label} stand still`).toBe(0);
+
+          // Winners only: a lost run ends early, so it is not held to the level-up band.
+          const won = row.loadout.status === 'won' && row.loadout.roomsCleared === 9;
+          if (won) {
+            expect(row.loadout.levelUps, `${label} levelUps`).toBeGreaterThanOrEqual(
+              LEVEL_UP_TARGET_MIN,
+            );
+            expect(row.loadout.levelUps, `${label} levelUps`).toBeLessThanOrEqual(
+              LEVEL_UP_TARGET_MAX,
+            );
+          }
+        }
+      }, 300_000);
+    }
+
+    it(`${characterId}: the full matrix meets the #108 win floor and the class-pool contract`, () => {
+      const rows = rowsByClass.get(characterId) ?? [];
       expect(rows.length, `${characterId} rows`).toBe(floor.rows);
-
-      for (const row of rows) {
-        const label = `${characterId} chapter ${row.chapter} seed ${row.seed} (${row.boss})`;
-
-        // Stand still picks nothing.
-        expect(classSkillsOf(row.standStill), `${label} stand still class skills`).toEqual([]);
-
-        const classSkills = classSkillsOf(row.loadout);
-        expect(Array.isArray(classSkills), `${label} loadout.classSkills is a list`).toBe(true);
-        // Zero cross-class leaks.
-        for (const id of classSkills) {
-          expect(ownIds.has(id), `${label} leaked ${id}`).toBe(true);
-        }
-        // An owned Class Evolution shows in the evolutions column too.
-        if (classSkills.includes(evolutionId)) {
-          expect(row.loadout.evolutions, `${label} evolutions`).toContain(evolutionId);
-        }
-
-        // The pre-M20 stand-still contract still holds with class pools in play.
-        expect(row.standStill.status, `${label} stand still`).toBe('lost');
-        expect(row.standStill.roomsCleared, `${label} stand still`).toBe(0);
-
-        // Winners only: a lost run ends early, so it is not held to the level-up band.
-        const won = row.loadout.status === 'won' && row.loadout.roomsCleared === 9;
-        if (won) {
-          expect(row.loadout.levelUps, `${label} levelUps`).toBeGreaterThanOrEqual(
-            LEVEL_UP_TARGET_MIN,
-          );
-          expect(row.loadout.levelUps, `${label} levelUps`).toBeLessThanOrEqual(
-            LEVEL_UP_TARGET_MAX,
-          );
-        }
-      }
 
       const wins = rows.filter(
         (row) => row.loadout.status === 'won' && row.loadout.roomsCleared === 9,
@@ -118,7 +126,7 @@ describe('#89 sim table models the class-exclusive pools (4 classes × 4 chapter
       // The Class Evolution unlocks in at least one row, and is reported in `evolutions`.
       const evolutionRows = rows.filter((row) => row.loadout.evolutions.includes(evolutionId));
       expect(evolutionRows.length, `${characterId} rows unlocking ${evolutionId}`).toBeGreaterThanOrEqual(1);
-    }, 300_000);
+    });
   }
 
   it('formats a class skills column holding each row\'s class skills', () => {
