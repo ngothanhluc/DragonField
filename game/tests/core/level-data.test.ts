@@ -6,7 +6,7 @@ import {
   type ChapterData,
   type LevelData,
 } from '../../assets/scripts/core/level/level-data';
-import { parseTileRows } from '../../scripts/lib/tile-rows';
+import { parseTileRows } from '../helpers/tile-rows';
 import { loadChapterOne } from '../helpers/tmx-levels';
 
 interface RawPoint {

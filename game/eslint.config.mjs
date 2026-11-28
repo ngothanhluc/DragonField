@@ -36,6 +36,7 @@ export default tseslint.config(
       'assets/scripts/core/**/*.ts',
       'sim/**/*.ts',
       'scripts/**/*.ts',
+      'tests/**/*.ts',
     ],
     rules: {
       'no-restricted-imports': [
@@ -45,7 +46,7 @@ export default tseslint.config(
             {
               group: ['cc', 'cc/*'],
               message:
-                'core/, sim/ and scripts/ must be plain TS: do not import cc. Move engine-dependent code into assets/scripts/game/.',
+                'core/, sim/, scripts/ and tests/ must be plain TS: do not import cc. Move engine-dependent code into assets/scripts/game/.',
             },
           ],
         },

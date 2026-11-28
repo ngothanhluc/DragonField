@@ -4,7 +4,8 @@
  *
  * Agreed locations:
  * - `sim/run-simulation.ts`, `sim/boss-run.ts` (game root, next to `scripts/` and `tests/`)
- * - `scripts/lib/autotile.ts`, `scripts/lib/tile-rows.ts`
+ * - `scripts/lib/autotile.ts`
+ * - `tests/helpers/tile-rows.ts` (a test fixture, so not `scripts/lib`)
  *
  * The real proof for "the built index.js no longer contains simulateRun/parseTileRows" is a
  * web-desktop build (not runnable in CI); this test pins the source-level cause of it.
@@ -23,7 +24,7 @@ const MOVED = {
   runSimulation: "sim/run-simulation.ts",
   bossRun: "sim/boss-run.ts",
   autotile: "scripts/lib/autotile.ts",
-  tileRows: "scripts/lib/tile-rows.ts",
+  tileRows: "tests/helpers/tile-rows.ts",
 } as const;
 
 const OLD_PATHS = [
